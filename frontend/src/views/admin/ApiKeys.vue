@@ -192,33 +192,6 @@
                   </div>
                 </TableCell>
                 <TableCell class="py-4">
-                  <div class="space-y-1.5">
-                    <div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <span>余额：</span>
-                      <Badge
-                        v-if="isApiKeyUnlimited(apiKey)"
-                        variant="secondary"
-                        class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                      >
-                        无限额度
-                      </Badge>
-                      <span
-                        v-else
-                        class="text-sm font-medium tabular-nums"
-                        :class="isNegativeWalletAmount(getApiKeyWalletTotalBalance(apiKey)) ? 'text-rose-600' : 'text-foreground'"
-                      >
-                        {{ formatWalletAmount(getApiKeyWalletTotalBalance(apiKey), '-') }}
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
-                      <span>
-                        已消费：
-                        <span class="font-medium tabular-nums text-foreground">${{ getApiKeyWalletConsumed(apiKey).toFixed(2) }}</span>
-                      </span>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell class="py-4">
                   <div class="space-y-1 text-xs">
                     <div class="text-muted-foreground">
                       请求: <span class="font-medium text-foreground">{{ (apiKey.total_requests || 0).toLocaleString() }}</span>
@@ -306,13 +279,6 @@
                     >
                       {{ apiKey.is_active ? '活跃' : '禁用' }}
                     </Badge>
-                    <Badge
-                      v-if="getApiKeyWallet(apiKey.id)"
-                      :variant="walletStatusBadge(getApiKeyWalletStatus(apiKey.id))"
-                      class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                    >
-                      {{ walletStatusLabel(getApiKeyWalletStatus(apiKey.id)) }}
-                    </Badge>
                   </div>
                 </TableCell>
                 <TableCell class="py-4">
@@ -334,15 +300,6 @@
                       @click="editApiKey(apiKey)"
                     >
                       <SquarePen class="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7"
-                      title="资金操作"
-                      @click="openAddBalanceDialog(apiKey)"
-                    >
-                      <DollarSign class="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -427,13 +384,6 @@
                     {{ apiKey.is_active ? '活跃' : '禁用' }}
                   </Badge>
                   <Badge
-                    v-if="getApiKeyWallet(apiKey.id)"
-                    :variant="walletStatusBadge(getApiKeyWalletStatus(apiKey.id))"
-                    class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                  >
-                    {{ walletStatusLabel(getApiKeyWalletStatus(apiKey.id)) }}
-                  </Badge>
-                  <Badge
                     variant="secondary"
                     class="h-5 px-1.5 py-0 text-[10px] font-medium"
                   >
@@ -452,38 +402,6 @@
                   >
                     过期自动删除
                   </Badge>
-                </div>
-
-                <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="space-y-1">
-                      <p class="text-[11px] text-muted-foreground">
-                        余额：
-                      </p>
-                      <Badge
-                        v-if="isApiKeyUnlimited(apiKey)"
-                        variant="secondary"
-                        class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                      >
-                        无限额度
-                      </Badge>
-                      <p
-                        v-else
-                        class="text-sm font-medium tabular-nums leading-none"
-                        :class="isNegativeWalletAmount(getApiKeyWalletTotalBalance(apiKey)) ? 'text-rose-600' : 'text-foreground'"
-                      >
-                        {{ formatWalletAmount(getApiKeyWalletTotalBalance(apiKey), '-') }}
-                      </p>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-[11px] text-muted-foreground">
-                        已消费：
-                      </p>
-                      <p class="text-sm font-medium tabular-nums text-foreground">
-                        ${{ getApiKeyWalletConsumed(apiKey).toFixed(2) }}
-                      </p>
-                    </div>
-                  </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-2.5 text-xs">
@@ -787,17 +705,6 @@
       </template>
     </Dialog>
 
-    <WalletOpsDrawer
-      :open="showWalletActionDrawer"
-      :wallet="walletActionTarget?.wallet || null"
-      :owner-name="walletActionTarget?.apiKey.name || walletActionTarget?.apiKey.key_display || '未命名 Key'"
-      :owner-subtitle="walletActionTarget?.apiKey.key_display || walletActionTarget?.apiKey.username || ''"
-      context-label="独立密钥钱包"
-      accent="blue"
-      :show-refunds="false"
-      @close="closeWalletActionDrawer"
-      @changed="handleWalletDrawerChanged"
-    />
   </div>
 </template>
 
@@ -808,9 +715,6 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useClipboard } from '@/composables/useClipboard'
 import { adminApi, type AdminApiKey, type CreateStandaloneApiKeyRequest } from '@/api/admin'
 import type { ApiKeyInstallSession, InstallSessionTargetSystem, InstallTargetCli } from '@/api/me'
-import type { AdminWallet } from '@/api/admin-wallets'
-import { walletStatusBadge, walletStatusLabel } from '@/utils/walletDisplay'
-import WalletOpsDrawer from '@/features/wallet/components/WalletOpsDrawer.vue'
 import { EmptyState, LoadingState } from '@/components/common'
 
 import {
@@ -860,7 +764,6 @@ const { confirmDanger } = useConfirm()
 const { copyToClipboard } = useClipboard()
 
 const apiKeys = ref<AdminApiKey[]>([])
-const apiKeyWalletMap = ref<Record<string, AdminWallet>>({})
 const loading = ref(false)
 const total = ref(0)
 const currentPage = ref(1)
@@ -975,8 +878,6 @@ const filteredApiKeys = computed(() => {
   return result
 })
 
-const showWalletActionDrawer = ref(false)
-const walletActionTarget = ref<{ apiKey: AdminApiKey; wallet: AdminWallet } | null>(null)
 
 onMounted(async () => {
   installSystem.value = detectCurrentSystem()
@@ -1005,32 +906,6 @@ function resetInstallCopiedState() {
   installCopied.value = false
 }
 
-function buildAdminWalletFromApiKey(apiKey: AdminApiKey): AdminWallet | null {
-  if (!apiKey.wallet?.id) {
-    return null
-  }
-
-  return {
-    ...apiKey.wallet,
-    id: apiKey.wallet.id,
-    user_id: null,
-    api_key_id: apiKey.id,
-    owner_type: 'api_key',
-    owner_name: apiKey.name || apiKey.key_display || null,
-    created_at: apiKey.created_at || apiKey.wallet.updated_at || '',
-  }
-}
-
-function buildApiKeyWalletMap(items: AdminApiKey[]): Record<string, AdminWallet> {
-  return items.reduce<Record<string, AdminWallet>>((acc, apiKey) => {
-    const wallet = buildAdminWalletFromApiKey(apiKey)
-    if (wallet) {
-      acc[apiKey.id] = wallet
-    }
-    return acc
-  }, {})
-}
-
 async function refreshApiKeys() {
   loading.value = true
   try {
@@ -1047,7 +922,6 @@ async function refreshApiKeys() {
     }
     apiKeys.value = standaloneKeys
     total.value = response.total
-    apiKeyWalletMap.value = buildApiKeyWalletMap(standaloneKeys)
   } catch (err: unknown) {
     log.error('加载独立Keys失败:', err)
     error(parseApiError(err, '加载独立 Keys 失败'))
@@ -1145,7 +1019,6 @@ async function deleteApiKey(apiKey: AdminApiKey) {
     const response = await adminApi.deleteApiKey(apiKey.id)
     apiKeys.value = apiKeys.value.filter(k => k.id !== apiKey.id)
     total.value = total.value - 1
-    delete apiKeyWalletMap.value[apiKey.id]
     success(response.message)
   } catch (err: unknown) {
     log.error('删除密钥失败:', err)
@@ -1197,8 +1070,6 @@ function editApiKey(apiKey: AdminApiKey) {
   editingKeyData.value = {
     id: apiKey.id,
     name: apiKey.name || '',
-    initial_balance_usd: isApiKeyUnlimited(apiKey) ? undefined : (getApiKeyWalletTotalBalance(apiKey) ?? undefined),
-    current_balance_usd: isApiKeyUnlimited(apiKey) ? null : getApiKeyWalletTotalBalance(apiKey),
     unlimited_balance: isApiKeyUnlimited(apiKey),
     expires_at: expiresAt,
     rate_limit: apiKey.rate_limit ?? undefined,
@@ -1213,29 +1084,8 @@ function editApiKey(apiKey: AdminApiKey) {
   showKeyFormDialog.value = true
 }
 
-function getApiKeyWallet(apiKeyId: string): AdminWallet | null {
-  return apiKeyWalletMap.value[apiKeyId] || null
-}
-
 function isApiKeyUnlimited(apiKey: AdminApiKey): boolean {
-  const wallet = getApiKeyWallet(apiKey.id)
-  return wallet?.limit_mode === 'unlimited' || wallet?.unlimited === true
-}
-
-function getApiKeyWalletTotalBalance(apiKey: AdminApiKey): number | null {
-  if (isApiKeyUnlimited(apiKey)) {
-    return null
-  }
-  const wallet = getApiKeyWallet(apiKey.id)
-  return wallet ? wallet.balance : 0
-}
-
-function getApiKeyWalletConsumed(apiKey: AdminApiKey): number {
-  return getApiKeyWallet(apiKey.id)?.total_consumed ?? (apiKey.total_cost_usd || 0)
-}
-
-function getApiKeyWalletStatus(apiKeyId: string): string | null {
-  return getApiKeyWallet(apiKeyId)?.status ?? null
+  return apiKey.unlimited === true
 }
 
 function formatApiKeyTotalTokens(apiKey: AdminApiKey): string {
@@ -1257,51 +1107,6 @@ function isConcurrentLimitInherited(concurrentLimit?: number | null): boolean {
 
 function isConcurrentLimitUnlimited(concurrentLimit?: number | null): boolean {
   return concurrentLimit === 0
-}
-
-function formatWalletAmount(value: number | null, nullLabel = '无限制'): string {
-  if (value == null) {
-    return nullLabel
-  }
-  return `$${value.toFixed(2)}`
-}
-
-function isNegativeWalletAmount(value: number | null): boolean {
-  return typeof value === 'number' && value < 0
-}
-
-function openAddBalanceDialog(apiKey: AdminApiKey) {
-  const wallet = getApiKeyWallet(apiKey.id)
-  if (!wallet) {
-    error('该独立 Key 的钱包尚未初始化，暂时无法进行资金操作')
-    return
-  }
-
-  walletActionTarget.value = {
-    apiKey,
-    wallet
-  }
-  showWalletActionDrawer.value = true
-}
-
-function closeWalletActionDrawer() {
-  showWalletActionDrawer.value = false
-}
-
-async function handleWalletDrawerChanged() {
-  await refreshApiKeys()
-  if (!walletActionTarget.value) {
-    return
-  }
-
-  const latestKey = apiKeys.value.find((item) => item.id === walletActionTarget.value?.apiKey.id)
-  const latestWallet = getApiKeyWallet(walletActionTarget.value.apiKey.id)
-  if (latestKey) {
-    walletActionTarget.value.apiKey = latestKey
-  }
-  if (latestWallet) {
-    walletActionTarget.value.wallet = latestWallet
-  }
 }
 
 function selectKey() {
@@ -1431,7 +1236,6 @@ async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
           ...apiKeys.value[index],
           ...updated,
         }
-        apiKeyWalletMap.value = buildApiKeyWalletMap(apiKeys.value)
       }
       success('API Key 更新成功')
     } else {

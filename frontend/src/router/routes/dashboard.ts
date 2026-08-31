@@ -18,17 +18,6 @@ export const dashboardRoutes: RouteRecordRaw[] = [
         component: view(() => import('@/views/user/MyApiKeys.vue'))
       },
       {
-        path: 'management-tokens',
-        name: 'ManagementTokens',
-        component: view(() => import('@/views/user/ManagementTokens.vue')),
-        meta: { module: 'management_tokens' }
-      },
-      {
-        path: 'announcements',
-        name: 'Announcements',
-        component: view(() => import('@/views/user/Announcements.vue'))
-      },
-      {
         path: 'usage',
         name: 'MyUsage',
         component: view(() => import('@/views/shared/Usage.vue'))
@@ -44,29 +33,9 @@ export const dashboardRoutes: RouteRecordRaw[] = [
         component: view(() => import('@/views/user/Settings.vue'))
       },
       {
-        path: 'wallet',
-        name: 'WalletCenter',
-        component: view(() => import('@/views/user/WalletCenter.vue'))
-      },
-      {
-        path: 'billing',
-        name: 'BillingPlans',
-        component: view(() => import('@/views/user/BillingPlans.vue'))
-      },
-      {
-        path: 'referral',
-        name: 'ReferralCenter',
-        component: view(() => import('@/views/user/ReferralCenter.vue'))
-      },
-      {
         path: 'models',
         name: 'ModelCatalog',
         component: view(() => import('@/views/user/ModelCatalog.vue'))
-      },
-      {
-        path: 'async-tasks',
-        name: 'UserAsyncTasks',
-        component: view(() => import('@/views/admin/AsyncTasks.vue'))
       }
     ]
   }

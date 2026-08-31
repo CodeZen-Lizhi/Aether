@@ -3,7 +3,6 @@ import type { ListPolicyMode, RateLimitPolicyMode, User, UserRole } from '@/api/
 export type UserFilterRole = 'all' | UserRole
 export type UserFilterStatus = 'all' | 'active' | 'inactive'
 export type UserSortOption = 'default' | 'created_at_desc' | 'created_at_asc'
-export type UserBatchQuotaMode = 'skip' | 'wallet' | 'unlimited'
 export type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'dark'
 
 export interface UserFilterOption<TValue extends string = string> {
@@ -33,14 +32,6 @@ export interface UserManagementRow {
   roleLabel: string
   roleBadgeVariant: BadgeVariant
   isUnlimited: boolean
-  hasWallet: boolean
-  totalBalanceLabel: string
-  packageBalanceLabel: string
-  walletBalanceLabel: string
-  consumedLabel: string
-  isNegativeBalance: boolean
-  walletStatusLabel: string
-  walletStatusVariant: BadgeVariant
   requestCountLabel: string
   tokensLabel: string
   rateLimitLabel: string

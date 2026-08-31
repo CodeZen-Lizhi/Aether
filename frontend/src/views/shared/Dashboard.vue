@@ -339,122 +339,6 @@
         </div>
       </div>
 
-      <!-- 右侧系统公告 -->
-      <div
-        id="announcements-section"
-        class="w-full lg:w-[300px] xl:w-[320px] flex-shrink-0 flex flex-col min-h-0"
-        :style="announcementsContainerStyle"
-      >
-        <div class="mb-3 flex items-center justify-between flex-shrink-0">
-          <h3 class="text-sm font-medium text-foreground">
-            系统公告
-          </h3>
-          <Badge
-            variant="outline"
-            class="uppercase tracking-[0.3em] text-[10px]"
-          >
-            Live
-          </Badge>
-        </div>
-
-        <Card
-          class="overflow-hidden p-4 flex flex-col flex-1 min-h-0 h-full max-h-[280px] lg:max-h-none"
-        >
-          <div
-            v-if="loadingAnnouncements"
-            class="flex-1 flex items-center justify-center"
-          >
-            <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-
-          <div
-            v-else-if="announcements.length === 0"
-            class="flex-1 flex flex-col items-center justify-center"
-          >
-            <Bell class="h-8 w-8 text-muted-foreground/40" />
-            <p class="mt-2 text-xs text-muted-foreground">
-              暂无公告
-            </p>
-          </div>
-
-          <div
-            v-else
-            class="-mx-4 px-4 flex-1 overflow-y-auto scrollbar-thin min-h-0 pb-2"
-          >
-            <div
-              ref="announcementsTimelineRef"
-              class="relative pl-5"
-            >
-              <div
-                v-if="announcements.length > 1"
-                class="absolute left-[7px] w-[2px] bg-slate-200 dark:bg-muted"
-                :style="timelineLineStyle"
-              />
-
-              <button
-                v-for="announcement in announcements"
-                :key="announcement.id"
-                data-announcement-item
-                type="button"
-                class="relative w-full text-left mb-3 last:mb-0"
-                @click="viewAnnouncementDetail(announcement)"
-              >
-                <div class="flex gap-2">
-                  <div class="absolute left-[-18px] top-1 z-10">
-                    <span
-                      data-announcement-marker
-                      class="flex h-3 w-3 items-center justify-center rounded-full border-2 border-white dark:border-slate-900"
-                      :class="[
-                        announcement.is_pinned
-                          ? 'bg-amber-500 dark:bg-amber-400'
-                          : announcement.is_read
-                            ? 'bg-slate-300 dark:bg-slate-600'
-                            : getAnnouncementDotColor(announcement.type),
-                      ]"
-                    >
-                      <span
-                        v-if="!announcement.is_read && !announcement.is_pinned"
-                        class="h-1.5 w-1.5 rounded-full bg-white"
-                      />
-                    </span>
-                  </div>
-
-                  <div
-                    class="flex-1 rounded-lg p-2 transition"
-                    :class="[
-                      announcement.is_pinned
-                        ? 'hover:bg-amber-50/50 dark:hover:bg-amber-900/10'
-                        : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30',
-                    ]"
-                  >
-                    <div class="flex items-center gap-2 mb-1">
-                      <h4
-                        class="text-xs font-medium text-foreground line-clamp-1 flex-1"
-                      >
-                        {{ announcement.title }}
-                      </h4>
-                      <span
-                        v-if="announcement.is_pinned"
-                        class="flex-shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:text-amber-400"
-                      >
-                        置顶
-                      </span>
-                    </div>
-                    <div
-                      class="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 mb-1"
-                    >
-                      {{ getPlainText(announcement.content) }}
-                    </div>
-                    <div class="text-[10px] text-muted-foreground/70">
-                      {{ formatAnnouncementDate(announcement.created_at) }}
-                    </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        </Card>
-      </div>
     </div>
 
     <!-- 趋势图表筛选 -->
@@ -826,61 +710,6 @@
       </div>
     </Card>
   </div>
-
-  <!-- 公告详情对话框 -->
-  <Dialog
-    v-model="detailDialogOpen"
-    size="lg"
-  >
-    <template #header>
-      <div class="border-b border-border px-6 py-4">
-        <div class="flex items-center gap-3">
-          <component
-            :is="getAnnouncementIcon(selectedAnnouncement.type)"
-            v-if="selectedAnnouncement"
-            class="h-5 w-5 flex-shrink-0"
-            :class="getAnnouncementIconColor(selectedAnnouncement.type)"
-          />
-          <div class="flex-1 min-w-0">
-            <h3
-              class="text-lg font-semibold text-foreground leading-tight truncate"
-            >
-              {{ selectedAnnouncement?.title || "公告详情" }}
-            </h3>
-            <p class="text-xs text-muted-foreground">
-              系统公告
-            </p>
-          </div>
-        </div>
-      </div>
-    </template>
-
-    <div
-      v-if="selectedAnnouncement"
-      class="space-y-4"
-    >
-      <div class="text-xs text-muted-foreground">
-        {{ formatFullDate(selectedAnnouncement.created_at) }}
-      </div>
-
-      <!-- eslint-disable vue/no-v-html -->
-      <div
-        class="prose prose-sm dark:prose-invert max-w-none"
-        v-html="renderMarkdown(selectedAnnouncement.content)"
-      />
-      <!-- eslint-enable vue/no-v-html -->
-    </div>
-
-    <template #footer>
-      <Button
-        variant="outline"
-        class="h-10 px-5"
-        @click="detailDialogOpen = false"
-      >
-        关闭
-      </Button>
-    </template>
-  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -903,7 +732,6 @@ import {
 } from "@/api/dashboard";
 import { getDateRangeFromPeriod } from "@/features/usage/composables";
 import type { DateRangeParams } from "@/features/usage/types";
-import { announcementApi, type Announcement } from "@/api/announcements";
 import {
   Card,
   Badge,
@@ -957,20 +785,7 @@ type DashboardStatCard = Omit<DashboardStat, "icon"> & {
 };
 
 const statsPanelRef = ref<HTMLElement | null>(null);
-const announcementsHeight = ref<number | null>(null);
-const announcementsTimelineRef = ref<HTMLElement | null>(null);
-const timelineLineStyle = ref<{ top: string; bottom: string }>({
-  top: "0px",
-  bottom: "0px",
-});
 const isLargeScreen = ref(false);
-
-const announcementsContainerStyle = computed(() => {
-  // 移动端不设置固定高度，让内容自然流动
-  if (!isLargeScreen.value || !announcementsHeight.value) return {};
-  // 桌面端设置固定高度，与左侧统计面板保持一致
-  return { height: `${announcementsHeight.value}px` };
-});
 
 function checkScreenSize() {
   if (typeof window !== "undefined") {
@@ -979,78 +794,17 @@ function checkScreenSize() {
 }
 
 let statsPanelObserver: ResizeObserver | null = null;
-let announcementsTimelineObserver: ResizeObserver | null = null;
-
-function updateAnnouncementsHeight() {
-  if (typeof window === "undefined") return;
-  const panel = statsPanelRef.value;
-  if (!panel) return;
-  const { height } = panel.getBoundingClientRect();
-  if (height <= 0) return;
-  announcementsHeight.value = Math.round(height);
-  nextTick(() => updateTimelineLine());
-}
-
-function updateTimelineLine() {
-  if (typeof window === "undefined") return;
-  const container = announcementsTimelineRef.value;
-  if (!container) return;
-  const items = container.querySelectorAll<HTMLElement>(
-    "[data-announcement-item]",
-  );
-  if (items.length < 2) {
-    timelineLineStyle.value = { top: "0px", bottom: "0px" };
-    return;
-  }
-  const firstMarker = items[0].querySelector<HTMLElement>(
-    "[data-announcement-marker]",
-  );
-  const lastMarker = items[items.length - 1].querySelector<HTMLElement>(
-    "[data-announcement-marker]",
-  );
-  if (!firstMarker || !lastMarker) return;
-  const containerRect = container.getBoundingClientRect();
-  const firstRect = firstMarker.getBoundingClientRect();
-  const lastRect = lastMarker.getBoundingClientRect();
-  const topOffset = Math.max(
-    0,
-    firstRect.top + firstRect.height / 2 - containerRect.top,
-  );
-  const bottomOffset = Math.max(
-    0,
-    containerRect.bottom - (lastRect.top + lastRect.height / 2),
-  );
-  timelineLineStyle.value = {
-    top: `${topOffset}px`,
-    bottom: `${bottomOffset}px`,
-  };
-}
 
 function handleWindowResize() {
   checkScreenSize();
-  updateAnnouncementsHeight();
-  updateTimelineLine();
 }
 
 function setupResizeObserver() {
   if (typeof window === "undefined") return;
   const panel = statsPanelRef.value;
   if (!panel || !("ResizeObserver" in window)) return;
-  statsPanelObserver = new ResizeObserver(() => updateAnnouncementsHeight());
+  statsPanelObserver = new ResizeObserver(() => {});
   statsPanelObserver.observe(panel);
-  updateAnnouncementsHeight();
-}
-
-function setupTimelineResizeObserver() {
-  if (typeof window === "undefined" || !("ResizeObserver" in window)) return;
-  const container = announcementsTimelineRef.value;
-  announcementsTimelineObserver?.disconnect();
-  announcementsTimelineObserver = null;
-  if (!container) return;
-  announcementsTimelineObserver = new ResizeObserver(() =>
-    updateTimelineLine(),
-  );
-  announcementsTimelineObserver.observe(container);
 }
 
 const isAdmin = computed(() => authStore.canAccessAdmin);
@@ -1140,9 +894,6 @@ let hasPendingDailyStatsLoad = false;
 let dailyStatsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 公告
-const announcements = ref<Announcement[]>([]);
-const loadingAnnouncements = ref(false);
-const selectedAnnouncement = ref<Announcement | null>(null);
 const detailDialogOpen = ref(false);
 
 const iconMap: Record<string, Component> = {
@@ -1473,12 +1224,8 @@ onMounted(async () => {
   await Promise.all([
     loadDashboardData(),
     loadDailyStats(),
-    loadAnnouncements(),
   ]);
   await nextTick();
-  setupTimelineResizeObserver();
-  updateAnnouncementsHeight();
-  updateTimelineLine();
 });
 
 onBeforeUnmount(() => {
@@ -1490,8 +1237,6 @@ onBeforeUnmount(() => {
   }
   statsPanelObserver?.disconnect();
   statsPanelObserver = null;
-  announcementsTimelineObserver?.disconnect();
-  announcementsTimelineObserver = null;
   if (dailyStatsDebounceTimer) {
     clearTimeout(dailyStatsDebounceTimer);
     dailyStatsDebounceTimer = null;
@@ -1604,119 +1349,6 @@ function formatResponseTime(seconds: number): string {
   if (seconds === 0) return "-";
   if (seconds < 1) return `${(seconds * 1000).toFixed(0)}ms`;
   return `${seconds.toFixed(2)}s`;
-}
-
-// 公告相关
-async function loadAnnouncements() {
-  loadingAnnouncements.value = true;
-  try {
-    const response = await announcementApi.getAnnouncements({
-      active_only: true,
-      limit: 100,
-    });
-    announcements.value = response.items;
-  } catch {
-    announcements.value = [];
-  } finally {
-    loadingAnnouncements.value = false;
-    await nextTick();
-    setupTimelineResizeObserver();
-    updateTimelineLine();
-  }
-}
-
-watch(
-  () => announcements.value.length,
-  async () => {
-    await nextTick();
-    setupTimelineResizeObserver();
-    updateTimelineLine();
-  },
-);
-
-async function viewAnnouncementDetail(announcement: Announcement) {
-  if (!announcement.is_read && !isAdmin.value) {
-    try {
-      await announcementApi.markAsRead(announcement.id);
-      announcement.is_read = true;
-    } catch {
-      /* 静默忽略标记已读错误 */
-    }
-  }
-  selectedAnnouncement.value = announcement;
-  detailDialogOpen.value = true;
-}
-
-function getPlainText(content: string): string {
-  const cleaned = content
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]*`/g, " ")
-    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
-    .replace(/\[[^\]]*]\(([^)]*)\)/g, "$1")
-    .replace(/[#>*_~]/g, "")
-    .replace(/\n+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (cleaned.length <= 100) return cleaned;
-  return `${cleaned.slice(0, 100).trim()}...`;
-}
-
-function getAnnouncementIcon(type: string) {
-  switch (type) {
-    case "important":
-      return AlertCircle;
-    case "warning":
-      return AlertTriangle;
-    case "maintenance":
-      return Wrench;
-    default:
-      return Info;
-  }
-}
-
-function getAnnouncementIconColor(type: string) {
-  switch (type) {
-    case "important":
-      return "text-rose-600 dark:text-rose-400";
-    case "warning":
-      return "text-amber-600 dark:text-amber-400";
-    case "maintenance":
-      return "text-orange-600 dark:text-orange-400";
-    default:
-      return "text-primary dark:text-primary";
-  }
-}
-
-function formatAnnouncementDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const minutes = Math.floor(diff / (1000 * 60));
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days < 7) return `${days}天前`;
-  return date.toLocaleDateString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function getAnnouncementDotColor(type: string): string {
-  switch (type) {
-    case "important":
-      return "bg-rose-500 dark:bg-rose-400";
-    case "warning":
-      return "bg-amber-500 dark:bg-amber-400";
-    case "maintenance":
-      return "bg-orange-500 dark:bg-orange-400";
-    default:
-      return "bg-emerald-500 dark:bg-emerald-400";
-  }
 }
 
 function formatFullDate(dateString: string): string {

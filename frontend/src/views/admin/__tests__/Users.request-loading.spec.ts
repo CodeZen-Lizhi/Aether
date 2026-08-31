@@ -38,30 +38,7 @@ describe('Users request loading', () => {
     expect(manualRefresh).toBeTruthy()
     expect(manualRefresh).toContain('refreshUsers()')
     expect(manualRefresh).toContain('loadUserGroups()')
-    expect(manualRefresh).toContain('loadUserWallets()')
     expect(source).toContain('@refresh="handleManualRefresh"')
-  })
-
-  it('refreshes wallet state after user access-control mutations', () => {
-    const batchCompleted = source
-      .split('async function handleUserBatchCompleted')[1]
-      ?.split('function invalidateUserOptions')[0]
-    expect(batchCompleted).toContain('Promise.all([refreshUsers(), loadUserWallets()])')
-
-    const formSubmit = source
-      .split('async function handleUserFormSubmit')[1]
-      ?.split('async function manageApiKeys')[0]
-    expect(formSubmit).toContain('Promise.all([refreshUsers(), loadUserWallets()])')
-  })
-
-  it('seeds a new managed key from the selected target user feature settings', () => {
-    const openCreateKey = source
-      .split('function openCreateUserApiKeyDialog()')[1]
-      ?.split('function openEditUserApiKeyDialog')[0]
-
-    expect(openCreateKey).toBeTruthy()
-    expect(openCreateKey).toContain('selectedUser.value?.feature_settings')
-    expect(openCreateKey).not.toContain('authStore')
   })
 
   it('rejects a stale API key response after switching users or closing the dialog', () => {

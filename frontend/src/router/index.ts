@@ -1,12 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { useModuleStore } from '@/stores/modules'
 import { log } from '@/utils/logger'
 import {
   ensureUserLoaded,
   resolveHomeRedirect,
-  checkAdminAccess,
-  checkModuleAccess
+  checkAdminAccess
 } from './guards'
 import { routes } from './routes'
 
@@ -17,7 +15,6 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
-  const moduleStore = useModuleStore()
 
   try {
     const isAuthenticated = await ensureUserLoaded(authStore)
@@ -37,14 +34,8 @@ router.beforeEach(async (to, from, next) => {
     // 管理端检查
     const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin)
     if (requiresAdmin) {
-      const adminRedirect = await checkAdminAccess(to, authStore, moduleStore)
+      const adminRedirect = checkAdminAccess(authStore)
       if (adminRedirect) return next(adminRedirect)
-    }
-
-    // 非管理端的模块检查
-    if (!requiresAdmin) {
-      const moduleRedirect = await checkModuleAccess(to, moduleStore)
-      if (moduleRedirect) return next(moduleRedirect)
     }
 
     next()

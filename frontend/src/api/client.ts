@@ -1,7 +1,6 @@
-import axios, { getAdapter } from 'axios'
-import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig, AxiosAdapter } from 'axios'
+import axios from 'axios'
+import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import { NETWORK_CONFIG, AUTH_CONFIG } from '@/config/constants'
-import { isDemoMode } from '@/config/demo'
 import { getClientDeviceId } from '@/utils/deviceId'
 import { CrossTabRefreshCoordinator } from '@/utils/crossTabRefresh'
 import { log } from '@/utils/logger'
@@ -10,21 +9,6 @@ import { cache } from '@/utils/cache'
 // 在开发环境下使用代理,生产环境使用环境变量
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 export const AUTH_STATE_CHANGE_EVENT = 'aether-auth-state-change'
-
-type MockRuntime = typeof import('@/mocks')
-
-let mockRuntimePromise: Promise<MockRuntime> | null = null
-let currentMockUserToken: string | null = null
-
-function loadMockRuntime(): Promise<MockRuntime> {
-  if (!mockRuntimePromise) {
-    mockRuntimePromise = import('@/mocks').catch((error) => {
-      mockRuntimePromise = null
-      throw error
-    })
-  }
-  return mockRuntimePromise
-}
 
 /**
  * 判断请求是否为公共端点
@@ -60,43 +44,6 @@ function isAccountLevelForbidden(status: number, errorDetail: string): boolean {
   return accountErrors.some((msg) => errorDetail.includes(msg))
 }
 
-/**
- * 创建 Demo 模式的自定义 adapter
- * 在 Demo 模式下拦截请求并返回 mock 数据
- */
-function createDemoAdapter(defaultAdapter: AxiosAdapter) {
-  return async (config: InternalAxiosRequestConfig): Promise<AxiosResponse> => {
-    if (isDemoMode()) {
-      try {
-        const mockRuntime = await loadMockRuntime()
-        mockRuntime.setMockUserToken(currentMockUserToken)
-        const mockResponse = await mockRuntime.handleMockRequest({
-          method: config.method?.toUpperCase(),
-          url: config.url,
-          data: config.data,
-          params: config.params,
-        })
-        if (mockResponse) {
-          // 确保响应包含 config
-          mockResponse.config = config
-          return mockResponse
-        }
-      } catch (error: unknown) {
-        // Mock 错误需要附加 config，否则 handleResponseError 会崩溃
-        if (axios.isAxiosError(error)) {
-          error.config = config
-          if (error.response) {
-            error.response.config = config
-          }
-        }
-        throw error
-      }
-    }
-    // 非 Demo 模式或没有 mock 响应时，使用默认 adapter
-    return defaultAdapter(config)
-  }
-}
-
 class ApiClient {
   private client: AxiosInstance
   private token: string | null = null
@@ -120,10 +67,6 @@ class ApiClient {
         'Content-Type': 'application/json',
       },
     })
-
-    // 设置自定义 adapter 处理 Demo 模式
-    const defaultAdapter = getAdapter(this.client.defaults.adapter)
-    this.client.defaults.adapter = createDemoAdapter(defaultAdapter)
 
     this.setupInterceptors()
     this.setupCrossTabAuthSync()
@@ -311,7 +254,6 @@ class ApiClient {
       cache.clear()
     }
     this.token = token
-    currentMockUserToken = token
   }
 
   setToken(token: string): void {
@@ -346,7 +288,7 @@ class ApiClient {
     return this.client.post('/api/auth/refresh')
   }
 
-  // 以下方法直接委托给 axios client，Demo 模式由 adapter 统一处理
+  // 以下方法直接委托给 axios client
   async request<T = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.request<T>(config)
   }

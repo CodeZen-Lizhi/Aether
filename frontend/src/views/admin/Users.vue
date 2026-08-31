@@ -61,8 +61,6 @@
         @toggle-selected="toggleOne"
         @toggle-select-current-page="toggleSelectCurrentPage"
         @edit="editUser"
-        @wallet="openWalletActionDialog"
-        @plans="manageUserPlans"
         @api-keys="manageApiKeys"
         @sessions="manageUserSessions"
         @toggle-status="toggleUserStatus"
@@ -109,28 +107,6 @@
       @changed="handleUserGroupsChanged"
     />
 
-    <UserPlanDialog
-      :open="showUserPlansDialog"
-      :user-id="selectedUser?.id || null"
-      :user-name="selectedUser?.username || ''"
-      :entitlements="userPlanEntitlements"
-      :plans="grantableBillingPlans"
-      :selected-plan-id="selectedGrantPlanId"
-      :grant-reason="grantReason"
-      :loading-entitlements="loadingUserPlans"
-      :loading-plans="loadingBillingPlans"
-      :granting="grantingUserPlan"
-      :format-date-time="formatDateTime"
-      :format-plan-price="formatPlanPrice"
-      :format-plan-duration="formatPlanDuration"
-      :entitlement-labels="entitlementLabels"
-      @close="showUserPlansDialog = false"
-      @update:selected-plan-id="selectedGrantPlanId = $event"
-      @update:grant-reason="grantReason = $event"
-      @refresh-entitlements="loadUserPlanEntitlements"
-      @grant="grantPlanToSelectedUser"
-    />
-
     <UserApiKeysDialog
       :open="showApiKeysDialog"
       :api-keys="userApiKeys"
@@ -168,17 +144,6 @@
       @revoke-all="revokeAllSelectedUserSessions"
     />
 
-    <WalletOpsDrawer
-      :open="showWalletActionDialogState"
-      :wallet="walletActionTarget?.wallet || null"
-      :owner-name="walletActionTarget?.user.username || ''"
-      :owner-subtitle="walletActionTarget?.user.email || legacyT('未设置邮箱')"
-      :context-label="legacyT('用户钱包')"
-      accent="emerald"
-      @close="closeWalletActionDrawer"
-      @changed="handleWalletDrawerChanged"
-    />
-
     <NewApiKeyDialog
       :open="showNewApiKeyDialog"
       :api-key="newApiKey"
@@ -200,18 +165,14 @@ import {
   type UserBatchActionResponse,
   type UserBatchSelectionFilters,
   type UserGroup,
-  type AdminUserPlanEntitlement,
   type AdminUserSortBy,
   type AdminUserSortOrder,
 } from '@/api/users'
 import { formatSessionMeta } from '@/types/session'
-import { adminWalletApi, type AdminWallet } from '@/api/admin-wallets'
-import { adminBillingPlansApi, type BillingEntitlement, type BillingPlan } from '@/api/billing'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useClipboard } from '@/composables/useClipboard'
 import { adminApi } from '@/api/admin'
-import { walletStatusBadge, walletStatusLabel } from '@/utils/walletDisplay'
 
 // UI 组件
 import {
@@ -228,13 +189,8 @@ import UserBatchActionDialog from '@/features/users/components/UserBatchActionDi
 import UserGroupsDialog from '@/features/users/components/UserGroupsDialog.vue'
 import UserManagementHeader from '@/features/users/components/UserManagementHeader.vue'
 import UserManagementList from '@/features/users/components/UserManagementList.vue'
-import UserPlanDialog from '@/features/users/components/UserPlanDialog.vue'
 import UserSelectionToolbar from '@/features/users/components/UserSelectionToolbar.vue'
 import UserSessionsDialog from '@/features/users/components/UserSessionsDialog.vue'
-import {
-  buildApiKeyRedactionFeatureSettingsPatch,
-  resolveApiKeyRedactionFormState,
-} from '@/features/users/apiKeyFeatureSettings'
 import type { UserManagementRow } from '@/features/users/components/user-management-types'
 import {
   USER_ROLE_FILTER_OPTIONS,
@@ -243,7 +199,6 @@ import {
   formatUserRoleLabel,
   userRoleBadgeVariant,
 } from '@/features/users/components/user-management-config'
-import WalletOpsDrawer from '@/features/wallet/components/WalletOpsDrawer.vue'
 import { parseApiError } from '@/utils/errorParser'
 import { formatTokens, formatRateLimitInheritable, formatRateLimitSimple, isRateLimitInherited, isRateLimitUnlimited } from '@/utils/format'
 import { log } from '@/utils/logger'
@@ -269,22 +224,14 @@ const userFormDialogRef = ref<InstanceType<typeof UserFormDialog>>()
 // API Keys 对话框状态
 const showApiKeysDialog = ref(false)
 const showUserSessionsDialog = ref(false)
-const showUserPlansDialog = ref(false)
 const showNewApiKeyDialog = ref(false)
 const showUserApiKeyFormDialog = ref(false)
 const selectedUser = ref<User | null>(null)
 const userApiKeys = ref<ApiKey[]>([])
 const userSessions = ref<UserSession[]>([])
-const userPlanEntitlements = ref<AdminUserPlanEntitlement[]>([])
-const availableBillingPlans = ref<BillingPlan[]>([])
-const selectedGrantPlanId = ref('')
-const grantReason = ref('')
 const newApiKey = ref('')
 const creatingApiKey = ref(false)
 const loadingUserSessions = ref(false)
-const loadingUserPlans = ref(false)
-const loadingBillingPlans = ref(false)
-const grantingUserPlan = ref(false)
 const sessionDialogActionLoading = ref<string | null>(null)
 const editingUserApiKey = ref<ApiKey | null>(null)
 const userApiKeyForm = ref<UserApiKeyFormState>({
@@ -292,16 +239,8 @@ const userApiKeyForm = ref<UserApiKeyFormState>({
   rate_limit: undefined,
   concurrent_limit: undefined,
   ip_rules_text: '',
-  chat_pii_redaction_mode: 'inherit',
-  chat_pii_redaction_enabled: false,
-  chat_pii_redaction_placeholder_notice: true,
 })
 
-// 用户统计
-const userWalletMap = ref<Record<string, AdminWallet>>({})
-
-const showWalletActionDialogState = ref(false)
-const walletActionTarget = ref<{ user: User; wallet: AdminWallet } | null>(null)
 const showUserBatchDialog = ref(false)
 const showUserGroupsDialog = ref(false)
 const userOptionsVersion = ref(0)
@@ -325,9 +264,7 @@ const sortOrder = computed<AdminUserSortOrder>(() =>
 const currentPage = ref(1)
 const pageSize = ref(20)
 const USERS_PAGE_CACHE_TTL_MS = 10 * 1000
-const USER_WALLETS_CACHE_TTL_MS = 10 * 1000
 const USERS_SEARCH_DEBOUNCE_MS = 300
-let userWalletsRequestId = 0
 let userApiKeysRequestId = 0
 let userApiKeyMutationRequestId = 0
 let usersSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -369,10 +306,6 @@ const batchSelectionFilters = computed<UserBatchSelectionFilters>(() => {
   return filters
 })
 
-const grantableBillingPlans = computed(() =>
-  availableBillingPlans.value.filter((plan) => hasPackageEntitlement(plan.entitlements))
-)
-
 const hasUserFilters = computed(() =>
   Boolean(searchQuery.value.trim())
   || filterRole.value !== 'all'
@@ -382,21 +315,11 @@ const hasUserFilters = computed(() =>
 
 const userRows = computed<UserManagementRow[]>(() =>
   paginatedUsers.value.map((user) => {
-    const totalBalance = getUserWalletTotalBalance(user)
-    const walletStatus = getUserWalletStatus(user.id)
     return {
       user,
       roleLabel: legacyT(formatUserRoleLabel(user.role)),
       roleBadgeVariant: userRoleBadgeVariant(user.role),
       isUnlimited: isUserUnlimited(user),
-      hasWallet: Boolean(getUserWallet(user.id)),
-      totalBalanceLabel: formatCurrencyValue(totalBalance, '-'),
-      packageBalanceLabel: formatCurrencyValue(getUserPackageBalance(user), '$0.00'),
-      walletBalanceLabel: formatCurrencyValue(getUserWalletBalance(user), '$0.00'),
-      consumedLabel: `$${getUserWalletConsumed(user).toFixed(2)}`,
-      isNegativeBalance: isNegativeWalletValue(totalBalance),
-      walletStatusLabel: walletStatusLabel(walletStatus),
-      walletStatusVariant: walletStatusBadge(walletStatus),
       requestCountLabel: formatNumber(user.request_count),
       tokensLabel: formatTokens(user.total_tokens ?? 0),
       rateLimitLabel: formatRateLimitInheritable(user.rate_limit),
@@ -439,15 +362,12 @@ watch([filterRole, filterStatus, filterGroup, sortOption], () => {
 watch(paginatedUsers, (users) => rememberBatchPageUsers(users), { immediate: true })
 
 onMounted(() => {
-  void refreshUsers({ preferCache: true }).then(() =>
-    loadUserWallets({ cacheTtlMs: USER_WALLETS_CACHE_TTL_MS })
-  )
+  void refreshUsers({ preferCache: true })
   void loadUserGroups()
 })
 
 onBeforeUnmount(() => {
   clearUsersSearchDebounce()
-  userWalletsRequestId += 1
   userApiKeysRequestId += 1
   userApiKeyMutationRequestId += 1
 })
@@ -473,7 +393,6 @@ async function handleManualRefresh() {
   await Promise.all([
     refreshUsers(),
     loadUserGroups(),
-    loadUserWallets(),
   ])
 }
 
@@ -516,7 +435,7 @@ function openUserBatchDialog(): void {
 }
 
 async function handleUserBatchCompleted(_result: UserBatchActionResponse): Promise<void> {
-  await Promise.all([refreshUsers(), loadUserWallets()])
+  await refreshUsers()
   resetBatchSelection(true)
 }
 
@@ -539,115 +458,13 @@ function formatDateTime(value?: string | null): string {
   })
 }
 
-function formatPlanPrice(plan: BillingPlan): string {
-  return `${Number(plan.price_amount || 0).toFixed(2)} ${plan.price_currency || 'CNY'}`
-}
-
-function formatPlanDuration(plan: BillingPlan): string {
-  const labels: Record<string, string> = {
-    day: legacyT('天'),
-    month: legacyT('个月'),
-    year: legacyT('年'),
-    custom: legacyT('天'),
-  }
-  const unit = labels[plan.duration_unit] || legacyT('天')
-  return `${Number(plan.duration_value || 1)}${unit}`
-}
-
-function entitlementLabels(items: BillingEntitlement[] | undefined): string[] {
-  return (items || []).map((item) => {
-    if (item.type === 'wallet_credit') {
-      return `${legacyT('附赠余额')} $${Number(item.amount_usd || 0).toFixed(2)}`
-    }
-    if (item.type === 'daily_quota') {
-      return `${legacyT('每日额度')} $${Number(item.daily_quota_usd || 0).toFixed(2)}`
-    }
-    if (item.type === 'membership_group') {
-      return legacyT('会员权益')
-    }
-    return item.type
-  })
-}
-
-function hasPackageEntitlement(items: BillingEntitlement[] | undefined): boolean {
-  return (items || []).some((item) => item.type === 'daily_quota' || item.type === 'membership_group')
-}
-
-async function loadUserWallets(options: { cacheTtlMs?: number } = {}) {
-  const requestId = ++userWalletsRequestId
-  try {
-    const wallets = await adminWalletApi.listAllWallets(
-      { owner_type: 'user' },
-      { cacheTtlMs: options.cacheTtlMs ?? 0 },
-    )
-    if (requestId !== userWalletsRequestId) return
-    userWalletMap.value = wallets
-      .filter((wallet) => !!wallet.user_id)
-      .reduce<Record<string, AdminWallet>>((acc, wallet) => {
-        acc[wallet.user_id as string] = wallet
-        return acc
-      }, {})
-  } catch (err) {
-    if (requestId !== userWalletsRequestId) return
-    log.error('加载用户钱包失败:', err)
-  }
-}
-
 function formatNumber(value?: number | null): string {
   const numericValue = typeof value === 'number' && Number.isFinite(value) ? value : 0
   return numericValue.toLocaleString()
 }
 
-function getUserWallet(userId: string): AdminWallet | null {
-  return userWalletMap.value[userId] || null
-}
-
 function isUserUnlimited(user: User): boolean {
-  const wallet = getUserWallet(user.id)
-  if (wallet?.limit_mode === 'unlimited' || wallet?.unlimited === true) {
-    return true
-  }
   return Boolean(user.unlimited)
-}
-
-function getUserWalletTotalBalance(user: User): number | null {
-  if (isUserUnlimited(user)) {
-    return null
-  }
-  const wallet = getUserWallet(user.id)
-  if (!wallet) {
-    return null
-  }
-  if (typeof wallet.total_available_balance === 'number' && Number.isFinite(wallet.total_available_balance)) {
-    return wallet.total_available_balance
-  }
-  return getUserWalletBalance(user) + getUserPackageBalance(user)
-}
-
-function getUserWalletBalance(user: User): number {
-  const wallet = getUserWallet(user.id)
-  const value = wallet?.wallet_balance ?? wallet?.balance ?? 0
-  return Number.isFinite(value) ? value : 0
-}
-
-function getUserPackageBalance(user: User): number {
-  const value = getUserWallet(user.id)?.package_balance ?? 0
-  return Number.isFinite(value) ? value : 0
-}
-
-function getUserWalletConsumed(user: User): number {
-  return getUserWallet(user.id)?.total_consumed ?? 0
-}
-
-function getUserWalletStatus(userId: string): string | null {
-  return getUserWallet(userId)?.status ?? null
-}
-
-function formatCurrencyValue(value: number | null, nullLabel = '-'): string {
-  if (value == null) {
-    return nullLabel
-  }
-  return `$${value.toFixed(2)}`
 }
 
 function formatConcurrentLimitSimple(concurrentLimit?: number | null): string {
@@ -683,10 +500,6 @@ function formatUserEffectiveRateLimitSource(user: User): string {
     return legacyT('用户单独配置')
   }
   return legacyT('系统默认')
-}
-
-function isNegativeWalletValue(value: number | null): boolean {
-  return typeof value === 'number' && value < 0
 }
 
 async function toggleUserStatus(user: User) {
@@ -764,7 +577,6 @@ async function handleUserFormSubmit(data: UserFormData & { password?: string; un
         username: data.username,
         password: data.password ?? '',
         email: data.email || undefined,
-        initial_gift_usd: data.initial_gift_usd,
         unlimited: data.unlimited,
         role: data.role,
         group_ids: data.group_ids ?? [],
@@ -778,7 +590,7 @@ async function handleUserFormSubmit(data: UserFormData & { password?: string; un
       success(legacyT('用户创建成功'))
     }
     closeUserFormDialog()
-    await Promise.all([refreshUsers(), loadUserWallets()])
+    await refreshUsers()
   } catch (err: unknown) {
     const title = data.id ? '更新用户失败' : '创建用户失败'
     error(localizedApiError(err, '未知错误'), legacyT(title))
@@ -817,70 +629,6 @@ async function manageUserSessions(user: User) {
   }
 }
 
-async function manageUserPlans(user: User) {
-  selectedUser.value = user
-  showUserPlansDialog.value = true
-  selectedGrantPlanId.value = ''
-  grantReason.value = ''
-  await Promise.all([
-    loadUserPlanEntitlements(user.id),
-    loadAvailableBillingPlans(),
-  ])
-  if (!selectedGrantPlanId.value && grantableBillingPlans.value.length > 0) {
-    selectedGrantPlanId.value = grantableBillingPlans.value[0].id
-  }
-}
-
-async function loadUserPlanEntitlements(userId: string) {
-  loadingUserPlans.value = true
-  try {
-    const response = await usersApi.listUserPlanEntitlements(userId)
-    userPlanEntitlements.value = response.items
-  } catch (err) {
-    error(localizedApiError(err, '加载用户套餐失败'), legacyT('加载用户套餐失败'))
-    userPlanEntitlements.value = []
-  } finally {
-    loadingUserPlans.value = false
-  }
-}
-
-async function loadAvailableBillingPlans() {
-  loadingBillingPlans.value = true
-  try {
-    const response = await adminBillingPlansApi.list()
-    availableBillingPlans.value = response.items
-    if (
-      selectedGrantPlanId.value
-      && !response.items.some((plan) => plan.id === selectedGrantPlanId.value)
-    ) {
-      selectedGrantPlanId.value = ''
-    }
-  } catch (err) {
-    error(localizedApiError(err, '加载套餐列表失败'), legacyT('加载套餐列表失败'))
-    availableBillingPlans.value = []
-  } finally {
-    loadingBillingPlans.value = false
-  }
-}
-
-async function grantPlanToSelectedUser() {
-  if (!selectedUser.value || !selectedGrantPlanId.value) return
-  grantingUserPlan.value = true
-  try {
-    const response = await usersApi.grantUserPlan(selectedUser.value.id, {
-      plan_id: selectedGrantPlanId.value,
-      reason: grantReason.value.trim() || null,
-    })
-    userPlanEntitlements.value = response.items
-    grantReason.value = ''
-    success(legacyT('套餐已发放'))
-  } catch (err) {
-    error(localizedApiError(err, '发放套餐失败'), legacyT('发放套餐失败'))
-  } finally {
-    grantingUserPlan.value = false
-  }
-}
-
 async function loadUserApiKeys(userId: string) {
   const requestId = ++userApiKeysRequestId
   try {
@@ -903,37 +651,23 @@ async function loadUserApiKeys(userId: string) {
 }
 
 function openCreateUserApiKeyDialog() {
-  const redactionFeature = resolveApiKeyRedactionFormState(
-    null,
-    selectedUser.value?.feature_settings,
-  )
   userApiKeyForm.value = {
     name: `Key-${new Date().toISOString().split('T')[0]}`,
     rate_limit: undefined,
     concurrent_limit: undefined,
     ip_rules_text: '',
-    chat_pii_redaction_mode: redactionFeature.mode,
-    chat_pii_redaction_enabled: redactionFeature.enabled,
-    chat_pii_redaction_placeholder_notice: redactionFeature.inject_model_instruction,
   }
   editingUserApiKey.value = null
   showUserApiKeyFormDialog.value = true
 }
 
 function openEditUserApiKeyDialog(apiKey: ApiKey) {
-  const redactionFeature = resolveApiKeyRedactionFormState(
-    apiKey.feature_settings,
-    selectedUser.value?.feature_settings,
-  )
   editingUserApiKey.value = apiKey
   userApiKeyForm.value = {
     name: apiKey.name || '',
     rate_limit: apiKey.rate_limit ?? undefined,
     concurrent_limit: apiKey.concurrent_limit ?? undefined,
     ip_rules_text: apiKey.ip_rules?.join(', ') ?? '',
-    chat_pii_redaction_mode: redactionFeature.mode,
-    chat_pii_redaction_enabled: redactionFeature.enabled,
-    chat_pii_redaction_placeholder_notice: redactionFeature.inject_model_instruction,
   }
   showUserApiKeyFormDialog.value = true
 }
@@ -950,9 +684,6 @@ function closeUserApiKeyFormDialog() {
     rate_limit: undefined,
     concurrent_limit: undefined,
     ip_rules_text: '',
-    chat_pii_redaction_mode: 'inherit',
-    chat_pii_redaction_enabled: false,
-    chat_pii_redaction_placeholder_notice: true,
   }
 }
 
@@ -976,22 +707,12 @@ async function submitUserApiKeyForm() {
   creatingApiKey.value = true
   try {
     const ipRules = parseIpRulesInput(form.ip_rules_text)
-    const featureSettingsPatch = buildApiKeyRedactionFeatureSettingsPatch({
-      isEditing: Boolean(editingApiKey),
-      currentFeatureSettings: editingApiKey?.feature_settings,
-      mode: form.chat_pii_redaction_mode,
-      value: {
-        enabled: form.chat_pii_redaction_enabled,
-        inject_model_instruction: form.chat_pii_redaction_placeholder_notice,
-      },
-    })
     if (editingApiKey) {
       await usersStore.updateApiKey(targetUserId, editingApiKey.id, {
         name: form.name,
         rate_limit: form.rate_limit ?? 0,
         concurrent_limit: form.concurrent_limit,
         ip_rules: ipRules,
-        ...featureSettingsPatch,
       })
       if (!mutationIsCurrent()) return
       success(legacyT('API Key已更新'))
@@ -1001,7 +722,6 @@ async function submitUserApiKeyForm() {
         rate_limit: form.rate_limit ?? 0,
         concurrent_limit: form.concurrent_limit,
         ip_rules: ipRules,
-        ...featureSettingsPatch,
       })
       if (!mutationIsCurrent()) return
       newApiKey.value = response.key || ''
@@ -1104,33 +824,6 @@ async function copyFullKey(apiKey: ApiKey) {
   } catch (err: unknown) {
     log.error('复制密钥失败:', err)
     error(localizedApiError(err, '未知错误'), legacyT('复制密钥失败'))
-  }
-}
-
-function openWalletActionDialog(user: User) {
-  const wallet = getUserWallet(user.id)
-  if (!wallet) {
-    error(legacyT('该用户的钱包尚未初始化，暂时无法进行资金操作'))
-    return
-  }
-
-  walletActionTarget.value = {
-    user,
-    wallet,
-  }
-  showWalletActionDialogState.value = true
-}
-
-function closeWalletActionDrawer() {
-  showWalletActionDialogState.value = false
-}
-
-async function handleWalletDrawerChanged() {
-  await loadUserWallets()
-  if (!walletActionTarget.value) return
-  const latestWallet = getUserWallet(walletActionTarget.value.user.id)
-  if (latestWallet) {
-    walletActionTarget.value.wallet = latestWallet
   }
 }
 

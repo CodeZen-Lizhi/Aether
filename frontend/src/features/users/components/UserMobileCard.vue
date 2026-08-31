@@ -19,11 +19,6 @@
         mobile
       />
 
-      <UserWalletSummary
-        :row="row"
-        mobile
-      />
-
       <div class="grid grid-cols-2 gap-2.5 text-xs">
         <div class="rounded-lg border border-border/50 bg-background/70 p-2.5">
           <div class="mb-1 text-muted-foreground">
@@ -55,8 +50,6 @@
         :is-active="row.user.is_active"
         mobile
         @edit="$emit('edit')"
-        @wallet="$emit('wallet')"
-        @plans="$emit('plans')"
         @api-keys="$emit('api-keys')"
         @sessions="$emit('sessions')"
         @toggle-status="$emit('toggle-status')"
@@ -72,7 +65,6 @@ import { useI18n } from '@/i18n'
 import UserActionButtons from './UserActionButtons.vue'
 import UserIdentityCell from './UserIdentityCell.vue'
 import UserStatusBadges from './UserStatusBadges.vue'
-import UserWalletSummary from './UserWalletSummary.vue'
 import type { UserManagementRow } from './user-management-types'
 
 defineProps<{
@@ -85,8 +77,6 @@ defineProps<{
 defineEmits<{
   'toggle-selected': [checked: boolean]
   edit: []
-  wallet: []
-  plans: []
   'api-keys': []
   sessions: []
   'toggle-status': []

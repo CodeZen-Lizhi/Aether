@@ -21,66 +21,57 @@ function route(path: string, name?: string, meta: Record<string, unknown> = {}):
 }
 
 describe('main layout navigation builder', () => {
-  it('builds user navigation from translation keys and active modules', () => {
+  it('builds user navigation from translation keys', () => {
     const navigation = buildNavigation({
       canAccessAdmin: false,
-      modules: {},
-      isModuleActive: (name) => name === 'referral',
       t: translate,
     })
 
     expect(navigation.map(group => group.title)).toEqual([
       'tx:nav.group.overview',
       'tx:nav.group.resources',
-      'tx:nav.group.account',
     ])
-    expect(navigation.flatMap(group => group.items.map(item => item.name))).toContain('tx:nav.myReferral')
+    expect(navigation.flatMap(group => group.items.map(item => item.name))).toEqual([
+      'tx:nav.dashboard',
+      'tx:nav.healthMonitor',
+      'tx:nav.modelCatalog',
+      'tx:nav.apiKeys',
+      'tx:nav.usageStats',
+    ])
   })
 
-  it('builds admin navigation with dynamic module menu items sorted by menu order', () => {
+  it('builds admin navigation with proxy nodes entry', () => {
     const navigation = buildNavigation({
       canAccessAdmin: true,
-      modules: {
-        first: {
-          active: true,
-          admin_route: '/admin/first',
-          admin_menu_group: 'management',
-          admin_menu_order: 2,
-          admin_menu_icon: 'Gift',
-          display_name: 'First module',
-        },
-        second: {
-          active: true,
-          admin_route: '/admin/second',
-          admin_menu_group: 'management',
-          admin_menu_order: 1,
-          admin_menu_icon: 'Key',
-          display_name: 'Second module',
-        },
-      },
-      isModuleActive: () => false,
       t: translate,
     })
 
+    expect(navigation.map(group => group.title)).toEqual([
+      'tx:nav.group.overview',
+      'tx:nav.group.management',
+      'tx:nav.group.system',
+    ])
     const managementItems = navigation.find(group => group.title === 'tx:nav.group.management')?.items ?? []
-    expect(managementItems.map(item => item.name)).toEqual(expect.arrayContaining(['Second module', 'First module']))
-    expect(managementItems.findIndex(item => item.name === 'Second module')).toBeLessThan(
-      managementItems.findIndex(item => item.name === 'First module')
-    )
+    expect(managementItems.map(item => item.name)).toEqual([
+      'tx:nav.userManagement',
+      'tx:nav.providers',
+      'tx:nav.modelManagement',
+      'tx:nav.routing',
+      'tx:nav.pool',
+      'tx:nav.standaloneKeys',
+      'tx:nav.proxyNodes',
+    ])
   })
 
   it('builds translated breadcrumbs for settings and routing detail pages', () => {
     const navigation = buildNavigation({
       canAccessAdmin: true,
-      modules: {},
-      isModuleActive: () => false,
       t: translate,
     })
 
     expect(buildBreadcrumbs({
       route: route('/dashboard/settings'),
       navigation,
-      modules: {},
       isNavActive: () => false,
       t: translate,
     })).toEqual([
@@ -91,7 +82,6 @@ describe('main layout navigation builder', () => {
     expect(buildBreadcrumbs({
       route: route('/admin/routing/new', 'RoutingProfileCreate'),
       navigation,
-      modules: {},
       isNavActive: href => href === '/admin/routing',
       t: translate,
     })).toEqual([

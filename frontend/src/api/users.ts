@@ -1,7 +1,6 @@
 import apiClient from './client'
 import { cachedRequest } from '@/utils/cache'
 import type { UserSession as SessionRecord } from '@/types/session'
-import type { BillingPlan, UserPlanEntitlement } from './billing'
 
 export type UserRole = 'admin' | 'audit_admin' | 'user'
 export type ListPolicyMode = 'inherit' | 'unrestricted' | 'specific' | 'deny_all'
@@ -62,7 +61,6 @@ export interface CreateUserRequest {
   password: string
   email: string
   role?: UserRole
-  initial_gift_usd?: number | null
   unlimited?: boolean
   group_ids?: string[]
   feature_settings?: FeatureSettings | null
@@ -238,26 +236,6 @@ export interface UpsertUserApiKeyRequest {
 
 export type UserSession = SessionRecord
 
-export interface AdminUserPlanEntitlement extends UserPlanEntitlement {
-  plan_title?: string | null
-  plan?: BillingPlan | null
-}
-
-export interface AdminUserPlanEntitlementsResponse {
-  items: AdminUserPlanEntitlement[]
-  total: number
-}
-
-export interface GrantUserPlanRequest {
-  plan_id: string
-  reason?: string | null
-}
-
-export interface GrantUserPlanResponse extends AdminUserPlanEntitlementsResponse {
-  order?: Record<string, unknown>
-  credited?: boolean
-}
-
 export interface GetAllUsersOptions {
   search?: string
   role?: UserRole
@@ -430,23 +408,7 @@ export const usersApi = {
     return response.data
   },
 
-  async listUserPlanEntitlements(userId: string): Promise<AdminUserPlanEntitlementsResponse> {
-    const response = await apiClient.get<AdminUserPlanEntitlementsResponse>(
-      `/api/admin/users/${userId}/billing/entitlements`
-    )
-    return response.data
-  },
 
-  async grantUserPlan(
-    userId: string,
-    payload: GrantUserPlanRequest
-  ): Promise<GrantUserPlanResponse> {
-    const response = await apiClient.post<GrantUserPlanResponse>(
-      `/api/admin/users/${userId}/billing/grant-plan`,
-      payload
-    )
-    return response.data
-  },
 
   async revokeUserSession(userId: string, sessionId: string): Promise<{ message: string }> {
     const response = await apiClient.delete<{ message: string }>(`/api/admin/users/${userId}/sessions/${sessionId}`)

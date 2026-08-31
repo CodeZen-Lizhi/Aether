@@ -26,19 +26,13 @@
       v-if="statsExpanded"
       class="space-y-4"
     >
-      <!-- 活跃度热图 + 请求间隔时间线 -->
-      <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <!-- 活跃度热图 -->
+      <div class="grid grid-cols-1 gap-4">
         <ActivityHeatmapCard
           :data="activityHeatmapData"
           :title="isAdminPage ? '总体活跃天数' : '我的活跃天数'"
           :is-loading="isLoadingHeatmap"
           :has-error="heatmapError"
-        />
-        <IntervalTimelineCard
-          :title="intervalTimelineTitle"
-          :is-admin="isAdminPage"
-          :hours="intervalTimelineHours"
-          :refresh-interval-ms="0"
         />
       </div>
 
@@ -147,8 +141,7 @@ import {
   UsageApiFormatTable,
   UsageRecordsTable,
   ActivityHeatmapCard,
-  RequestDetailDrawer,
-  IntervalTimelineCard
+  RequestDetailDrawer
 } from '@/features/usage/components'
 import {
   useUsageData,
@@ -202,44 +195,6 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const pageSizeOptions = [10, 20, 50, 100]
 
-function clampIntervalTimelineHours(hours: number): number {
-  return Math.min(720, Math.max(1, Math.ceil(hours)))
-}
-
-function getIntervalTimelineHours(dateRange: DateRangeParams): number {
-  switch (dateRange.preset) {
-    case 'yesterday':
-      return 48
-    case 'last7days':
-      return 24 * 7
-    case 'last30days':
-      return 24 * 30
-    case 'last90days':
-      return 24 * 30
-    case 'today':
-      return 24
-    default:
-      break
-  }
-
-  if (dateRange.start_date && dateRange.end_date) {
-    const start = new Date(`${dateRange.start_date}T00:00:00`)
-    const end = new Date(`${dateRange.end_date}T23:59:59`)
-    const diffMs = end.getTime() - start.getTime()
-    if (!Number.isNaN(diffMs) && diffMs >= 0) {
-      return clampIntervalTimelineHours(diffMs / (1000 * 60 * 60))
-    }
-  }
-
-  return 24
-}
-
-function formatIntervalTimelineWindow(hours: number): string {
-  if (hours === 24) return '最近24小时'
-  if (hours % 24 === 0) return `最近${hours / 24}天`
-  return `最近${hours}小时`
-}
-
 // 筛选状态
 const filterSearch = ref('')
 const filterUser = ref('__all__')
@@ -270,11 +225,6 @@ const {
 const activityHeatmapData = ref<ActivityHeatmap | null>(null)
 const isLoadingHeatmap = ref(false)
 const heatmapError = ref(false)
-const intervalTimelineHours = computed(() => getIntervalTimelineHours(timeRange.value))
-const intervalTimelineTitle = computed(() => {
-  const baseTitle = isAdminPage.value ? '请求间隔时间线' : '我的请求间隔'
-  return `${baseTitle}（${formatIntervalTimelineWindow(intervalTimelineHours.value)}）`
-})
 const ADMIN_ANALYTICS_REFRESH_INTERVAL = 60000
 let adminAnalyticsRefreshInFlight: Promise<void> | null = null
 let lastAdminAnalyticsRefreshAt = 0

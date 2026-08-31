@@ -329,108 +329,6 @@
           </div>
         </Card>
 
-        <!-- OAuth 绑定 -->
-        <Card class="p-6">
-          <h3 class="text-lg font-medium text-foreground mb-4">
-            OAuth 绑定
-          </h3>
-
-          <div
-            v-if="profile?.auth_source === 'ldap'"
-            class="text-sm text-muted-foreground"
-          >
-            LDAP 用户不支持 OAuth 绑定
-          </div>
-
-          <div
-            v-else-if="oauthUnavailable"
-            class="text-sm text-muted-foreground"
-          >
-            OAuth 模块未启用或暂不可用
-          </div>
-
-          <div
-            v-else
-            class="space-y-4"
-          >
-            <!-- 合并已绑定和可绑定为卡片网格 -->
-            <div
-              v-if="oauthLinks.length === 0 && bindableProviders.length === 0"
-              class="text-sm text-muted-foreground"
-            >
-              暂无可用的 OAuth Provider
-            </div>
-            <div
-              v-else
-              class="grid grid-cols-1 sm:grid-cols-2 gap-3"
-            >
-              <!-- 已绑定的 Provider -->
-              <div
-                v-for="link in oauthLinks"
-                :key="link.provider_type"
-                class="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-4"
-              >
-                <div class="flex items-center gap-3 min-w-0 flex-1">
-                  <!-- eslint-disable vue/no-v-html -->
-                  <div
-                    class="oauth-icon shrink-0"
-                    v-html="getOAuthIcon(link.provider_type)"
-                  />
-                  <!-- eslint-enable vue/no-v-html -->
-                  <div class="min-w-0">
-                    <div class="text-sm font-medium truncate">
-                      {{ link.display_name }}
-                    </div>
-                    <div class="text-xs text-muted-foreground truncate">
-                      {{ link.provider_username || link.provider_email || '已绑定' }}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  :disabled="oauthActionLoading"
-                  @click="handleUnbind(link.provider_type)"
-                >
-                  解绑
-                </Button>
-              </div>
-
-              <!-- 可绑定的 Provider -->
-              <div
-                v-for="p in bindableProviders"
-                :key="p.provider_type"
-                class="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border p-4 hover:border-primary/50 transition-colors"
-              >
-                <div class="flex items-center gap-3 min-w-0 flex-1">
-                  <!-- eslint-disable vue/no-v-html -->
-                  <div
-                    class="oauth-icon shrink-0"
-                    v-html="getOAuthIcon(p.provider_type, p.icon_url)"
-                  />
-                  <!-- eslint-enable vue/no-v-html -->
-                  <div class="min-w-0">
-                    <div class="text-sm font-medium truncate">
-                      {{ p.display_name }}
-                    </div>
-                    <div class="text-xs text-muted-foreground">
-                      未绑定
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  :disabled="oauthActionLoading"
-                  @click="handleBind(p.provider_type)"
-                >
-                  绑定
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Card>
-
         <!-- 偏好设置 -->
         <Card class="p-6">
           <h3 class="text-lg font-medium text-foreground mb-4">
@@ -660,9 +558,7 @@ import { useAuthStore } from '@/stores/auth'
 import { meApi, type Profile } from '@/api/me'
 import { type UserSession, formatSessionMeta } from '@/types/session'
 import { authApi } from '@/api/auth'
-import { oauthApi, type OAuthLinkInfo, type OAuthProviderInfo } from '@/api/oauth'
 import { getClientDeviceId } from '@/utils/deviceId'
-import { getOAuthIcon } from '@/utils/oauth-icons'
 import { useDarkMode, type ThemeMode } from '@/composables/useDarkMode'
 import {
   getPasswordPolicyHint,
@@ -749,10 +645,6 @@ const passwordPolicyLevel = ref<PasswordPolicyLevel>('weak')
 const themeSelectOpen = ref(false)
 const languageSelectOpen = ref(false)
 
-const oauthUnavailable = ref(false)
-const oauthActionLoading = ref(false)
-const oauthLinks = ref<OAuthLinkInfo[]>([])
-const bindableProviders = ref<OAuthProviderInfo[]>([])
 const emailConfigured = ref(false) // 系统是否配置了邮箱服务
 
 // 原始值，用于检测是否有修改
@@ -817,8 +709,8 @@ onMounted(async () => {
     loadPreferences(),
     loadSessions(),
     loadEmailConfigured(),
-    profilePromise.then(() => loadOAuthBindings()),
   ])
+  void profilePromise
 })
 
 async function loadEmailConfigured() {
@@ -894,94 +786,6 @@ async function loadSessions() {
     log.error('加载登录设备失败:', error)
   } finally {
     sessionsLoading.value = false
-  }
-}
-
-async function loadOAuthBindings() {
-  oauthUnavailable.value = false
-  oauthLinks.value = []
-  bindableProviders.value = []
-
-  // profile 加载失败时跳过
-  if (!profile.value) {
-    oauthUnavailable.value = true
-    return
-  }
-
-  // LDAP 用户不支持绑定
-  if (profile.value.auth_source === 'ldap') {
-    return
-  }
-
-  try {
-    const [links, providers] = await Promise.all([
-      oauthApi.getMyLinks(),
-      oauthApi.getBindableProviders(),
-    ])
-    oauthLinks.value = links
-    bindableProviders.value = providers
-  } catch (err: unknown) {
-    if (getErrorStatus(err) === 503) {
-      oauthUnavailable.value = true
-      return
-    }
-    log.error('加载 OAuth 绑定信息失败:', err)
-    oauthUnavailable.value = true
-  }
-}
-
-function handleBind(providerType: string) {
-  // 保存返回路径（OAuth callback 会读取）
-  sessionStorage.setItem('redirectPath', route.fullPath)
-
-  // 先获取一次性绑定令牌，再在新标签页打开（避免在 URL 中暴露 access_token）
-  oauthActionLoading.value = true
-  oauthApi.createBindToken(providerType)
-    .then((bindToken) => {
-      // getApiUrl 可能返回相对路径，需要拼接完整 URL
-      const basePath = getApiUrl(`/api/user/oauth/${providerType}/bind`)
-      const bindUrl = basePath.startsWith('http')
-        ? new URL(basePath)
-        : new URL(basePath, window.location.origin)
-      bindUrl.searchParams.set('bind_token', bindToken)
-      bindUrl.searchParams.set('client_device_id', getClientDeviceId())
-
-      // 新标签页打开 OAuth 流程
-      const newTab = window.open(bindUrl.toString(), '_blank')
-
-      // 监听标签页关闭，刷新绑定状态
-      if (newTab) {
-        const MAX_WAIT_MS = 10 * 60 * 1000 // 10 分钟超时
-        const startTime = Date.now()
-        const checkClosed = setInterval(() => {
-          if (newTab.closed || Date.now() - startTime > MAX_WAIT_MS) {
-            clearInterval(checkClosed)
-            oauthActionLoading.value = false
-            loadOAuthBindings()
-          }
-        }, 500)
-      } else {
-        // 被浏览器阻止，回退到当前页面跳转
-        oauthActionLoading.value = false
-        window.location.href = bindUrl.toString()
-      }
-    })
-    .catch((err) => {
-      oauthActionLoading.value = false
-      showError(getErrorMessage(err, '获取绑定令牌失败'))
-    })
-}
-
-async function handleUnbind(providerType: string) {
-  oauthActionLoading.value = true
-  try {
-    await oauthApi.unbind(providerType)
-    success('解绑成功')
-    await loadOAuthBindings()
-  } catch (err) {
-    showError(getErrorMessage(err, '解绑失败'))
-  } finally {
-    oauthActionLoading.value = false
   }
 }
 
@@ -1203,13 +1007,4 @@ function formatDate(dateString?: string): string {
 </script>
 
 <style scoped>
-.oauth-icon {
-  width: 24px;
-  height: 24px;
-}
-
-.oauth-icon :deep(svg) {
-  width: 100%;
-  height: 100%;
-}
 </style>

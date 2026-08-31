@@ -7,13 +7,6 @@
       {{ legacyT(row.statusLabel) }}
     </Badge>
     <Badge
-      v-if="row.hasWallet"
-      :variant="row.walletStatusVariant"
-      class="h-5 px-1.5 py-0 text-[10px] font-medium"
-    >
-      {{ legacyT(row.walletStatusLabel) }}
-    </Badge>
-    <Badge
       v-if="mobile"
       variant="secondary"
       class="h-5 px-1.5 py-0 text-[10px] font-medium"

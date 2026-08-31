@@ -15,9 +15,6 @@
             <TableHead class="w-[260px] h-12 font-semibold">
               {{ legacyT('用户信息') }}
             </TableHead>
-            <TableHead class="w-[240px] h-12 font-semibold">
-              {{ legacyT('钱包') }}
-            </TableHead>
             <TableHead class="w-[170px] h-12 font-semibold">
               {{ legacyT('统计/限速') }}
             </TableHead>
@@ -50,8 +47,6 @@
             :can-operate-admin="canOperateAdmin"
             @toggle-selected="(checked) => emit('toggle-selected', row.user.id, checked)"
             @edit="emit('edit', row.user)"
-            @wallet="emit('wallet', row.user)"
-            @plans="emit('plans', row.user)"
             @api-keys="emit('api-keys', row.user)"
             @sessions="emit('sessions', row.user)"
             @toggle-status="emit('toggle-status', row.user)"
@@ -80,8 +75,6 @@
           :can-operate-admin="canOperateAdmin"
           @toggle-selected="(checked) => emit('toggle-selected', row.user.id, checked)"
           @edit="emit('edit', row.user)"
-          @wallet="emit('wallet', row.user)"
-          @plans="emit('plans', row.user)"
           @api-keys="emit('api-keys', row.user)"
           @sessions="emit('sessions', row.user)"
           @toggle-status="emit('toggle-status', row.user)"
@@ -127,8 +120,6 @@ const emit = defineEmits<{
   'toggle-selected': [userId: string, checked: boolean]
   'toggle-select-current-page': []
   edit: [user: UserManagementRow['user']]
-  wallet: [user: UserManagementRow['user']]
-  plans: [user: UserManagementRow['user']]
   'api-keys': [user: UserManagementRow['user']]
   sessions: [user: UserManagementRow['user']]
   'toggle-status': [user: UserManagementRow['user']]

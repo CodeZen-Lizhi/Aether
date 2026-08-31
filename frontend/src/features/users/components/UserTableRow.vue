@@ -11,9 +11,6 @@
       <UserIdentityCell :row="row" />
     </TableCell>
     <TableCell class="py-4">
-      <UserWalletSummary :row="row" />
-    </TableCell>
-    <TableCell class="py-4">
       <div class="space-y-1 text-xs">
         <div class="flex items-center text-muted-foreground">
           <span class="w-14">{{ legacyT('请求:') }}</span>
@@ -52,8 +49,6 @@
         :can-operate-admin="canOperateAdmin"
         :is-active="row.user.is_active"
         @edit="$emit('edit')"
-        @wallet="$emit('wallet')"
-        @plans="$emit('plans')"
         @api-keys="$emit('api-keys')"
         @sessions="$emit('sessions')"
         @toggle-status="$emit('toggle-status')"
@@ -72,7 +67,6 @@ import { useI18n } from '@/i18n'
 import UserActionButtons from './UserActionButtons.vue'
 import UserIdentityCell from './UserIdentityCell.vue'
 import UserStatusBadges from './UserStatusBadges.vue'
-import UserWalletSummary from './UserWalletSummary.vue'
 import type { UserManagementRow } from './user-management-types'
 
 defineProps<{
@@ -85,8 +79,6 @@ defineProps<{
 defineEmits<{
   'toggle-selected': [checked: boolean]
   edit: []
-  wallet: []
-  plans: []
   'api-keys': []
   sessions: []
   'toggle-status': []
