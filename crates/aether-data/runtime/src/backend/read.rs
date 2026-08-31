@@ -1,10 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
 
-#[cfg(feature = "mysql")]
-use super::MysqlBackend;
-#[cfg(feature = "postgres")]
-use super::PostgresBackend;
 #[cfg(feature = "sqlite")]
 use super::SqliteBackend;
 use crate::repository::announcements::AnnouncementReadRepository;

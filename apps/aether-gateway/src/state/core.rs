@@ -4149,28 +4149,7 @@ mod tests {
             .expect("admin read should retry immediately after failed prewarm");
     }
 
-    #[tokio::test]
-    async fn runtime_pool_can_disable_background_isolation() {
-        let config = GatewayDataConfig::from_database_config(
-            SqlDatabaseConfig::new(
-                DatabaseDriver::Postgres,
-                "postgres://localhost/aether",
-                SqlPoolConfig {
-                    min_connections: 4,
-                    max_connections: 20,
-                    ..SqlPoolConfig::default()
-                },
-            )
-            .expect("database config should be valid"),
-        );
-
-        let state = AppState::new()
-            .expect("app state should build")
-            .with_data_config_and_background_isolation(config, false)
-            .expect("data state should build");
-
-        assert!(!state.background_data_isolated);
-    }
+    
 
     #[tokio::test]
     async fn system_config_reads_use_short_lived_cache_until_app_invalidation() {

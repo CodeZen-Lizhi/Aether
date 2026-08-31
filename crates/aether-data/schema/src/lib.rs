@@ -1004,9 +1004,8 @@ ALTER TABLE users ADD COLUMN ldap_dn VARCHAR(1024);
             .and_then(Path::parent)
             .expect("crate should live under workspace/crates/aether-data");
         let schema_dir = workspace.join("crates/aether-data/runtime/schema/logical");
-        let mut required_sql_paths = vec![workspace
-            .join("crates/aether-data/adapters/postgres/migrations/20260403000000_baseline.sql")];
-        for driver in ["mysql", "sqlite"] {
+        let mut required_sql_paths = Vec::new();
+        for driver in ["sqlite"] {
             let driver_dir =
                 workspace.join(format!("crates/aether-data/adapters/{driver}/migrations"));
             let mut paths = std::fs::read_dir(&driver_dir)

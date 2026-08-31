@@ -14,7 +14,7 @@ aether-data.workspace = true
 aether-data-contracts.workspace = true
 aether-gateway = { workspace = true, features = ["testkit"] }
 aether-runtime-state.workspace = true
-aether-testkit = { workspace = true, features = ["gateway", "postgres"] }
+aether-testkit = { workspace = true, features = ["gateway"] }
 axum.workspace = true
 futures-util.workspace = true
 http.workspace = true
@@ -22,7 +22,7 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-sqlx = { workspace = true, features = ["postgres"] }
+sqlx = { workspace = true, features = ["sqlite"] }
 tokio.workspace = true
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 uuid.workspace = true

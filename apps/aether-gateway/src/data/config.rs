@@ -1,4 +1,4 @@
-use aether_data::driver::postgres::PostgresPoolConfig;
+use aether_data_contracts::PostgresPoolConfig;
 use aether_data::{DataLayerConfig, SqlDatabaseConfig};
 use std::fmt;
 

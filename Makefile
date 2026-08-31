@@ -38,162 +38,9 @@ dev_uses_sqlite_database() {
 	[[ "$${driver}" == "sqlite" || "$${url}" == sqlite:* ]]
 }
 
-dev_uses_postgres_database() {
-	local driver
-	local url
-	driver="$$(lowercase "$${AETHER_DATABASE_DRIVER:-}")"
-	url="$${AETHER_DATABASE_URL:-$${DATABASE_URL:-}}"
-
-	if [[ -z "$${driver}" && -z "$${url}" ]]; then
-		return 0
-	fi
-
-	[[ "$${driver}" == "postgres" || "$${driver}" == "postgresql" || "$${url}" == postgres:* || "$${url}" == postgresql:* ]]
-}
-
-dev_uses_redis_runtime() {
-	local backend
-	backend="$$(lowercase "$${AETHER_RUNTIME_BACKEND:-}")"
-
-	if [[ "$${backend}" == "memory" ]]; then
-		return 1
-	fi
-	if [[ "$${backend}" == "redis" ]]; then
-		return 0
-	fi
-	if dev_uses_sqlite_database; then
-		return 1
-	fi
-
-	return 0
-}
-
-print_dev_infra_hint() {
-	echo "=> 本地开发依赖未就绪。"
-	echo "=> 可手动启动 Postgres / Redis:"
-	echo "=>   docker compose up -d postgres redis"
-}
-
-check_postgres_ready() {
-	local host="$$1"
-	local port="$$2"
-
-	if command -v pg_isready >/dev/null 2>&1; then
-		pg_isready -h "$${host}" -p "$${port}" >/dev/null 2>&1
-		return $$?
-	fi
-
-	if command -v nc >/dev/null 2>&1; then
-		nc -z "$${host}" "$${port}" >/dev/null 2>&1
-		return $$?
-	fi
-
-	return 0
-}
-
-check_redis_ready() {
-	local host="$$1"
-	local port="$$2"
-	local password="$$3"
-
-	if command -v redis-cli >/dev/null 2>&1; then
-		REDISCLI_AUTH="$${password}" redis-cli -h "$${host}" -p "$${port}" ping >/dev/null 2>&1
-		return $$?
-	fi
-
-	if command -v nc >/dev/null 2>&1; then
-		nc -z "$${host}" "$${port}" >/dev/null 2>&1
-		return $$?
-	fi
-
-	return 0
-}
-
-is_local_host() {
-	case "$$1" in
-		localhost|127.0.0.1|::1)
-			return 0
-			;;
-	esac
-
-	return 1
-}
-
 ensure_dev_infra() {
-	local postgres_host="$${DB_HOST:-localhost}"
-	local postgres_port="$${DB_PORT:-5432}"
-	local redis_host="$${REDIS_HOST:-localhost}"
-	local redis_port="$${REDIS_PORT:-6379}"
-	local redis_password="$${REDIS_PASSWORD:-}"
-	local need_postgres=false
-	local need_redis=false
-	local services=()
-
-	if dev_uses_postgres_database; then
-		if ! check_postgres_ready "$${postgres_host}" "$${postgres_port}"; then
-			if is_local_host "$${postgres_host}"; then
-				need_postgres=true
-				services+=(postgres)
-			else
-				echo "=> PostgreSQL 不可用: $${postgres_host}:$${postgres_port}"
-				print_dev_infra_hint
-				return 1
-			fi
-		fi
-	fi
-
-	if dev_uses_redis_runtime; then
-		if ! check_redis_ready "$${redis_host}" "$${redis_port}" "$${redis_password}"; then
-			if is_local_host "$${redis_host}"; then
-				need_redis=true
-				services+=(redis)
-			else
-				echo "=> Redis 不可用: $${redis_host}:$${redis_port}"
-				print_dev_infra_hint
-				return 1
-			fi
-		fi
-	fi
-
-	if [ "$${#services[@]}" -eq 0 ]; then
-		return 0
-	fi
-
-	if ! command -v docker >/dev/null 2>&1; then
-		echo "=> 未找到 docker，无法自动启动本地开发依赖。"
-		print_dev_infra_hint
-		return 1
-	fi
-
-	echo "=> 本地开发依赖未就绪，正在启动: docker compose up -d $${services[*]}"
-	if ! docker compose up -d "$${services[@]}"; then
-		echo "=> docker compose 启动本地开发依赖失败。"
-		print_dev_infra_hint
-		return 1
-	fi
-
-	for _ in {1..100}; do
-		local ready=true
-		if [ "$${need_postgres}" = "true" ] && ! check_postgres_ready "$${postgres_host}" "$${postgres_port}"; then
-			ready=false
-		fi
-		if [ "$${need_redis}" = "true" ] && ! check_redis_ready "$${redis_host}" "$${redis_port}" "$${redis_password}"; then
-			ready=false
-		fi
-		if [ "$${ready}" = "true" ]; then
-			return 0
-		fi
-		sleep 0.2
-	done
-
-	if [ "$${need_postgres}" = "true" ] && ! check_postgres_ready "$${postgres_host}" "$${postgres_port}"; then
-		echo "=> PostgreSQL 不可用: $${postgres_host}:$${postgres_port}"
-	fi
-	if [ "$${need_redis}" = "true" ] && ! check_redis_ready "$${redis_host}" "$${redis_port}" "$${redis_password}"; then
-		echo "=> Redis 不可用: $${redis_host}:$${redis_port}"
-	fi
-	print_dev_infra_hint
-	return 1
+	# Personal build: SQLite + memory runtime only; no external infra needed.
+	return 0
 }
 
 print_startup_failure_hint() {
@@ -299,22 +146,10 @@ RUST_SERVICE_STARTUP_TIMEOUT_SECONDS="$${RUST_SERVICE_STARTUP_TIMEOUT_SECONDS:-1
 GATEWAY_STARTUP_TIMEOUT_SECONDS="$${GATEWAY_STARTUP_TIMEOUT_SECONDS:-$${RUST_SERVICE_STARTUP_TIMEOUT_SECONDS}}"
 export AETHER_GATEWAY_VIDEO_TASK_TRUTH_SOURCE_MODE="$${AETHER_GATEWAY_VIDEO_TASK_TRUTH_SOURCE_MODE:-rust-authoritative}"
 
-if dev_uses_postgres_database; then
-	export DATABASE_URL="postgresql://$${DB_USER:-postgres}:$${DB_PASSWORD:-}@$${DB_HOST:-localhost}:$${DB_PORT:-5432}/$${DB_NAME:-aether}"
-	if ! dotenv_has_key "AETHER_GATEWAY_DATA_POSTGRES_URL"; then
-		export AETHER_GATEWAY_DATA_POSTGRES_URL="$${DATABASE_URL}"
-	fi
-fi
-
-if dev_uses_redis_runtime; then
-	export REDIS_URL="redis://:$${REDIS_PASSWORD:-}@$${REDIS_HOST:-localhost}:$${REDIS_PORT:-6379}/0"
-	if ! dotenv_has_key "AETHER_GATEWAY_DATA_REDIS_URL"; then
-		export AETHER_GATEWAY_DATA_REDIS_URL="$${REDIS_URL}"
-	fi
-else
-	unset REDIS_URL
-	unset AETHER_GATEWAY_DATA_REDIS_URL
-fi
+unset DATABASE_URL
+unset REDIS_URL
+unset AETHER_GATEWAY_DATA_POSTGRES_URL
+unset AETHER_GATEWAY_DATA_REDIS_URL
 
 if ! dotenv_has_key "AETHER_GATEWAY_DATA_ENCRYPTION_KEY"; then
 	export AETHER_GATEWAY_DATA_ENCRYPTION_KEY="$${ENCRYPTION_KEY:-}"
@@ -517,25 +352,8 @@ lowercase() {
 	printf '%s' "$$1" | tr '[:upper:]' '[:lower:]'
 }
 
-uses_postgres_database() {
-	local driver
-	local url
-	driver="$$(lowercase "$${AETHER_DATABASE_DRIVER:-}")"
-	url="$${AETHER_DATABASE_URL:-$${DATABASE_URL:-}}"
-
-	if [[ -z "$${driver}" && -z "$${url}" ]]; then
-		return 0
-	fi
-
-	[[ "$${driver}" == "postgres" || "$${driver}" == "postgresql" || "$${url}" == postgres:* || "$${url}" == postgresql:* ]]
-}
-
-if uses_postgres_database; then
-	export DATABASE_URL="postgresql://$${DB_USER:-postgres}:$${DB_PASSWORD:-}@$${DB_HOST:-localhost}:$${DB_PORT:-5432}/$${DB_NAME:-aether}"
-	if ! dotenv_has_key "AETHER_GATEWAY_DATA_POSTGRES_URL"; then
-		export AETHER_GATEWAY_DATA_POSTGRES_URL="$${DATABASE_URL}"
-	fi
-fi
+unset DATABASE_URL
+unset AETHER_GATEWAY_DATA_POSTGRES_URL
 
 if ! dotenv_has_key "AETHER_GATEWAY_DATA_ENCRYPTION_KEY"; then
 	export AETHER_GATEWAY_DATA_ENCRYPTION_KEY="$${ENCRYPTION_KEY:-}"

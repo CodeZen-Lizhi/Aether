@@ -164,8 +164,6 @@ dependencies = [
  "aether-ai-formats",
  "aether-cache",
  "aether-data-contracts",
- "aether-data-mysql",
- "aether-data-postgres",
  "aether-data-sqlite",
  "aether-wallet",
  "async-trait",
@@ -197,45 +195,6 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tokio",
-]
-
-[[package]]
-name = "aether-data-mysql"
-version = "0.1.0"
-dependencies = [
- "aether-ai-formats",
- "aether-data-contracts",
- "aether-data-query",
- "async-trait",
- "chrono",
- "chrono-tz",
- "flate2",
- "serde_json",
- "sha2",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "aether-data-postgres"
-version = "0.1.0"
-dependencies = [
- "aether-ai-formats",
- "aether-data-contracts",
- "aether-data-query",
- "async-trait",
- "chrono",
- "chrono-tz",
- "flate2",
- "futures-util",
- "serde_json",
- "sha2",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]

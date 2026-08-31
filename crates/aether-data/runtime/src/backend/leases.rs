@@ -1,11 +1,5 @@
 use std::fmt;
 
-#[cfg(feature = "postgres")]
-use super::PostgresBackend;
-#[cfg(feature = "postgres")]
-use crate::driver::postgres::{PostgresLeaseRunner, PostgresLeaseRunnerConfig};
-#[cfg(feature = "postgres")]
-use crate::DataLayerError;
 
 #[derive(Clone, Default)]
 pub struct DataLeaseBackends {

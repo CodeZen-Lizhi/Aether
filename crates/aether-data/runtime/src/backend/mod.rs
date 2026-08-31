@@ -8,10 +8,6 @@
 
 mod leases;
 mod maintenance;
-#[cfg(feature = "mysql")]
-mod mysql;
-#[cfg(feature = "postgres")]
-mod postgres;
 mod read;
 mod referrals;
 #[cfg(feature = "sqlite")]
@@ -26,10 +22,6 @@ mod write;
 
 use crate::maintenance::DatabasePoolSummary;
 pub use leases::DataLeaseBackends;
-#[cfg(feature = "mysql")]
-pub use mysql::MysqlBackend;
-#[cfg(feature = "postgres")]
-pub use postgres::PostgresBackend;
 pub use read::DataReadRepositories;
 pub use referrals::{
     ReferralAdminStats, ReferralDataState, ReferralMutationStatus, ReferralRelationshipListQuery,

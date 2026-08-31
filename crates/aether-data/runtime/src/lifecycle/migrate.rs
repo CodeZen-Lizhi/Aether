@@ -3,10 +3,6 @@
 //! Each driver owns its migrator and startup preparation. The facade keeps
 //! the established public entry points used by gateway bootstrap code.
 
-#[cfg(feature = "mysql")]
-mod mysql;
-#[cfg(feature = "postgres")]
-mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 mod types;
@@ -14,8 +10,6 @@ mod types;
 #[cfg(all(test, feature = "postgres", feature = "mysql", feature = "sqlite"))]
 mod tests;
 
-#[cfg(feature = "postgres")]
-pub use postgres::{pending_migrations, prepare_database_for_startup, run_migrations};
 pub use types::PendingMigrationInfo;
 
 #[cfg(any(feature = "mysql", feature = "sqlite"))]

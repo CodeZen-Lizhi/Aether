@@ -18,5 +18,5 @@ aether-gateway = { workspace = true, features = ["testkit"], optional = true }
 aether-runtime.workspace = true
 aether-runtime-state = { workspace = true, optional = true }
 axum.workspace = true
-sqlx = { workspace = true, features = ["postgres"], optional = true }
+sqlx = { workspace = true, features = ["sqlite"], optional = true }
 tokio.workspace = true

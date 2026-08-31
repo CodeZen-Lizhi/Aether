@@ -6,10 +6,6 @@ pub use aether_data_contracts::repository::management_tokens::{
     StoredManagementTokenListPage, StoredManagementTokenUserSummary, StoredManagementTokenWithUser,
     UpdateManagementTokenRecord,
 };
-#[cfg(feature = "mysql")]
-pub use aether_data_mysql::MysqlManagementTokenRepository;
-#[cfg(feature = "postgres")]
-pub use aether_data_postgres::SqlxManagementTokenRepository;
 #[cfg(feature = "sqlite")]
 pub use aether_data_sqlite::SqliteManagementTokenRepository;
 pub use memory::InMemoryManagementTokenRepository;

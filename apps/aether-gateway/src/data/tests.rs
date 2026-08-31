@@ -158,24 +158,7 @@ fn maintenance_pool_pressure_deferral_has_timeout() {
     assert!(stale_defer.is_none());
 }
 
-#[tokio::test]
-async fn postgres_gateway_data_state_builds_video_task_reader() {
-    let state = GatewayDataState::from_config(GatewayDataConfig::from_postgres_url(
-        "postgres://localhost/aether",
-        false,
-    ))
-    .expect("postgres-backed state should build");
 
-    assert!(state.has_backends());
-    assert!(state.has_auth_api_key_reader());
-    assert!(state.has_minimal_candidate_selection_reader());
-    assert!(state.has_request_candidate_reader());
-    assert!(state.has_provider_catalog_reader());
-    assert!(state.has_proxy_node_reader());
-    assert!(state.has_proxy_node_writer());
-    assert!(state.has_usage_reader());
-    assert!(state.has_video_task_reader());
-}
 
 #[tokio::test]
 async fn data_state_find_uses_configured_read_repository() {
@@ -233,26 +216,7 @@ async fn data_state_find_uses_configured_read_repository() {
     assert_eq!(task.expect("task should exist").id, "task-1");
 }
 
-#[tokio::test]
-async fn app_state_wires_gateway_data_state_from_config() {
-    let state = AppState::new()
-        .expect("app state should build")
-        .with_data_config(GatewayDataConfig::from_postgres_url(
-            "postgres://localhost/aether",
-            false,
-        ))
-        .expect("data config should wire");
 
-    assert!(state.data.has_backends());
-    assert!(state.data.has_auth_api_key_reader());
-    assert!(state.data.has_minimal_candidate_selection_reader());
-    assert!(state.data.has_request_candidate_reader());
-    assert!(state.data.has_provider_catalog_reader());
-    assert!(state.data.has_proxy_node_reader());
-    assert!(state.data.has_proxy_node_writer());
-    assert!(state.data.has_usage_reader());
-    assert!(state.data.has_video_task_reader());
-}
 
 #[tokio::test]
 async fn app_state_prepares_sqlite_database_startup() -> Result<(), Box<dyn std::error::Error>> {

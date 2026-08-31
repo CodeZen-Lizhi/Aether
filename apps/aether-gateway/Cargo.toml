@@ -24,7 +24,7 @@ aether-billing.workspace = true
 aether-cache.workspace = true
 aether-contracts.workspace = true
 aether-crypto.workspace = true
-aether-data = { workspace = true, features = ["all-drivers"] }
+aether-data = { workspace = true }
 aether-data-contracts.workspace = true
 aether-dispatch-core.workspace = true
 aether-gateway-frontdoor.workspace = true
@@ -81,7 +81,7 @@ sha1 = "0.10"
 sha2 = { workspace = true, features = ["oid"] }
 socket2.workspace = true
 tar.workspace = true
-sqlx = { workspace = true, features = ["postgres", "mysql", "sqlite", "migrate"] }
+sqlx = { workspace = true, features = ["sqlite", "migrate"] }
 sysinfo = "0.32"
 thiserror.workspace = true
 tokio.workspace = true

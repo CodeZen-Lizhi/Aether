@@ -1,9 +1,5 @@
 use std::fmt;
 
-#[cfg(feature = "postgres")]
-use super::PostgresBackend;
-#[cfg(feature = "postgres")]
-use crate::driver::postgres::PostgresTransactionRunner;
 
 #[derive(Clone, Default)]
 pub struct DataTransactionBackends {

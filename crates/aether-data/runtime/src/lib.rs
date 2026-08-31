@@ -17,10 +17,6 @@ pub mod lifecycle;
 pub mod maintenance;
 pub mod repository;
 
-#[cfg(feature = "mysql")]
-pub use backend::MysqlBackend;
-#[cfg(feature = "postgres")]
-pub use backend::PostgresBackend;
 #[cfg(feature = "sqlite")]
 pub use backend::SqliteBackend;
 pub use backend::{

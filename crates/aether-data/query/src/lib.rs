@@ -522,22 +522,11 @@ pub fn push_order_by<DB>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::{Execute, MySql, Postgres, QueryBuilder, Sqlite};
+    use sqlx::{Execute, QueryBuilder, Sqlite};
 
     #[test]
     fn quotes_identifiers_by_dialect() {
-        assert_eq!(SqlDialect::Postgres.quote_ident("trigger"), "\"trigger\"");
-        assert_eq!(SqlDialect::MySql.quote_ident("trigger"), "`trigger`");
-        assert_eq!(SqlDialect::MySql.quote_ident("tri`gger"), "`tri``gger`");
         assert_eq!(SqlDialect::Sqlite.quote_ident("trigger"), "\"trigger\"");
-        assert_eq!(
-            SqlDialect::Postgres.quote_path(&["usage", "id"]),
-            "\"usage\".\"id\""
-        );
-        assert_eq!(
-            SqlDialect::MySql.quote_path(&["usage", "item`id"]),
-            "`usage`.`item``id`"
-        );
     }
 
     #[test]
@@ -561,21 +550,6 @@ mod tests {
     }
 
     #[test]
-    fn ci_contains_uses_ilike_for_postgres() {
-        let mut builder = QueryBuilder::<Postgres>::new("SELECT * FROM items");
-        let mut where_clause = WhereClause::new();
-        push_ci_contains(
-            &mut builder,
-            &mut where_clause,
-            SqlDialect::Postgres,
-            "task_key",
-            " Fetch ",
-        );
-        let query = builder.build();
-        assert!(query.sql().contains(" WHERE task_key ILIKE $1"));
-    }
-
-    #[test]
     fn ci_contains_uses_lower_like_for_sqlite() {
         let mut sqlite_builder = QueryBuilder::<Sqlite>::new("SELECT * FROM items");
         let mut sqlite_where = WhereClause::new();
@@ -587,23 +561,6 @@ mod tests {
             " Fetch ",
         );
         assert!(sqlite_builder
-            .build()
-            .sql()
-            .contains(" WHERE LOWER(task_key) LIKE ?"));
-    }
-
-    #[test]
-    fn ci_contains_uses_lower_like_for_mysql() {
-        let mut mysql_builder = QueryBuilder::<MySql>::new("SELECT * FROM items");
-        let mut mysql_where = WhereClause::new();
-        push_ci_contains(
-            &mut mysql_builder,
-            &mut mysql_where,
-            SqlDialect::MySql,
-            "task_key",
-            " Fetch ",
-        );
-        assert!(mysql_builder
             .build()
             .sql()
             .contains(" WHERE LOWER(task_key) LIKE ?"));
@@ -681,31 +638,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn select_statement_keeps_bind_order_and_dialect_search() {
-        let query = SelectQuery::new("items")
-            .select(SelectColumn::expr("id"))
-            .select(SelectColumn::expr("name"));
-        let mut statement = query.statement::<Postgres>(SqlDialect::Postgres);
-        statement
-            .where_eq("kind", "scheduled".to_string())
-            .where_ci_contains_any(&["name", "description"], "Fetch")
-            .order_by(
-                Some("name"),
-                SortDirection::Asc,
-                &[OrderByColumn {
-                    key: "name",
-                    sql: "name",
-                }],
-                "name",
-            )
-            .limit_offset(20, 40);
-
-        let mut builder = statement.finish();
-        let query = builder.build();
-        assert_eq!(
-            query.sql(),
-            "SELECT id, name FROM items WHERE kind = $1 AND (name ILIKE $2 OR description ILIKE $3) ORDER BY name ASC LIMIT $4 OFFSET $5"
-        );
-    }
 }

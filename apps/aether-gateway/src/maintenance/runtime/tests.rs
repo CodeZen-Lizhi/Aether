@@ -1031,32 +1031,6 @@ fn usage_cleanup_before_now_window_uses_current_timestamp_only() {
     assert_eq!(window.log_cutoff, now_utc);
 }
 
-#[tokio::test]
-async fn summarize_database_pool_uses_busy_connections_for_usage_rate() {
-    let data = GatewayDataState::from_config(crate::data::GatewayDataConfig::from_postgres_config(
-        aether_data::driver::postgres::PostgresPoolConfig {
-            database_url: "postgres://localhost/aether".to_string(),
-            min_connections: 1,
-            max_connections: 8,
-            acquire_timeout_ms: 1_000,
-            idle_timeout_ms: 5_000,
-            max_lifetime_ms: 30_000,
-            statement_cache_capacity: 64,
-            require_ssl: false,
-        },
-    ))
-    .expect("gateway data state should build");
-
-    let summary = summarize_database_pool(&data).expect("pool summary should exist");
-
-    assert_eq!(summary.driver, aether_data::DatabaseDriver::Postgres);
-    assert_eq!(summary.checked_out, 0);
-    assert_eq!(summary.pool_size, 0);
-    assert_eq!(summary.idle, 0);
-    assert_eq!(summary.max_connections, 8);
-    assert_eq!(summary.usage_rate, 0.0);
-}
-
 #[test]
 fn stats_aggregation_target_uses_previous_utc_day() {
     let now_utc = "2026-04-05T10:20:30Z"

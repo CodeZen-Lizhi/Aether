@@ -1,9 +1,5 @@
 //! Driver-specific wallet usage aggregation adapters.
 
-#[cfg(feature = "mysql")]
-mod mysql;
-#[cfg(feature = "postgres")]
-mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 

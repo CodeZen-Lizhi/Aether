@@ -10,8 +10,6 @@ members = [
     "crates/aether-provider/pool",
     "crates/aether-routing-core",
     "crates/aether-data/contracts",
-    "crates/aether-data/adapters/postgres",
-    "crates/aether-data/adapters/mysql",
     "crates/aether-data/adapters/sqlite",
     "crates/aether-data/query",
     "crates/aether-data/schema",
@@ -34,8 +32,8 @@ members = [
     "crates/aether-gateway/execution",
     "crates/aether-gateway/workers",
     "crates/aether-gateway/tunnel",
-    "crates/aether-testing/loadtools",
     "crates/aether-testing/integration",
+        "crates/aether-testing/loadtools",
     "crates/aether-usage/core",
     "crates/aether-testing/support",
     "crates/aether-usage/runtime",
@@ -65,8 +63,7 @@ aether-provider-core = { path = "crates/aether-provider/core" }
 aether-provider-pool = { path = "crates/aether-provider/pool" }
 aether-routing-core = { path = "crates/aether-routing-core" }
 aether-data-contracts = { path = "crates/aether-data/contracts" }
-aether-data-postgres = { path = "crates/aether-data/adapters/postgres" }
-aether-data-mysql = { path = "crates/aether-data/adapters/mysql" }
+aether-loadtools = { path = "crates/aether-testing/loadtools" }
 aether-data-sqlite = { path = "crates/aether-data/adapters/sqlite" }
 aether-data-query = { path = "crates/aether-data/query" }
 aether-data-schema = { path = "crates/aether-data/schema" }
@@ -89,7 +86,6 @@ aether-gateway-control = { path = "crates/aether-gateway/control" }
 aether-gateway-execution = { path = "crates/aether-gateway/execution" }
 aether-gateway-workers = { path = "crates/aether-gateway/workers" }
 aether-gateway-tunnel = { path = "crates/aether-gateway/tunnel" }
-aether-loadtools = { path = "crates/aether-testing/loadtools" }
 aether-integration-tests = { path = "crates/aether-testing/integration" }
 aether-test-support = { path = "crates/aether-testing/support" }
 aether-usage-core = { path = "crates/aether-usage/core" }

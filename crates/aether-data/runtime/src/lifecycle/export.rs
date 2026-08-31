@@ -12,10 +12,6 @@ use sqlx::{Column, TypeInfo, ValueRef};
 use crate::error::SqlResultExt;
 use crate::{DataLayerError, DatabaseDriver, SqlDatabaseConfig};
 
-#[cfg(feature = "mysql")]
-mod mysql;
-#[cfg(feature = "postgres")]
-mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
