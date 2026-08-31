@@ -5,10 +5,6 @@ mod types;
 #[cfg(all(test, feature = "postgres", feature = "mysql", feature = "sqlite"))]
 mod tests;
 
-#[cfg(feature = "mysql")]
-pub use mysql::{
-    pending_backfills as pending_mysql_backfills, run_backfills as run_mysql_backfills,
-};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
     pending_backfills as pending_sqlite_backfills, run_backfills as run_sqlite_backfills,

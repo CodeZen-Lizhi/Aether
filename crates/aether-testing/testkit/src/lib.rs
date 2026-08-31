@@ -8,8 +8,6 @@ mod wait;
 mod execution_runtime;
 #[cfg(feature = "gateway")]
 mod gateway;
-#[cfg(feature = "postgres")]
-mod postgres;
 #[cfg(feature = "gateway")]
 mod tunnel;
 
@@ -32,7 +30,5 @@ pub use wait::wait_until;
 pub use execution_runtime::{ExecutionRuntimeHarness, ExecutionRuntimeHarnessConfig};
 #[cfg(feature = "gateway")]
 pub use gateway::{GatewayHarness, GatewayHarnessConfig, GATEWAY_HARNESS_API_KEY};
-#[cfg(feature = "postgres")]
-pub use postgres::{prepare_aether_postgres_schema, ManagedPostgresServer};
 #[cfg(feature = "gateway")]
 pub use tunnel::{TunnelHarness, TunnelHarnessConfig};

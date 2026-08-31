@@ -4,7 +4,5 @@
 //! process startup or explicit maintenance/export commands.
 
 pub mod backfill;
-#[cfg(feature = "postgres")]
-pub(crate) mod bootstrap;
 pub mod export;
 pub mod migrate;

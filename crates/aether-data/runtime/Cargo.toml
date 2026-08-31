@@ -9,6 +9,10 @@ build = "build.rs"
 
 [features]
 default = ["sqlite"]
+# Empty features kept so legacy `#[cfg(feature = "...")]` blocks stay valid but
+# compile to nothing in this SQLite-only build.
+postgres = []
+mysql = []
 sqlite = ["dep:aether-data-sqlite", "sqlx/sqlite"]
 
 [dependencies]

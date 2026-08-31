@@ -136,11 +136,6 @@ impl DataBackends {
     ) -> Result<Option<DatabasePostgresObservabilitySnapshot>, DataLayerError> {
         #[cfg(not(feature = "postgres"))]
         return Ok(None);
-        #[cfg(feature = "postgres")]
-        match self.postgres() {
-            Some(postgres) => postgres.postgres_observability_snapshot().await.map(Some),
-            None => Ok(None),
-        }
     }
 
     pub async fn postgres_activity_groups(
@@ -151,11 +146,6 @@ impl DataBackends {
         let _ = limit;
         #[cfg(not(feature = "postgres"))]
         return Ok(Vec::new());
-        #[cfg(feature = "postgres")]
-        match self.postgres() {
-            Some(postgres) => postgres.postgres_activity_groups(limit).await,
-            None => Ok(Vec::new()),
-        }
     }
 
     pub async fn aggregate_wallet_daily_usage(
@@ -291,14 +281,6 @@ impl DataBackends {
 impl<'a> SqlBackendRef<'a> {
     async fn warm_database_pool(self) -> Result<(), DataLayerError> {
         match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => {
-                warm_pool(postgres.pool(), postgres.config().min_connections).await
-            }
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => {
-                warm_pool(mysql.pool(), mysql.config().pool.min_connections).await
-            }
             #[cfg(feature = "sqlite")]
             Self::Sqlite(sqlite) => {
                 warm_pool(sqlite.pool(), sqlite.config().pool.min_connections).await
@@ -322,16 +304,6 @@ impl<'a> SqlBackendRef<'a> {
 
     async fn run_database_migrations(self) -> Result<bool, MigrateError> {
         match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => {
-                crate::lifecycle::migrate::run_migrations(postgres.pool()).await?;
-                Ok(true)
-            }
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => {
-                crate::lifecycle::migrate::run_mysql_migrations(mysql.pool()).await?;
-                Ok(true)
-            }
             #[cfg(feature = "sqlite")]
             Self::Sqlite(sqlite) => {
                 crate::lifecycle::migrate::run_sqlite_migrations(sqlite.pool()).await?;
@@ -342,16 +314,6 @@ impl<'a> SqlBackendRef<'a> {
 
     async fn run_database_backfills(self) -> Result<bool, MigrateError> {
         match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => {
-                crate::lifecycle::backfill::run_backfills(postgres.pool()).await?;
-                Ok(true)
-            }
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => {
-                crate::lifecycle::backfill::run_mysql_backfills(mysql.pool()).await?;
-                Ok(true)
-            }
             #[cfg(feature = "sqlite")]
             Self::Sqlite(sqlite) => {
                 crate::lifecycle::backfill::run_sqlite_backfills(sqlite.pool()).await?;
@@ -520,18 +482,6 @@ impl<'a> SqlBackendRef<'a> {
         description: Option<&str>,
     ) -> Result<StoredSystemConfigEntry, DataLayerError> {
         match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => {
-                postgres
-                    .upsert_system_config_entry(key, value, description)
-                    .await
-            }
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => {
-                mysql
-                    .upsert_system_config_entry(key, value, description)
-                    .await
-            }
             #[cfg(feature = "sqlite")]
             Self::Sqlite(sqlite) => {
                 sqlite
@@ -598,28 +548,6 @@ impl<'a> SqlBackendRef<'a> {
         mode: AdminSystemUsageAggregateImportMode,
     ) -> Result<AdminSystemUsageAggregateImportSummary, DataLayerError> {
         match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => {
-                postgres
-                    .import_admin_system_usage_aggregates(
-                        snapshot,
-                        user_id_map,
-                        api_key_id_map,
-                        mode,
-                    )
-                    .await
-            }
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => {
-                mysql
-                    .import_admin_system_usage_aggregates(
-                        snapshot,
-                        user_id_map,
-                        api_key_id_map,
-                        mode,
-                    )
-                    .await
-            }
             #[cfg(feature = "sqlite")]
             Self::Sqlite(sqlite) => {
                 sqlite

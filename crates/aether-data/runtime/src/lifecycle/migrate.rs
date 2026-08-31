@@ -15,24 +15,8 @@ pub use types::PendingMigrationInfo;
 #[cfg(any(feature = "mysql", feature = "sqlite"))]
 use sqlx::migrate::MigrateError;
 
-#[cfg(feature = "mysql")]
-pub async fn run_mysql_migrations(pool: &sqlx::MySqlPool) -> Result<(), MigrateError> {
-    mysql::run_migrations(pool).await
-}
 
-#[cfg(feature = "mysql")]
-pub async fn pending_mysql_migrations(
-    pool: &sqlx::MySqlPool,
-) -> Result<Vec<PendingMigrationInfo>, MigrateError> {
-    mysql::pending_migrations(pool).await
-}
 
-#[cfg(feature = "mysql")]
-pub async fn prepare_mysql_database_for_startup(
-    pool: &sqlx::MySqlPool,
-) -> Result<Vec<PendingMigrationInfo>, MigrateError> {
-    mysql::prepare_database_for_startup(pool).await
-}
 
 #[cfg(feature = "sqlite")]
 pub async fn run_sqlite_migrations(pool: &sqlx::SqlitePool) -> Result<(), MigrateError> {

@@ -18,14 +18,6 @@ mod sqlite;
 #[cfg(all(test, feature = "postgres", feature = "mysql", feature = "sqlite"))]
 mod tests;
 
-#[cfg(feature = "mysql")]
-pub use mysql::{
-    export_mysql_core_jsonl, export_mysql_jsonl, import_mysql_jsonl, import_mysql_plan,
-};
-#[cfg(feature = "postgres")]
-pub use postgres::{
-    export_postgres_core_jsonl, export_postgres_jsonl, import_postgres_jsonl, import_postgres_plan,
-};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
     export_sqlite_core_jsonl, export_sqlite_jsonl, import_sqlite_jsonl, import_sqlite_plan,
@@ -483,24 +475,6 @@ struct SchemaCopyColumn {
     postgres: PostgresImportColumn,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(all(feature = "postgres", feature = "sqlite"))]
-struct SchemaCopyTable {
-    table_name: String,
-    columns: Vec<SchemaCopyColumn>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(feature = "postgres")]
-struct PostgresImportColumn {
-    data_type: String,
-    udt_name: String,
-    is_nullable: bool,
-    has_default: bool,
-}
-
-#[cfg(feature = "postgres")]
-type PostgresImportColumns = BTreeMap<String, PostgresImportColumn>;
 #[cfg(any(feature = "mysql", feature = "sqlite"))]
 type ImportColumnNames = BTreeSet<String>;
 
@@ -665,20 +639,6 @@ fn normalize_imported_binary(
     }
 }
 
-#[cfg(feature = "postgres")]
-fn postgres_bytea_json_value(column_name: &str, value: &Value) -> Result<Value, DataLayerError> {
-    let Some(bytes) = normalize_imported_binary("postgres", column_name, value)? else {
-        return Ok(Value::Null);
-    };
-    let mut encoded = String::with_capacity(2 + bytes.len() * 2);
-    encoded.push_str("\\x");
-    for byte in bytes {
-        use std::fmt::Write as _;
-        write!(&mut encoded, "{byte:02x}")
-            .map_err(|err| DataLayerError::UnexpectedValue(err.to_string()))?;
-    }
-    Ok(Value::String(encoded))
-}
 
 pub fn encode_jsonl(records: &[DataExportRecord]) -> Result<String, DataLayerError> {
     validate_export_records(records)?;
@@ -844,26 +804,6 @@ pub async fn export_database_jsonl(
                 export_sqlite_jsonl(&pool, domains, created_at_unix_secs).await
             }
         }
-        #[cfg(feature = "mysql")]
-        DatabaseDriver::Mysql => {
-            let pool = crate::driver::mysql::MysqlPoolFactory::new(database)?.connect_lazy()?;
-            if domains.is_empty() {
-                export_mysql_core_jsonl(&pool, created_at_unix_secs).await
-            } else {
-                export_mysql_jsonl(&pool, domains, created_at_unix_secs).await
-            }
-        }
-        #[cfg(feature = "postgres")]
-        DatabaseDriver::Postgres => {
-            let pool =
-                crate::driver::postgres::PostgresPoolFactory::new(database.to_postgres_config()?)?
-                    .connect_lazy()?;
-            if domains.is_empty() {
-                export_postgres_core_jsonl(&pool, created_at_unix_secs).await
-            } else {
-                export_postgres_jsonl(&pool, domains, created_at_unix_secs).await
-            }
-        }
         #[cfg(not(feature = "sqlite"))]
         DatabaseDriver::Sqlite => Err(DataLayerError::InvalidInput(
             "SQLite driver is not enabled for aether-data".to_string(),
@@ -888,18 +828,6 @@ pub async fn import_database_jsonl(
         DatabaseDriver::Sqlite => {
             let pool = crate::driver::sqlite::SqlitePoolFactory::new(database)?.connect_lazy()?;
             import_sqlite_jsonl(&pool, input).await
-        }
-        #[cfg(feature = "mysql")]
-        DatabaseDriver::Mysql => {
-            let pool = crate::driver::mysql::MysqlPoolFactory::new(database)?.connect_lazy()?;
-            import_mysql_jsonl(&pool, input).await
-        }
-        #[cfg(feature = "postgres")]
-        DatabaseDriver::Postgres => {
-            let pool =
-                crate::driver::postgres::PostgresPoolFactory::new(database.to_postgres_config()?)?
-                    .connect_lazy()?;
-            import_postgres_jsonl(&pool, input).await
         }
         #[cfg(not(feature = "sqlite"))]
         DatabaseDriver::Sqlite => Err(DataLayerError::InvalidInput(
@@ -1478,10 +1406,6 @@ fn sqlite_copy_affinity(column: &SqliteCopyColumn) -> SqliteCopyAffinity {
     }
 }
 
-#[cfg(feature = "postgres")]
-fn is_postgres_bytea_column(column: &PostgresImportColumn) -> bool {
-    column.data_type == "bytea" || column.udt_name == "bytea"
-}
 
 #[cfg(all(feature = "postgres", feature = "sqlite"))]
 fn is_postgres_date_column(column: &PostgresImportColumn) -> bool {
@@ -1665,23 +1589,6 @@ fn bind_sqlite_json_value<'q>(
     })
 }
 
-#[cfg(feature = "postgres")]
-pub(super) fn postgres_quote_identifier(identifier: &str) -> Result<String, DataLayerError> {
-    if identifier.trim().is_empty() {
-        return Err(DataLayerError::InvalidInput(
-            "postgres import column name cannot be empty".to_string(),
-        ));
-    }
-    if !identifier
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    {
-        return Err(DataLayerError::InvalidInput(format!(
-            "postgres import column name '{identifier}' contains unsupported characters"
-        )));
-    }
-    Ok(format!(r#""{identifier}""#))
-}
 
 #[cfg(any(feature = "mysql", feature = "sqlite"))]
 fn filter_import_payload(
