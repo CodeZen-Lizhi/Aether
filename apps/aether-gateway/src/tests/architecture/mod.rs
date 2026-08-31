@@ -151,7 +151,8 @@ pub(super) fn read_workspace_file(path: &str) -> String {
         .join("../..")
         .canonicalize()
         .expect("workspace root should resolve");
-    fs::read_to_string(workspace_root.join(path)).expect("source file should be readable")
+    fs::read_to_string(workspace_root.join(path))
+        .unwrap_or_else(|err| panic!("source file should be readable: {path}: {err}"))
 }
 
 pub(super) fn read_workspace_module_tree(path: &str) -> String {
@@ -161,7 +162,8 @@ pub(super) fn read_workspace_module_tree(path: &str) -> String {
         .expect("workspace root should resolve");
     let root_path = workspace_root.join(path);
     let mut contents =
-        vec![fs::read_to_string(&root_path).expect("source file should be readable")];
+        vec![fs::read_to_string(&root_path)
+            .unwrap_or_else(|err| panic!("source file should be readable: {path}: {err}"))];
 
     let module_dir = if root_path.file_name().and_then(|value| value.to_str()) == Some("mod.rs") {
         root_path

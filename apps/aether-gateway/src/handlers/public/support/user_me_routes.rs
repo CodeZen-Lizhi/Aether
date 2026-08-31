@@ -3,27 +3,19 @@ use axum::{body::Body, http, response::Response};
 
 use super::{
     handle_auth_me, handle_users_me_api_key_capabilities_put, handle_users_me_api_key_create,
-    handle_users_me_api_key_delete, handle_users_me_api_key_detail_get,
-    handle_users_me_api_key_install_session_create, handle_users_me_api_key_patch,
+    handle_users_me_api_key_delete, handle_users_me_api_key_detail_get, handle_users_me_api_key_patch,
     handle_users_me_api_key_providers_put, handle_users_me_api_key_update,
     handle_users_me_api_keys_get, handle_users_me_available_models,
     handle_users_me_client_config_get, handle_users_me_delete_other_sessions,
-    handle_users_me_delete_session, handle_users_me_detail_put,
-    handle_users_me_endpoint_status_get, handle_users_me_management_token_create,
-    handle_users_me_management_token_delete, handle_users_me_management_token_detail_get,
-    handle_users_me_management_token_regenerate, handle_users_me_management_token_toggle,
-    handle_users_me_management_token_update, handle_users_me_management_tokens_list,
+    handle_users_me_delete_session, handle_users_me_detail_put, handle_users_me_endpoint_status_get,
     handle_users_me_model_capabilities_get, handle_users_me_model_capabilities_put,
     handle_users_me_password_patch, handle_users_me_preferences_get,
-    handle_users_me_preferences_put, handle_users_me_providers_get, handle_users_me_referral_get,
-    handle_users_me_sessions_get, handle_users_me_update_session, handle_users_me_usage_active_get,
-    handle_users_me_usage_get, handle_users_me_usage_heatmap_get,
-    handle_users_me_usage_interval_timeline_get, users_me_api_key_capabilities_path_matches,
-    users_me_api_key_detail_path_matches, users_me_api_key_install_sessions_path_matches,
-    users_me_api_key_providers_path_matches, users_me_management_token_detail_path_matches,
-    users_me_management_token_regenerate_path_matches,
-    users_me_management_token_toggle_path_matches, users_me_management_tokens_root,
-    users_me_session_detail_path_matches, AppState, GatewayPublicRequestContext,
+    handle_users_me_preferences_put, handle_users_me_providers_get, handle_users_me_sessions_get,
+    handle_users_me_update_session, handle_users_me_usage_active_get, handle_users_me_usage_get,
+    handle_users_me_usage_heatmap_get, handle_users_me_usage_interval_timeline_get,
+    users_me_api_key_capabilities_path_matches, users_me_api_key_detail_path_matches,
+    users_me_api_key_providers_path_matches, users_me_session_detail_path_matches, AppState,
+    GatewayPublicRequestContext,
 };
 
 pub(crate) async fn maybe_build_local_users_me_response(
@@ -70,38 +62,15 @@ pub(crate) async fn maybe_build_local_users_me_response(
         Some("api_keys_list") if request_context.request_path == "/api/users/me/api-keys" => {
             Some(handle_users_me_api_keys_get(state, request_context, headers).await)
         }
-        Some("management_tokens_list")
-            if users_me_management_tokens_root(&request_context.request_path) =>
-        {
-            Some(handle_users_me_management_tokens_list(state, request_context, headers).await)
-        }
         Some("api_keys_create") if request_context.request_path == "/api/users/me/api-keys" => {
             Some(
                 handle_users_me_api_key_create(state, request_context, headers, request_body).await,
-            )
-        }
-        Some("management_tokens_create")
-            if users_me_management_tokens_root(&request_context.request_path) =>
-        {
-            Some(
-                handle_users_me_management_token_create(
-                    state,
-                    request_context,
-                    headers,
-                    request_body,
-                )
-                .await,
             )
         }
         Some("api_key_detail")
             if users_me_api_key_detail_path_matches(&request_context.request_path) =>
         {
             Some(handle_users_me_api_key_detail_get(state, request_context, headers).await)
-        }
-        Some("management_token_detail")
-            if users_me_management_token_detail_path_matches(&request_context.request_path) =>
-        {
-            Some(handle_users_me_management_token_detail_get(state, request_context, headers).await)
         }
         Some("api_key_update")
             if users_me_api_key_detail_path_matches(&request_context.request_path) =>
@@ -110,38 +79,15 @@ pub(crate) async fn maybe_build_local_users_me_response(
                 handle_users_me_api_key_update(state, request_context, headers, request_body).await,
             )
         }
-        Some("management_token_update")
-            if users_me_management_token_detail_path_matches(&request_context.request_path) =>
-        {
-            Some(
-                handle_users_me_management_token_update(
-                    state,
-                    request_context,
-                    headers,
-                    request_body,
-                )
-                .await,
-            )
-        }
         Some("api_key_patch")
             if users_me_api_key_detail_path_matches(&request_context.request_path) =>
         {
             Some(handle_users_me_api_key_patch(state, request_context, headers, request_body).await)
         }
-        Some("management_token_toggle")
-            if users_me_management_token_toggle_path_matches(&request_context.request_path) =>
-        {
-            Some(handle_users_me_management_token_toggle(state, request_context, headers).await)
-        }
         Some("api_key_delete")
             if users_me_api_key_detail_path_matches(&request_context.request_path) =>
         {
             Some(handle_users_me_api_key_delete(state, request_context, headers).await)
-        }
-        Some("management_token_delete")
-            if users_me_management_token_detail_path_matches(&request_context.request_path) =>
-        {
-            Some(handle_users_me_management_token_delete(state, request_context, headers).await)
         }
         Some("api_key_providers_update")
             if users_me_api_key_providers_path_matches(&request_context.request_path) =>
@@ -169,24 +115,6 @@ pub(crate) async fn maybe_build_local_users_me_response(
                 .await,
             )
         }
-        Some("api_key_install_session_create")
-            if users_me_api_key_install_sessions_path_matches(&request_context.request_path) =>
-        {
-            Some(
-                handle_users_me_api_key_install_session_create(
-                    state,
-                    request_context,
-                    headers,
-                    request_body,
-                )
-                .await,
-            )
-        }
-        Some("management_token_regenerate")
-            if users_me_management_token_regenerate_path_matches(&request_context.request_path) =>
-        {
-            Some(handle_users_me_management_token_regenerate(state, request_context, headers).await)
-        }
         Some("usage") if request_context.request_path == "/api/users/me/usage" => {
             Some(handle_users_me_usage_get(state, request_context, headers).await)
         }
@@ -211,9 +139,6 @@ pub(crate) async fn maybe_build_local_users_me_response(
         }
         Some("preferences") if request_context.request_path == "/api/users/me/preferences" => {
             Some(handle_users_me_preferences_get(state, request_context, headers).await)
-        }
-        Some("referral") if request_context.request_path == "/api/users/me/referral" => {
-            Some(handle_users_me_referral_get(state, request_context, headers).await)
         }
         Some("available_models")
             if request_context.request_path == "/api/users/me/available-models" =>

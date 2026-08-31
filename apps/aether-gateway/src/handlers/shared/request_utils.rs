@@ -228,9 +228,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 )
                 | (Some("endpoints_manage"), http::Method::PUT, Some("update_key"))
                 | (Some("endpoints_manage"), http::Method::PUT, Some("update_endpoint"))
-                | (Some("modules_manage"), http::Method::PUT, Some("set_enabled"))
-                | (Some("management_tokens_manage"), http::Method::POST, Some("create_token"))
-                | (Some("management_tokens_manage"), http::Method::PUT, Some("update_token"))
                 | (Some("oauth_manage"), http::Method::PUT, Some("upsert_provider"))
                 | (Some("oauth_manage"), http::Method::POST, Some("test_provider"))
                 | (Some("provider_oauth_manage"), http::Method::POST, Some("complete_key_oauth"))
@@ -305,8 +302,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("provider_ops_manage"), http::Method::POST, Some("connect_provider"))
                 | (Some("provider_ops_manage"), http::Method::POST, Some("verify_provider"))
                 | (Some("provider_ops_manage"), http::Method::PUT, Some("save_provider_config"))
-                | (Some("announcements_manage"), http::Method::POST, Some("create_announcement"))
-                | (Some("announcements_manage"), http::Method::PUT, Some("update_announcement"))
                 | (
                     Some("provider_strategy_manage"),
                     http::Method::PUT,
@@ -359,8 +354,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("proxy_nodes_manage"), http::Method::POST, Some("batch_upgrade_nodes"))
                 | (Some("proxy_nodes_manage"), http::Method::PATCH, Some("update_manual_node"))
                 | (Some("proxy_nodes_manage"), http::Method::PUT, Some("update_node_config"))
-                | (Some("security_manage"), http::Method::POST, Some("blacklist_add"))
-                | (Some("security_manage"), http::Method::POST, Some("whitelist_add"))
                 | (Some("users_manage"), http::Method::POST, Some("create_user"))
                 | (Some("users_manage"), http::Method::POST, Some("resolve_user_selection"))
                 | (Some("users_manage"), http::Method::POST, Some("batch_action_users"))

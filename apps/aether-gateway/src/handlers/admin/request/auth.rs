@@ -131,54 +131,6 @@ impl<'a> AdminAppState<'a> {
         self.app.regenerate_management_token_secret(mutation).await
     }
 
-    pub(crate) async fn remove_admin_security_blacklist(
-        &self,
-        ip_address: &str,
-    ) -> Result<bool, GatewayError> {
-        self.app.remove_admin_security_blacklist(ip_address).await
-    }
-
-    pub(crate) async fn add_admin_security_blacklist(
-        &self,
-        ip_address: &str,
-        reason: &str,
-        ttl_seconds: Option<u64>,
-    ) -> Result<bool, GatewayError> {
-        self.app
-            .add_admin_security_blacklist(ip_address, reason, ttl_seconds)
-            .await
-    }
-
-    pub(crate) async fn admin_security_blacklist_stats(
-        &self,
-    ) -> Result<(bool, usize, Option<String>), GatewayError> {
-        self.app.admin_security_blacklist_stats().await
-    }
-
-    pub(crate) async fn list_admin_security_blacklist(
-        &self,
-    ) -> Result<Vec<crate::state::AdminSecurityBlacklistEntry>, GatewayError> {
-        self.app.list_admin_security_blacklist().await
-    }
-
-    pub(crate) async fn add_admin_security_whitelist(
-        &self,
-        ip_address: &str,
-    ) -> Result<bool, GatewayError> {
-        self.app.add_admin_security_whitelist(ip_address).await
-    }
-
-    pub(crate) async fn remove_admin_security_whitelist(
-        &self,
-        ip_address: &str,
-    ) -> Result<bool, GatewayError> {
-        self.app.remove_admin_security_whitelist(ip_address).await
-    }
-
-    pub(crate) async fn list_admin_security_whitelist(&self) -> Result<Vec<String>, GatewayError> {
-        self.app.list_admin_security_whitelist().await
-    }
-
     pub(crate) async fn upsert_ldap_module_config(
         &self,
         config: &aether_data::repository::auth_modules::StoredLdapModuleConfig,

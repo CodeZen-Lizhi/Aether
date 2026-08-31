@@ -7,30 +7,19 @@ use super::{
     AdminWalletRefundRecord, AdminWalletTransactionRecord, AppState, LocalMutationOutcome,
 };
 
-mod announcements;
 mod api_key_exports;
 mod auth;
 mod background_tasks;
 mod billing;
 mod candidate_queries;
 mod gemini_files;
-mod monitoring;
 mod payments;
 mod referrals;
-mod security;
 mod usage_queries;
 mod user_preferences;
 mod wallet;
 
 impl AppState {
-    pub fn has_announcement_data_reader(&self) -> bool {
-        self.data.has_announcement_reader()
-    }
-
-    pub fn has_announcement_data_writer(&self) -> bool {
-        self.data.has_announcement_writer()
-    }
-
     pub fn has_background_task_data_reader(&self) -> bool {
         self.data.has_background_task_reader()
     }

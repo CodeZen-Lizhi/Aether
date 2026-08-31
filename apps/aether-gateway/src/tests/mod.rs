@@ -11,7 +11,6 @@ pub(super) use serde_json::json;
 
 mod ai_execute;
 mod architecture;
-mod async_task;
 mod audit;
 mod concurrency;
 mod control;

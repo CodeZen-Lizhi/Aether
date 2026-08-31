@@ -1,126 +1,20 @@
 use super::{
-    http, json, ldap_module_config_is_valid, module_available_from_env, system_config_bool,
-    system_config_string, AppState, Body, GatewayError, GatewayPublicRequestContext, IntoResponse,
-    Json, Response,
+    http, json, AppState, Body, GatewayError, GatewayPublicRequestContext, IntoResponse, Json,
+    Response,
 };
 
-pub(crate) async fn build_auth_registration_settings_payload(
-    state: &AppState,
-) -> Result<serde_json::Value, GatewayError> {
-    let enable_registration = state
-        .read_system_config_json_value("enable_registration")
-        .await?;
-    let require_email_verification = state
-        .read_system_config_json_value("require_email_verification")
-        .await?;
-    let smtp_host = state.read_system_config_json_value("smtp_host").await?;
-    let smtp_from_email = state
-        .read_system_config_json_value("smtp_from_email")
-        .await?;
-    let password_policy_level_config = state
-        .read_system_config_json_value("password_policy_level")
-        .await?;
-    let turnstile_enabled_config = state
-        .read_system_config_json_value("turnstile_enabled")
-        .await?;
-    let turnstile_site_key_config = state
-        .read_system_config_json_value("turnstile_site_key")
-        .await?;
-    let privacy_enabled_config = state
-        .read_system_config_json_value("registration_privacy_policy_enabled")
-        .await?;
-    let privacy_format_config = state
-        .read_system_config_json_value("registration_privacy_policy_format")
-        .await?;
-    let privacy_content_config = state
-        .read_system_config_json_value("registration_privacy_policy_content")
-        .await?;
-    let privacy_version_config = state
-        .read_system_config_json_value("registration_privacy_policy_version")
-        .await?;
-
-    let email_configured = smtp_host
-        .as_ref()
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .is_some()
-        && smtp_from_email
-            .as_ref()
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .is_some();
-    let enable_registration = system_config_bool(enable_registration.as_ref(), false);
-    let require_email_verification =
-        system_config_bool(require_email_verification.as_ref(), false) && email_configured;
-    let password_policy_level = match system_config_string(password_policy_level_config.as_ref()) {
-        Some(value) if matches!(value.as_str(), "weak" | "medium" | "strong") => value,
-        _ => "weak".to_string(),
-    };
-    let turnstile_enabled = system_config_bool(turnstile_enabled_config.as_ref(), false);
-    let turnstile_site_key = system_config_string(turnstile_site_key_config.as_ref());
-    let privacy_policy_enabled = system_config_bool(privacy_enabled_config.as_ref(), false);
-    let privacy_policy_format = match system_config_string(privacy_format_config.as_ref()) {
-        Some(value) if matches!(value.as_str(), "markdown" | "html") => value,
-        _ => "markdown".to_string(),
-    };
-    let privacy_policy_content =
-        system_config_string(privacy_content_config.as_ref()).unwrap_or_default();
-    let privacy_policy_version =
-        system_config_string(privacy_version_config.as_ref()).unwrap_or_else(|| "1".to_string());
-
-    Ok(json!({
-        "enable_registration": enable_registration,
-        "require_email_verification": require_email_verification,
-        "email_configured": email_configured,
-        "password_policy_level": password_policy_level,
-        "turnstile_enabled": turnstile_enabled,
-        "turnstile_site_key": turnstile_site_key,
-        "turnstile_required_actions": ["send_verification_code", "register"],
-        "privacy_policy": {
-            "enabled": privacy_policy_enabled,
-            "format": privacy_policy_format,
-            "content": privacy_policy_content,
-            "version": privacy_policy_version,
-        },
-    }))
-}
-
 pub(crate) async fn build_auth_settings_payload(
-    state: &AppState,
+    _state: &AppState,
 ) -> Result<serde_json::Value, GatewayError> {
-    let ldap_enabled_config = state
-        .read_system_config_json_value("module.ldap.enabled")
-        .await?;
-    let ldap_config = state.get_ldap_module_config().await?;
-    let ldap_enabled = module_available_from_env("LDAP_AVAILABLE", true)
-        && system_config_bool(ldap_enabled_config.as_ref(), false)
-        && ldap_config_is_enabled(ldap_config.as_ref());
-    let ldap_exclusive = ldap_enabled
-        && ldap_config
-            .as_ref()
-            .map(|config| config.is_exclusive)
-            .unwrap_or(false);
-
     Ok(json!({
-        "local_enabled": !ldap_exclusive,
-        "ldap_enabled": ldap_enabled,
-        "ldap_exclusive": ldap_exclusive,
+        "local_enabled": true,
+        "ldap_enabled": false,
+        "ldap_exclusive": false,
     }))
-}
-
-pub(super) fn ldap_config_is_enabled(
-    config: Option<&aether_data::repository::auth_modules::StoredLdapModuleConfig>,
-) -> bool {
-    config.is_some_and(|config| config.is_enabled) && ldap_module_config_is_valid(config)
 }
 
 const AUTH_ACCESS_TOKEN_DEFAULT_EXPIRATION_HOURS: i64 = 24;
 pub(super) const AUTH_REFRESH_TOKEN_EXPIRATION_DAYS: i64 = 7;
-pub(super) const AUTH_EMAIL_VERIFICATION_PREFIX: &str = "email:verification:";
-pub(super) const AUTH_EMAIL_VERIFIED_PREFIX: &str = "email:verified:";
-pub(super) const AUTH_EMAIL_VERIFIED_TTL_SECS: u64 = 3600;
 
 pub(crate) fn build_auth_json_response(
     status: http::StatusCode,

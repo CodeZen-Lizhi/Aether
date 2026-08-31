@@ -1,5 +1,4 @@
 pub mod core;
-pub mod identity;
 pub mod network;
 pub mod provider;
 

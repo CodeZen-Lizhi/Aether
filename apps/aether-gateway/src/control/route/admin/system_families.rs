@@ -15,73 +15,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin:system",
             false,
         ))
-    } else if method == http::Method::GET && normalized_path == "/api/admin/system/check-update" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "check_update",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::GET && normalized_path == "/api/admin/system/releases" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "releases",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && normalized_path == "/api/admin/system/update-capability"
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "update_capability",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/prepare-update"
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "prepare_update",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/apply-update" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "apply_update",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/rollback" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "rollback",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::GET && normalized_path == "/api/admin/system/update-status" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "update_status",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::GET && normalized_path == "/api/admin/system/update-history" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "update_history",
-            "admin:system",
-            false,
-        ))
     } else if method == http::Method::GET && normalized_path == "/api/admin/system/aws-regions" {
         Some(classified(
             "admin_proxy",
@@ -130,16 +63,7 @@ pub(super) fn classify_admin_system_family_route(
             "admin:system",
             false,
         ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/backups/s3/run"
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "s3_backup_run",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/config/import" {
+        } else if method == http::Method::POST && normalized_path == "/api/admin/system/config/import" {
         Some(classified(
             "admin_proxy",
             "system_manage",

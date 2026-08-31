@@ -641,68 +641,6 @@ async fn provider_quota_exhaustion_transparently_retries_onto_another_key() -> R
 ///
 /// 上游把收到的 `input` 原样回显，所以它回来的就是占位符——这一条同时钉住了两个
 /// 方向：上游不能看到原文，客户端不能看到占位符。
-#[tokio::test]
-async fn redacted_pii_is_restored_before_the_client_sees_a_provider_frame() -> Result<(), BoxError>
-{
-    const CLIENT_EMAIL: &str = "responses.ws.pii@example.com";
-
-    let harness = Harness::start_with_pii_redaction(UpstreamBehavior::EchoInputBack).await?;
-    let mut client = harness.connect().await?;
-
-    client
-        .send(response_create(
-            json!({"input": format!("my mail is {CLIENT_EMAIL}")}),
-        ))
-        .await?;
-
-    let delta = receive_event(&mut client, "response.output_text.delta").await?;
-    let delta_text = delta
-        .get("delta")
-        .and_then(Value::as_str)
-        .ok_or("the provider delta must carry text")?;
-    assert!(
-        delta_text.contains(CLIENT_EMAIL),
-        "the client must receive the restored value: {delta_text}"
-    );
-    assert!(
-        !delta_text.contains("<AETHER:"),
-        "no redaction placeholder may reach the client: {delta_text}"
-    );
-
-    // 请求侧仍然成立：上游只看到占位符，看不到原文。
-    let upstream_events = harness.upstream.observed_events().await;
-    assert_eq!(upstream_events.len(), 1);
-    let upstream_input = upstream_events[0]
-        .get("input")
-        .and_then(Value::as_str)
-        .ok_or("the upstream request must carry input")?;
-    assert!(
-        !upstream_input.contains(CLIENT_EMAIL),
-        "the upstream must never see the raw PII: {upstream_input}"
-    );
-    assert!(
-        upstream_input.contains("<AETHER:EMAIL:"),
-        "the upstream must see the placeholder: {upstream_input}"
-    );
-
-    // 还原只发生在最后一跳：终态照常到达，计费不受影响。
-    let completed = receive_event(&mut client, "response.completed").await?;
-    assert_eq!(
-        completed
-            .pointer("/response/status")
-            .and_then(Value::as_str),
-        Some("completed")
-    );
-    let audits = harness
-        .usage_audits_where(1, "the billed redacted turn", is_billed)
-        .await?;
-    assert_eq!(audits.len(), 1);
-    assert_eq!(audits[0].total_tokens, INPUT_TOKENS + OUTPUT_TOKENS);
-
-    client.close(None).await?;
-    Ok(())
-}
-
 fn is_pending(audit: &StoredRequestUsageAudit) -> bool {
     audit.status.eq_ignore_ascii_case("pending")
 }

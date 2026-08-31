@@ -1,18 +1,16 @@
 use super::{
     build_api_format_health_monitor_payload, build_model_health_monitor_payload,
-    build_public_auth_modules_status_payload, build_public_catalog_models_payload,
+    build_public_catalog_models_payload,
     build_public_catalog_search_models_payload, build_public_providers_payload,
-    build_related_health_monitor_payload, capability_detail_by_name, ldap_module_config_is_valid,
+    build_related_health_monitor_payload, capability_detail_by_name,
     sanitize_public_model_config_for_user, serialize_public_capability, supported_capability_names,
     ApiFormatHealthMonitorOptions, HealthMonitorRelationDimension, ModelHealthMonitorOptions,
     PUBLIC_CAPABILITY_DEFINITIONS,
 };
 use crate::control::GatewayPublicRequestContext;
 use crate::handlers::shared::{
-    decrypt_catalog_secret_with_fallbacks, encrypt_catalog_secret_with_fallbacks,
-    escape_admin_email_template_html, module_available_from_env, query_param_bool,
-    query_param_optional_bool, query_param_value, read_admin_email_template_payload,
-    render_admin_email_template_html, system_config_bool, system_config_string,
+    decrypt_catalog_secret_with_fallbacks, encrypt_catalog_secret_with_fallbacks, query_param_bool,
+    query_param_optional_bool, query_param_value, system_config_bool, system_config_string,
     unix_secs_to_rfc3339,
 };
 use crate::{AppState, GatewayError};
@@ -24,24 +22,16 @@ use axum::Json;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[path = "support/announcements.rs"]
-mod support_announcements;
 #[path = "support/auth.rs"]
 mod support_auth;
 #[path = "support/billing.rs"]
 mod support_billing;
-#[path = "support/ccswitch.rs"]
-mod support_ccswitch;
 #[path = "support/dashboard.rs"]
 mod support_dashboard;
-#[path = "support/install.rs"]
-mod support_install;
 #[path = "support/models.rs"]
 mod support_models;
 #[path = "support/monitoring.rs"]
 mod support_monitoring;
-#[path = "support/oauth.rs"]
-mod support_oauth;
 #[path = "support/payment.rs"]
 mod support_payment;
 #[path = "support/test_connection.rs"]
@@ -51,41 +41,24 @@ mod support_user_me;
 #[path = "support/wallet.rs"]
 mod support_wallet;
 
-pub(crate) use self::support_announcements::maybe_build_local_admin_announcements_response;
 #[cfg(test)]
 pub(crate) use self::support_models::filter_eligible_model_rows;
 pub(crate) use self::support_models::matches_model_mapping_for_models;
 
-use self::support_announcements::{
-    maybe_build_local_announcement_user_response, maybe_build_local_public_announcements_response,
-};
-use self::support_auth::auth_registration::{
-    auth_password_policy_level, validate_auth_register_password,
-};
 use self::support_auth::auth_session::{
     build_auth_wallet_summary_payload, handle_auth_me, resolve_authenticated_local_user,
     AuthenticatedLocalUserContext,
 };
 use self::support_auth::{
-    build_auth_error_response, build_auth_json_response, build_auth_registration_settings_payload,
-    build_auth_settings_payload, extract_client_device_id, maybe_build_local_auth_response,
+    build_auth_error_response, build_auth_json_response, build_auth_settings_payload,
+    extract_client_device_id, maybe_build_local_auth_response,
 };
 use self::support_billing::maybe_build_local_billing_response;
-use self::support_ccswitch::maybe_build_local_ccswitch_response;
 use self::support_dashboard::maybe_build_local_dashboard_response;
-pub(crate) use self::support_install::{
-    base_url_from_request, build_api_key_install_session_response,
-    build_proxy_node_install_session_response, CreateApiKeyInstallSessionRequest,
-};
-use self::support_install::{
-    handle_users_me_api_key_install_session_create, maybe_build_local_install_response,
-    users_me_api_key_install_sessions_path_matches,
-};
 use self::support_models::{
     build_models_auth_error_response, maybe_build_local_models_response, models_api_format,
 };
 use self::support_monitoring::maybe_build_local_user_monitoring_response;
-use self::support_oauth::maybe_build_local_oauth_response;
 use self::support_payment::maybe_build_local_payment_callback_response;
 use self::support_test_connection::maybe_build_local_test_connection_response;
 use self::support_user_me::maybe_build_local_users_me_response;
@@ -139,27 +112,12 @@ pub(crate) async fn maybe_build_local_public_support_response(
         .await;
     }
 
-    if decision.route_family.as_deref() == Some("oauth") {
-        return maybe_build_local_oauth_response(state, request_context, headers, request_body)
-            .await;
-    }
-
     if decision.route_family.as_deref() == Some("dashboard") {
         return Some(maybe_build_local_dashboard_response(state, request_context, headers).await);
     }
 
     if decision.route_family.as_deref() == Some("monitoring_user") {
         return maybe_build_local_user_monitoring_response(state, request_context, headers).await;
-    }
-
-    if decision.route_family.as_deref() == Some("announcement_user") {
-        return maybe_build_local_announcement_user_response(
-            state,
-            request_context,
-            headers,
-            request_body,
-        )
-        .await;
     }
 
     if decision.route_family.as_deref() == Some("wallet") {
@@ -180,20 +138,9 @@ pub(crate) async fn maybe_build_local_public_support_response(
         return Some(build_unhandled_public_support_response(request_context));
     }
 
-    if decision.route_family.as_deref() == Some("ccswitch") {
-        if let Some(response) = maybe_build_local_ccswitch_response(state, request_context).await {
-            return Some(response);
-        }
-        return Some(build_unhandled_public_support_response(request_context));
-    }
-
     if decision.route_family.as_deref() == Some("users_me") {
         return maybe_build_local_users_me_response(state, request_context, headers, request_body)
             .await;
-    }
-
-    if decision.route_family.as_deref() == Some("install") {
-        return maybe_build_local_install_response(state, request_context).await;
     }
 
     if decision.route_family.as_deref() == Some("payment_callback") {
@@ -218,24 +165,12 @@ pub(crate) async fn maybe_build_local_public_support_response(
     }
 
     if decision.route_family.as_deref() == Some("auth_public") {
-        if decision.route_kind.as_deref() == Some("registration_settings")
-            && request_context.request_path == "/api/auth/registration-settings"
-        {
-            let payload = build_auth_registration_settings_payload(state).await.ok()?;
-            return Some(Json(payload).into_response());
-        }
-
         if decision.route_kind.as_deref() == Some("settings")
             && request_context.request_path == "/api/auth/settings"
         {
             let payload = build_auth_settings_payload(state).await.ok()?;
             return Some(Json(payload).into_response());
         }
-    }
-
-    if decision.route_family.as_deref() == Some("announcements") {
-        return maybe_build_local_public_announcements_response(state, request_context, headers)
-            .await;
     }
 
     if decision.route_family.as_deref() == Some("public_catalog") {
@@ -635,15 +570,6 @@ pub(crate) async fn maybe_build_local_public_support_response(
                 }))
                 .into_response(),
             );
-        }
-    }
-
-    if decision.route_family.as_deref() == Some("modules") {
-        if decision.route_kind.as_deref() == Some("auth_status")
-            && request_context.request_path == "/api/modules/auth-status"
-        {
-            let payload = build_public_auth_modules_status_payload(state).await.ok()?;
-            return Some(Json(payload).into_response());
         }
     }
 

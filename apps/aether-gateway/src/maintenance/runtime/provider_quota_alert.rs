@@ -11,10 +11,6 @@ use tracing::warn;
 use crate::admin_api::{
     admin_provider_ops_local_action_response, store_admin_provider_ops_balance_cache, AdminAppState,
 };
-use crate::important_notification::{
-    important_notification_dispatch_ready_for_item, send_important_notification_for_item,
-    ImportantNotification, PROVIDER_QUOTA_ALERT_ITEM_KEY,
-};
 use crate::{AppState, GatewayError};
 
 use super::PROVIDER_QUOTA_ALERT_CONCURRENCY;
@@ -76,16 +72,6 @@ pub(crate) async fn perform_provider_quota_alert_once(
             failed: 0,
         });
     }
-    if !important_notification_dispatch_ready_for_item(state, PROVIDER_QUOTA_ALERT_ITEM_KEY).await?
-    {
-        return Ok(ProviderQuotaAlertRunSummary {
-            checked: 0,
-            alerted: 0,
-            skipped: 0,
-            failed: 0,
-        });
-    }
-
     let now_unix_secs = now_unix_secs();
     let targets = select_provider_quota_alert_targets(state, now_unix_secs).await?;
     if targets.is_empty() {
@@ -225,49 +211,15 @@ async fn run_provider_quota_alert_for_provider(
     };
 
     if should_notify {
-        let notification = build_provider_quota_alert_notification(
-            &target.provider,
-            total_available,
-            target.config.threshold_amount,
+        warn!(
+            provider_id = %provider_id,
+            available = %total_available,
+            threshold = %target.config.threshold_amount,
+            "provider quota alert threshold reached"
         );
-        let variables = provider_quota_alert_notification_variables(
-            &target.provider,
-            total_available,
-            target.config.threshold_amount,
-        );
-        let report = send_important_notification_for_item(
-            state,
-            PROVIDER_QUOTA_ALERT_ITEM_KEY,
-            notification,
-            &variables,
-        )
-        .await;
-        let delivered = match &report {
-            Ok(report) if report.success => true,
-            Ok(report) => {
-                warn!(
-                    provider_id = %provider_id,
-                    report = ?report,
-                    "provider quota alert notification did not reach any channel"
-                );
-                false
-            }
-            Err(err) => {
-                warn!(
-                    provider_id = %provider_id,
-                    error = ?err,
-                    "provider quota alert notification failed"
-                );
-                false
-            }
-        };
-        if delivered {
-            next.last_notified_at = Some(now_unix_secs);
-            write_quota_alert_runtime_state(state, &provider_id, &next).await;
-            return ProviderQuotaAlertStatus::Alerted;
-        }
+        next.last_notified_at = Some(now_unix_secs);
         write_quota_alert_runtime_state(state, &provider_id, &next).await;
-        return ProviderQuotaAlertStatus::Failed;
+        return ProviderQuotaAlertStatus::Alerted;
     }
 
     write_quota_alert_runtime_state(state, &provider_id, &next).await;
@@ -344,40 +296,6 @@ fn value_as_f64(value: &Value) -> Option<f64> {
             .as_str()
             .and_then(|raw| raw.trim().parse::<f64>().ok())
     })
-}
-
-fn build_provider_quota_alert_notification(
-    provider: &StoredProviderCatalogProvider,
-    total_available: f64,
-    threshold_amount: f64,
-) -> ImportantNotification {
-    let title = format!("提供商额度提醒：{}", provider.name);
-    let body = format!(
-        "提供商 `{}` 当前剩余额度为 `{:.4}`，已低于或等于提醒阈值 `{:.4}`。\n\nProvider ID: `{}`",
-        provider.name, total_available, threshold_amount, provider.id
-    );
-    let text_body = format!(
-        "提供商 {} 当前剩余额度为 {:.4}，已低于或等于提醒阈值 {:.4}。\n\nProvider ID: {}",
-        provider.name, total_available, threshold_amount, provider.id
-    );
-    ImportantNotification {
-        title,
-        markdown_body: body,
-        text_body,
-    }
-}
-
-fn provider_quota_alert_notification_variables(
-    provider: &StoredProviderCatalogProvider,
-    total_available: f64,
-    threshold_amount: f64,
-) -> Vec<(&'static str, String)> {
-    vec![
-        ("provider_name", provider.name.clone()),
-        ("provider_id", provider.id.clone()),
-        ("total_available", format!("{total_available:.4}")),
-        ("threshold_amount", format!("{threshold_amount:.4}")),
-    ]
 }
 
 async fn read_quota_alert_runtime_state(

@@ -24,32 +24,11 @@ use axum::{
     response::Response,
 };
 
-pub(crate) async fn maybe_build_local_admin_security_response(
-    state: &AdminAppState<'_>,
-    request_context: &AdminRequestContext<'_>,
-    request_body: Option<&Bytes>,
-) -> Result<Option<Response<Body>>, GatewayError> {
-    crate::handlers::admin::maybe_build_local_admin_security_response(
-        state,
-        request_context,
-        request_body,
-    )
-    .await
-}
-
 pub(crate) async fn build_admin_endpoint_health_status_payload(
     state: &AdminAppState<'_>,
     lookback_hours: u64,
 ) -> Option<serde_json::Value> {
     crate::handlers::admin::build_admin_endpoint_health_status_payload(state, lookback_hours).await
-}
-
-pub(crate) async fn maybe_build_local_admin_video_tasks_response(
-    state: &AdminAppState<'_>,
-    request_context: &AdminRequestContext<'_>,
-) -> Result<Option<Response<Body>>, GatewayError> {
-    crate::handlers::admin::maybe_build_local_admin_video_tasks_response(state, request_context)
-        .await
 }
 
 pub(crate) async fn maybe_build_local_admin_usage_response(

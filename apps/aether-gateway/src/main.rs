@@ -2096,20 +2096,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     state.bootstrap_admin_from_env().await?;
-    match state.prewarm_chat_pii_redaction_runtime_config().await {
-        Ok(enabled) => {
-            info!(
-                chat_pii_redaction_enabled = enabled,
-                "prewarmed chat pii redaction runtime config"
-            );
-        }
-        Err(err) => {
-            warn!(
-                error = %err,
-                "failed to prewarm chat pii redaction runtime config"
-            );
-        }
-    }
     match prewarm_direct_h2c_sender_cache_from_env_for_startup().await {
         Ok(Some(report)) => {
             if report.failed_targets > 0 {

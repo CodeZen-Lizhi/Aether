@@ -1,7 +1,6 @@
 mod admin_proxy;
 mod api_keys;
 mod catalog;
-mod email_templates;
 mod external_models;
 mod normalize;
 mod payloads;
@@ -30,11 +29,6 @@ pub(crate) use self::catalog::{
     provider_key_health_summary_at, provider_key_status_snapshot_payload,
     sync_provider_key_oauth_status_snapshot, sync_provider_key_quota_status_snapshot,
     take_secret_prefix, take_secret_suffix,
-};
-pub(crate) use self::email_templates::{
-    admin_email_template_definition, admin_email_template_html_key,
-    admin_email_template_subject_key, escape_admin_email_template_html,
-    read_admin_email_template_payload, render_admin_email_template_html,
 };
 pub(crate) use self::external_models::OFFICIAL_EXTERNAL_MODEL_PROVIDERS;
 pub(crate) use self::normalize::{

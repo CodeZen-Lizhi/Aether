@@ -18,13 +18,11 @@ use axum::{
 };
 use serde_json::json;
 
-mod install_routes;
 mod mutation_routes;
 mod read_routes;
 mod routes;
 mod shared;
 
-use self::install_routes::build_admin_create_api_key_install_session_response;
 use self::mutation_routes::{
     build_admin_create_api_key_response, build_admin_delete_api_key_response,
     build_admin_toggle_api_key_response, build_admin_update_api_key_response,

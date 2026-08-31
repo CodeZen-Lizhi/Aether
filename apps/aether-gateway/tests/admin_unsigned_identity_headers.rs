@@ -25,9 +25,6 @@ async fn public_admin_routes_reject_unsigned_identity_headers() {
                 "/api/admin/endpoints/providers/provider-1/keys",
             ),
             (http::Method::GET, "/api/admin/endpoints/keys/key-1/reveal"),
-            (http::Method::POST, "/api/announcements"),
-            (http::Method::PUT, "/api/announcements/announcement-1"),
-            (http::Method::DELETE, "/api/announcements/announcement-1"),
         ] {
             let mut request = Request::builder()
                 .method(method.clone())

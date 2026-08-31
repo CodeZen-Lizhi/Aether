@@ -1,17 +1,11 @@
 use super::{
-    announcements, auth, billing, endpoint, features, model, observability, provider, referrals,
-    request, routing, system, users,
+    auth, billing, endpoint, model, observability, provider, referrals, request, routing, system,
+    users,
 };
 
 pub(crate) async fn maybe_build_local_admin_response(
     request: request::AdminRouteRequest<'_>,
 ) -> request::AdminRouteResult {
-    if let Some(response) =
-        announcements::maybe_build_local_admin_announcements_response(request).await?
-    {
-        return Ok(Some(response));
-    }
-
     if let Some(response) = model::maybe_build_local_admin_model_response(request).await? {
         return Ok(Some(response));
     }
@@ -45,10 +39,6 @@ pub(crate) async fn maybe_build_local_admin_response(
     }
 
     if let Some(response) = referrals::maybe_build_local_admin_referrals_response(request).await? {
-        return Ok(Some(response));
-    }
-
-    if let Some(response) = features::maybe_build_local_admin_features_response(request).await? {
         return Ok(Some(response));
     }
 

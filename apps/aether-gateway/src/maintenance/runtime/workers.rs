@@ -12,12 +12,12 @@ use super::{
     duration_until_next_db_maintenance_run, duration_until_next_stats_aggregation_run,
     duration_until_next_stats_hourly_aggregation_run, maintenance_timezone, parse_hhmm_time,
     perform_oauth_token_refresh_once, perform_provider_quota_alert_once, provider_checkin_schedule,
-    run_audit_cleanup_once, run_db_maintenance_once, run_gemini_file_mapping_cleanup_once,
+    run_db_maintenance_once, run_gemini_file_mapping_cleanup_once,
     run_pending_cleanup_once, run_pool_monitor_once, run_provider_checkin_once,
     run_proxy_node_metrics_cleanup_once, run_proxy_node_stale_cleanup_once,
     run_proxy_upgrade_rollout_once, run_request_candidate_cleanup_once, run_stats_aggregation_once,
     run_stats_hourly_aggregation_once, run_usage_cleanup_once, run_usage_counter_flush_once,
-    run_wallet_daily_usage_aggregation_once, AUDIT_LOG_CLEANUP_INTERVAL,
+    run_wallet_daily_usage_aggregation_once,
     GEMINI_FILE_MAPPING_CLEANUP_INTERVAL, OAUTH_TOKEN_REFRESH_INTERVAL, PENDING_CLEANUP_INTERVAL,
     POOL_MONITOR_INTERVAL, PROVIDER_CHECKIN_DEFAULT_TIME, PROVIDER_QUOTA_ALERT_INTERVAL,
     PROXY_NODE_METRICS_CLEANUP_HOUR, PROXY_NODE_METRICS_CLEANUP_MINUTE,
@@ -110,36 +110,6 @@ fn should_defer_stats_aggregation(
         "gateway stats aggregation deferred for foreground traffic"
     );
     true
-}
-
-pub(crate) fn spawn_audit_cleanup_worker(app: AppState) -> Option<tokio::task::JoinHandle<()>> {
-    if !app.data.has_audit_log_reader() {
-        return None;
-    }
-
-    Some(crate::task_runtime::spawn_singleton_worker(
-        app,
-        crate::task_runtime::TASK_KEY_AUDIT_CLEANUP,
-        |app| async move {
-            let data = app.data;
-            if let Err(err) = run_audit_cleanup_once(&data).await {
-                log_maintenance_worker_failure("audit_cleanup", "startup", &err);
-            }
-            let mut interval = tokio::time::interval(AUDIT_LOG_CLEANUP_INTERVAL);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            interval.tick().await;
-            let mut deferred_since = None;
-            loop {
-                interval.tick().await;
-                if should_defer_for_database_pressure(&data, "audit_cleanup", &mut deferred_since) {
-                    continue;
-                }
-                if let Err(err) = run_audit_cleanup_once(&data).await {
-                    log_maintenance_worker_failure("audit_cleanup", "tick", &err);
-                }
-            }
-        },
-    ))
 }
 
 pub(crate) fn spawn_db_maintenance_worker(app: AppState) -> Option<tokio::task::JoinHandle<()>> {

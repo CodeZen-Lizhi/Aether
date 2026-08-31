@@ -12,8 +12,7 @@ use crate::handlers::shared::{
 };
 
 use super::{
-    auth_password_policy_level, base_url_from_request, build_auth_error_response,
-    resolve_authenticated_local_user, validate_auth_register_password, AppState,
+    base_url_from_request, build_auth_error_response, resolve_authenticated_local_user, AppState,
     GatewayPublicRequestContext,
 };
 
@@ -253,20 +252,6 @@ pub(super) async fn handle_users_me_password_patch(
                 false,
             );
         }
-    }
-
-    let password_policy = match auth_password_policy_level(state).await {
-        Ok(value) => value,
-        Err(err) => {
-            return build_auth_error_response(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("password policy lookup failed: {err:?}"),
-                false,
-            )
-        }
-    };
-    if let Err(detail) = validate_auth_register_password(&payload.new_password, &password_policy) {
-        return build_auth_error_response(http::StatusCode::BAD_REQUEST, detail, false);
     }
 
     let password_hash = match bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST) {

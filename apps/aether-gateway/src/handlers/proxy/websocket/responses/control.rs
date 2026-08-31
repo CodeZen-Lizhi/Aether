@@ -21,11 +21,6 @@ use crate::{AppState, GatewayError};
 
 const LOG_TARGET: &str = "aether_gateway::handlers::proxy::responses_ws";
 
-macro_rules! warn {
-    ($($arg:tt)*) => {
-        tracing::warn!(target: LOG_TARGET, $($arg)*)
-    };
-}
 
 #[derive(Debug, Clone)]
 pub(super) struct ResponsesWebSocketTurnControl {
@@ -40,16 +35,6 @@ pub(super) async fn resolve_responses_websocket_turn_control(
     parts: &http::request::Parts,
     client_event: &Value,
 ) -> Result<ResponsesWebSocketTurnControl, GatewayError> {
-    if state
-        .admin_security_ip_blacklisted(context.client_ip)
-        .await?
-    {
-        return Err(GatewayError::Client {
-            status: StatusCode::FORBIDDEN,
-            message: "The current IP is blocked".to_string(),
-        });
-    }
-
     let mut decision = context.decision.clone();
     let auth_snapshot = if let Some(auth_context) = decision.auth_context.take() {
         let (refreshed, snapshot) = refresh_execution_runtime_auth_context_with_snapshot(
@@ -103,22 +88,7 @@ pub(super) async fn resolve_responses_websocket_turn_control(
         return Err(websocket_auth_rejection_error(rejection));
     }
 
-    let rpm_bypassed = match state.admin_security_ip_whitelisted(context.client_ip).await {
-        Ok(value) => value,
-        Err(error) => {
-            warn!(
-                event_name = "responses_websocket_turn_ip_whitelist_check_failed",
-                log_type = "ops",
-                transport = WEBSOCKET_LOG_TRANSPORT,
-                websocket = true,
-                trace_id = %context.trace_id,
-                client_ip = %context.client_ip,
-                error = ?error,
-                "gateway applied ordinary WebSocket RPM after the live IP whitelist check failed"
-            );
-            false
-        }
-    };
+    let rpm_bypassed = false;
 
     Ok(ResponsesWebSocketTurnControl {
         decision,

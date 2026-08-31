@@ -64,88 +64,6 @@ pub(super) fn classify_public_support_route(
             public_models_auth_signature,
             false,
         ))
-    } else if method == http::Method::POST
-        && matches!(
-            normalized_path,
-            "/api/announcements" | "/api/announcements/"
-        )
-    {
-        Some(classified(
-            "admin_proxy",
-            "announcements_manage",
-            "create_announcement",
-            "admin:announcements",
-            false,
-        ))
-    } else if method == http::Method::PUT
-        && normalized_path.starts_with("/api/announcements/")
-        && normalized_path != "/api/announcements/active"
-        && normalized_path != "/api/announcements/users/me/unread-count"
-        && normalized_path != "/api/announcements/users/me/unread-count/"
-        && !normalized_path.ends_with("/read-status")
-    {
-        Some(classified(
-            "admin_proxy",
-            "announcements_manage",
-            "update_announcement",
-            "admin:announcements",
-            false,
-        ))
-    } else if method == http::Method::DELETE
-        && normalized_path.starts_with("/api/announcements/")
-        && normalized_path != "/api/announcements/active"
-        && normalized_path != "/api/announcements/users/me/unread-count"
-        && normalized_path != "/api/announcements/users/me/unread-count/"
-        && !normalized_path.ends_with("/read-status")
-    {
-        Some(classified(
-            "admin_proxy",
-            "announcements_manage",
-            "delete_announcement",
-            "admin:announcements",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/announcements" | "/api/announcements/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "announcements",
-            "list",
-            "public:announcements",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/announcements/active" | "/api/announcements/active/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "announcements",
-            "active",
-            "public:announcements",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && normalized_path.starts_with("/api/announcements/")
-        && normalized_path != "/api/announcements/active"
-        && normalized_path != "/api/announcements/users/me/unread-count"
-        && normalized_path != "/api/announcements/users/me/unread-count/"
-        && !normalized_path.ends_with("/read-status")
-        && has_single_segment_after_prefix(normalized_path, "/api/announcements/")
-    {
-        Some(classified(
-            "public_support",
-            "announcements",
-            "detail",
-            "public:announcements",
-            false,
-        ))
     } else if method == http::Method::GET
         && matches!(
             normalized_path,
@@ -180,13 +98,9 @@ pub(super) fn classify_public_support_route(
             false,
         ))
     } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/auth/registration-settings" | "/api/auth/settings"
-        )
+        && matches!(normalized_path, "/api/auth/settings")
     {
         let route_kind = match normalized_path {
-            "/api/auth/registration-settings" => "registration_settings",
             "/api/auth/settings" => "settings",
             _ => "settings",
         };
@@ -269,64 +183,7 @@ pub(super) fn classify_public_support_route(
             "user:monitoring",
             false,
         ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/announcements/users/me/unread-count"
-                | "/api/announcements/users/me/unread-count/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "announcement_user",
-            "unread_count",
-            "user:announcements",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/announcements/users/me/required-unread"
-                | "/api/announcements/users/me/required-unread/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "announcement_user",
-            "required_unread",
-            "user:announcements",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && matches!(
-            normalized_path,
-            "/api/announcements/read-all" | "/api/announcements/read-all/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "announcement_user",
-            "read_all",
-            "user:announcements",
-            false,
-        ))
-    } else if method == http::Method::PATCH
-        && normalized_path.starts_with("/api/announcements/")
-        && (normalized_path.ends_with("/read-status") || normalized_path.ends_with("/read-status/"))
-        && has_single_nested_suffix_after_prefix(
-            normalized_path,
-            "/api/announcements/",
-            "read-status",
-        )
-    {
-        Some(classified(
-            "public_support",
-            "announcement_user",
-            "read_status",
-            "user:announcements",
-            false,
-        ))
-    } else if method == http::Method::GET
+        } else if method == http::Method::GET
         && matches!(
             normalized_path,
             "/api/wallet/balance"
@@ -777,15 +634,7 @@ pub(super) fn classify_public_support_route(
             "public:capabilities",
             false,
         ))
-    } else if method == http::Method::GET && normalized_path == "/api/modules/auth-status" {
-        Some(classified(
-            "public_support",
-            "modules",
-            "auth_status",
-            "public:modules",
-            false,
-        ))
-    } else if method == http::Method::GET
+        } else if method == http::Method::GET
         && matches!(
             normalized_path,
             "/" | "/health" | "/v1/health" | "/v1/providers" | "/v1/test-connection"

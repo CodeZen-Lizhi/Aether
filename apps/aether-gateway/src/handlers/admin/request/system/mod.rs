@@ -4,9 +4,7 @@ use crate::GatewayError;
 mod adaptive;
 mod export;
 mod import;
-mod modules;
 mod proxy_nodes;
-mod templates;
 
 const ADMIN_SYSTEM_DATA_EXPORT_VERSION: &str = "1.0";
 
@@ -123,10 +121,4 @@ impl<'a> AdminAppState<'a> {
         self.app.list_proxy_node_events(node_id, limit).await
     }
 
-    pub(crate) async fn read_admin_email_template_payload(
-        &self,
-        template_type: &str,
-    ) -> Result<Option<serde_json::Value>, GatewayError> {
-        crate::handlers::shared::read_admin_email_template_payload(self.app, template_type).await
-    }
 }

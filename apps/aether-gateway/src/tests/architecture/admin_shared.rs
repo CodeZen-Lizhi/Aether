@@ -47,7 +47,6 @@ fn admin_wrapped_state_owns_api_key_and_proxy_capabilities() {
         "pub(crate) fn encryption_key(&self) -> Option<&str>",
         "pub(crate) fn encrypt_catalog_secret_with_fallbacks(&self, secret: &str) -> Option<String>",
         "pub(crate) fn decrypt_catalog_secret_with_fallbacks(",
-        "pub(crate) async fn add_admin_security_blacklist(",
         "pub(crate) async fn list_auth_api_key_snapshots_by_ids(",
         "pub(crate) async fn list_auth_api_key_export_records_by_user_ids(",
         "pub(crate) async fn list_auth_api_key_export_standalone_records_page(",
@@ -73,15 +72,12 @@ fn admin_wrapped_state_owns_api_key_and_proxy_capabilities() {
 
     for path in [
         "apps/aether-gateway/src/handlers/admin/auth/api_keys/mutation_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/oauth_config.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/ldap/builders.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/create.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/update.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/delete.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/toggle_lock.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/list.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/reveal.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/upload/stage.rs",
         "apps/aether-gateway/src/handlers/admin/system/proxy_nodes.rs",
     ] {
         let contents = read_workspace_file(path);
@@ -482,29 +478,6 @@ fn admin_shared_does_not_own_system_core_routes_or_payloads() {
         "handlers/admin/shared/payloads.rs should not own AdminOAuthProviderUpsertRequest"
     );
 
-    let auth_oauth_config =
-        read_workspace_file("apps/aether-gateway/src/handlers/admin/auth/oauth_config.rs");
-    assert!(
-        auth_oauth_config.contains("pub(crate) struct AdminOAuthProviderUpsertRequest"),
-        "auth/oauth_config.rs should own AdminOAuthProviderUpsertRequest"
-    );
-    for pattern in [
-        "pub(crate) fn admin_oauth_provider_type_from_path",
-        "pub(crate) fn admin_oauth_test_provider_type_from_path",
-    ] {
-        assert!(
-            auth_oauth_config.contains(pattern),
-            "auth/oauth_config.rs should own {pattern}"
-        );
-    }
-    assert!(
-        !auth_oauth_config.contains("pub(crate) fn build_proxy_error_response"),
-        "auth/oauth_config.rs should not own build_proxy_error_response"
-    );
-    assert!(
-        !workspace_file_exists("apps/aether-gateway/src/handlers/admin/system/shared/payloads.rs"),
-        "system/shared/payloads.rs should be removed after oauth payload ownership moves to auth"
-    );
 
     let admin_shared_mod =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/shared/mod.rs");
@@ -527,10 +500,8 @@ fn admin_handlers_expose_real_subdomains_without_facade() {
     let admin_mod = read_workspace_file("apps/aether-gateway/src/handlers/admin/mod.rs");
 
     for pattern in [
-        "mod announcements;",
         "pub(super) mod auth;",
         "pub(super) mod endpoint;",
-        "pub(super) mod features;",
         "pub(super) mod observability;",
         "pub(super) mod provider;",
         "pub(super) mod request;",
@@ -544,10 +515,8 @@ fn admin_handlers_expose_real_subdomains_without_facade() {
     }
 
     for forbidden in [
-        "pub(crate) mod announcements;",
         "pub(crate) mod auth;",
         "pub(crate) mod endpoint;",
-        "pub(crate) mod features;",
         "pub(crate) mod observability;",
         "pub(crate) mod provider;",
         "pub(crate) mod system;",
@@ -780,10 +749,8 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
         "pub(crate) async fn maybe_build_local_admin_response(",
         "request::AdminRouteRequest<'_>",
         ") -> request::AdminRouteResult {",
-        "announcements::maybe_build_local_admin_announcements_response(",
         "auth::maybe_build_local_admin_auth_response(",
         "observability::maybe_build_local_admin_observability_response(",
-        "features::maybe_build_local_admin_features_response(",
         "model::maybe_build_local_admin_model_response(",
         "provider::maybe_build_local_admin_provider_response(",
         "system::maybe_build_local_admin_system_response(",
@@ -835,26 +802,14 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
         "pub(crate) fn has_provider_catalog_data_reader(&self) -> bool",
         "pub(crate) fn has_provider_catalog_data_writer(&self) -> bool",
         "pub(crate) fn has_request_candidate_data_reader(&self) -> bool",
-        "pub(crate) fn has_management_token_reader(&self) -> bool",
-        "pub(crate) fn has_management_token_writer(&self) -> bool",
         "pub(crate) fn has_global_model_data_reader(&self) -> bool",
         "pub(crate) fn has_usage_data_reader(&self) -> bool",
         "pub(crate) fn has_auth_module_writer(&self) -> bool",
-        "pub(crate) async fn get_ldap_module_config(",
-        "pub(crate) async fn upsert_ldap_module_config(",
         "pub(crate) async fn count_active_local_admin_users_with_valid_password(",
         "pub(crate) async fn list_oauth_provider_configs(",
         "pub(crate) async fn get_oauth_provider_config(",
         "pub(crate) async fn upsert_oauth_provider_config(",
         "pub(crate) async fn delete_oauth_provider_config(",
-        "pub(crate) async fn get_management_token_with_user(",
-        "pub(crate) async fn delete_management_token(",
-        "pub(crate) async fn remove_admin_security_blacklist(",
-        "pub(crate) async fn admin_security_blacklist_stats(",
-        "pub(crate) async fn list_admin_security_blacklist(",
-        "pub(crate) async fn add_admin_security_whitelist(",
-        "pub(crate) async fn remove_admin_security_whitelist(",
-        "pub(crate) async fn list_admin_security_whitelist(&self) -> Result<Vec<String>, GatewayError>",
         "pub(crate) fn mark_provider_key_rpm_reset(&self, key_id: &str, now_unix_secs: u64)",
         "pub(crate) async fn list_proxy_nodes(",
         "pub(crate) async fn find_proxy_node(",
@@ -889,11 +844,7 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
 #[test]
 fn admin_second_layer_route_seams_use_wrapped_request_types() {
     for file in [
-        "apps/aether-gateway/src/handlers/admin/auth/security.rs",
         "apps/aether-gateway/src/handlers/admin/auth/api_keys/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/ldap/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/ldap/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/oauth_routes.rs",
         "apps/aether-gateway/src/handlers/admin/billing/mod.rs",
         "apps/aether-gateway/src/handlers/admin/billing/collectors/mod.rs",
         "apps/aether-gateway/src/handlers/admin/billing/payments/mod.rs",
@@ -903,9 +854,6 @@ fn admin_second_layer_route_seams_use_wrapped_request_types() {
         "apps/aether-gateway/src/handlers/admin/billing/wallets/routes.rs",
         "apps/aether-gateway/src/handlers/admin/endpoint/health.rs",
         "apps/aether-gateway/src/handlers/admin/endpoint/rpm.rs",
-        "apps/aether-gateway/src/handlers/admin/features/video_tasks/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/features/video_tasks/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/mod.rs",
         "apps/aether-gateway/src/handlers/admin/model/catalog_routes.rs",
         "apps/aether-gateway/src/handlers/admin/model/global_models/routes/core/mod.rs",
         "apps/aether-gateway/src/handlers/admin/observability/stats/mod.rs",
@@ -931,8 +879,6 @@ fn admin_second_layer_route_seams_use_wrapped_request_types() {
         "apps/aether-gateway/src/handlers/admin/system/core/mod.rs",
         "apps/aether-gateway/src/handlers/admin/system/adaptive/mod.rs",
         "apps/aether-gateway/src/handlers/admin/system/adaptive/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/system/management_tokens.rs",
-        "apps/aether-gateway/src/handlers/admin/system/modules.rs",
         "apps/aether-gateway/src/handlers/admin/system/proxy_nodes.rs",
         "apps/aether-gateway/src/handlers/admin/users/routes.rs",
     ] {
@@ -966,11 +912,9 @@ fn admin_second_layer_route_seams_use_wrapped_request_types() {
 #[test]
 fn admin_route_adjacent_owners_use_wrapped_state_types() {
     for file in [
-        "apps/aether-gateway/src/handlers/admin/auth/ldap/builders.rs",
         "apps/aether-gateway/src/handlers/admin/auth/api_keys/shared.rs",
         "apps/aether-gateway/src/handlers/admin/auth/api_keys/mutation_routes.rs",
         "apps/aether-gateway/src/handlers/admin/auth/api_keys/read_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/oauth_config.rs",
         "apps/aether-gateway/src/handlers/admin/billing/collectors/reads.rs",
         "apps/aether-gateway/src/handlers/admin/billing/collectors/writes.rs",
         "apps/aether-gateway/src/handlers/admin/billing/payments/callbacks.rs",
@@ -996,13 +940,11 @@ fn admin_route_adjacent_owners_use_wrapped_state_types() {
         "apps/aether-gateway/src/handlers/admin/users/lifecycle/support.rs",
         "apps/aether-gateway/src/handlers/admin/provider/query/models/mod.rs",
         "apps/aether-gateway/src/handlers/admin/provider/strategy/builders.rs",
-        "apps/aether-gateway/src/handlers/admin/features/video_tasks/builders.rs",
         "apps/aether-gateway/src/handlers/admin/observability/stats/leaderboard.rs",
         "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/reads.rs",
         "apps/aether-gateway/src/handlers/admin/provider/models/payloads.rs",
         "apps/aether-gateway/src/handlers/admin/system/shared/configs.rs",
         "apps/aether-gateway/src/handlers/admin/system/shared/settings.rs",
-        "apps/aether-gateway/src/handlers/admin/system/shared/modules.rs",
         "apps/aether-gateway/src/handlers/admin/system/shared/export/providers.rs",
         "apps/aether-gateway/src/handlers/admin/users/sessions.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/create.rs",
@@ -1011,10 +953,6 @@ fn admin_route_adjacent_owners_use_wrapped_state_types() {
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/reveal.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/toggle_lock.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/update.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/read_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/upload/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/upload/request.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/upload/support.rs",
         "apps/aether-gateway/src/handlers/admin/model/global_models/routes/core/reads.rs",
         "apps/aether-gateway/src/handlers/admin/model/global_models/routes/core/writes.rs",
         "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/start.rs",
@@ -1065,10 +1003,6 @@ fn admin_route_adjacent_owners_use_wrapped_state_types() {
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/reveal.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/toggle_lock.rs",
         "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/update.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/read_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/upload/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/upload/request.rs",
-        "apps/aether-gateway/src/handlers/admin/features/gemini_files/upload/support.rs",
     ] {
         let contents = read_workspace_file(file);
         assert!(

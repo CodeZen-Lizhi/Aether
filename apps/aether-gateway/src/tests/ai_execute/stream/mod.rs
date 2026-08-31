@@ -26,4 +26,3 @@ use super::{
 
 mod decision;
 mod image;
-mod pii_redaction;

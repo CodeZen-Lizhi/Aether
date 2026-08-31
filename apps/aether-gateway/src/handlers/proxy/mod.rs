@@ -41,9 +41,9 @@ use crate::constants::{
     TUNNEL_AFFINITY_OWNER_INSTANCE_HEADER,
 };
 use crate::control::{
-    allows_control_execute_emergency, management_token_permission_keys_from_value,
-    maybe_execute_via_control, request_model_local_rejection, should_buffer_request_for_local_auth,
-    trusted_auth_local_rejection, GatewayControlDecision, GatewayPublicRequestContext,
+    allows_control_execute_emergency, maybe_execute_via_control, request_model_local_rejection,
+    should_buffer_request_for_local_auth, trusted_auth_local_rejection, GatewayControlDecision,
+    GatewayPublicRequestContext,
 };
 use crate::executor::{
     beautify_local_execution_client_error_message, build_local_execution_runtime_miss_context,
@@ -109,8 +109,6 @@ const LOCAL_EXECUTION_PLANNING_TIMEOUT_DETAIL: &str =
     "当前 AI 请求在本地执行规划阶段超时，请稍后重试";
 const EXECUTION_PATH_TUNNEL_AFFINITY_FORWARD: &str = "tunnel_affinity_forward";
 const EXECUTION_PATH_CODEX_LIVE_CALL: &str = "codex_live_call";
-const MANAGEMENT_TOKEN_PREFIX: &str = "ae-";
-const LEGACY_MANAGEMENT_TOKEN_PREFIX: &str = "ae_";
 fn finalize_request_body_buffer_rejection(
     state: &AppState,
     request_context: &GatewayPublicRequestContext,
@@ -211,114 +209,12 @@ fn execution_runtime_candidate_header_value(decision: &GatewayControlDecision) -
     }
 }
 
-fn extract_management_token_bearer(headers: &http::HeaderMap) -> Option<String> {
-    let header = crate::headers::header_value_str(headers, http::header::AUTHORIZATION.as_str())?;
-    let token = header
-        .strip_prefix("Bearer ")
-        .or_else(|| header.strip_prefix("bearer "))?
-        .trim()
-        .to_string();
-    (!token.is_empty()
-        && (token.starts_with(MANAGEMENT_TOKEN_PREFIX)
-            || token.starts_with(LEGACY_MANAGEMENT_TOKEN_PREFIX)))
-    .then_some(token)
-}
-
-fn hash_management_token(value: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(value.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
 fn remote_ip_allowed(allowed_ips: Option<&serde_json::Value>, remote_ip: std::net::IpAddr) -> bool {
     json_ip_rules_allow(allowed_ips, remote_ip)
 }
 
 fn api_key_remote_ip_allowed(ip_rules: Option<&[String]>, remote_ip: std::net::IpAddr) -> bool {
     ip_rules_allow(ip_rules, remote_ip)
-}
-
-async fn maybe_promote_management_token_admin_principal(
-    state: &AppState,
-    client_ip: std::net::IpAddr,
-    headers: &http::HeaderMap,
-    trace_id: &str,
-    request_context: &mut GatewayPublicRequestContext,
-) -> Result<(), GatewayError> {
-    let Some(decision) = request_context.control_decision.as_mut() else {
-        return Ok(());
-    };
-    if decision.route_class.as_deref() != Some("admin_proxy") || decision.admin_principal.is_some()
-    {
-        return Ok(());
-    }
-
-    let Some(token) = extract_management_token_bearer(headers) else {
-        return Ok(());
-    };
-    let token_hash = hash_management_token(&token);
-    let Some(token_with_user) = state
-        .get_management_token_with_user_by_hash(&token_hash)
-        .await?
-    else {
-        return Ok(());
-    };
-
-    if !token_with_user.token.is_active {
-        return Ok(());
-    }
-    if token_with_user
-        .token
-        .expires_at_unix_secs
-        .is_some_and(|value| value <= chrono::Utc::now().timestamp().max(0) as u64)
-    {
-        return Ok(());
-    }
-    if !remote_ip_allowed(token_with_user.token.allowed_ips.as_ref(), client_ip) {
-        return Ok(());
-    }
-    let Some(user) = state.find_user_auth_by_id(&token_with_user.user.id).await? else {
-        return Ok(());
-    };
-    if !user.is_active || user.is_deleted || !crate::roles::can_access_admin_console(&user.role) {
-        return Ok(());
-    }
-    let management_token_permissions = match management_token_permission_keys_from_value(
-        token_with_user.token.permissions.as_ref(),
-    ) {
-        Ok(value) => value,
-        Err(err) => {
-            warn!(
-                trace_id = %trace_id,
-                token_id = %token_with_user.token.id,
-                error = %err,
-                "gateway rejected management token with invalid permissions"
-            );
-            return Ok(());
-        }
-    };
-
-    decision.admin_principal = Some(crate::control::GatewayAdminPrincipalContext {
-        user_id: user.id.clone(),
-        user_role: user.role.clone(),
-        session_id: None,
-        management_token_id: Some(token_with_user.token.id.clone()),
-        management_token_permissions,
-    });
-
-    let remote_ip = client_ip.to_string();
-    if let Err(err) = state
-        .record_management_token_usage(&token_with_user.token.id, Some(remote_ip.as_str()))
-        .await
-    {
-        warn!(
-            trace_id = %trace_id,
-            token_id = %token_with_user.token.id,
-            error = ?err,
-            "gateway failed to record management token usage"
-        );
-    }
-    Ok(())
 }
 
 async fn maybe_forward_public_request_to_tunnel_owner(
@@ -1047,50 +943,6 @@ async fn proxy_request_inner(
     };
     let request_admission_ms = started_at.elapsed().as_millis() as u64;
     observe_gateway_stage_ms("frontdoor_admission", request_admission_ms);
-    match state.admin_security_ip_blacklisted(client_ip).await {
-        Ok(true) => {
-            warn!(
-                event_name = "frontdoor_ip_blacklist_rejected",
-                log_type = "event",
-                trace_id = %trace_id,
-                client_ip = %client_ip,
-                path = %request.uri().path(),
-                "gateway rejected blacklisted client IP"
-            );
-            let response = build_local_http_error_response_with_request_path(
-                &trace_id,
-                None,
-                Some(request.uri().path()),
-                http::StatusCode::FORBIDDEN,
-                "当前 IP 已被禁止访问",
-            )?;
-            return Ok(finalize_gateway_response(
-                &state,
-                response,
-                &trace_id,
-                &remote_addr,
-                request.method(),
-                request
-                    .uri()
-                    .path_and_query()
-                    .map(|value| value.as_str())
-                    .unwrap_or("/"),
-                None,
-                EXECUTION_PATH_LOCAL_AUTH_DENIED,
-                &started_at,
-                request_permit.take(),
-            ));
-        }
-        Ok(false) => {}
-        Err(err) => warn!(
-            event_name = "frontdoor_ip_blacklist_check_failed",
-            log_type = "ops",
-            trace_id = %trace_id,
-            client_ip = %client_ip,
-            error = ?err,
-            "gateway failed open after IP blacklist check error"
-        ),
-    }
     let (mut parts, body) = request.into_parts();
     let redaction_slot = crate::privacy::RedactionSessionSlot::default();
     parts.extensions.insert(redaction_slot.clone());
@@ -1147,14 +999,6 @@ async fn proxy_request_inner(
         &parts.uri,
         &parts.headers,
         &trace_id,
-    )
-    .await?;
-    maybe_promote_management_token_admin_principal(
-        &state,
-        client_ip,
-        &parts.headers,
-        &trace_id,
-        &mut request_context,
     )
     .await?;
     if let Some(auth_context) = request_context
@@ -1504,36 +1348,10 @@ async fn proxy_request_inner(
     }
 
     let rpm_started_at = Instant::now();
-    let ip_whitelist_applies =
-        control_decision.and_then(|decision| decision.route_class.as_deref()) == Some("ai_public");
-    let ip_whitelisted = if ip_whitelist_applies {
-        state.admin_security_ip_whitelisted(client_ip).await
-    } else {
-        Ok(false)
-    };
-    let rate_limit_outcome = match ip_whitelisted {
-        Ok(true) => FrontdoorUserRpmOutcome::NotApplicable,
-        Ok(false) => {
-            state
-                .frontdoor_user_rpm()
-                .check_and_consume(&state, control_decision)
-                .await?
-        }
-        Err(err) => {
-            warn!(
-                event_name = "frontdoor_ip_whitelist_check_failed",
-                log_type = "ops",
-                trace_id = %trace_id,
-                client_ip = %client_ip,
-                error = ?err,
-                "gateway continued with rate limiting after IP whitelist check error"
-            );
-            state
-                .frontdoor_user_rpm()
-                .check_and_consume(&state, control_decision)
-                .await?
-        }
-    };
+    let rate_limit_outcome = state
+        .frontdoor_user_rpm()
+        .check_and_consume(&state, control_decision)
+        .await?;
     observe_gateway_stage_ms("frontdoor_rpm", rpm_started_at.elapsed().as_millis() as u64);
     if let FrontdoorUserRpmOutcome::Rejected(rejection) = &rate_limit_outcome {
         let auth_context = control_decision.and_then(|decision| decision.auth_context.as_ref());

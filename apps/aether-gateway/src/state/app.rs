@@ -415,8 +415,6 @@ pub struct AppState {
     pub(crate) candidate_row_page_cache: Arc<super::super::cache::CandidateRowPageCache>,
     pub(crate) candidate_page_cache: Arc<super::super::cache::CandidatePageCache>,
     pub(crate) candidate_resolved_page_cache: Arc<super::super::cache::CandidateResolvedPageCache>,
-    pub(crate) chat_pii_redaction_runtime_config_cache:
-        crate::privacy::ChatPiiRedactionRuntimeConfigCacheHandle,
     pub(crate) fallback_metrics: Arc<fallback_metrics::GatewayFallbackMetrics>,
     pub(crate) usage_counter_flush_metrics: Arc<UsageCounterFlushRuntimeMetrics>,
     pub(crate) task_supervisor_metrics: TaskSupervisorMetrics,

@@ -4,7 +4,7 @@ use super::{
     build_internal_gateway_header_map, build_internal_gateway_passthrough_payload,
     build_internal_gateway_proxy_public_response, build_internal_gateway_request_parts,
     build_internal_gateway_resolve_payload, build_internal_gateway_uri,
-    build_internal_tunnel_heartbeat_ack, build_management_token_payload, gateway_error_message,
+    build_internal_tunnel_heartbeat_ack, gateway_error_message,
     maybe_build_internal_finalize_video_response, parse_internal_tunnel_heartbeat_request,
     parse_internal_tunnel_node_status_request,
 };

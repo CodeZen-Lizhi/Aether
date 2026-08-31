@@ -43,34 +43,6 @@ pub(crate) async fn maybe_build_local_admin_core_response(
     request_context: &AdminRequestContext<'_>,
     request_body: Option<&Bytes>,
 ) -> Result<Option<Response<Body>>, GatewayError> {
-    if let Some(response) =
-        super::management_tokens::maybe_build_local_admin_management_tokens_response(
-            state,
-            request_context,
-            request_body,
-        )
-        .await?
-    {
-        return Ok(Some(response));
-    }
-    if let Some(response) = crate::handlers::admin::auth::maybe_build_local_admin_oauth_response(
-        state,
-        request_context,
-        request_body,
-    )
-    .await?
-    {
-        return Ok(Some(response));
-    }
-    if let Some(response) = super::modules::maybe_build_local_admin_modules_response(
-        state,
-        request_context,
-        request_body,
-    )
-    .await?
-    {
-        return Ok(Some(response));
-    }
     if let Some(response) = system_routes::maybe_build_local_admin_core_system_response(
         state,
         request_context,

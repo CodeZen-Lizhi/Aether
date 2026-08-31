@@ -162,16 +162,6 @@ pub(crate) async fn prepare_authenticated_ai_websocket(
 ) -> Result<AuthenticatedAiWebSocketUpgradePreparation, GatewayError> {
     let trace_id = extract_or_generate_trace_id(&headers);
     let client_ip = effective_client_ip(&headers, &remote_addr);
-    if state.admin_security_ip_blacklisted(client_ip).await? {
-        return build_local_http_error_response(
-            &trace_id,
-            None,
-            StatusCode::FORBIDDEN,
-            "当前 IP 已被禁止访问",
-        )
-        .map(AuthenticatedAiWebSocketUpgradePreparation::Rejected);
-    }
-
     let request_context = crate::control::resolve_public_request_context(
         &state,
         &Method::GET,

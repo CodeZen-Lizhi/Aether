@@ -53,7 +53,6 @@ use super::super::{control::GatewayControlDecision, error::GatewayError};
 use super::super::{provider_transport, usage};
 
 use crate::maintenance::spawn_account_self_check_worker;
-use crate::maintenance::spawn_audit_cleanup_worker;
 use crate::maintenance::spawn_db_maintenance_worker;
 use crate::maintenance::spawn_fixed_provider_reconciliation_task;
 use crate::maintenance::spawn_gemini_file_mapping_cleanup_worker;
@@ -90,7 +89,6 @@ const AUTH_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &[
     crate::constants::ANTIGRAVITY_BEARER_BRIDGE_CONFIG_KEY,
 ];
 const FRONTDOOR_RPM_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &["rate_limit_per_minute"];
-const CHAT_PII_REDACTION_SYSTEM_CONFIG_PREFIX: &str = "module.chat_pii_redaction.";
 const METRIC_SNAPSHOT_REFRESH_TIMEOUT: Duration = Duration::from_secs(4);
 const METRIC_SNAPSHOT_PREWARM_TIMEOUT: Duration = Duration::from_secs(12);
 // Dependency collection runs behind the stale-while-revalidate snapshot and on the isolated
@@ -124,22 +122,11 @@ fn system_config_key_affects_frontdoor_rpm(key: &str) -> bool {
     FRONTDOOR_RPM_AFFECTING_SYSTEM_CONFIG_KEYS.contains(&key)
 }
 
-fn system_config_key_affects_chat_pii_redaction(key: &str) -> bool {
-    key.trim()
-        .starts_with(CHAT_PII_REDACTION_SYSTEM_CONFIG_PREFIX)
-}
-
 fn system_config_key_affects_provider_transport_snapshot(key: &str) -> bool {
     key.trim() == "enable_format_conversion"
 }
 
 impl AppState {
-    pub async fn prewarm_chat_pii_redaction_runtime_config(&self) -> Result<bool, String> {
-        crate::privacy::read_chat_pii_redaction_runtime_config(self)
-            .await
-            .map(|config| config.enabled)
-            .map_err(|err| format!("{err:?}"))
-    }
 
     fn usage_worker_queue_for(
         runtime_state: &Arc<RuntimeState>,
@@ -372,8 +359,6 @@ impl AppState {
             candidate_resolved_page_cache: Arc::new(
                 crate::cache::CandidateResolvedPageCache::default(),
             ),
-            chat_pii_redaction_runtime_config_cache:
-                crate::privacy::new_chat_pii_redaction_runtime_config_cache(),
             fallback_metrics: Arc::new(fallback_metrics::GatewayFallbackMetrics::default()),
             usage_counter_flush_metrics: Arc::new(
                 crate::maintenance::UsageCounterFlushRuntimeMetrics::default(),
@@ -890,11 +875,6 @@ impl AppState {
         if deleted && system_config_key_affects_frontdoor_rpm(key) {
             self.frontdoor_user_rpm.clear_system_default_cache();
         }
-        if deleted && system_config_key_affects_chat_pii_redaction(key) {
-            crate::privacy::clear_chat_pii_redaction_runtime_config_cache(
-                &self.chat_pii_redaction_runtime_config_cache,
-            );
-        }
         if deleted && system_config_key_affects_provider_transport_snapshot(key) {
             self.clear_provider_transport_snapshot_cache();
         }
@@ -971,11 +951,6 @@ impl AppState {
         }
         if system_config_key_affects_frontdoor_rpm(key) {
             self.frontdoor_user_rpm.clear_system_default_cache();
-        }
-        if system_config_key_affects_chat_pii_redaction(key) {
-            crate::privacy::clear_chat_pii_redaction_runtime_config_cache(
-                &self.chat_pii_redaction_runtime_config_cache,
-            );
         }
         if system_config_key_affects_provider_transport_snapshot(key) {
             self.clear_provider_transport_snapshot_cache();
@@ -2087,10 +2062,6 @@ impl AppState {
             crate::wallet_runtime::spawn_provider_quota_reset_worker(background_state.clone()),
         );
         supervise_worker(
-            crate::task_runtime::TASK_KEY_AUDIT_CLEANUP,
-            spawn_audit_cleanup_worker(background_state.clone()),
-        );
-        supervise_worker(
             crate::task_runtime::TASK_KEY_DB_MAINTENANCE,
             spawn_db_maintenance_worker(background_state.clone()),
         );
@@ -2169,10 +2140,6 @@ impl AppState {
         supervise_worker(
             crate::task_runtime::TASK_KEY_VIDEO_TASK_POLLER,
             spawn_video_task_poller(background_state.clone()),
-        );
-        supervise_worker(
-            crate::backup::worker::S3_BACKUP_WORKER_TASK_KEY,
-            crate::backup::worker::spawn_s3_backup_worker(background_state.clone()),
         );
 
         supervisor

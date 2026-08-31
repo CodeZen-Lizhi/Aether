@@ -89,127 +89,6 @@ fn classifies_public_catalog_site_info_as_public_support_route() {
 }
 
 #[test]
-fn classifies_public_announcement_list_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements?limit=20"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("announcements"));
-    assert_eq!(decision.route_kind.as_deref(), Some("list"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("public:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_announcement_create_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements".parse().expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::POST, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(
-        decision.route_family.as_deref(),
-        Some("announcements_manage")
-    );
-    assert_eq!(decision.route_kind.as_deref(), Some("create_announcement"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_announcement_update_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements/announcement-1"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::PUT, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(
-        decision.route_family.as_deref(),
-        Some("announcements_manage")
-    );
-    assert_eq!(decision.route_kind.as_deref(), Some("update_announcement"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_announcement_delete_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements/announcement-1"
-        .parse()
-        .expect("uri should parse");
-    let decision = classify_control_route(&http::Method::DELETE, &uri, &headers)
-        .expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(
-        decision.route_family.as_deref(),
-        Some("announcements_manage")
-    );
-    assert_eq!(decision.route_kind.as_deref(), Some("delete_announcement"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_public_active_announcements_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements/active"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("announcements"));
-    assert_eq!(decision.route_kind.as_deref(), Some("active"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("public:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_public_announcement_detail_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements/announcement-1"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("announcements"));
-    assert_eq!(decision.route_kind.as_deref(), Some("detail"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("public:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
 fn classifies_dashboard_stats_as_public_support_route() {
     let headers = headers(&[]);
     let uri: Uri = "/api/dashboard/stats".parse().expect("uri should parse");
@@ -259,63 +138,6 @@ fn classifies_wallet_redeem_as_public_support_route() {
         decision.auth_endpoint_signature.as_deref(),
         Some("user:wallet")
     );
-}
-
-#[test]
-fn classifies_announcement_unread_count_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements/users/me/unread-count"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("announcement_user"));
-    assert_eq!(decision.route_kind.as_deref(), Some("unread_count"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("user:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_announcement_read_status_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements/announcement-1/read-status"
-        .parse()
-        .expect("uri should parse");
-    let decision = classify_control_route(&http::Method::PATCH, &uri, &headers)
-        .expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("announcement_user"));
-    assert_eq!(decision.route_kind.as_deref(), Some("read_status"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("user:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_announcement_read_all_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/announcements/read-all"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::POST, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("announcement_user"));
-    assert_eq!(decision.route_kind.as_deref(), Some("read_all"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("user:announcements")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
 }
 
 #[test]
@@ -810,28 +632,6 @@ fn classifies_public_catalog_health_related_as_public_support_route() {
 }
 
 #[test]
-fn classifies_auth_registration_settings_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/auth/registration-settings"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("auth_public"));
-    assert_eq!(
-        decision.route_kind.as_deref(),
-        Some("registration_settings")
-    );
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("public:auth")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
 fn classifies_auth_settings_as_public_support_route() {
     let headers = headers(&[]);
     let uri: Uri = "/api/auth/settings".parse().expect("uri should parse");
@@ -1005,25 +805,6 @@ fn classifies_capabilities_model_as_public_support_route() {
     assert_eq!(
         decision.auth_endpoint_signature.as_deref(),
         Some("public:capabilities")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_modules_auth_status_as_public_support_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/modules/auth-status"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("public_support"));
-    assert_eq!(decision.route_family.as_deref(), Some("modules"));
-    assert_eq!(decision.route_kind.as_deref(), Some("auth_status"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("public:modules")
     );
     assert!(!decision.is_execution_runtime_candidate());
 }

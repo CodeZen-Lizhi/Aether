@@ -39,7 +39,6 @@ use sha2::{Digest, Sha256};
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::handlers::public::build_proxy_node_install_session_response;
 use crate::handlers::shared::generate_gateway_secret_plaintext;
 use crate::LocalMutationOutcome;
 
@@ -466,37 +465,6 @@ pub(crate) async fn maybe_build_local_admin_proxy_nodes_response(
                 "node": build_admin_proxy_node_payload(&node),
             }))
             .into_response(),
-        ));
-    }
-
-    if decision.route_kind.as_deref() == Some("create_proxy_node_install_session")
-        && request_context.method() == http::Method::POST
-    {
-        if !state.app().has_management_token_writer() {
-            return Ok(Some(build_admin_proxy_nodes_data_unavailable_response()));
-        }
-        let input = match parse_json_body::<ProxyNodeInstallSessionCreateRequest>(request_body) {
-            Ok(input) => input,
-            Err(response) => return Ok(Some(response)),
-        };
-        let node_name = match validate_proxy_install_node_name(&input.node_name) {
-            Ok(node_name) => node_name,
-            Err(response) => return Ok(Some(response)),
-        };
-        let raw_token =
-            match create_proxy_install_management_token(state, request_context, &node_name).await {
-                Ok(token) => token,
-                Err(response) => return Ok(Some(response)),
-            };
-        return Ok(Some(
-            build_proxy_node_install_session_response(
-                state.app(),
-                request_context.public(),
-                headers,
-                node_name,
-                raw_token,
-            )
-            .await,
         ));
     }
 

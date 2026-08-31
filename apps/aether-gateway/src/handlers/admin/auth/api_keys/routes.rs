@@ -1,4 +1,3 @@
-use super::install_routes::build_admin_create_api_key_install_session_response;
 use super::mutation_routes::{
     build_admin_create_api_key_response, build_admin_delete_api_key_response,
     build_admin_toggle_api_key_response, build_admin_update_api_key_response,
@@ -56,21 +55,6 @@ pub(super) async fn maybe_build_local_admin_api_keys_routes_response(
         {
             Ok(Some(
                 build_admin_create_api_key_response(state, request_context, request_body).await?,
-            ))
-        }
-        Some("create_api_key_install_session")
-            if request_context.method() == http::Method::POST
-                && path_no_trailing.starts_with("/api/admin/api-keys/")
-                && path_no_trailing.ends_with("/install-sessions") =>
-        {
-            Ok(Some(
-                build_admin_create_api_key_install_session_response(
-                    state,
-                    request_context,
-                    request_headers,
-                    request_body,
-                )
-                .await?,
             ))
         }
         Some("update_api_key")
