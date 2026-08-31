@@ -17,7 +17,7 @@ use aether_data::repository::oauth_providers::{
 use aether_data::repository::pool_scores::InMemoryPoolMemberScoreRepository;
 use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
 use aether_data::repository::users::{StoredUserAuthRecord, UserReadRepository};
-use aether_data::repository::wallet::{StoredWalletSnapshot, WalletLookupKey};
+use aether_data::repository::wallet::StoredWalletSnapshot;
 use aether_data_contracts::repository::global_models::{
     AdminGlobalModelListQuery, AdminProviderModelListQuery, GlobalModelReadRepository,
     StoredPublicGlobalModel,
@@ -1138,27 +1138,6 @@ async fn gateway_imports_admin_system_users_locally_and_persists_data_impl() {
     );
     assert_eq!(imported_groups[0].rate_limit, Some(44));
 
-    let user_wallet = state
-        .find_wallet(WalletLookupKey::UserId(&imported_user.id))
-        .await
-        .expect("user wallet lookup should succeed")
-        .expect("user wallet should exist");
-    assert_eq!(user_wallet.balance, 15.0);
-    assert_eq!(user_wallet.gift_balance, 5.0);
-    assert_eq!(user_wallet.limit_mode, "finite");
-    assert_eq!(user_wallet.currency, "CNY");
-    assert_eq!(user_wallet.status, "locked");
-    assert_eq!(user_wallet.total_recharged, 48.5);
-    assert_eq!(user_wallet.total_consumed, 31.25);
-    assert_eq!(user_wallet.total_refunded, 2.5);
-    assert_eq!(user_wallet.total_adjusted, 7.75);
-    assert_eq!(
-        user_wallet.updated_at_unix_secs,
-        chrono::DateTime::parse_from_rfc3339(user_wallet_updated_at)
-            .expect("user wallet updated_at should parse")
-            .timestamp() as u64
-    );
-
     let user_api_keys = state
         .list_auth_api_key_export_records_by_user_ids(std::slice::from_ref(&imported_user.id))
         .await
@@ -1208,25 +1187,16 @@ async fn gateway_imports_admin_system_users_locally_and_persists_data_impl() {
         "sk-standalone-import-1"
     );
 
-    let standalone_wallet = state
-        .find_wallet(WalletLookupKey::ApiKeyId(&standalone_keys[0].api_key_id))
-        .await
-        .expect("standalone wallet lookup should succeed")
-        .expect("standalone wallet should exist");
-    assert_eq!(standalone_wallet.balance, 20.0);
-    assert_eq!(standalone_wallet.gift_balance, 10.0);
-    assert_eq!(standalone_wallet.limit_mode, "finite");
-    assert_eq!(standalone_wallet.currency, "EUR");
-    assert_eq!(standalone_wallet.status, "disabled");
-    assert_eq!(standalone_wallet.total_recharged, 91.0);
-    assert_eq!(standalone_wallet.total_consumed, 63.25);
-    assert_eq!(standalone_wallet.total_refunded, 4.5);
-    assert_eq!(standalone_wallet.total_adjusted, 13.0);
     assert_eq!(
-        standalone_wallet.updated_at_unix_secs,
-        chrono::DateTime::parse_from_rfc3339(standalone_wallet_updated_at)
-            .expect("standalone wallet updated_at should parse")
-            .timestamp() as u64
+        decrypt_python_fernet_ciphertext(
+            DEVELOPMENT_ENCRYPTION_KEY,
+            standalone_keys[0]
+                .key_encrypted
+                .as_deref()
+                .expect("encrypted standalone api key should exist"),
+        )
+        .expect("standalone api key should decrypt"),
+        "sk-standalone-import-1"
     );
 
     gateway_handle.abort();

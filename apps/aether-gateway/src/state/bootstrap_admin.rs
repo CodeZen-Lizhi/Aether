@@ -1,5 +1,4 @@
 use crate::{AppState, GatewayError};
-use aether_data::repository::wallet::WalletLookupKey;
 use regex::Regex;
 use tracing::{info, warn};
 
@@ -202,29 +201,6 @@ async fn find_existing_bootstrap_user(
     }
 }
 
-async fn ensure_bootstrap_admin_wallet(
-    state: &AppState,
-    user_id: &str,
-) -> Result<(), GatewayError> {
-    if state
-        .find_wallet(WalletLookupKey::UserId(user_id))
-        .await?
-        .is_some()
-    {
-        return Ok(());
-    }
-
-    let created = state
-        .initialize_auth_user_wallet(user_id, 0.0, true)
-        .await?;
-    if created.is_none() {
-        return Err(GatewayError::Internal(
-            "bootstrap admin wallet storage is unavailable".to_string(),
-        ));
-    }
-    Ok(())
-}
-
 impl AppState {
     pub async fn bootstrap_admin_from_env(&self) -> Result<(), std::io::Error> {
         let Some(config) = BootstrapAdminConfig::from_env()
@@ -265,7 +241,6 @@ impl AppState {
                     existing_user.username
                 )));
             }
-            ensure_bootstrap_admin_wallet(self, &existing_user.id).await?;
             info!(
                 event_name = "bootstrap_admin_ready",
                 log_type = "ops",
@@ -310,7 +285,6 @@ impl AppState {
             .await
         {
             Ok(Some(user)) => {
-                ensure_bootstrap_admin_wallet(self, &user.id).await?;
                 info!(
                     event_name = "bootstrap_admin_created",
                     log_type = "ops",
@@ -329,8 +303,7 @@ impl AppState {
                 if let Some(user) =
                     find_existing_bootstrap_user(self, &username, email.as_deref()).await?
                 {
-                    ensure_bootstrap_admin_wallet(self, &user.id).await?;
-                    warn!(
+                        warn!(
                         event_name = "bootstrap_admin_race_resolved",
                         log_type = "ops",
                         username = %user.username,
@@ -350,8 +323,7 @@ impl AppState {
 mod tests {
     use super::BootstrapAdminConfig;
     use crate::AppState;
-    use aether_data::repository::wallet::WalletLookupKey;
-
+    
     fn bootstrap_config() -> BootstrapAdminConfig {
         BootstrapAdminConfig {
             email: Some("admin@example.com".to_string()),
@@ -388,7 +360,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bootstrap_admin_creates_missing_admin_and_wallet() {
+    async fn bootstrap_admin_creates_missing_admin() {
         let state = AppState::new().expect("state should build");
 
         state
@@ -412,32 +384,6 @@ mod tests {
         )
         .expect("password hash should verify"));
 
-        let wallet = state
-            .find_wallet(WalletLookupKey::UserId(&user.id))
-            .await
-            .expect("wallet lookup should succeed")
-            .expect("wallet should exist");
-        assert_eq!(wallet.limit_mode, "unlimited");
-    }
-
-    #[tokio::test]
-    async fn bootstrap_admin_repairs_missing_wallet_for_existing_matching_admin() {
-        let existing = sample_local_admin("admin-user-1", "admin", Some("admin@example.com"));
-        let state = AppState::new()
-            .expect("state should build")
-            .with_auth_users_for_tests([existing.clone()]);
-
-        state
-            .bootstrap_admin_from_config(bootstrap_config())
-            .await
-            .expect("bootstrap should succeed");
-
-        let wallet = state
-            .find_wallet(WalletLookupKey::UserId(&existing.id))
-            .await
-            .expect("wallet lookup should succeed")
-            .expect("wallet should exist");
-        assert_eq!(wallet.limit_mode, "unlimited");
     }
 
     #[tokio::test]

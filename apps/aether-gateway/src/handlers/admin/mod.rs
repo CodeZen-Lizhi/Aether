@@ -1,10 +1,8 @@
 pub(super) mod auth;
-mod billing;
 pub(super) mod endpoint;
 mod model;
 pub(super) mod observability;
 pub(super) mod provider;
-mod referrals;
 mod routing;
 mod system;
 mod users;

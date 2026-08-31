@@ -177,7 +177,6 @@ impl<'a> AdminAppState<'a> {
             .into_iter()
             .map(|totals| (totals.user_id.clone(), totals))
             .collect::<BTreeMap<_, _>>();
-        let user_wallets = self.list_wallet_snapshots_by_user_ids(&user_ids).await?;
         let user_api_keys = self
             .list_auth_api_key_export_records_by_user_ids(&user_ids)
             .await?;
@@ -190,24 +189,7 @@ impl<'a> AdminAppState<'a> {
             .iter()
             .map(|key| key.api_key_id.clone())
             .collect::<Vec<_>>();
-        let standalone_wallets = self
-            .list_wallet_snapshots_by_api_key_ids(&standalone_api_key_ids)
-            .await?;
         let usage_aggregates = self.export_admin_system_usage_aggregates().await?;
-
-        let wallets_by_user_id = user_wallets
-            .into_iter()
-            .filter_map(|wallet| wallet.user_id.clone().map(|user_id| (user_id, wallet)))
-            .collect::<BTreeMap<_, _>>();
-        let wallets_by_api_key_id = standalone_wallets
-            .into_iter()
-            .filter_map(|wallet| {
-                wallet
-                    .api_key_id
-                    .clone()
-                    .map(|api_key_id| (api_key_id, wallet))
-            })
-            .collect::<BTreeMap<_, _>>();
 
         let mut api_keys_by_user_id = BTreeMap::<
             String,
@@ -251,8 +233,7 @@ impl<'a> AdminAppState<'a> {
         let users_data = users
             .iter()
             .map(|user| {
-                let wallet = wallets_by_user_id.get(&user.id);
-                let wallet_payload = serialize_admin_system_users_export_wallet(wallet);
+                let wallet_payload = serialize_admin_system_users_export_wallet(None);
                 let memberships = memberships_by_user_id.remove(&user.id).unwrap_or_default();
                 let group_ids = memberships
                     .iter()
@@ -290,9 +271,7 @@ impl<'a> AdminAppState<'a> {
                     "feature_settings": user.feature_settings.clone(),
                     "group_ids": group_ids,
                     "group_names": group_names,
-                    "unlimited": wallet
-                        .map(|entry| entry.limit_mode.eq_ignore_ascii_case("unlimited"))
-                        .unwrap_or(false),
+                    "unlimited": true,
                     "wallet": wallet_payload,
                     "is_active": user.is_active,
                     "request_count": usage_totals
@@ -309,11 +288,7 @@ impl<'a> AdminAppState<'a> {
         let standalone_keys_data = standalone_api_keys
             .iter()
             .map(|key| {
-                self.build_admin_system_users_export_api_key_payload(
-                    key,
-                    wallets_by_api_key_id.get(&key.api_key_id),
-                    false,
-                )
+                self.build_admin_system_users_export_api_key_payload(key, None, false)
             })
             .collect::<Vec<_>>();
 

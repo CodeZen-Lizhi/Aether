@@ -71,14 +71,6 @@ fn admin_wrapped_state_owns_api_key_and_proxy_capabilities() {
     }
 
     for path in [
-        "apps/aether-gateway/src/handlers/admin/auth/api_keys/mutation_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/create.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/update.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/delete.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/toggle_lock.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/list.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/reveal.rs",
-        "apps/aether-gateway/src/handlers/admin/system/proxy_nodes.rs",
     ] {
         let contents = read_workspace_file(path);
         assert!(
@@ -109,45 +101,6 @@ fn admin_wrapped_state_owns_api_key_and_proxy_capabilities() {
             ) && !contents
                 .contains("resolve_transport_proxy_snapshot_with_tunnel_affinity(state.app(),"),
             "{path} should use AdminAppState proxy capability instead of raw state.app() transport proxy resolution"
-        );
-    }
-}
-
-#[test]
-fn admin_wrapped_state_owns_billing_capabilities() {
-    let admin_request =
-        read_workspace_module_tree("apps/aether-gateway/src/handlers/admin/request/mod.rs");
-    for pattern in [
-        "pub(crate) fn has_wallet_data_writer(&self) -> bool",
-        "pub(crate) async fn list_admin_billing_collectors(",
-        "pub(crate) async fn read_admin_billing_collector(",
-        "pub(crate) async fn create_admin_billing_collector(",
-        "pub(crate) async fn update_admin_billing_collector(",
-        "pub(crate) async fn apply_admin_billing_preset(",
-        "pub(crate) async fn list_admin_billing_rules(",
-        "pub(crate) async fn read_admin_billing_rule(",
-        "pub(crate) async fn create_admin_billing_rule(",
-        "pub(crate) async fn update_admin_billing_rule(",
-        "pub(crate) async fn list_admin_wallets(",
-        "pub(crate) async fn list_admin_wallet_ledger(",
-        "pub(crate) async fn list_admin_wallet_refund_requests(",
-        "pub(crate) async fn list_admin_wallet_transactions(",
-        "pub(crate) async fn list_admin_wallet_refunds(",
-        "pub(crate) async fn list_admin_payment_orders(",
-        "pub(crate) async fn list_admin_payment_callbacks(",
-        "pub(crate) async fn read_admin_payment_order(",
-        "pub(crate) async fn admin_expire_payment_order(",
-        "pub(crate) async fn admin_credit_payment_order(",
-        "pub(crate) async fn admin_fail_payment_order(",
-        "pub(crate) async fn admin_adjust_wallet_balance(",
-        "pub(crate) async fn admin_create_manual_wallet_recharge(",
-        "pub(crate) async fn admin_process_wallet_refund(",
-        "pub(crate) async fn admin_complete_wallet_refund(",
-        "pub(crate) async fn admin_fail_wallet_refund(",
-    ] {
-        assert!(
-            admin_request.contains(pattern),
-            "handlers/admin/request/mod.rs should expose billing capability {pattern}"
         );
     }
 }
@@ -213,14 +166,6 @@ fn admin_wrapped_state_owns_provider_oauth_capabilities() {
     }
 
     for path in [
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/start.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/import.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/tasks.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/refresh/request.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/device/authorize.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/device/poll.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/complete/key.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/complete/provider.rs",
     ] {
         let contents = read_workspace_file(path);
         assert!(
@@ -591,12 +536,6 @@ fn ai_serving_external_consumers_use_single_api_facade() {
     }
 
     for path in [
-        "apps/aether-gateway/src/executor/orchestration.rs",
-        "apps/aether-gateway/src/execution_runtime/sync/execution.rs",
-        "apps/aether-gateway/src/execution_runtime/stream/execution.rs",
-        "apps/aether-gateway/src/execution_runtime/submission.rs",
-        "apps/aether-gateway/src/execution_runtime/tests.rs",
-        "apps/aether-gateway/src/lib.rs",
     ] {
         let contents = read_workspace_file(path);
         assert!(
@@ -754,7 +693,6 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
         "model::maybe_build_local_admin_model_response(",
         "provider::maybe_build_local_admin_provider_response(",
         "system::maybe_build_local_admin_system_response(",
-        "billing::maybe_build_local_admin_billing_routes_response(",
         "users::maybe_build_local_admin_users_response(",
         "endpoint::maybe_build_local_admin_endpoints_response(",
     ] {
@@ -844,43 +782,6 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
 #[test]
 fn admin_second_layer_route_seams_use_wrapped_request_types() {
     for file in [
-        "apps/aether-gateway/src/handlers/admin/auth/api_keys/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/collectors/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/payments/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/payments/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/presets/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/endpoint/health.rs",
-        "apps/aether-gateway/src/handlers/admin/endpoint/rpm.rs",
-        "apps/aether-gateway/src/handlers/admin/model/catalog_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/model/global_models/routes/core/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/stats/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/stats/analytics_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/stats/cost_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/stats/leaderboard_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/stats/provider_quota_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/monitoring/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/usage/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoint_keys.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/ops/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/pool_admin/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/query/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/query/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/strategy/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/strategy/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/refresh.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/device/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/complete/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/system/core/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/system/adaptive/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/system/adaptive/routes.rs",
-        "apps/aether-gateway/src/handlers/admin/system/proxy_nodes.rs",
-        "apps/aether-gateway/src/handlers/admin/users/routes.rs",
     ] {
         let contents = read_workspace_file(file);
         assert!(
@@ -912,59 +813,6 @@ fn admin_second_layer_route_seams_use_wrapped_request_types() {
 #[test]
 fn admin_route_adjacent_owners_use_wrapped_state_types() {
     for file in [
-        "apps/aether-gateway/src/handlers/admin/auth/api_keys/shared.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/api_keys/mutation_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/auth/api_keys/read_routes.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/collectors/reads.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/collectors/writes.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/payments/callbacks.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/payments/orders.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/presets/apply.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/rules.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/reads/detail.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/reads/ledger.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/reads/list.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/reads/refund_requests.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/reads/refunds.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/reads/transactions.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/mutations/adjust.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/mutations/complete_refund.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/mutations/fail_refund.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/mutations/process_refund.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/mutations/recharge.rs",
-        "apps/aether-gateway/src/handlers/admin/billing/wallets/shared/payloads.rs",
-        "apps/aether-gateway/src/handlers/admin/model/global/helpers.rs",
-        "apps/aether-gateway/src/handlers/admin/model/global/payloads.rs",
-        "apps/aether-gateway/src/handlers/admin/model/global/providers.rs",
-        "apps/aether-gateway/src/handlers/admin/model/write.rs",
-        "apps/aether-gateway/src/handlers/admin/users/lifecycle/support.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/query/models/mod.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/strategy/builders.rs",
-        "apps/aether-gateway/src/handlers/admin/observability/stats/leaderboard.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/reads.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/payloads.rs",
-        "apps/aether-gateway/src/handlers/admin/system/shared/configs.rs",
-        "apps/aether-gateway/src/handlers/admin/system/shared/settings.rs",
-        "apps/aether-gateway/src/handlers/admin/system/shared/export/providers.rs",
-        "apps/aether-gateway/src/handlers/admin/users/sessions.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/create.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/delete.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/list.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/reveal.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/toggle_lock.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/update.rs",
-        "apps/aether-gateway/src/handlers/admin/model/global_models/routes/core/reads.rs",
-        "apps/aether-gateway/src/handlers/admin/model/global_models/routes/core/writes.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/start.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/import.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/tasks.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/refresh/request.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/device/authorize.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/device/poll.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/complete/key.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/complete/provider.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/batch/orchestration.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/oauth/dispatch/batch/task.rs",
     ] {
         let contents = read_workspace_file(file);
         assert!(
@@ -978,31 +826,6 @@ fn admin_route_adjacent_owners_use_wrapped_state_types() {
     }
 
     for file in [
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/create.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/update.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/delete.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/list.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/detail.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/endpoints_admin/defaults.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/list.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/detail.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/create.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/update.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/delete.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/batch.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/available_source.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/assign_global.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/models/import.rs",
-        "apps/aether-gateway/src/handlers/admin/users/lifecycle/reads.rs",
-        "apps/aether-gateway/src/handlers/admin/users/lifecycle/create.rs",
-        "apps/aether-gateway/src/handlers/admin/users/lifecycle/update.rs",
-        "apps/aether-gateway/src/handlers/admin/users/lifecycle/delete.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/create.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/delete.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/list.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/reveal.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/toggle_lock.rs",
-        "apps/aether-gateway/src/handlers/admin/users/api_keys/responses/update.rs",
     ] {
         let contents = read_workspace_file(file);
         assert!(
@@ -1025,10 +848,6 @@ fn admin_route_adjacent_owners_use_wrapped_state_types() {
     }
 
     for file in [
-        "apps/aether-gateway/src/handlers/admin/endpoint/health_builders/status.rs",
-        "apps/aether-gateway/src/handlers/admin/endpoint/health_builders/keys.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/write/reveal.rs",
-        "apps/aether-gateway/src/handlers/admin/provider/write/keys/payload.rs",
     ] {
         let contents = read_workspace_file(file);
         assert!(

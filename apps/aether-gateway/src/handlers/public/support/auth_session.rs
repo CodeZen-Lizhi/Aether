@@ -140,34 +140,24 @@ pub(super) fn auth_token_identity_matches_user(
 }
 
 pub(crate) fn build_auth_wallet_summary_payload(
-    wallet: Option<&aether_data::repository::wallet::StoredWalletSnapshot>,
+    _wallet: Option<&aether_data::repository::wallet::StoredWalletSnapshot>,
 ) -> serde_json::Value {
-    let recharge_balance = wallet.map(|value| value.balance).unwrap_or(0.0);
-    let gift_balance = wallet.map(|value| value.gift_balance).unwrap_or(0.0);
-    let limit_mode = wallet
-        .map(|value| value.limit_mode.clone())
-        .unwrap_or_else(|| "finite".to_string());
+    // Wallets were removed from this personal build; every key is effectively unlimited.
     json!({
-        "id": wallet.map(|value| value.id.clone()),
-        "balance": recharge_balance + gift_balance,
-        "recharge_balance": recharge_balance,
-        "gift_balance": gift_balance,
-        "refundable_balance": recharge_balance,
-        "currency": wallet.map(|value| value.currency.clone()).unwrap_or_else(|| "USD".to_string()),
-        "status": wallet.map(|value| value.status.clone()).unwrap_or_else(|| "active".to_string()),
-        "limit_mode": limit_mode,
-        "unlimited": wallet
-            .map(|value| value.limit_mode.eq_ignore_ascii_case("unlimited"))
-            .unwrap_or(false),
-        "total_recharged": wallet.map(|value| value.total_recharged).unwrap_or(0.0),
-        "total_consumed": wallet.map(|value| value.total_consumed).unwrap_or(0.0),
-        "total_refunded": wallet.map(|value| value.total_refunded).unwrap_or(0.0),
-        "total_adjusted": wallet.map(|value| value.total_adjusted).unwrap_or(0.0),
-        "updated_at": wallet
-            .and_then(|value| {
-                chrono::DateTime::<chrono::Utc>::from_timestamp(value.updated_at_unix_secs as i64, 0)
-            })
-            .map(|value| value.to_rfc3339()),
+        "id": serde_json::Value::Null,
+        "balance": 0.0,
+        "recharge_balance": 0.0,
+        "gift_balance": 0.0,
+        "refundable_balance": 0.0,
+        "currency": "USD",
+        "status": "active",
+        "limit_mode": "unlimited",
+        "unlimited": true,
+        "total_recharged": 0.0,
+        "total_consumed": 0.0,
+        "total_refunded": 0.0,
+        "total_adjusted": 0.0,
+        "updated_at": serde_json::Value::Null,
     })
 }
 
@@ -333,11 +323,7 @@ pub(crate) async fn handle_auth_me(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let wallet = state
-        .read_wallet_snapshot_for_auth(&auth.user.id, "", false)
-        .await
-        .ok()
-        .flatten();
+    let wallet: Option<aether_data::repository::wallet::StoredWalletSnapshot> = None;
     let feature_settings = match state.read_user_feature_settings(&auth.user.id).await {
         Ok(value) => value,
         Err(err) => {

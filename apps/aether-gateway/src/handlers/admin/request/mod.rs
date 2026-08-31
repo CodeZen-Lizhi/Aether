@@ -1,5 +1,4 @@
 mod auth;
-mod billing;
 mod capabilities;
 mod context;
 mod endpoint;

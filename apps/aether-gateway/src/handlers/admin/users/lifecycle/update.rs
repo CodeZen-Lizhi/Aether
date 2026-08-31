@@ -287,36 +287,7 @@ pub(in super::super) async fn build_admin_update_user_response(
                 .into_response());
         }
     }
-    if let Some(unlimited) = payload.unlimited {
-        match state
-            .find_wallet(aether_data::repository::wallet::WalletLookupKey::UserId(
-                &user_id,
-            ))
-            .await?
-        {
-            Some(wallet) => {
-                let desired_limit_mode = if unlimited { "unlimited" } else { "finite" };
-                if !wallet.limit_mode.eq_ignore_ascii_case(desired_limit_mode) {
-                    if state
-                        .update_auth_user_wallet_limit_mode(&user_id, desired_limit_mode)
-                        .await?
-                        .is_none()
-                    {
-                        return Ok(build_admin_users_data_unavailable_response());
-                    }
-                }
-            }
-            None => {
-                if state
-                    .initialize_auth_user_wallet(&user_id, 0.0, unlimited)
-                    .await?
-                    .is_none()
-                {
-                    return Ok(build_admin_users_data_unavailable_response());
-                }
-            }
-        }
-    }
+    // Wallets were removed; unlimited flag ignored.
     if let Some(feature_settings) = feature_settings {
         state
             .update_user_feature_settings(&user_id, feature_settings)
@@ -330,14 +301,8 @@ pub(in super::super) async fn build_admin_update_user_response(
         )
             .into_response());
     };
-    let wallet = state
-        .find_wallet(aether_data::repository::wallet::WalletLookupKey::UserId(
-            &user_id,
-        ))
-        .await?;
-    let unlimited = wallet
-        .as_ref()
-        .is_some_and(|wallet| wallet.limit_mode.eq_ignore_ascii_case("unlimited"));
+    // Wallets were removed; users are effectively unlimited.
+    let unlimited = true;
     let export_row = find_admin_export_user(state, &user_id).await?;
     let groups = state.list_user_groups_for_user(&user_id).await?;
     let rate_limit = export_row.as_ref().and_then(|row| row.rate_limit);

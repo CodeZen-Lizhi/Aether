@@ -24,22 +24,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[path = "support/auth.rs"]
 mod support_auth;
-#[path = "support/billing.rs"]
-mod support_billing;
 #[path = "support/dashboard.rs"]
 mod support_dashboard;
 #[path = "support/models.rs"]
 mod support_models;
 #[path = "support/monitoring.rs"]
 mod support_monitoring;
-#[path = "support/payment.rs"]
-mod support_payment;
 #[path = "support/test_connection.rs"]
 mod support_test_connection;
 #[path = "support/user_me.rs"]
 mod support_user_me;
-#[path = "support/wallet.rs"]
-mod support_wallet;
 
 #[cfg(test)]
 pub(crate) use self::support_models::filter_eligible_model_rows;
@@ -53,22 +47,13 @@ use self::support_auth::{
     build_auth_error_response, build_auth_json_response, build_auth_settings_payload,
     extract_client_device_id, maybe_build_local_auth_response,
 };
-use self::support_billing::maybe_build_local_billing_response;
 use self::support_dashboard::maybe_build_local_dashboard_response;
 use self::support_models::{
     build_models_auth_error_response, maybe_build_local_models_response, models_api_format,
 };
 use self::support_monitoring::maybe_build_local_user_monitoring_response;
-use self::support_payment::maybe_build_local_payment_callback_response;
 use self::support_test_connection::maybe_build_local_test_connection_response;
 use self::support_user_me::maybe_build_local_users_me_response;
-use self::support_wallet::{
-    build_wallet_balance_payload_for_auth_scope, build_wallet_balance_payload_for_user,
-    build_wallet_live_today_usage_payload_for_api_key,
-    build_wallet_live_today_usage_payload_for_user, direct_gateway_channels,
-    maybe_build_local_wallet_response, sanitize_wallet_gateway_response,
-    wallet_normalize_optional_string_field,
-};
 
 pub(crate) fn build_unhandled_public_support_response(
     request_context: &GatewayPublicRequestContext,
@@ -120,37 +105,9 @@ pub(crate) async fn maybe_build_local_public_support_response(
         return maybe_build_local_user_monitoring_response(state, request_context, headers).await;
     }
 
-    if decision.route_family.as_deref() == Some("wallet") {
-        if let Some(response) =
-            maybe_build_local_wallet_response(state, request_context, headers, request_body).await
-        {
-            return Some(response);
-        }
-        return Some(build_unhandled_public_support_response(request_context));
-    }
-
-    if decision.route_family.as_deref() == Some("billing") {
-        if let Some(response) =
-            maybe_build_local_billing_response(state, request_context, headers, request_body).await
-        {
-            return Some(response);
-        }
-        return Some(build_unhandled_public_support_response(request_context));
-    }
-
     if decision.route_family.as_deref() == Some("users_me") {
         return maybe_build_local_users_me_response(state, request_context, headers, request_body)
             .await;
-    }
-
-    if decision.route_family.as_deref() == Some("payment_callback") {
-        return maybe_build_local_payment_callback_response(
-            state,
-            request_context,
-            headers,
-            request_body,
-        )
-        .await;
     }
 
     if decision.route_family.as_deref() == Some("models") {

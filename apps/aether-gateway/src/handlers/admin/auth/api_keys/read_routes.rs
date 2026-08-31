@@ -50,17 +50,9 @@ pub(super) async fn build_admin_list_api_keys_response(
         .map(|record| record.api_key_id.clone())
         .collect::<Vec<_>>();
     let wallet_lookup_started_at = Instant::now();
-    let wallets_by_api_key_id = state
-        .list_wallet_snapshots_by_api_key_ids(&api_key_ids)
-        .await?
-        .into_iter()
-        .filter_map(|wallet| {
-            wallet
-                .api_key_id
-                .clone()
-                .map(|api_key_id| (api_key_id, wallet))
-        })
-        .collect::<std::collections::BTreeMap<_, _>>();
+    // Wallets removed: no wallet metadata attached to key payloads.
+    let wallets_by_api_key_id: std::collections::BTreeMap<String, aether_data::repository::wallet::StoredWalletSnapshot> =
+        std::collections::BTreeMap::new();
     let wallet_lookup_ms = wallet_lookup_started_at.elapsed().as_millis() as u64;
 
     let api_keys = paged_records
@@ -149,16 +141,10 @@ pub(super) async fn build_admin_api_key_detail_response(
         ));
     }
 
-    let wallet = state
-        .list_wallet_snapshots_by_api_key_ids(std::slice::from_ref(&api_key_id))
-        .await?
-        .into_iter()
-        .find(|wallet| wallet.api_key_id.as_deref() == Some(api_key_id.as_str()));
-
     Ok(Json(build_admin_api_key_detail_payload(
         state,
         &record,
-        wallet.as_ref(),
+        None,
     ))
     .into_response())
 }

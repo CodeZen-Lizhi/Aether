@@ -10,9 +10,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, info};
 
-use crate::wallet_runtime::{
-    local_rejection_from_wallet_access, resolve_wallet_auth_gate_uncached,
-};
 use crate::{AppState, GatewayError};
 
 use super::super::GatewayControlDecision;
@@ -788,14 +785,12 @@ pub(crate) async fn refresh_execution_runtime_auth_context_with_snapshot(
         return Ok((denied, None));
     };
 
-    let wallet_access = resolve_wallet_auth_gate_uncached(state, &snapshot).await?;
     let refreshed = build_data_backed_auth_context(
         state,
         snapshot.clone(),
         auth_endpoint_signature,
         Some(true),
         auth_context.balance_remaining,
-        wallet_access,
     )
     .await;
     Ok((refreshed, Some(snapshot)))
@@ -962,17 +957,8 @@ pub(super) async fn resolve_data_backed_auth_context(
                 .touch_auth_api_key_last_used_best_effort(&snapshot.api_key_id)
                 .await;
 
-            let wallet_access = resolve_wallet_auth_gate_uncached(state, &snapshot).await?;
             Ok(Some(
-                build_data_backed_auth_context(
-                    state,
-                    snapshot,
-                    signature,
-                    None,
-                    None,
-                    wallet_access,
-                )
-                .await,
+                build_data_backed_auth_context(state, snapshot, signature, None, None).await,
             ))
         }
         Some(GatewayPrincipalCandidate::DeferredBearerToken { raw, carrier }) => {
@@ -1071,14 +1057,12 @@ async fn resolve_antigravity_bearer_bridge_auth_context(
         }));
     };
 
-    let wallet_access = resolve_wallet_auth_gate_uncached(state, &snapshot).await?;
     let auth_context = build_data_backed_auth_context(
         state,
         snapshot,
         auth_endpoint_signature,
         None,
         None,
-        wallet_access,
     )
     .await;
     info!(
@@ -1130,7 +1114,6 @@ async fn resolve_trusted_auth_context(
         }));
     };
 
-    let wallet_access = resolve_wallet_auth_gate_uncached(state, &snapshot).await?;
     Ok(Some(
         build_data_backed_auth_context(
             state,
@@ -1138,7 +1121,6 @@ async fn resolve_trusted_auth_context(
             auth_endpoint_signature,
             trusted_headers.access_allowed,
             trusted_headers.balance_remaining,
-            wallet_access,
         )
         .await,
     ))
@@ -1150,7 +1132,6 @@ async fn build_data_backed_auth_context(
     auth_endpoint_signature: &str,
     header_access_allowed: Option<bool>,
     balance_remaining: Option<f64>,
-    wallet_access: Option<aether_wallet::WalletAccessDecision>,
 ) -> GatewayControlAuthContext {
     let allowed_models = snapshot
         .effective_allowed_models()
@@ -1165,9 +1146,6 @@ async fn build_data_backed_auth_context(
     let key_access_allowed = header_access_allowed
         .map(|value| value && snapshot.currently_usable)
         .unwrap_or(snapshot.currently_usable);
-    let wallet_remaining = wallet_access
-        .as_ref()
-        .and_then(|decision| decision.remaining);
     let requested_provider = auth_endpoint_signature
         .split_once(':')
         .map(|(provider, _)| provider)
@@ -1180,14 +1158,9 @@ async fn build_data_backed_auth_context(
         Some(GatewayLocalAuthRejection::InvalidApiKey)
     } else if locked_api_key {
         Some(GatewayLocalAuthRejection::LockedApiKey)
-    } else if let Some(rejection) = wallet_access
-        .as_ref()
-        .and_then(local_rejection_from_wallet_access)
-    {
-        Some(rejection)
     } else if header_access_allowed.is_some_and(|value| !value) && snapshot.currently_usable {
         Some(GatewayLocalAuthRejection::BalanceDenied {
-            remaining: balance_remaining.or(wallet_remaining),
+            remaining: balance_remaining,
         })
     } else if !requested_provider.is_empty() && !requested_provider_allowed {
         Some(GatewayLocalAuthRejection::ProviderNotAllowed {
@@ -1215,7 +1188,7 @@ async fn build_data_backed_auth_context(
         api_key_name: snapshot.api_key_name.clone(),
         user_id: snapshot.user_id,
         api_key_id: snapshot.api_key_id,
-        balance_remaining: wallet_remaining.or(balance_remaining),
+        balance_remaining,
         access_allowed: key_access_allowed && local_rejection.is_none(),
         user_rate_limit: snapshot.user_rate_limit,
         api_key_rate_limit: snapshot.api_key_rate_limit,
@@ -1821,182 +1794,6 @@ mod tests {
             repository.key_hash_lookup_count(&hash_api_key(api_key)),
             1,
             "concurrent cache misses for one auth context should only load one snapshot"
-        );
-    }
-
-    #[tokio::test]
-    async fn data_backed_auth_context_marks_wallet_denial_as_not_allowed() {
-        let api_key = "sk-test-empty-wallet";
-        let auth_repository = Arc::new(InMemoryAuthApiKeySnapshotRepository::seed(vec![(
-            Some(hash_api_key(api_key)),
-            sample_snapshot("key-empty-wallet", "user-empty-wallet"),
-        )]));
-        let wallet_repository = Arc::new(InMemoryWalletRepository::seed(vec![
-            StoredWalletSnapshot::new(
-                "wallet-empty".to_string(),
-                Some("user-empty-wallet".to_string()),
-                None,
-                0.0,
-                0.0,
-                "finite".to_string(),
-                "USD".to_string(),
-                "active".to_string(),
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                100,
-            )
-            .expect("wallet should build"),
-        ]));
-        let data =
-            GatewayDataState::with_auth_and_wallet_for_tests(auth_repository, wallet_repository);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data);
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            http::header::AUTHORIZATION,
-            format!("Bearer {api_key}").parse().unwrap(),
-        );
-
-        let auth_context = resolve_data_backed_auth_context(
-            &state,
-            &headers,
-            &uri("/v1/chat/completions"),
-            Some("openai:chat"),
-        )
-        .await
-        .expect("resolution should succeed")
-        .expect("auth context should exist");
-
-        assert_eq!(
-            auth_context.local_rejection,
-            Some(GatewayLocalAuthRejection::BalanceDenied {
-                remaining: Some(0.0),
-            })
-        );
-        assert!(!auth_context.access_allowed);
-    }
-
-    #[tokio::test]
-    async fn execution_runtime_auth_context_revalidates_cached_wallet_state() {
-        let api_key = "sk-test-runtime-wallet-cache";
-        let auth_repository = Arc::new(InMemoryAuthApiKeySnapshotRepository::seed(vec![(
-            Some(hash_api_key(api_key)),
-            sample_snapshot("key-runtime-wallet-cache", "user-runtime-wallet-cache"),
-        )]));
-        let wallet_repository = Arc::new(InMemoryWalletRepository::seed(vec![
-            StoredWalletSnapshot::new(
-                "wallet-runtime-cache".to_string(),
-                Some("user-runtime-wallet-cache".to_string()),
-                None,
-                10.0,
-                0.0,
-                "finite".to_string(),
-                "USD".to_string(),
-                "active".to_string(),
-                10.0,
-                0.0,
-                0.0,
-                0.0,
-                100,
-            )
-            .expect("wallet should build"),
-        ]));
-        let data = GatewayDataState::with_auth_and_wallet_for_tests(
-            auth_repository.clone(),
-            Arc::clone(&wallet_repository),
-        );
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data);
-        let decision = GatewayControlDecision::synthetic(
-            "/v1/chat/completions",
-            Some("ai_public".to_string()),
-            Some("openai".to_string()),
-            Some("chat".to_string()),
-            Some("openai:chat".to_string()),
-        );
-        let mut headers = HeaderMap::new();
-        headers.insert("x-api-key", api_key.parse().unwrap());
-
-        let first = resolve_execution_runtime_auth_context(
-            &state,
-            &decision,
-            &headers,
-            &uri("/v1/chat/completions"),
-            "trace-runtime-wallet-cache",
-        )
-        .await
-        .expect("resolution should succeed")
-        .expect("auth context should exist");
-        assert!(first.access_allowed);
-        state
-            .auth_context_cache
-            .set_refresh_interval_for_tests(Duration::from_millis(10));
-
-        wallet_repository
-            .update_auth_user_wallet_snapshot(
-                "user-runtime-wallet-cache",
-                0.0,
-                0.0,
-                "finite",
-                "USD",
-                "active",
-                10.0,
-                10.0,
-                0.0,
-                0.0,
-                Some(101),
-            )
-            .await
-            .expect("wallet update should succeed")
-            .expect("wallet should exist");
-        tokio::time::sleep(Duration::from_millis(15)).await;
-
-        let second = tokio::time::timeout(
-            Duration::from_millis(100),
-            resolve_execution_runtime_auth_context(
-                &state,
-                &decision,
-                &headers,
-                &uri("/v1/chat/completions"),
-                "trace-runtime-wallet-cache",
-            ),
-        )
-        .await
-        .expect("due security refresh should complete")
-        .expect("resolution should succeed")
-        .expect("auth context should exist");
-        assert!(
-            !second.access_allowed,
-            "the due request must observe denial"
-        );
-
-        let cache_key =
-            build_auth_context_cache_key(&headers, &uri("/v1/chat/completions"), "openai:chat")
-                .expect("cache key should exist");
-        let refreshed = get_cached_auth_context(&state, &cache_key)
-            .expect("synchronous refresh should publish the wallet denial");
-        assert_eq!(
-            refreshed.local_rejection,
-            Some(GatewayLocalAuthRejection::BalanceDenied {
-                remaining: Some(0.0),
-            }),
-            "auth refresh should publish current wallet state"
-        );
-        assert!(!refreshed.access_allowed);
-        assert_eq!(
-            auth_repository.key_hash_lookup_count(&hash_api_key(api_key)),
-            2,
-            "initial auth and due refresh must each validate the presented credential"
-        );
-        assert_eq!(
-            auth_repository.snapshot_lookup_count("key-runtime-wallet-cache"),
-            0,
-            "due refresh must not trust the cached user/key mapping"
         );
     }
 

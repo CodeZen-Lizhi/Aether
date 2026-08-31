@@ -65,7 +65,7 @@ pub(super) async fn build_admin_create_api_key_response(
     request_context: &AdminRequestContext<'_>,
     request_body: Option<&axum::body::Bytes>,
 ) -> Result<Response<Body>, GatewayError> {
-    if !state.has_auth_api_key_writer() || !state.has_auth_wallet_write_capability() {
+    if !state.has_auth_api_key_writer() {
         return Ok(build_admin_api_keys_data_unavailable_response());
     }
 
@@ -124,13 +124,6 @@ pub(super) async fn build_admin_create_api_key_response(
             Ok(value) => value,
             Err(detail) => return Ok(build_admin_api_keys_bad_request_response(detail)),
         };
-    let (initial_balance_usd, unlimited_balance) = match normalize_standalone_initial_balance(
-        payload.initial_balance_usd,
-        payload.unlimited_balance,
-    ) {
-        Ok(value) => value,
-        Err(detail) => return Ok(build_admin_api_keys_bad_request_response(detail)),
-    };
     let expires_at_unix_secs =
         match parse_standalone_api_key_expires_at(payload.expires_at.as_deref()) {
             Ok(value) => value,
@@ -183,13 +176,6 @@ pub(super) async fn build_admin_create_api_key_response(
     else {
         return Ok(build_admin_api_keys_data_unavailable_response());
     };
-    let wallet = match state
-        .initialize_auth_api_key_wallet(&created.api_key_id, initial_balance_usd, unlimited_balance)
-        .await?
-    {
-        Some(wallet) => wallet,
-        None => return Ok(build_admin_api_keys_data_unavailable_response()),
-    };
     let created = if feature_settings.is_some() {
         state
             .set_standalone_api_key_feature_settings(&created.api_key_id, feature_settings.clone())
@@ -215,7 +201,7 @@ pub(super) async fn build_admin_create_api_key_response(
             "expires_at": format_optional_unix_secs_iso8601(created.expires_at_unix_secs),
             "auto_delete_on_expiry": created.auto_delete_on_expiry,
             "feature_settings": created.feature_settings,
-            "wallet": serialize_admin_system_users_export_wallet(Some(&wallet)),
+            "wallet": serialize_admin_system_users_export_wallet(None),
             "message": "独立余额Key创建成功，请妥善保存完整密钥，后续将无法查看",
         }))
         .into_response(),
@@ -365,42 +351,6 @@ pub(super) async fn build_admin_update_api_key_response(
         ));
     }
 
-    let mut wallet = state
-        .find_wallet(aether_data::repository::wallet::WalletLookupKey::ApiKeyId(
-            &api_key_id,
-        ))
-        .await?;
-    if field_presence.contains("unlimited_balance") {
-        if !state.has_auth_wallet_write_capability() {
-            return Ok(build_admin_api_keys_data_unavailable_response());
-        }
-        let desired_unlimited = payload.unlimited_balance.unwrap_or(false);
-        let desired_limit_mode = if desired_unlimited {
-            "unlimited"
-        } else {
-            "finite"
-        };
-        wallet = match wallet {
-            Some(existing_wallet)
-                if existing_wallet
-                    .limit_mode
-                    .eq_ignore_ascii_case(desired_limit_mode) =>
-            {
-                Some(existing_wallet)
-            }
-            Some(_) => {
-                state
-                    .update_auth_api_key_wallet_limit_mode(&api_key_id, desired_limit_mode)
-                    .await?
-            }
-            None => {
-                state
-                    .initialize_auth_api_key_wallet(&api_key_id, 0.0, desired_unlimited)
-                    .await?
-            }
-        };
-    }
-
     let Some(updated) = state
         .update_standalone_api_key_basic(
             aether_data::repository::auth::UpdateStandaloneApiKeyBasicRecord {
@@ -437,14 +387,7 @@ pub(super) async fn build_admin_update_api_key_response(
         updated
     };
 
-    if wallet.is_none() {
-        wallet = state
-            .find_wallet(aether_data::repository::wallet::WalletLookupKey::ApiKeyId(
-                &api_key_id,
-            ))
-            .await?;
-    }
-    let mut payload = build_admin_api_key_detail_payload(state, &updated, wallet.as_ref());
+    let mut payload = build_admin_api_key_detail_payload(state, &updated, None);
     payload["message"] = json!("API密钥已更新");
     Ok(attach_admin_audit_response(
         Json(payload).into_response(),

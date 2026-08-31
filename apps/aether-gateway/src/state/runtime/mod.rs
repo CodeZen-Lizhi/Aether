@@ -10,14 +10,10 @@ use super::{
 mod api_key_exports;
 mod auth;
 mod background_tasks;
-mod billing;
 mod candidate_queries;
 mod gemini_files;
-mod payments;
-mod referrals;
 mod usage_queries;
 mod user_preferences;
-mod wallet;
 
 impl AppState {
     pub fn has_background_task_data_reader(&self) -> bool {

@@ -187,7 +187,6 @@ pub(super) fn read_workspace_module_tree(path: &str) -> String {
     contents.join("\n")
 }
 
-mod admin_billing;
 mod admin_model;
 mod admin_observability;
 mod admin_provider;

@@ -186,14 +186,8 @@ pub(in super::super) async fn build_admin_user_batch_action_response(
             continue;
         }
 
-        if let Some(unlimited) = mutation.unlimited {
-            if !apply_batch_user_wallet_limit_mode(state, &item.user_id, unlimited).await? {
-                failures.push(json!({
-                    "user_id": item.user_id,
-                    "reason": "用户钱包不可用",
-                }));
-                continue;
-            }
+        if mutation.unlimited.is_some() {
+            // Wallets were removed from this personal build; unlimited flag ignored.
         }
 
         if mutation.has_auth_user_fields()
@@ -679,34 +673,6 @@ fn batch_role_demotion_failure_reason(
         return Some("不能降级最后一个管理员账户");
     }
     None
-}
-
-async fn apply_batch_user_wallet_limit_mode(
-    state: &AdminAppState<'_>,
-    user_id: &str,
-    unlimited: bool,
-) -> Result<bool, GatewayError> {
-    let desired_limit_mode = if unlimited { "unlimited" } else { "finite" };
-    match state
-        .find_wallet(aether_data::repository::wallet::WalletLookupKey::UserId(
-            user_id,
-        ))
-        .await?
-    {
-        Some(wallet) => {
-            if wallet.limit_mode.eq_ignore_ascii_case(desired_limit_mode) {
-                return Ok(true);
-            }
-            Ok(state
-                .update_auth_user_wallet_limit_mode(user_id, desired_limit_mode)
-                .await?
-                .is_some())
-        }
-        None => Ok(state
-            .initialize_auth_user_wallet(user_id, 0.0, unlimited)
-            .await?
-            .is_some()),
-    }
 }
 
 fn build_admin_user_batch_bad_request_response(detail: String) -> Response<Body> {

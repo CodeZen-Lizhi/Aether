@@ -66,13 +66,11 @@ pub(in super::super) async fn build_admin_list_users_response(
         .collect::<Vec<_>>();
     let (
         auth_rows_result,
-        wallet_rows_result,
         usage_totals_result,
         memberships_result,
         groups_result,
     ) = tokio::join!(
         state.list_user_auth_by_ids(&user_ids),
-        state.list_wallet_snapshots_by_user_ids(&user_ids),
         state.summarize_usage_totals_by_user_ids(&user_ids),
         state.list_user_group_memberships_by_user_ids(&user_ids),
         state.list_user_groups(),
@@ -81,10 +79,7 @@ pub(in super::super) async fn build_admin_list_users_response(
         .into_iter()
         .map(|user| (user.id.clone(), user))
         .collect::<BTreeMap<_, _>>();
-    let wallet_by_user_id = wallet_rows_result?
-        .into_iter()
-        .filter_map(|wallet| wallet.user_id.clone().map(|user_id| (user_id, wallet)))
-        .collect::<BTreeMap<_, _>>();
+    // Wallets removed; all users treated as unlimited.
     let usage_totals_by_user_id = usage_totals_result?
         .into_iter()
         .map(|item| (item.user_id.clone(), item))
@@ -104,9 +99,8 @@ pub(in super::super) async fn build_admin_list_users_response(
     let mut payload = Vec::with_capacity(paged_rows.len());
     for row in paged_rows {
         let auth = auth_by_user_id.get(&row.id);
-        let unlimited = wallet_by_user_id
-            .get(&row.id)
-            .is_some_and(|wallet| wallet.limit_mode.eq_ignore_ascii_case("unlimited"));
+        // Wallets removed: users are effectively unlimited.
+        let unlimited = true;
         let usage_totals = usage_totals_by_user_id.get(&row.id);
         let groups = group_ids_by_user_id
             .get(&row.id)
@@ -155,16 +149,10 @@ pub(in super::super) async fn build_admin_get_user_response(
             .into_response());
     };
 
-    let wallet = state
-        .find_wallet(aether_data::repository::wallet::WalletLookupKey::UserId(
-            &user_id,
-        ))
-        .await?;
     let export_row = find_admin_export_user(state, &user_id).await?;
     let groups = state.list_user_groups_for_user(&user_id).await?;
-    let unlimited = wallet
-        .as_ref()
-        .is_some_and(|wallet| wallet.limit_mode.eq_ignore_ascii_case("unlimited"));
+    // Wallets were removed from this personal build; users are effectively unlimited.
+    let unlimited = true;
     let mut payload = build_admin_user_payload_with_groups(
         &user,
         export_row.as_ref().and_then(|row| row.rate_limit),

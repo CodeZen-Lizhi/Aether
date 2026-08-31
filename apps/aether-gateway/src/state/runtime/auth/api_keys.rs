@@ -25,6 +25,38 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
+    pub(crate) async fn find_user_daily_quota_availability(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<aether_data_contracts::repository::billing::UserDailyQuotaAvailabilityRecord>, GatewayError>
+    {
+        self.data
+            .find_user_daily_quota_availability(user_id)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
+    pub(crate) async fn find_user_daily_quota_availability_for_auth(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<aether_data_contracts::repository::billing::UserDailyQuotaAvailabilityRecord>, GatewayError>
+    {
+        let user_id = user_id.trim();
+        if user_id.is_empty() {
+            return Ok(None);
+        }
+        let ttl = self.frontdoor_runtime_guards.auth_capacity_cache_ttl;
+        if ttl.is_zero() {
+            return self.find_user_daily_quota_availability(user_id).await;
+        }
+        self.auth_daily_quota_availability_cache
+            .get_or_load(user_id.to_string(), ttl, || async move {
+                let _permit = self.acquire_auth_snapshot_load_gate().await?;
+                self.find_user_daily_quota_availability(user_id).await
+            })
+            .await
+    }
+
     pub(crate) async fn read_cached_auth_api_key_snapshot(
         &self,
         user_id: &str,

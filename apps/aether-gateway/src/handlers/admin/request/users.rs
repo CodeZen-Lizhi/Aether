@@ -734,22 +734,6 @@ impl<'a> AdminAppState<'a> {
         self.app.delete_standalone_api_key(api_key_id).await
     }
 
-    pub(crate) async fn list_wallet_snapshots_by_api_key_ids(
-        &self,
-        api_key_ids: &[String],
-    ) -> Result<Vec<aether_data::repository::wallet::StoredWalletSnapshot>, GatewayError> {
-        self.app
-            .list_wallet_snapshots_by_api_key_ids(api_key_ids)
-            .await
-    }
-
-    pub(crate) async fn list_wallet_snapshots_by_user_ids(
-        &self,
-        user_ids: &[String],
-    ) -> Result<Vec<aether_data::repository::wallet::StoredWalletSnapshot>, GatewayError> {
-        self.app.list_wallet_snapshots_by_user_ids(user_ids).await
-    }
-
     pub(crate) async fn summarize_usage_total_tokens_by_api_key_ids(
         &self,
         api_key_ids: &[String],

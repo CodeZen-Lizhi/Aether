@@ -45,7 +45,6 @@ use aether_data::repository::system::{
     AdminSystemStatsUserDailyAggregate, AdminSystemUsageAggregateImportMode,
     AdminSystemUsageAggregateImportSummary, AdminSystemUsageAggregateSnapshot,
 };
-use aether_data::repository::wallet::WalletLookupKey;
 use aether_data_contracts::repository::global_models::{
     AdminGlobalModelListQuery, AdminProviderModelListQuery, CreateAdminGlobalModelRecord,
     UpdateAdminGlobalModelRecord, UpsertAdminProviderModelRecord,
@@ -622,20 +621,6 @@ struct AdminSystemUsersImportStats {
     errors: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-struct ImportedWalletTarget {
-    recharge_balance: f64,
-    gift_balance: f64,
-    limit_mode: String,
-    currency: String,
-    status: String,
-    total_recharged: f64,
-    total_consumed: f64,
-    total_refunded: f64,
-    total_adjusted: f64,
-    updated_at_unix_secs: Option<u64>,
-}
-
 fn imported_system_export_version(version: Option<&Value>) -> Result<(u32, u32), String> {
     let Some(Value::String(version)) = version else {
         return Err("version 必须是 x.y 字符串".to_string());
@@ -1097,91 +1082,6 @@ fn resolve_imported_user_group_ids(
         }
     }
     Ok(group_ids.into_iter().collect())
-}
-
-fn normalize_imported_wallet_target(
-    wallet: Option<&Map<String, Value>>,
-    unlimited: bool,
-) -> Result<ImportedWalletTarget, String> {
-    let gift_balance = imported_optional_f64(
-        wallet.and_then(|map| map.get("gift_balance")),
-        "wallet.gift_balance",
-    )?
-    .unwrap_or(0.0)
-    .max(0.0);
-    let recharge_balance = if let Some(map) = wallet {
-        if map.contains_key("recharge_balance") {
-            imported_optional_f64(map.get("recharge_balance"), "wallet.recharge_balance")?
-                .unwrap_or(0.0)
-        } else if map.contains_key("refundable_balance") {
-            imported_optional_f64(map.get("refundable_balance"), "wallet.refundable_balance")?
-                .unwrap_or(0.0)
-        } else {
-            let total_balance =
-                imported_optional_f64(map.get("balance"), "wallet.balance")?.unwrap_or(0.0);
-            total_balance - gift_balance
-        }
-    } else {
-        0.0
-    };
-    let limit_mode = if let Some(map) = wallet {
-        if let Some(mode) = imported_optional_string(map.get("limit_mode"))? {
-            match mode.to_ascii_lowercase().as_str() {
-                "finite" => "finite".to_string(),
-                "unlimited" => "unlimited".to_string(),
-                _ => return Err("wallet.limit_mode 仅支持 finite / unlimited".to_string()),
-            }
-        } else if imported_optional_bool(map.get("unlimited"))?.unwrap_or(unlimited) {
-            "unlimited".to_string()
-        } else {
-            "finite".to_string()
-        }
-    } else if unlimited {
-        "unlimited".to_string()
-    } else {
-        "finite".to_string()
-    };
-    let currency = imported_optional_string(wallet.and_then(|map| map.get("currency")))?
-        .unwrap_or_else(|| "USD".to_string());
-    let status = imported_optional_string(wallet.and_then(|map| map.get("status")))?
-        .unwrap_or_else(|| "active".to_string());
-    let total_recharged = imported_optional_f64(
-        wallet.and_then(|map| map.get("total_recharged")),
-        "wallet.total_recharged",
-    )?
-    .unwrap_or(recharge_balance);
-    let total_consumed = imported_optional_f64(
-        wallet.and_then(|map| map.get("total_consumed")),
-        "wallet.total_consumed",
-    )?
-    .unwrap_or(0.0);
-    let total_refunded = imported_optional_f64(
-        wallet.and_then(|map| map.get("total_refunded")),
-        "wallet.total_refunded",
-    )?
-    .unwrap_or(0.0);
-    let total_adjusted = imported_optional_f64(
-        wallet.and_then(|map| map.get("total_adjusted")),
-        "wallet.total_adjusted",
-    )?
-    .unwrap_or(gift_balance);
-    let updated_at_unix_secs = imported_rfc3339_to_unix_secs(
-        wallet.and_then(|map| map.get("updated_at")),
-        "wallet.updated_at",
-    )?;
-
-    Ok(ImportedWalletTarget {
-        recharge_balance,
-        gift_balance,
-        limit_mode,
-        currency,
-        status,
-        total_recharged,
-        total_consumed,
-        total_refunded,
-        total_adjusted,
-        updated_at_unix_secs,
-    })
 }
 
 impl<'a> AdminAppState<'a> {
@@ -2679,14 +2579,6 @@ impl<'a> AdminAppState<'a> {
                 "feature_settings"
             )
             .and_then(normalize_admin_feature_settings));
-            let wallet_payload = match user.get("wallet") {
-                Some(Value::Object(map)) => Some(map),
-                Some(Value::Null) | None => None,
-                Some(_) => return Ok(Err(invalid_request("wallet 必须是对象"))),
-            };
-            let wallet_target =
-                invalid_value!(normalize_imported_wallet_target(wallet_payload, false));
-
             let mut existing_user = if let Some(email) = email.as_deref() {
                 self.find_user_auth_by_identifier(email).await?
             } else {
@@ -2829,12 +2721,6 @@ impl<'a> AdminAppState<'a> {
                             self.replace_user_groups_for_user(&existing.id, group_ids)
                                 .await?;
                         }
-                        self.sync_imported_user_wallet(
-                            &existing.id,
-                            &wallet_target,
-                            &email.clone().unwrap_or(username.clone()),
-                        )
-                        .await?;
                         stats.users.updated += 1;
                         existing.id
                     }
@@ -2900,12 +2786,6 @@ impl<'a> AdminAppState<'a> {
                     self.replace_user_groups_for_user(&created.id, group_ids)
                         .await?;
                 }
-                self.sync_imported_user_wallet(
-                    &created.id,
-                    &wallet_target,
-                    &email.clone().unwrap_or(username.clone()),
-                )
-                .await?;
                 stats.users.created += 1;
                 created.id
             };
@@ -3257,16 +3137,6 @@ impl<'a> AdminAppState<'a> {
                     "feature_settings"
                 )
                 .and_then(normalize_admin_feature_settings));
-                let wallet_payload = match key.get("wallet") {
-                    Some(Value::Object(map)) => Some(map),
-                    Some(Value::Null) | None => None,
-                    Some(_) => return Ok(Err(invalid_request("wallet 必须是对象"))),
-                };
-                let unlimited =
-                    invalid_value!(imported_optional_bool(key.get("unlimited"))).unwrap_or(false);
-                let wallet_target =
-                    invalid_value!(normalize_imported_wallet_target(wallet_payload, unlimited));
-
                 if let Some(existing_key) = existing_standalone_by_hash.get(&key_hash).cloned() {
                     match merge_mode {
                         AdminImportMergeMode::Skip => {
@@ -3344,14 +3214,6 @@ impl<'a> AdminAppState<'a> {
                                         .to_string(),
                                 );
                             }
-                            self.sync_imported_api_key_wallet(
-                                &existing_key.api_key_id,
-                                &wallet_target,
-                                key.get("name")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("独立余额 Key"),
-                            )
-                            .await?;
                             stats.standalone_keys.updated += 1;
                             if let Some(source_api_key_id) = source_api_key_id.clone() {
                                 imported_api_key_id_map
@@ -3400,12 +3262,6 @@ impl<'a> AdminAppState<'a> {
                         )
                         .await?;
                 }
-                self.sync_imported_api_key_wallet(
-                    &created.api_key_id,
-                    &wallet_target,
-                    created.name.as_deref().unwrap_or("独立余额 Key"),
-                )
-                .await?;
                 let created_api_key_id = created.api_key_id.clone();
                 existing_standalone_by_hash.insert(key_hash, created);
                 if let Some(source_api_key_id) = source_api_key_id {
@@ -3510,102 +3366,6 @@ impl<'a> AdminAppState<'a> {
         .map(Some)
     }
 
-    async fn sync_imported_user_wallet(
-        &self,
-        user_id: &str,
-        wallet_target: &ImportedWalletTarget,
-        label: &str,
-    ) -> Result<(), GatewayError> {
-        if self
-            .find_wallet(WalletLookupKey::UserId(user_id))
-            .await?
-            .is_none()
-        {
-            let created = self
-                .initialize_auth_user_wallet(user_id, 0.0, false)
-                .await?;
-            if created.is_none() {
-                return Err(GatewayError::Internal(format!(
-                    "failed to initialize imported wallet for {label}"
-                )));
-            }
-        }
-        self.sync_wallet_snapshot(WalletOwner::User(user_id), wallet_target, label)
-            .await
-    }
-
-    async fn sync_imported_api_key_wallet(
-        &self,
-        api_key_id: &str,
-        wallet_target: &ImportedWalletTarget,
-        label: &str,
-    ) -> Result<(), GatewayError> {
-        if self
-            .find_wallet(WalletLookupKey::ApiKeyId(api_key_id))
-            .await?
-            .is_none()
-        {
-            let created = self
-                .initialize_auth_api_key_wallet(api_key_id, 0.0, false)
-                .await?;
-            if created.is_none() {
-                return Err(GatewayError::Internal(format!(
-                    "failed to initialize imported wallet for {label}"
-                )));
-            }
-        }
-        self.sync_wallet_snapshot(WalletOwner::ApiKey(api_key_id), wallet_target, label)
-            .await
-    }
-
-    async fn sync_wallet_snapshot(
-        &self,
-        owner: WalletOwner<'_>,
-        wallet_target: &ImportedWalletTarget,
-        label: &str,
-    ) -> Result<(), GatewayError> {
-        let updated = match owner {
-            WalletOwner::User(user_id) => {
-                self.update_auth_user_wallet_snapshot(
-                    user_id,
-                    wallet_target.recharge_balance,
-                    wallet_target.gift_balance,
-                    &wallet_target.limit_mode,
-                    &wallet_target.currency,
-                    &wallet_target.status,
-                    wallet_target.total_recharged,
-                    wallet_target.total_consumed,
-                    wallet_target.total_refunded,
-                    wallet_target.total_adjusted,
-                    wallet_target.updated_at_unix_secs,
-                )
-                .await?
-            }
-            WalletOwner::ApiKey(api_key_id) => {
-                self.update_auth_api_key_wallet_snapshot(
-                    api_key_id,
-                    wallet_target.recharge_balance,
-                    wallet_target.gift_balance,
-                    &wallet_target.limit_mode,
-                    &wallet_target.currency,
-                    &wallet_target.status,
-                    wallet_target.total_recharged,
-                    wallet_target.total_consumed,
-                    wallet_target.total_refunded,
-                    wallet_target.total_adjusted,
-                    wallet_target.updated_at_unix_secs,
-                )
-                .await?
-            }
-        };
-        if updated.is_none() {
-            return Err(GatewayError::Internal(format!(
-                "failed to persist imported wallet snapshot for {label}"
-            )));
-        }
-        Ok(())
-    }
-
     fn resolve_imported_system_user_api_key_material(
         &self,
         key: &Map<String, Value>,
@@ -3646,7 +3406,7 @@ mod tests {
         imported_optional_i32, imported_optional_u64, imported_rfc3339_to_unix_secs,
         imported_string_list_from_value, normalize_import_endpoint_format,
         normalize_import_key_formats, normalize_import_key_raw_payload,
-        normalize_imported_wallet_target, seed_imported_oauth_pool_score,
+        seed_imported_oauth_pool_score,
         validate_imported_system_users_export_version, ImportedProviderKey,
     };
     use crate::admin_api::AdminAppState;
@@ -3976,35 +3736,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn import_preserves_python_wallet_negative_recharge_balance() {
-        let wallet = json!({
-            "balance": -4.5,
-            "recharge_balance": -5.25,
-            "gift_balance": 0.75,
-            "limit_mode": "finite"
-        });
-        let wallet = wallet.as_object().expect("wallet should be object");
+    
 
-        let target = normalize_imported_wallet_target(Some(wallet), false).unwrap();
-        assert_eq!(target.recharge_balance, -5.25);
-        assert_eq!(target.gift_balance, 0.75);
-        assert_eq!(target.total_recharged, -5.25);
-    }
-
-    #[test]
-    fn import_preserves_python_wallet_negative_balance_fallback() {
-        let wallet = json!({
-            "balance": -4.5,
-            "gift_balance": 0.75,
-            "limit_mode": "finite"
-        });
-        let wallet = wallet.as_object().expect("wallet should be object");
-
-        let target = normalize_imported_wallet_target(Some(wallet), false).unwrap();
-        assert_eq!(target.recharge_balance, -5.25);
-        assert_eq!(target.gift_balance, 0.75);
-    }
+    
 
     #[test]
     fn import_rejects_legacy_string_lists() {

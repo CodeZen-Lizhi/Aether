@@ -1292,11 +1292,7 @@ pub(super) async fn handle_users_me_usage_get(
         })
         .collect::<Vec<_>>();
 
-    let wallet = state
-        .read_wallet_snapshot_for_auth(&auth.user.id, "", false)
-        .await
-        .ok()
-        .flatten();
+    let wallet: Option<aether_data::repository::wallet::StoredWalletSnapshot> = None;
 
     let mut payload = json!({
         "total_requests": total_requests,

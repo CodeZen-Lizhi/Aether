@@ -1,10 +1,8 @@
 mod adaptive;
 mod api_keys;
-mod billing;
 mod endpoints;
 mod health_access;
 mod models;
-mod payments;
 mod pool;
 mod provider_ops;
 mod provider_query;
@@ -16,4 +14,3 @@ mod system;
 mod system_import;
 mod usage;
 mod users;
-mod wallets;

@@ -4,7 +4,6 @@ mod catalog;
 mod external_models;
 mod normalize;
 mod payloads;
-mod payment_direct;
 mod payment_gateway_config;
 pub(crate) mod provider_pool;
 mod request_utils;
@@ -40,12 +39,6 @@ pub(crate) use self::normalize::{
 pub(crate) use self::payloads::{
     InternalGatewayAuthContextRequest, InternalGatewayExecuteRequest,
     InternalGatewayResolveRequest, InternalTunnelHeartbeatRequest, InternalTunnelNodeStatusRequest,
-};
-pub(crate) use self::payment_direct::{
-    close_direct_gateway_order, create_alipay_direct_checkout, create_stripe_direct_checkout,
-    create_wxpay_direct_checkout, direct_payment_client_ip, refund_direct_gateway_order,
-    verify_alipay_notify_callback, verify_wxpay_notify_callback, DirectGatewayRefundResult,
-    DirectPaymentCheckoutInput,
 };
 pub(crate) use self::payment_gateway_config::{
     payment_gateway_allow_user_refund, payment_gateway_channels_config_json,

@@ -1,4 +1,3 @@
-use super::super::support_wallet::build_wallet_balance_payload_for_user;
 use super::{
     build_auth_error_response, query_param_value, resolve_authenticated_local_user, AppState,
     GatewayError, GatewayPublicRequestContext,
@@ -192,31 +191,6 @@ fn dashboard_format_usd(value: f64) -> String {
 
 fn dashboard_json_f64(value: Option<&serde_json::Value>) -> f64 {
     value.and_then(serde_json::Value::as_f64).unwrap_or(0.0)
-}
-
-fn dashboard_wallet_card_value_and_subvalue(
-    wallet_payload: &serde_json::Value,
-) -> (String, String) {
-    let unlimited = wallet_payload
-        .get("unlimited")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    if unlimited {
-        return ("无限额度".to_string(), "无限额度".to_string());
-    }
-
-    let package_balance = dashboard_json_f64(wallet_payload.get("package_balance")).max(0.0);
-    let wallet_balance = dashboard_json_f64(wallet_payload.get("wallet_balance")).max(0.0);
-    let total_available =
-        dashboard_json_f64(wallet_payload.get("total_available_balance")).max(0.0);
-    (
-        dashboard_format_usd(total_available),
-        format!(
-            "套餐额度 {} · 钱包余额 {}",
-            dashboard_format_usd(package_balance),
-            dashboard_format_usd(wallet_balance)
-        ),
-    )
 }
 
 fn dashboard_format_percentage(value: f64) -> String {
@@ -1155,29 +1129,6 @@ pub(super) async fn handle_dashboard_stats_get(
         return dashboard_cached_json_response(state, cache_key, cache_ttl, &payload);
     }
 
-    let wallet = if state.has_wallet_data_reader() {
-        match state
-            .find_wallet(aether_data::repository::wallet::WalletLookupKey::UserId(
-                auth.user.id.as_str(),
-            ))
-            .await
-        {
-            Ok(value) => value,
-            Err(err) => {
-                return build_auth_error_response(
-                    http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("dashboard wallet lookup failed: {err:?}"),
-                    false,
-                );
-            }
-        }
-    } else {
-        None
-    };
-    let wallet_payload =
-        build_wallet_balance_payload_for_user(state, &auth.user.id, wallet.as_ref()).await;
-    let (wallet_value, wallet_sub_value) =
-        dashboard_wallet_card_value_and_subvalue(&wallet_payload);
     let payload = json!({
         "stats": [
             {
@@ -1191,12 +1142,6 @@ pub(super) async fn handle_dashboard_stats_get(
                 "value": dashboard_format_integer(period_totals.requests),
                 "subValue": format!("今日 {}", dashboard_format_integer(today_totals.requests)),
                 "icon": "Users",
-            },
-            {
-                "name": "钱包余额",
-                "value": wallet_value,
-                "subValue": wallet_sub_value,
-                "icon": "DollarSign",
             },
             {
                 "name": "本月 Token",
