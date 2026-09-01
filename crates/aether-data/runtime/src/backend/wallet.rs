@@ -13,7 +13,6 @@ pub(super) fn u64_to_i64(value: u64, field_name: &str) -> Result<i64, DataLayerE
         .map_err(|_| DataLayerError::InvalidInput(format!("invalid {field_name}: {value}")))
 }
 
-
 #[cfg(any(feature = "mysql", feature = "sqlite"))]
 pub(super) fn wallet_daily_usage_id(
     wallet_id: &str,

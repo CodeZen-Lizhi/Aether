@@ -1,11 +1,10 @@
 use super::{
     build_api_format_health_monitor_payload, build_model_health_monitor_payload,
-    build_public_catalog_models_payload,
-    build_public_catalog_search_models_payload, build_public_providers_payload,
-    build_related_health_monitor_payload, capability_detail_by_name,
-    sanitize_public_model_config_for_user, serialize_public_capability, supported_capability_names,
-    ApiFormatHealthMonitorOptions, HealthMonitorRelationDimension, ModelHealthMonitorOptions,
-    PUBLIC_CAPABILITY_DEFINITIONS,
+    build_public_catalog_models_payload, build_public_catalog_search_models_payload,
+    build_public_providers_payload, build_related_health_monitor_payload,
+    capability_detail_by_name, sanitize_public_model_config_for_user, serialize_public_capability,
+    supported_capability_names, ApiFormatHealthMonitorOptions, HealthMonitorRelationDimension,
+    ModelHealthMonitorOptions, PUBLIC_CAPABILITY_DEFINITIONS,
 };
 use crate::control::GatewayPublicRequestContext;
 use crate::handlers::shared::{
@@ -661,7 +660,6 @@ pub(crate) async fn maybe_build_local_public_support_response(
                             let mut payload = json!({
                                 "id": provider_id.clone(),
                                 "is_active": provider.is_active,
-                                "provider_priority": provider.provider_priority,
                             });
                             if include_endpoints {
                                 payload["endpoints"] = serde_json::Value::Array(
@@ -731,7 +729,6 @@ pub(crate) async fn maybe_build_local_public_support_response(
             let mut payload = json!({
                 "id": provider_id.clone(),
                 "is_active": provider.is_active,
-                "provider_priority": provider.provider_priority,
             });
             if include_endpoints {
                 let endpoints = state

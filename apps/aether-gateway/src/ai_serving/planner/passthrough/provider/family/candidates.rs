@@ -21,8 +21,8 @@ use crate::ai_serving::planner::materialization_policy::{
 };
 use crate::ai_serving::planner::spec_metadata::local_same_format_provider_spec_metadata;
 use crate::ai_serving::{
-    ai_local_execution_contract_for_formats,
-    resolve_local_decision_execution_runtime_auth_context, GatewayControlDecision, PlannerAppState,
+    ai_local_execution_contract_for_formats, resolve_local_decision_execution_runtime_auth_context,
+    GatewayControlDecision, PlannerAppState,
 };
 use crate::client_session_affinity::client_session_affinity_from_api_request;
 use crate::clock::current_unix_secs;

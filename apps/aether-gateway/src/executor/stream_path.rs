@@ -1,10 +1,6 @@
 use aether_ai_serving::{
-run_ai_stream_execution_path,
-AiPlanFallbackReason,
-AiServingExecutionOutcome,
-AiStreamExecutionPathPort,
-AiStreamExecutionStep,
-OriginalRequestPayload,
+    run_ai_stream_execution_path, AiPlanFallbackReason, AiServingExecutionOutcome,
+    AiStreamExecutionPathPort, AiStreamExecutionStep, OriginalRequestPayload,
 };
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
@@ -26,7 +22,8 @@ use crate::{AppState, GatewayError, GatewayFallbackReason};
 
 use super::{
     execute_stream_plan_and_reports_with_transfer_tracker, maybe_execute_stream_via_local_decision,
-    maybe_execute_stream_via_local_gemini_files_decision, maybe_execute_stream_via_local_image_decision,
+    maybe_execute_stream_via_local_gemini_files_decision,
+    maybe_execute_stream_via_local_image_decision,
     maybe_execute_stream_via_local_openai_responses_decision,
     maybe_execute_stream_via_local_same_format_provider_decision,
     maybe_execute_stream_via_local_standard_decision, maybe_execute_stream_via_plan_fallback,

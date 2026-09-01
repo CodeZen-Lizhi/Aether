@@ -47,7 +47,7 @@ pub(super) fn classify_admin_system_family_route(
             "admin:system",
             false,
         ))
-        } else if method == http::Method::POST && normalized_path == "/api/admin/system/config/import" {
+    } else if method == http::Method::POST && normalized_path == "/api/admin/system/config/import" {
         Some(classified(
             "admin_proxy",
             "system_manage",

@@ -24,9 +24,8 @@ use crate::ai_serving::planner::materialization_policy::{
 };
 use crate::ai_serving::planner::spec_metadata::local_standard_spec_metadata;
 use crate::ai_serving::{
-    ai_local_execution_contract_for_formats,
-    gemini_request_is_image_generation, resolve_local_decision_execution_runtime_auth_context,
-    GatewayControlDecision, PlannerAppState,
+    ai_local_execution_contract_for_formats, gemini_request_is_image_generation,
+    resolve_local_decision_execution_runtime_auth_context, GatewayControlDecision, PlannerAppState,
 };
 use crate::client_session_affinity::client_session_affinity_from_parts;
 use crate::{AppState, GatewayError};

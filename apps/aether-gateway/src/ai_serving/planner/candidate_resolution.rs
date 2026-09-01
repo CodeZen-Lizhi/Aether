@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use aether_ai_serving::{
-run_ai_candidate_resolution,
-AiCandidateResolutionMode,
-AiCandidateResolutionPort,
-AiCandidateResolutionRequest,
+    run_ai_candidate_resolution, AiCandidateResolutionMode, AiCandidateResolutionPort,
+    AiCandidateResolutionRequest,
 };
 use aether_routing_core::ResolvedRoutingPolicy;
 use async_trait::async_trait;
@@ -108,11 +106,6 @@ impl AiCandidateResolutionPort for GatewayLocalCandidateResolutionPort<'_> {
         requested_model: Option<&str>,
     ) -> Option<&'static str> {
         if let Some(skip_reason) =
-            routing_policy_candidate_skip_reason(self.routing_policy, candidate, transport)
-        {
-            return Some(skip_reason);
-        }
-        if let Some(skip_reason) =
             candidate_auth_channel_skip_reason(transport, self.request_auth_channel)
         {
             return Some(skip_reason);
@@ -189,7 +182,6 @@ impl AiCandidateResolutionPort for GatewayLocalCandidateResolutionPort<'_> {
         );
         Ok(ranked)
     }
-
 }
 
 pub(crate) async fn resolve_and_rank_local_execution_candidates(
@@ -281,10 +273,9 @@ pub(crate) async fn resolve_and_rank_logical_local_execution_candidates(
         client_session_affinity,
         required_capabilities,
         routing_policy,
-        None,
+        _sticky_session_token,
         request_auth_channel,
         mode,
-        false,
     )
     .await
 }
@@ -314,10 +305,9 @@ async fn resolve_and_rank_local_execution_candidates_with_mode(
         client_session_affinity,
         required_capabilities,
         routing_policy,
-        None,
+        _sticky_session_token,
         request_auth_channel,
         mode,
-        false,
     )
     .await
 }
@@ -335,7 +325,6 @@ async fn resolve_and_rank_local_execution_candidates_with_pool_expansion(
     _sticky_session_token: Option<&str>,
     request_auth_channel: Option<&str>,
     mode: AiCandidateResolutionMode,
-    expand_pool_groups: bool,
 ) -> (
     Vec<EligibleLocalExecutionCandidate>,
     Vec<SkippedLocalExecutionCandidate>,
@@ -355,7 +344,6 @@ async fn resolve_and_rank_local_execution_candidates_with_pool_expansion(
         client_api_format,
         requested_model,
         mode,
-        expand_pool_groups,
     };
 
     let started_at = Instant::now();
@@ -500,10 +488,9 @@ mod tests {
     use super::candidate_auth_channel_skip_reason;
     use crate::ai_serving::GatewayProviderTransportSnapshot;
     use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-};
+        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+        GatewayProviderTransportProvider,
+    };
     use aether_scheduler_core::SchedulerMinimalCandidateSelectionCandidate;
     use serde_json::json;
 
@@ -571,6 +558,9 @@ GatewayProviderTransportProvider,
             key_id: "key-1".to_string(),
             key_name: "key".to_string(),
             key_auth_type: "bearer".to_string(),
+            provider_priority: 0,
+            key_internal_priority: 0,
+            key_global_priority_for_format: None,
             key_capabilities: None,
             model_id: "model-1".to_string(),
             global_model_id: "global-model-1".to_string(),

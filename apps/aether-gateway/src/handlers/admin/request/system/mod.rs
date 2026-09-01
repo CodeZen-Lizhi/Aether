@@ -120,5 +120,4 @@ impl<'a> AdminAppState<'a> {
     ) -> Result<Vec<aether_data::repository::proxy_nodes::StoredProxyNodeEvent>, GatewayError> {
         self.app.list_proxy_node_events(node_id, limit).await
     }
-
 }

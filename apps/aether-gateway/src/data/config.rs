@@ -1,5 +1,5 @@
-use aether_data_contracts::PostgresPoolConfig;
 use aether_data::{DataLayerConfig, SqlDatabaseConfig};
+use aether_data_contracts::PostgresPoolConfig;
 use std::fmt;
 
 #[derive(Clone, Default)]

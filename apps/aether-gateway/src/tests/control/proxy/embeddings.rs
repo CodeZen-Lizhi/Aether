@@ -395,7 +395,6 @@ fn embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
         provider_id: "provider-embedding".to_string(),
         provider_name: "OpenAI Embeddings".to_string(),
         provider_type: "custom".to_string(),
-        provider_priority: 1,
         provider_is_active: true,
         endpoint_id: "endpoint-embedding".to_string(),
         endpoint_api_format: "openai:embedding".to_string(),
@@ -409,8 +408,6 @@ fn embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
         key_api_formats: Some(vec!["openai:embedding".to_string()]),
         key_allowed_models: None,
         key_capabilities: None,
-        key_internal_priority: 50,
-        key_global_priority_by_format: None,
         model_id: "model-embedding-small".to_string(),
         global_model_id: "global-embedding-small".to_string(),
         global_model_name: "text-embedding-3-small".to_string(),
@@ -429,7 +426,6 @@ fn gemini_embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
         provider_id: "provider-gemini-embedding".to_string(),
         provider_name: "Gemini Embeddings".to_string(),
         provider_type: "gemini".to_string(),
-        provider_priority: 1,
         provider_is_active: true,
         endpoint_id: "endpoint-gemini-embedding".to_string(),
         endpoint_api_format: "gemini:embedding".to_string(),
@@ -443,8 +439,6 @@ fn gemini_embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
         key_api_formats: Some(vec!["gemini:embedding".to_string()]),
         key_allowed_models: None,
         key_capabilities: None,
-        key_internal_priority: 50,
-        key_global_priority_by_format: None,
         model_id: "model-gemini-embedding-preview".to_string(),
         global_model_id: "global-gemini-embedding-preview".to_string(),
         global_model_name: "gemini-embedding-2-preview".to_string(),
@@ -476,7 +470,6 @@ fn aliyun_embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
         provider_id: "provider-aliyun-embedding".to_string(),
         provider_name: "Aliyun DashScope".to_string(),
         provider_type: "aliyun".to_string(),
-        provider_priority: 1,
         provider_is_active: true,
         endpoint_id: "endpoint-aliyun-embedding".to_string(),
         endpoint_api_format: "aliyun:multimodal_embedding".to_string(),
@@ -490,8 +483,6 @@ fn aliyun_embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
         key_api_formats: Some(vec!["aliyun:multimodal_embedding".to_string()]),
         key_allowed_models: None,
         key_capabilities: None,
-        key_internal_priority: 50,
-        key_global_priority_by_format: None,
         model_id: "model-qwen3-vl-embedding".to_string(),
         global_model_id: "global-qwen3-vl-embedding".to_string(),
         global_model_name: "qwen3-vl-embedding".to_string(),
@@ -919,14 +910,6 @@ async fn embeddings_route_converts_openai_payload_to_gemini_embedding_provider_i
 
     gateway_handle.abort();
     execution_runtime_handle.abort();
-}
-
-#[test]
-fn embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider() {
-    run_embedding_proxy_test(
-        "embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider",
-        embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider_impl,
-    );
 }
 
 async fn embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider_impl() {

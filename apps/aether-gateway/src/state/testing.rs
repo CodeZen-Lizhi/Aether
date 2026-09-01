@@ -212,84 +212,6 @@ impl AppState {
         self
     }
 
-    pub(crate) fn with_oauth_refresh_coordinator_for_tests(
-        mut self,
-        coordinator: provider_transport::LocalOAuthRefreshCoordinator,
-    ) -> Self {
-        self.oauth_refresh = Arc::new(coordinator);
-        self
-    }
-
-    pub(crate) fn with_provider_oauth_state_entry_for_tests(
-        mut self,
-        nonce: &str,
-        payload: serde_json::Value,
-    ) -> Self {
-        let store = self
-            .provider_oauth_state_store
-            .get_or_insert_with(|| Arc::new(StdMutex::new(HashMap::new())));
-        store
-            .lock()
-            .expect("provider oauth state store should lock")
-            .insert(format!("provider_oauth_state:{nonce}"), payload.to_string());
-        self.runtime_state.kv_set_local_nowait(
-            &format!("provider_oauth_state:{nonce}"),
-            payload.to_string(),
-            Some(Duration::from_secs(
-                aether_data::repository::provider_oauth::PROVIDER_OAUTH_STATE_TTL_SECS,
-            )),
-        );
-        self
-    }
-
-    pub(crate) fn with_provider_oauth_device_session_entry_for_tests(
-        mut self,
-        session_id: &str,
-        payload: serde_json::Value,
-    ) -> Self {
-        let store = self
-            .provider_oauth_device_session_store
-            .get_or_insert_with(|| Arc::new(StdMutex::new(HashMap::new())));
-        store
-            .lock()
-            .expect("provider oauth device session store should lock")
-            .insert(
-                format!("device_auth_session:{session_id}"),
-                payload.to_string(),
-            );
-        self.runtime_state.kv_set_local_nowait(
-            &format!("device_auth_session:{session_id}"),
-            payload.to_string(),
-            Some(Duration::from_secs(3600)),
-        );
-        self
-    }
-
-    pub(crate) fn with_provider_oauth_batch_task_entry_for_tests(
-        mut self,
-        task_id: &str,
-        payload: serde_json::Value,
-    ) -> Self {
-        let store = self
-            .provider_oauth_batch_task_store
-            .get_or_insert_with(|| Arc::new(StdMutex::new(HashMap::new())));
-        store
-            .lock()
-            .expect("provider oauth batch task store should lock")
-            .insert(
-                format!("provider_oauth_batch_task:{task_id}"),
-                payload.to_string(),
-            );
-        self.runtime_state.kv_set_local_nowait(
-            &format!("provider_oauth_batch_task:{task_id}"),
-            payload.to_string(),
-            Some(Duration::from_secs(
-                aether_data::repository::provider_oauth::PROVIDER_OAUTH_BATCH_TASK_TTL_SECS,
-            )),
-        );
-        self
-    }
-
     pub(crate) fn with_auth_session_for_tests(
         self,
         session: crate::data::state::StoredUserSessionRecord,
@@ -646,18 +568,6 @@ impl AppState {
             .lock()
             .expect("auth user model capability store should lock")
             .insert(user_id.to_string(), settings);
-        self
-    }
-
-    pub(crate) fn with_provider_oauth_token_url_for_tests(
-        self,
-        provider_type: &str,
-        token_url: impl Into<String>,
-    ) -> Self {
-        self.provider_oauth_token_url_overrides
-            .lock()
-            .expect("provider oauth token url overrides should lock")
-            .insert(provider_type.trim().to_ascii_lowercase(), token_url.into());
         self
     }
 }

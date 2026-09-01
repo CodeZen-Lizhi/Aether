@@ -88,7 +88,6 @@ fn sample_files_candidate_row() -> StoredMinimalCandidateSelectionRow {
         provider_id: "provider-gemini-files-local-1".to_string(),
         provider_name: "gemini".to_string(),
         provider_type: "custom".to_string(),
-        provider_priority: 10,
         provider_is_active: true,
         endpoint_id: "endpoint-gemini-files-local-1".to_string(),
         endpoint_api_format: "gemini:files".to_string(),
@@ -102,8 +101,6 @@ fn sample_files_candidate_row() -> StoredMinimalCandidateSelectionRow {
         key_api_formats: Some(vec!["gemini:files".to_string()]),
         key_allowed_models: None,
         key_capabilities: Some(serde_json::json!({"gemini_files": true})),
-        key_internal_priority: 5,
-        key_global_priority_by_format: Some(serde_json::json!({"gemini:files": 1})),
         model_id: "model-gemini-files-local-1".to_string(),
         global_model_id: "global-model-gemini-files-local-1".to_string(),
         global_model_name: "gemini-2.5-pro".to_string(),
@@ -131,17 +128,7 @@ fn sample_files_provider_catalog_provider() -> StoredProviderCatalogProvider {
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(
-        true,
-        false,
-        false,
-        None,
-        Some(2),
-        None,
-        Some(20.0),
-        None,
-        None,
-    )
+    .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
 }
 
 fn sample_files_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -182,9 +169,8 @@ fn sample_files_provider_catalog_key() -> StoredProviderCatalogKey {
         encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-upstream-gemini-files")
             .expect("api key should encrypt"),
         None,
-        Some(serde_json::json!({"gemini_files": true})),
-        Some(serde_json::json!({"gemini:files": 1})),
         None,
+        Some(serde_json::json!({"gemini:files": 1})),
         None,
         None,
         None,

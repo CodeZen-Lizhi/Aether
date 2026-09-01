@@ -1,10 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use aether_ai_serving::{
-run_ai_authenticated_decision_input,
-AiAuthenticatedDecisionInputPort,
-};
+use aether_ai_serving::{run_ai_authenticated_decision_input, AiAuthenticatedDecisionInputPort};
 use aether_routing_core::{
     rank_vector_for_candidate, CandidateKind, ResolvedRoutingPolicy, RoutingCandidateFacts,
     RoutingCandidateTrace, RoutingDecisionTrace, RoutingRulePhase,
@@ -966,10 +963,9 @@ mod tests {
         RoutingGroupWriteRepository,
     };
     use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-};
+        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+        GatewayProviderTransportProvider,
+    };
 
     #[test]
     fn original_client_session_id_accepts_live_header_as_fallback() {
@@ -1307,12 +1303,6 @@ GatewayProviderTransportProvider,
         }
     }
 
-
-
-
-
-
-
     fn set_provider_request_rules(
         input: &mut LocalRequestedModelDecisionInput,
         allowed_models: &[&str],
@@ -1402,7 +1392,6 @@ GatewayProviderTransportProvider,
             policy.scheduling_mode,
             aether_routing_core::RoutingSchedulingMode::LoadBalance
         );
-        assert!(policy.keep_priority_on_conversion);
         assert!(policy.mutation_plan.is_empty());
         assert!(input.routing_trace_seed.is_some());
     }
@@ -1491,8 +1480,6 @@ GatewayProviderTransportProvider,
         );
     }
 
-
-
     #[test]
     fn provider_request_routing_policy_cannot_restore_credentials_or_aether_internal_headers() {
         for header_name in [
@@ -1545,14 +1532,6 @@ GatewayProviderTransportProvider,
             );
         }
     }
-
-
-
-
-
-
-
-
 
     #[test]
     fn provider_request_routing_policy_rejects_body_patch_without_json_body() {
@@ -1617,6 +1596,4 @@ GatewayProviderTransportProvider,
             json!(["x-provider-route"])
         );
     }
-
-
 }

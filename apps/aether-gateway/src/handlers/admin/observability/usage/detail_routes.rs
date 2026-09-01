@@ -14,10 +14,8 @@ use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::{attach_admin_audit_response, query_param_bool};
 use crate::GatewayError;
 use aether_admin::observability::usage::{
-admin_usage_bad_request_response,
-admin_usage_data_unavailable_response,
-admin_usage_provider_key_name,
-ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
+    admin_usage_bad_request_response, admin_usage_data_unavailable_response,
+    admin_usage_provider_key_name, ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
 };
 use aether_data_contracts::repository::usage::{StoredRequestUsageAudit, UsageBodyField};
 use axum::{

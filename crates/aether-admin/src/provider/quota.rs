@@ -3819,9 +3819,8 @@ mod tests {
         parse_gemini_cli_v1internal_credits_response, parse_windsurf_model_configs_response,
         parse_windsurf_rate_limit_response, parse_windsurf_user_status_response,
         quota_refresh_success_invalid_state, should_auto_remove_structured_reason,
-        CodexQuotaMergeContext, CodexQuotaWindowCoverage,
-        OAUTH_ACCOUNT_BLOCK_PREFIX, OAUTH_EXPIRED_PREFIX, OAUTH_REFRESH_FAILED_PREFIX,
-        OAUTH_REQUEST_FAILED_PREFIX,
+        CodexQuotaMergeContext, CodexQuotaWindowCoverage, OAUTH_ACCOUNT_BLOCK_PREFIX,
+        OAUTH_EXPIRED_PREFIX, OAUTH_REFRESH_FAILED_PREFIX, OAUTH_REQUEST_FAILED_PREFIX,
     };
     use aether_contracts::{ExecutionResult, ResponseBody};
     use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;

@@ -96,7 +96,6 @@ async fn gateway_executes_openai_responses_compact_as_unary_request_impl() {
             provider_id: "provider-openai-compact-local-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "codex".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-compact-local-1".to_string(),
             endpoint_api_format: "openai:responses:compact".to_string(),
@@ -110,8 +109,6 @@ async fn gateway_executes_openai_responses_compact_as_unary_request_impl() {
             key_api_formats: Some(vec!["openai:responses:compact".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses:compact": 1})),
             model_id: "model-openai-compact-local-1".to_string(),
             global_model_id: "global-model-openai-compact-local-1".to_string(),
             global_model_name: "gpt-5.6-sol".to_string(),
@@ -141,7 +138,6 @@ async fn gateway_executes_openai_responses_compact_as_unary_request_impl() {
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -208,7 +204,6 @@ async fn gateway_executes_openai_responses_compact_as_unary_request_impl() {
                 .expect("auth config should encrypt"),
             ),
             None,
-            Some(serde_json::json!({"openai:responses:compact": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-openai-compact-local"})),

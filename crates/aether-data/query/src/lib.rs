@@ -637,5 +637,4 @@ mod tests {
             "SELECT id AS \"provider_id\", CAST(monthly_quota_usd AS REAL) AS \"monthly_quota_usd\" FROM providers"
         );
     }
-
 }

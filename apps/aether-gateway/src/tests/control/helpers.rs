@@ -175,7 +175,7 @@ pub(super) async fn issue_test_admin_access_token(
 pub(super) fn sample_provider(
     id: &str,
     name: &str,
-    priority: i32,
+    _priority: i32,
 ) -> StoredProviderCatalogProvider {
     StoredProviderCatalogProvider::new(
         id.to_string(),
@@ -184,7 +184,6 @@ pub(super) fn sample_provider(
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_routing_fields(priority)
 }
 
 pub(super) fn sample_proxy_node(node_id: &str) -> StoredProxyNode {
@@ -490,7 +489,6 @@ pub(super) fn sample_key(
     .with_transport_fields(
         Some(json!([api_format])),
         encrypted_api_key,
-        None,
         None,
         None,
         None,

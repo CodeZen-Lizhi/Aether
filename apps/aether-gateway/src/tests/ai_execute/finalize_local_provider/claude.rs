@@ -104,7 +104,6 @@ async fn gateway_executes_claude_chat_sync_same_format_via_local_finalize_respon
             provider_id: "provider-claude-chat-finalize-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-chat-finalize-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -118,8 +117,6 @@ async fn gateway_executes_claude_chat_sync_same_format_via_local_finalize_respon
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-chat-finalize-local-1".to_string(),
             global_model_id: "global-model-claude-chat-finalize-local-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
@@ -147,17 +144,7 @@ async fn gateway_executes_claude_chat_sync_same_format_via_local_finalize_respon
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -204,7 +191,6 @@ async fn gateway_executes_claude_chat_sync_same_format_via_local_finalize_respon
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             None,
@@ -561,7 +547,6 @@ async fn gateway_executes_claude_chat_sync_upstream_stream_via_local_finalize_re
             provider_id: "provider-claude-chat-stream-finalize-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-chat-stream-finalize-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -575,8 +560,6 @@ async fn gateway_executes_claude_chat_sync_upstream_stream_via_local_finalize_re
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-chat-stream-finalize-local-1".to_string(),
             global_model_id: "global-model-claude-chat-stream-finalize-local-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
@@ -604,17 +587,7 @@ async fn gateway_executes_claude_chat_sync_upstream_stream_via_local_finalize_re
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -661,7 +634,6 @@ async fn gateway_executes_claude_chat_sync_upstream_stream_via_local_finalize_re
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             None,
@@ -1023,7 +995,6 @@ async fn gateway_executes_claude_cli_sync_upstream_stream_via_local_finalize_res
             provider_id: "provider-claude-cli-finalize-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-finalize-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -1037,8 +1008,6 @@ async fn gateway_executes_claude_cli_sync_upstream_stream_via_local_finalize_res
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-cli-finalize-local-1".to_string(),
             global_model_id: "global-model-claude-cli-finalize-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
@@ -1066,17 +1035,7 @@ async fn gateway_executes_claude_cli_sync_upstream_stream_via_local_finalize_res
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -1123,7 +1082,6 @@ async fn gateway_executes_claude_cli_sync_upstream_stream_via_local_finalize_res
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             None,

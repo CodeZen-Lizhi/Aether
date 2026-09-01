@@ -17,15 +17,9 @@ use crate::ai_serving::{
     ResponsesWebSocketDecision, ResponsesWebSocketPinnedCandidate,
 };
 use crate::control::GatewayControlDecision;
-use crate::orchestration::release_pool_key_lease_from_report_context;
 use crate::{AppState, GatewayError};
 
-/// Owns a selected pool-key lease until the attempt lifecycle has taken over
-/// the decision report context.
-pub(super) struct PlannedPoolKeyLeaseGuard {
-    state: AppState,
-    report_context: Option<Value>,
-}
+pub(super) struct PlannedPoolKeyLeaseGuard;
 
 /// Planner output coupled to both its request parts and lease guard.
 pub(super) struct OwnedResponsesWebSocketDecision {
@@ -74,14 +68,10 @@ pub(super) fn spawn_owned_responses_websocket_plan(
             timeout_ms: owner_timeout.as_millis() as u64,
         })??;
 
-        Ok(planned.map(|planned| {
-            let planned_lease =
-                PlannedPoolKeyLeaseGuard::new(&state, planned.execution.report_context.as_ref());
-            OwnedResponsesWebSocketDecision {
-                planned,
-                planning_parts: parts,
-                planned_lease,
-            }
+        Ok(planned.map(|planned| OwnedResponsesWebSocketDecision {
+            planned,
+            planning_parts: parts,
+            planned_lease: PlannedPoolKeyLeaseGuard,
         }))
     })
 }
@@ -107,35 +97,9 @@ pub(super) async fn await_owned_responses_websocket_plan(
 }
 
 impl PlannedPoolKeyLeaseGuard {
-    fn new(state: &AppState, report_context: Option<&Value>) -> Self {
-        Self {
-            state: state.clone(),
-            report_context: report_context.cloned(),
-        }
-    }
+    pub(super) async fn release(self) {}
 
-    pub(super) async fn release(mut self) {
-        release_pool_key_lease_from_report_context(&self.state, self.report_context.as_ref()).await;
-        self.report_context = None;
-    }
-
-    fn disarm(&mut self) {
-        self.report_context = None;
-    }
-}
-
-impl Drop for PlannedPoolKeyLeaseGuard {
-    fn drop(&mut self) {
-        let Some(report_context) = self.report_context.take() else {
-            return;
-        };
-        let state = self.state.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                release_pool_key_lease_from_report_context(&state, Some(&report_context)).await;
-            });
-        }
-    }
+    pub(super) fn disarm(&mut self) {}
 }
 
 /// Keeps the planning guard in the same detached owner task as lifecycle

@@ -9,11 +9,8 @@ use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::{query_param_bool, query_param_value};
 use crate::GatewayError;
 use aether_admin::observability::stats::{
-admin_stats_bad_request_response,
-admin_stats_leaderboard_empty_response,
-AdminStatsLeaderboardMetric,
-AdminStatsSortOrder,
-AdminStatsUsageFilter,
+    admin_stats_bad_request_response, admin_stats_leaderboard_empty_response,
+    AdminStatsLeaderboardMetric, AdminStatsSortOrder, AdminStatsUsageFilter,
 };
 use aether_data_contracts::repository::usage::{UsageLeaderboardGroupBy, UsageLeaderboardQuery};
 use axum::{body::Body, http, response::Response};

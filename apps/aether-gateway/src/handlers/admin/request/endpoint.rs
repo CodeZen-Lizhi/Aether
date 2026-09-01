@@ -1,10 +1,6 @@
 use super::AdminAppState;
 
 impl<'a> AdminAppState<'a> {
-    
-
-    
-
     pub(crate) async fn recover_admin_key_health(
         &self,
         key_id: &str,
@@ -16,8 +12,6 @@ impl<'a> AdminAppState<'a> {
     pub(crate) async fn recover_all_admin_key_health(&self) -> Option<serde_json::Value> {
         crate::handlers::admin::endpoint::recover_all_admin_key_health(self).await
     }
-
-    
 
     pub(crate) async fn build_admin_key_rpm_payload(
         &self,

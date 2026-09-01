@@ -3,9 +3,9 @@ use axum::{body::Body, http, response::Response};
 
 use super::{
     handle_auth_me, handle_users_me_api_key_capabilities_put, handle_users_me_api_key_create,
-    handle_users_me_api_key_delete, handle_users_me_api_key_detail_get, handle_users_me_api_key_patch,
-    handle_users_me_api_key_providers_put, handle_users_me_api_key_update,
-    handle_users_me_api_keys_get, handle_users_me_available_models,
+    handle_users_me_api_key_delete, handle_users_me_api_key_detail_get,
+    handle_users_me_api_key_patch, handle_users_me_api_key_providers_put,
+    handle_users_me_api_key_update, handle_users_me_api_keys_get, handle_users_me_available_models,
     handle_users_me_client_config_get, handle_users_me_delete_other_sessions,
     handle_users_me_delete_session, handle_users_me_detail_put,
     handle_users_me_model_capabilities_get, handle_users_me_model_capabilities_put,

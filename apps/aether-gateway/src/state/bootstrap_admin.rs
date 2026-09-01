@@ -303,7 +303,7 @@ impl AppState {
                 if let Some(user) =
                     find_existing_bootstrap_user(self, &username, email.as_deref()).await?
                 {
-                        warn!(
+                    warn!(
                         event_name = "bootstrap_admin_race_resolved",
                         log_type = "ops",
                         username = %user.username,
@@ -323,7 +323,7 @@ impl AppState {
 mod tests {
     use super::BootstrapAdminConfig;
     use crate::AppState;
-    
+
     fn bootstrap_config() -> BootstrapAdminConfig {
         BootstrapAdminConfig {
             email: Some("admin@example.com".to_string()),
@@ -383,7 +383,6 @@ mod tests {
                 .expect("password hash should exist")
         )
         .expect("password hash should verify"));
-
     }
 
     #[tokio::test]

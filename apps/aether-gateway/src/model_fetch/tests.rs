@@ -52,7 +52,7 @@ fn sample_provider(provider_id: &str) -> StoredProviderCatalogProvider {
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(true, false, true, None, None, None, None, None, None)
+    .with_transport_fields(true, false, None, None, None, None, None, None)
 }
 
 fn sample_endpoint(
@@ -96,7 +96,6 @@ fn sample_key(provider_id: &str, key_id: &str) -> StoredProviderCatalogKey {
         Some(json!(["openai:chat"])),
         encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "live-secret-api-key")
             .expect("api key should encrypt"),
-        None,
         None,
         None,
         Some(json!(["gpt-4.1"])),
@@ -319,7 +318,7 @@ async fn codex_preset_model_fetch_associates_the_api_supported_review_model() {
         "codex".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(true, false, true, None, None, None, None, None, None);
+    .with_transport_fields(true, false, None, None, None, None, None, None);
     let mut key = sample_key("provider-codex", "key-codex");
     key.locked_models = None;
     key.model_include_patterns = None;

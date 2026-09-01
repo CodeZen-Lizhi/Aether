@@ -97,7 +97,6 @@ async fn gateway_executes_claude_cli_sync_via_local_decision_gate_with_local_syn
             provider_id: "provider-claude-cli-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -111,8 +110,6 @@ async fn gateway_executes_claude_cli_sync_via_local_decision_gate_with_local_syn
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-cli-local-1".to_string(),
             global_model_id: "global-model-claude-cli-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
@@ -142,7 +139,6 @@ async fn gateway_executes_claude_cli_sync_via_local_decision_gate_with_local_syn
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -197,7 +193,6 @@ async fn gateway_executes_claude_cli_sync_via_local_decision_gate_with_local_syn
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-claude-cli-local"})),
@@ -545,7 +540,6 @@ async fn gateway_returns_claude_cli_error_for_local_sync_failure_impl() {
             provider_id: "provider-claude-cli-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -559,8 +553,6 @@ async fn gateway_returns_claude_cli_error_for_local_sync_failure_impl() {
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-cli-local-1".to_string(),
             global_model_id: "global-model-claude-cli-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
@@ -590,7 +582,6 @@ async fn gateway_returns_claude_cli_error_for_local_sync_failure_impl() {
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -645,7 +636,6 @@ async fn gateway_returns_claude_cli_error_for_local_sync_failure_impl() {
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-claude-cli-local"})),
@@ -830,7 +820,6 @@ async fn gateway_marks_claude_cli_cross_format_runtime_miss_when_format_conversi
             provider_id: "provider-claude-cli-openai-local-miss-1".to_string(),
             provider_name: "RightCode".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-openai-local-miss-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -844,8 +833,6 @@ async fn gateway_marks_claude_cli_cross_format_runtime_miss_when_format_conversi
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-claude-cli-openai-local-miss-1".to_string(),
             global_model_id: "global-model-claude-cli-openai-local-miss-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
@@ -873,17 +860,7 @@ async fn gateway_marks_claude_cli_cross_format_runtime_miss_when_format_conversi
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -928,7 +905,6 @@ async fn gateway_marks_claude_cli_cross_format_runtime_miss_when_format_conversi
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             None,

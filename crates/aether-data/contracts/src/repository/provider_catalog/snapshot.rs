@@ -212,10 +212,9 @@ fn compare_optional_u64_null_last(
 
 fn sort_key_page(items: &mut [StoredProviderCatalogKey], order: ProviderCatalogKeyListOrder) {
     items.sort_by(|left, right| match order {
-        ProviderCatalogKeyListOrder::Name => left
-            .name
-            .cmp(&right.name)
-            .then(left.id.cmp(&right.id)),
+        ProviderCatalogKeyListOrder::Name => {
+            left.name.cmp(&right.name).then(left.id.cmp(&right.id))
+        }
         ProviderCatalogKeyListOrder::CreatedAt => left
             .created_at_unix_ms
             .unwrap_or_default()

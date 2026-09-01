@@ -62,7 +62,6 @@ async fn gateway_executes_openai_chat_sync_via_local_decision_gate_without_execu
             provider_id: "provider-openai-local-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-local-1".to_string(),
             endpoint_api_format: "openai:chat".to_string(),
@@ -76,8 +75,6 @@ async fn gateway_executes_openai_chat_sync_via_local_decision_gate_without_execu
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
             model_id: "model-openai-local-1".to_string(),
             global_model_id: "global-model-openai-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -105,17 +102,7 @@ async fn gateway_executes_openai_chat_sync_via_local_decision_gate_without_execu
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -157,7 +144,6 @@ async fn gateway_executes_openai_chat_sync_via_local_decision_gate_without_execu
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:chat": 1})),
             None,
             None,
             None,
@@ -274,7 +260,6 @@ async fn gateway_executes_openai_chat_sync_via_local_decision_gate_without_execu
     backup_candidate_row.endpoint_id = "endpoint-openai-local-2".to_string();
     backup_candidate_row.key_id = "key-openai-local-2".to_string();
     backup_candidate_row.key_name = "backup".to_string();
-    backup_candidate_row.key_internal_priority = 6;
     backup_candidate_row.model_id = "model-openai-local-2".to_string();
     backup_candidate_row.global_model_id = "global-model-openai-local-2".to_string();
     backup_candidate_row.model_provider_model_name = "gpt-5-upstream-backup".to_string();
@@ -449,7 +434,6 @@ async fn gateway_executes_openai_chat_sync_with_regex_model_mapping_in_execution
             provider_id: "provider-openai-regex-mapping-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-regex-mapping-1".to_string(),
             endpoint_api_format: "openai:chat".to_string(),
@@ -463,8 +447,6 @@ async fn gateway_executes_openai_chat_sync_with_regex_model_mapping_in_execution
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: Some(vec!["gpt-5.4".to_string()]),
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
             model_id: "model-openai-regex-mapping-1".to_string(),
             global_model_id: "global-model-openai-regex-mapping-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -492,17 +474,7 @@ async fn gateway_executes_openai_chat_sync_with_regex_model_mapping_in_execution
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -544,7 +516,6 @@ async fn gateway_executes_openai_chat_sync_with_regex_model_mapping_in_execution
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:chat": 1})),
             Some(serde_json::json!(["gpt-5.4"])),
             None,
             None,
@@ -741,7 +712,6 @@ async fn gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candida
             provider_id: "provider-openai-chat-gemini-local-1".to_string(),
             provider_name: "gemini".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-chat-gemini-local-1".to_string(),
             endpoint_api_format: "gemini:generate_content".to_string(),
@@ -755,8 +725,6 @@ async fn gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candida
             key_api_formats: Some(vec!["gemini:generate_content".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"gemini:generate_content": 1})),
             model_id: "model-openai-chat-gemini-local-1".to_string(),
             global_model_id: "global-model-openai-chat-gemini-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -779,7 +747,6 @@ async fn gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candida
     fn sample_disabled_conversion_candidate_row() -> StoredMinimalCandidateSelectionRow {
         let mut row = sample_candidate_row();
         row.provider_id = "provider-openai-chat-gemini-local-disabled".to_string();
-        row.provider_priority = 20;
         row.endpoint_id = "endpoint-openai-chat-gemini-local-disabled".to_string();
         row.key_id = "key-openai-chat-gemini-local-disabled".to_string();
         row.model_id = "model-openai-chat-gemini-local-disabled".to_string();
@@ -803,17 +770,7 @@ async fn gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candida
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_disabled_conversion_provider_catalog_provider() -> StoredProviderCatalogProvider {
@@ -824,17 +781,7 @@ async fn gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candida
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -904,7 +851,6 @@ async fn gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candida
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"gemini:generate_content": 1})),
             None,
             None,
             None,
@@ -932,7 +878,6 @@ async fn gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candida
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"gemini:generate_content": 2})),
             None,
             None,
             None,
@@ -1313,7 +1258,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
             provider_id: "provider-openai-chat-claude-cli-local-1".to_string(),
             provider_name: "claude_code".to_string(),
             provider_type: "claude_code".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-chat-claude-cli-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -1327,8 +1271,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-openai-chat-claude-cli-local-1".to_string(),
             global_model_id: "global-model-openai-chat-claude-cli-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -1359,7 +1301,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
         .with_transport_fields(
             true,
             false,
-            true,
             None,
             Some(2),
             None,
@@ -1417,7 +1358,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             None,
@@ -1767,7 +1707,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_cli_syn
             provider_id: "provider-openai-chat-gemini-cli-local-1".to_string(),
             provider_name: "gemini_cli".to_string(),
             provider_type: "gemini_cli".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-chat-gemini-cli-local-1".to_string(),
             endpoint_api_format: "gemini:generate_content".to_string(),
@@ -1781,8 +1720,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_cli_syn
             key_api_formats: Some(vec!["gemini:generate_content".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"gemini:generate_content": 1})),
             model_id: "model-openai-chat-gemini-cli-local-1".to_string(),
             global_model_id: "global-model-openai-chat-gemini-cli-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -1810,17 +1747,7 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_cli_syn
             "gemini_cli".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -1867,7 +1794,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_cli_syn
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"gemini:generate_content": 1})),
             None,
             None,
             None,
@@ -2197,7 +2123,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_sync_fa
             provider_id: "provider-openai-chat-claude-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-chat-claude-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -2211,8 +2136,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_sync_fa
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-openai-chat-claude-local-1".to_string(),
             global_model_id: "global-model-openai-chat-claude-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2240,17 +2163,7 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_sync_fa
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2297,7 +2210,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_sync_fa
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             None,
@@ -2606,7 +2518,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_sync_fa
             provider_id: "provider-openai-chat-gemini-local-1".to_string(),
             provider_name: "gemini".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-chat-gemini-local-1".to_string(),
             endpoint_api_format: "gemini:generate_content".to_string(),
@@ -2620,8 +2531,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_sync_fa
             key_api_formats: Some(vec!["gemini:generate_content".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"gemini:generate_content": 1})),
             model_id: "model-openai-chat-gemini-local-1".to_string(),
             global_model_id: "global-model-openai-chat-gemini-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2649,17 +2558,7 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_sync_fa
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2706,7 +2605,6 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_gemini_sync_fa
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"gemini:generate_content": 1})),
             None,
             None,
             None,
@@ -3055,7 +2953,6 @@ async fn gateway_executes_openai_chat_sync_with_custom_path_via_local_decision_g
             provider_id: "provider-openai-custom-path-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-custom-path-1".to_string(),
             endpoint_api_format: "openai:chat".to_string(),
@@ -3069,8 +2966,6 @@ async fn gateway_executes_openai_chat_sync_with_custom_path_via_local_decision_g
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
             model_id: "model-openai-custom-path-1".to_string(),
             global_model_id: "global-model-openai-custom-path-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -3100,7 +2995,6 @@ async fn gateway_executes_openai_chat_sync_with_custom_path_via_local_decision_g
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -3158,7 +3052,6 @@ async fn gateway_executes_openai_chat_sync_with_custom_path_via_local_decision_g
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:chat": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-openai-custom-path"})),

@@ -200,7 +200,6 @@ impl SqliteBackend {
         Arc::new(SqliteProviderCatalogReadRepository::new(self.pool_clone()))
     }
 
-
     pub fn routing_group_read_repository(&self) -> Arc<dyn RoutingGroupReadRepository> {
         Arc::new(SqliteRoutingGroupRepository::new(self.pool_clone()))
     }

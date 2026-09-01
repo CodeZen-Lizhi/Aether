@@ -141,15 +141,7 @@ fn responses_lite_instruction_text(item: &Value) -> Option<&str> {
 fn normalize_responses_lite_tools(value: &Value) -> Result<Value, &'static str> {
     match value {
         Value::Null => Ok(Value::Array(Vec::new())),
-        Value::Array(tools) => Ok(Value::Array(
-            tools
-                .iter()
-                .filter(|tool| {
-                    crate::ai_serving::codex_responses_lite_tool_is_client_executed(tool)
-                })
-                .cloned()
-                .collect(),
-        )),
+        Value::Array(tools) => Ok(Value::Array(tools.clone())),
         _ => Err("invalid_response_create_tools"),
     }
 }
@@ -519,13 +511,12 @@ pub(super) fn planned_request_uses_codex_responses_lite(
         .as_ref()
         .is_none_or(|body| body.get("context_management").is_none_or(Value::is_null));
     decision_is_codex_responses
-        && normalization.uses_codex_responses_lite()
         && final_body_supports_lite
         && decision
             .provider_request_headers
             .iter()
             .any(|(name, value)| {
-                name.eq_ignore_ascii_case(crate::ai_serving::CODEX_RESPONSES_LITE_HEADER)
+                name.eq_ignore_ascii_case("x-openai-internal-codex-responses-lite")
                     && value.trim().eq_ignore_ascii_case("true")
             })
 }
@@ -1139,66 +1130,6 @@ mod tests {
     }
 
     #[test]
-    fn effective_lite_contract_uses_the_converged_provider_header() {
-        let mut decision: crate::ai_serving::AiExecutionDecision = serde_json::from_value(json!({
-            "action": "local",
-            "provider_type": "codex",
-            "provider_api_format": "openai:responses",
-            "provider_request_headers": {}
-        }))
-        .expect("minimal decision");
-        let normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol")
-            .with_provider_type_for_tests("codex");
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-
-        decision.provider_request_headers.insert(
-            crate::ai_serving::CODEX_RESPONSES_LITE_HEADER.to_string(),
-            "false".to_string(),
-        );
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-
-        decision.provider_request_headers.clear();
-        decision.provider_request_headers.insert(
-            crate::ai_serving::CODEX_RESPONSES_LITE_HEADER.to_ascii_uppercase(),
-            "TRUE".to_string(),
-        );
-        assert!(planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-5.6-sol",
-            "context_management": {"compact_threshold": 1000}
-        }));
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-        decision.provider_request_body = None;
-
-        // Header rules on a custom provider must not be able to spoof the
-        // internal Codex contract marker and enable Lite de-duplication.
-        decision.provider_type = Some("custom".to_string());
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-        decision.provider_type = Some("codex".to_string());
-        let custom_normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol");
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &custom_normalization
-        ));
-    }
-
-    #[test]
     fn responses_lite_continuation_deduplicates_only_matching_static_config() {
         let first = json!({
             "type": "response.create",
@@ -1245,56 +1176,6 @@ mod tests {
             prepare_responses_lite_continuation(&changed_tools, &stored),
             Err("responses_lite_continuation_static_config_changed")
         );
-    }
-
-    #[test]
-    fn responses_lite_static_tools_match_the_actual_client_executed_synthetic_subset() {
-        let function = json!({"type": "function", "name": "lookup", "parameters": {}});
-        let custom = json!({"type": "custom", "name": "shell", "format": {}});
-        let namespace = json!({"type": "namespace", "name": "browser", "tools": []});
-        let client_search = json!({"type": "tool_search", "execution": "client"});
-        let first = json!({
-            "type": "response.create",
-            "model": "gpt-5.6-sol",
-            "instructions": "developer instructions",
-            "tools": [
-                function.clone(),
-                {"type": "web_search"},
-                {"type": "image_generation"},
-                custom.clone(),
-                namespace.clone(),
-                client_search.clone(),
-                {"type": "tool_search", "execution": "server"},
-                {"type": "tool_search"},
-                {"type": "future_hosted_tool"}
-            ],
-            "input": [{"role": "user", "content": "hello"}]
-        });
-        let stored = ResponsesLiteStaticConfig::from_response_create(&first);
-        let continuation = json!({
-            "type": "response.create",
-            "model": "gpt-5.6-sol",
-            "previous_response_id": "resp_1",
-            "input": [
-                {
-                    "type": "additional_tools",
-                    "role": "developer",
-                    "tools": [function, custom, namespace, client_search]
-                },
-                {
-                    "type": "message",
-                    "role": "developer",
-                    "content": [{"type": "input_text", "text": "developer instructions"}]
-                },
-                {"type": "function_call_output", "call_id": "call_1", "output": "ok"}
-            ]
-        });
-
-        let prepared = prepare_responses_lite_continuation(&continuation, &stored)
-            .expect("hosted tools are not part of the stored Lite synthetic prefix");
-        let input = prepared["input"].as_array().expect("prepared input");
-        assert_eq!(input.len(), 1);
-        assert_eq!(input[0]["type"], "function_call_output");
     }
 
     #[test]

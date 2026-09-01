@@ -45,17 +45,7 @@ async fn gateway_executes_openai_video_delete_via_reconstructed_data_backed_loca
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_endpoint() -> StoredProviderCatalogEndpoint {
@@ -95,7 +85,6 @@ async fn gateway_executes_openai_video_delete_via_reconstructed_data_backed_loca
             Some(json!(["openai:video"])),
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-upstream-openai-video")
                 .expect("api key should encrypt"),
-            None,
             None,
             Some(json!({"openai:video": 1})),
             None,

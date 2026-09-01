@@ -210,11 +210,7 @@ pub(crate) async fn build_public_providers_payload(
     if matches!(is_active, Some(false)) {
         providers.retain(|provider| !provider.is_active);
     }
-    providers.sort_by(|left, right| {
-        left.provider_priority
-            .cmp(&right.provider_priority)
-            .then_with(|| left.name.cmp(&right.name))
-    });
+    providers.sort_by(|left, right| left.name.cmp(&right.name));
     let providers = providers
         .into_iter()
         .skip(skip)
@@ -283,7 +279,6 @@ pub(crate) async fn build_public_providers_payload(
             json!({
                 "id": provider_id.clone(),
                 "is_active": provider.is_active,
-                "provider_priority": provider.provider_priority,
                 "models_count": model_count,
                 "active_models_count": model_count,
                 "endpoints_count": endpoints_count_by_provider.get(&provider_id).copied().unwrap_or(0),

@@ -113,10 +113,12 @@ mod tests {
         }
 
         assert!(!provider_type_supports_local_embedding_transport(
-            "custom", "openai:chat"
+            "custom",
+            "openai:chat"
         ));
         assert!(!provider_type_supports_local_embedding_transport(
-            "custom", "claude:messages"
+            "custom",
+            "claude:messages"
         ));
 
         assert!(provider_type_supports_local_embedding_transport(

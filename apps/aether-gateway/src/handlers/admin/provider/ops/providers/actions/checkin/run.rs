@@ -12,10 +12,7 @@ use super::shared::{
     admin_provider_ops_checkin_payload,
 };
 use crate::handlers::admin::request::AdminAppState;
-use aether_admin::provider::ops::{
-ProviderOpsArchitectureSpec,
-ProviderOpsCheckinMode,
-};
+use aether_admin::provider::ops::{ProviderOpsArchitectureSpec, ProviderOpsCheckinMode};
 use aether_contracts::ProxySnapshot;
 
 pub(in super::super) async fn admin_provider_ops_run_checkin_action(

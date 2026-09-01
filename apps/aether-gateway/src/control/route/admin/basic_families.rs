@@ -6,7 +6,8 @@ pub(super) fn classify_admin_basic_family_route(
     method: &http::Method,
     normalized_path: &str,
     normalized_path_no_trailing: &str,
-) -> Option<ClassifiedRoute> {    if method == http::Method::GET
+) -> Option<ClassifiedRoute> {
+    if method == http::Method::GET
         && matches!(
             normalized_path,
             "/api/admin/adaptive/keys" | "/api/admin/adaptive/keys/"

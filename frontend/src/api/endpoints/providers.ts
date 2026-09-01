@@ -468,3 +468,22 @@ export async function getProviderMappingPreview(
     return normalizeProviderMappingPreview(response.data, providerId)
   })
 }
+
+/** R11-5: 调度策略页用的供应商平铺列表（后端已按调度优先级排序，payload 带 priority）。 */
+export interface AdminProviderListItem {
+  id: string
+  name: string
+  priority?: number | null
+  api_format?: string | null
+  base_url?: string | null
+  is_active: boolean
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export async function listAdminProviders(limit = 1000): Promise<AdminProviderListItem[]> {
+  const response = await client.get<AdminProviderListItem[]>('/api/admin/providers', {
+    params: { skip: 0, limit },
+  })
+  return Array.isArray(response.data) ? response.data : []
+}

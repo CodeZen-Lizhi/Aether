@@ -248,3 +248,37 @@ export async function updateProviderKey(
   )
   return response.data
 }
+
+/** R11-6/R11-8: grouped-by-format 视图的 Key 条目（api_formats 为空的 key 已由后端按端点格式回退）。 */
+export interface GroupedEndpointKey {
+  id: string
+  provider_id: string
+  name: string
+  auth_type: string
+  api_key_masked?: string | null
+  rate_multipliers: Record<string, number> | null
+  is_active: boolean
+  provider_active: boolean
+  provider_name?: string | null
+  api_formats: string[]
+  api_format: string
+  health_score?: number
+  circuit_breaker_open?: boolean
+}
+
+/** 拉取全部 Key（按 API 格式分组的原始 payload），客户端按 key id 去重。 */
+export async function getEndpointKeysGroupedByFormat(): Promise<GroupedEndpointKey[]> {
+  const response = await client.get<Record<string, GroupedEndpointKey[]>>(
+    '/api/admin/endpoints/keys/grouped-by-format',
+  )
+  const grouped = response.data ?? {}
+  const byId = new Map<string, GroupedEndpointKey>()
+  for (const items of Object.values(grouped)) {
+    for (const key of Array.isArray(items) ? items : []) {
+      if (key && typeof key.id === 'string' && !byId.has(key.id)) {
+        byId.set(key.id, key)
+      }
+    }
+  }
+  return [...byId.values()]
+}

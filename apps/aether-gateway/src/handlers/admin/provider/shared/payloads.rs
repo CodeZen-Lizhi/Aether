@@ -216,7 +216,6 @@ pub(crate) struct AdminProviderUpdateRequest {
 
 pub(crate) type AdminProviderUpdatePatch = AdminTypedObjectPatch<AdminProviderUpdateRequest>;
 
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct AdminProviderModelCreateRequest {
     pub(crate) provider_model_name: String,

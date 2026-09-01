@@ -6,7 +6,7 @@ use crate::ai_serving::planner::decision_input::apply_provider_request_routing_p
 use crate::ai_serving::planner::redaction::sanitize_upstream_url_for_log;
 use crate::ai_serving::planner::report_context::{
     build_local_execution_report_context, insert_native_client_envelope_name,
-    insert_provider_stream_event_api_format, LocalExecutionReportContextParts,
+    LocalExecutionReportContextParts,
 };
 use crate::ai_serving::planner::spec_metadata::local_openai_responses_spec_metadata;
 use crate::ai_serving::planner::{
@@ -143,10 +143,6 @@ pub(crate) async fn maybe_build_local_openai_responses_decision_payload_for_cand
     {
         extra_fields.insert("chatgpt_web_image".to_string(), json!(true));
     }
-    insert_provider_stream_event_api_format(
-        &mut extra_fields,
-        resolved.transport.provider.provider_type.as_str(),
-    );
     let effective_headers = input.effective_headers(&parts.headers);
     let report_context = append_local_failover_policy_to_value(
         append_execution_contract_fields_to_value(
@@ -243,7 +239,6 @@ pub(crate) async fn maybe_build_local_openai_responses_decision_payload_for_cand
         upstream_url,
         execution_strategy,
         conversion_mode,
-        is_antigravity: _,
         envelope_name: _,
         upstream_is_stream,
         transport,

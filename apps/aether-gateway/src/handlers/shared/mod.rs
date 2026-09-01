@@ -4,7 +4,6 @@ mod catalog;
 mod external_models;
 mod normalize;
 mod payloads;
-pub(crate) mod provider_pool;
 mod request_utils;
 mod system_config_values;
 mod usage_stats;
@@ -25,8 +24,7 @@ pub(crate) use self::catalog::{
     masked_catalog_api_key_for_provider, parse_catalog_auth_config_json,
     provider_catalog_key_supports_format, provider_key_health_summary,
     provider_key_health_summary_at, provider_key_status_snapshot_payload,
-    sync_provider_key_oauth_status_snapshot, sync_provider_key_quota_status_snapshot,
-    take_secret_prefix, take_secret_suffix,
+    sync_provider_key_quota_status_snapshot, take_secret_prefix, take_secret_suffix,
 };
 pub(crate) use self::external_models::OFFICIAL_EXTERNAL_MODEL_PROVIDERS;
 pub(crate) use self::normalize::{

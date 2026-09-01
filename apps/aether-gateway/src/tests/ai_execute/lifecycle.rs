@@ -84,7 +84,6 @@ fn sample_local_openai_candidate_row() -> StoredMinimalCandidateSelectionRow {
         provider_id: "provider-openai-lifecycle-local-1".to_string(),
         provider_name: "openai".to_string(),
         provider_type: "custom".to_string(),
-        provider_priority: 10,
         provider_is_active: true,
         endpoint_id: "endpoint-openai-lifecycle-local-1".to_string(),
         endpoint_api_format: "openai:chat".to_string(),
@@ -98,8 +97,6 @@ fn sample_local_openai_candidate_row() -> StoredMinimalCandidateSelectionRow {
         key_api_formats: Some(vec!["openai:chat".to_string()]),
         key_allowed_models: None,
         key_capabilities: None,
-        key_internal_priority: 5,
-        key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
         model_id: "model-openai-lifecycle-local-1".to_string(),
         global_model_id: "global-model-openai-lifecycle-local-1".to_string(),
         global_model_name: "gpt-5".to_string(),
@@ -127,17 +124,7 @@ fn sample_local_openai_provider() -> StoredProviderCatalogProvider {
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(
-        true,
-        false,
-        false,
-        None,
-        Some(2),
-        None,
-        Some(20.0),
-        None,
-        None,
-    )
+    .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
 }
 
 fn sample_local_openai_endpoint() -> StoredProviderCatalogEndpoint {
@@ -179,7 +166,6 @@ fn sample_local_openai_key() -> StoredProviderCatalogKey {
             .expect("api key should encrypt"),
         None,
         None,
-        Some(serde_json::json!({"openai:chat": 1})),
         None,
         None,
         None,

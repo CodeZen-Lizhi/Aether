@@ -39,9 +39,7 @@ pub fn parse_request(
         FormatId::GeminiEmbedding => gemini::embedding::request::from(body, ctx),
         FormatId::DoubaoEmbedding => doubao::embedding::request::from(body, ctx),
         FormatId::AliyunMultimodalEmbedding => aliyun::embedding::request::from(body, ctx),
-        FormatId::OpenAiRealtime
-        | FormatId::OpenAiSearch
-        | FormatId::GeminiInteractions => None,
+        FormatId::OpenAiRealtime | FormatId::OpenAiSearch | FormatId::GeminiInteractions => None,
     }
     .ok_or_else(|| FormatError::RequestParseFailed {
         format: source.as_str().to_string(),
@@ -75,9 +73,7 @@ fn emit_request_inner(
         FormatId::GeminiEmbedding => gemini::embedding::request::to(request, ctx),
         FormatId::DoubaoEmbedding => doubao::embedding::request::to(request, ctx),
         FormatId::AliyunMultimodalEmbedding => aliyun::embedding::request::to(request, ctx),
-        FormatId::OpenAiRealtime
-        | FormatId::OpenAiSearch
-        | FormatId::GeminiInteractions => None,
+        FormatId::OpenAiRealtime | FormatId::OpenAiSearch | FormatId::GeminiInteractions => None,
     }
     .ok_or_else(|| FormatError::RequestEmitFailed {
         format: target.as_str().to_string(),

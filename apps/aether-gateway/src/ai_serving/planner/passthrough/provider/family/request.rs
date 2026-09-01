@@ -202,11 +202,8 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
     let mut provider_request_body = base_provider_request.body;
     let mut compatibility_edits = base_provider_request.compatibility_edits;
     if let Some(mapping) = model_directive_mapping.as_ref() {
-        let before_mapping = base_provider_request_body.clone();
-        crate::ai_serving::apply_model_directive_mapping_patch(
-            &mut provider_request_body,
-            mapping,
-        );
+        let before_mapping = provider_request_body.clone();
+        crate::ai_serving::apply_model_directive_mapping_patch(&mut provider_request_body, mapping);
         if before_mapping != provider_request_body {
             compatibility_edits.push(SameFormatProviderCompatibilityEdit {
                 field: "model_directive_mapping".to_string(),
@@ -228,7 +225,8 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or(input.requested_model.as_str());
-    if let Err(violation) = crate::ai_serving::finalize_openai_provider_request(
+    if let Err(violation) =
+        crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy(
             &mut provider_request_body,
             crate::ai_serving::OpenAiProviderRequestFinalization {
                 source_api_format: spec.api_format,
@@ -306,8 +304,8 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
     };
 
     let extra_headers = BTreeMap::new();
-    let Some(mut provider_request_headers) = build_same_format_provider_headers(
-        SameFormatProviderHeadersInput {
+    let Some(mut provider_request_headers) =
+        build_same_format_provider_headers(SameFormatProviderHeadersInput {
             headers: effective_headers,
             provider_request_body: &provider_request_body,
             original_request_body: body_json,
@@ -317,8 +315,8 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
             auth_header: prepared.auth_header.as_deref(),
             auth_value: prepared.auth_value.as_deref(),
             extra_headers: &extra_headers,
-        },
-    ) else {
+        })
+    else {
         mark_skipped_local_same_format_provider_candidate_with_failure_diagnostic(
             state,
             input,

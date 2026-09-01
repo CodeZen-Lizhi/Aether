@@ -20,6 +20,7 @@ pub(crate) fn build_local_openai_responses_request_body(
     _provider_type: &str,
     provider_api_format: &str,
     body_rules: Option<&Value>,
+    _user_api_key_id: Option<&str>,
     request_headers: &http::HeaderMap,
     enable_model_directives: bool,
 ) -> Option<Value> {
@@ -64,6 +65,7 @@ pub(crate) fn build_local_openai_responses_request_body_for_websocket_continuati
     provider_type: &str,
     provider_api_format: &str,
     body_rules: Option<&Value>,
+    user_api_key_id: Option<&str>,
     request_headers: &http::HeaderMap,
     enable_model_directives: bool,
 ) -> Option<Value> {
@@ -75,6 +77,7 @@ pub(crate) fn build_local_openai_responses_request_body_for_websocket_continuati
         provider_type,
         provider_api_format,
         body_rules,
+        user_api_key_id,
         request_headers,
         enable_model_directives,
     )
@@ -89,8 +92,8 @@ pub(crate) fn build_cross_format_openai_responses_request_body(
     force_body_stream_field: bool,
     _provider_type: &str,
     body_rules: Option<&Value>,
-    request_headers: &http::HeaderMap,
     user_api_key_id: Option<&str>,
+    request_headers: &http::HeaderMap,
     enable_model_directives: bool,
 ) -> Option<Value> {
     let _ = user_api_key_id;

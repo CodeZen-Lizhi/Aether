@@ -36,8 +36,11 @@ pub use health::{
     effective_provider_key_rpm_limit, is_candidate_in_recent_failure_cooldown,
     is_provider_key_circuit_open, is_provider_key_circuit_open_at,
     provider_key_circuit_payload_is_active_open_at, provider_key_health_bucket,
-    provider_key_health_score, provider_key_rpm_allows_request,
-    provider_key_rpm_allows_request_since, ProviderKeyHealthBucket, PROVIDER_KEY_RPM_WINDOW_SECS,
+    provider_key_health_score, provider_key_rate_limit_cooldown,
+    provider_key_rate_limit_cooldown_active_at, provider_key_rate_limit_cooldown_payload,
+    provider_key_rpm_allows_request, provider_key_rpm_allows_request_since,
+    ProviderKeyHealthBucket, ProviderKeyRateLimitCooldown, UpstreamFailureClass,
+    PROVIDER_KEY_RPM_WINDOW_SECS, RATE_LIMIT_COOLDOWN_BASE_SECS, RATE_LIMIT_COOLDOWN_MAX_SECS,
 };
 pub use model::{
     candidate_model_names, extract_global_priority_for_format, matches_model_mapping,
@@ -52,9 +55,10 @@ pub use model::{
 };
 pub use provider::{build_provider_concurrent_limit_map, should_skip_provider_quota};
 pub use ranking::{
-    apply_scheduler_candidate_ranking, SchedulerRankableCandidate, SchedulerRankingContext,
-    SchedulerRankingMode, SchedulerRankingOutcome, SchedulerTunnelAffinityBucket,
-    RANKING_REASON_CACHED_AFFINITY, RANKING_REASON_CROSS_FORMAT, RANKING_REASON_LOCAL_TUNNEL,
+    apply_scheduler_candidate_ranking, LatencyEwma, SchedulerRankableCandidate,
+    SchedulerRankingContext, SchedulerRankingMode, SchedulerRankingOutcome,
+    SchedulerTunnelAffinityBucket, RANKING_REASON_CACHED_AFFINITY, RANKING_REASON_CROSS_FORMAT,
+    RANKING_REASON_LOCAL_TUNNEL,
 };
 pub use request_candidate::{
     build_execution_request_candidate_seed, build_local_request_candidate_status_record,

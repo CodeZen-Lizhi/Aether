@@ -2,8 +2,7 @@ use crate::handlers::admin::request::AdminAppState;
 use crate::GatewayError;
 use aether_admin::observability::stats::round_to;
 use aether_admin::observability::usage::{
-admin_usage_data_unavailable_response,
-ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
+    admin_usage_data_unavailable_response, ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
 };
 use aether_data_contracts::repository::usage::{StoredUsageDailySummary, UsageDailyHeatmapQuery};
 use axum::{

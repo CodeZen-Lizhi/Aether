@@ -111,8 +111,7 @@ async fn resolve_candidate_transport_ranking_facts_from_transport(
 ) -> CandidateTransportRankingFacts {
     CandidateTransportRankingFacts {
         tunnel_bucket: resolve_tunnel_owner_affinity_from_transport(state, cache, transport).await,
-        keep_priority_on_conversion: ordering_config.keep_priority_on_conversion
-            || transport.provider.keep_priority_on_conversion,
+        keep_priority_on_conversion: ordering_config.keep_priority_on_conversion,
     }
 }
 

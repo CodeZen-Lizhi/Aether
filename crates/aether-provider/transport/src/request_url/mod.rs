@@ -577,8 +577,8 @@ mod tests {
     use aether_ai_formats::ApiOperation;
 
     use super::{
-        build_transport_request_url,
-        build_transport_request_url_for_request_body, TransportRequestUrlParams,
+        build_transport_request_url, build_transport_request_url_for_request_body,
+        TransportRequestUrlParams,
     };
     use crate::snapshot::{
         GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
@@ -753,12 +753,6 @@ mod tests {
             "https://voice.example.test/v1/socket/live?deployment=future&tenant=alpha"
         );
     }
-
-
-
-
-
-
 
     #[test]
     fn builds_openai_responses_url_for_formal_format_name() {
@@ -1129,9 +1123,6 @@ mod tests {
         );
     }
 
-
-
-
     #[test]
     fn count_tokens_config_fields_fall_back_from_endpoint_to_provider() {
         let mut transport = sample_transport(
@@ -1222,7 +1213,6 @@ mod tests {
             )
         );
     }
-
 
     #[test]
     fn embedding_request_url_builds_provider_default_paths() {
@@ -1375,8 +1365,6 @@ mod tests {
             Some("https://generativelanguage.googleapis.com/v1/interactions?trace=2")
         );
     }
-
-
 
     #[test]
     fn embedding_request_url_preserves_google_openai_compat_roots() {

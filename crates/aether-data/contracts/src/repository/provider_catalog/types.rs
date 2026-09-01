@@ -1034,16 +1034,7 @@ mod tests {
     #[test]
     fn transport_fields_allow_null_encrypted_api_key() {
         let key = sample_key()
-            .with_transport_fields(
-                None,
-                None::<String>,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
+            .with_transport_fields(None, None::<String>, None, None, None, None, None, None)
             .expect("null api key should be accepted");
 
         assert_eq!(key.encrypted_api_key, None);

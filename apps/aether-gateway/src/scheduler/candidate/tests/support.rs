@@ -12,7 +12,6 @@ pub(super) fn sample_row() -> StoredMinimalCandidateSelectionRow {
         provider_id: "provider-1".to_string(),
         provider_name: "OpenAI".to_string(),
         provider_type: "custom".to_string(),
-        provider_priority: 10,
         provider_is_active: true,
         endpoint_id: "endpoint-1".to_string(),
         endpoint_api_format: "openai:chat".to_string(),
@@ -26,8 +25,6 @@ pub(super) fn sample_row() -> StoredMinimalCandidateSelectionRow {
         key_api_formats: Some(vec!["openai:chat".to_string()]),
         key_allowed_models: None,
         key_capabilities: Some(serde_json::json!({"cache_1h": true})),
-        key_internal_priority: 50,
-        key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 2})),
         model_id: "model-1".to_string(),
         global_model_id: "global-model-1".to_string(),
         global_model_name: "gpt-4.1".to_string(),
@@ -67,17 +64,7 @@ pub(super) fn sample_provider(
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(
-        true,
-        false,
-        false,
-        concurrent_limit,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    .with_transport_fields(true, false, concurrent_limit, None, None, None, None, None)
 }
 
 pub(super) fn sample_key(

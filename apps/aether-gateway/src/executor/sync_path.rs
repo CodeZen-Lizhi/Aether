@@ -1,10 +1,6 @@
 use aether_ai_serving::{
-run_ai_sync_execution_path,
-AiPlanFallbackReason,
-AiServingExecutionOutcome,
-AiSyncExecutionPathPort,
-AiSyncExecutionStep,
-OriginalRequestPayload,
+    run_ai_sync_execution_path, AiPlanFallbackReason, AiServingExecutionOutcome,
+    AiSyncExecutionPathPort, AiSyncExecutionStep, OriginalRequestPayload,
 };
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
@@ -23,15 +19,14 @@ use crate::control::GatewayControlDecision;
 use crate::{AppState, GatewayError, GatewayFallbackReason};
 
 use super::{
-    execute_sync_plan_and_reports_with_transfer_tracker,
-    maybe_execute_sync_via_local_decision, maybe_execute_sync_via_local_gemini_files_decision,
+    execute_sync_plan_and_reports_with_transfer_tracker, maybe_execute_sync_via_local_decision,
+    maybe_execute_sync_via_local_gemini_files_decision,
     maybe_execute_sync_via_local_image_decision,
     maybe_execute_sync_via_local_openai_responses_decision,
     maybe_execute_sync_via_local_same_format_provider_decision,
     maybe_execute_sync_via_local_standard_decision, maybe_execute_sync_via_local_video_decision,
     maybe_execute_sync_via_plan_fallback, maybe_execute_sync_via_remote_decision,
-    parse_local_request_body, LocalExecutionRequestOutcome,
-    ProviderTransferTracker,
+    parse_local_request_body, LocalExecutionRequestOutcome, ProviderTransferTracker,
 };
 
 pub(crate) async fn maybe_execute_via_sync_decision_path(

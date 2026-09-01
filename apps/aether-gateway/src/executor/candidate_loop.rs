@@ -1,12 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aether_ai_serving::{
-run_ai_attempt_loop,
-AiAttemptExecutionOutcome,
-AiAttemptLoopOutcome,
-AiAttemptLoopPort,
-AiAttemptRetryScope,
-AiExecutionAttempt,
+    run_ai_attempt_loop, AiAttemptExecutionOutcome, AiAttemptLoopOutcome, AiAttemptLoopPort,
+    AiAttemptRetryScope, AiExecutionAttempt,
 };
 use aether_data_contracts::repository::candidates::RequestCandidateStatus;
 use aether_runtime::ConcurrencyPermit;
@@ -33,7 +29,6 @@ use crate::execution_runtime::{
 use crate::executor::{
     build_local_execution_exhaustion, mark_deferred_upstream_response, LocalExecutionRequestOutcome,
 };
-use crate::handlers::shared::provider_pool::release_admin_provider_pool_key_lease;
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
     local_execution_candidate_metadata_from_report_context,
@@ -1181,12 +1176,10 @@ async fn mark_unused_local_candidate(
 ) {
     let metadata = local_execution_candidate_metadata_from_report_context(report_context);
     if let Some(lease) = metadata.pool_key_lease.as_ref() {
-        if let Err(err) =
-            release_admin_provider_pool_key_lease(state.runtime_state.as_ref(), lease).await
-        {
+        if let Err(err) = state.runtime_state.lock_release(lease).await {
             warn!(
                 error = ?err,
-                "gateway candidate loop: failed to release unused pool key lease"
+                "gateway candidate loop: failed to release unused candidate lease"
             );
         }
     }

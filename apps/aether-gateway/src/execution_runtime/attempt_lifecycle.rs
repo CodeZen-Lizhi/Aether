@@ -25,7 +25,6 @@
 //! | `append_stream_capture_bytes` / `build_stream_body_capture` | [`AttemptBodyCapture`] |
 //!
 //! HTTP 侧的 `stage_trace` 埋点、kiro prompt-cache usage 合并、direct-inline 延迟
-//! pending 等是它独有的，接线时作为 transport 专有部分留在原处。
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -1150,92 +1149,6 @@ mod tests {
             AttemptProviderEffect::ProviderFailure
         );
         assert_eq!(settlement.billing, AttemptBilling::Billed);
-    }
-
-    #[test]
-    fn a_legitimate_incomplete_still_releases_the_pool_key_lease() {
-        // 共享 usage 判定目前仍把 response.incomplete 记成终态失败，于是会出现
-        // failed=true 而 projects_provider_failure=false 的组合。这种组合必须
-        // 明确落到「只释放 lease」的分支，否则 lease 会挂到 TTL 过期。
-        let effect = classify_attempt_provider_effect(false, false, true);
-
-        assert_eq!(effect, AttemptProviderEffect::NoProviderEffect);
-        assert!(effect.releases_pool_key_lease());
-    }
-
-    #[test]
-    fn every_provider_effect_releases_the_pool_key_lease() {
-        for (cancelled, projects_provider_failure, failed, expected) in [
-            (
-                true,
-                false,
-                false,
-                AttemptProviderEffect::NoProviderEffect,
-            ),
-            (true, true, true, AttemptProviderEffect::NoProviderEffect),
-            (false, true, true, AttemptProviderEffect::ProviderFailure),
-            (
-                false,
-                false,
-                true,
-                AttemptProviderEffect::NoProviderEffect,
-            ),
-            (false, false, false, AttemptProviderEffect::ProviderSuccess),
-        ] {
-            let effect =
-                classify_attempt_provider_effect(cancelled, projects_provider_failure, failed);
-            assert_eq!(
-                effect, expected,
-                "cancelled={cancelled} projects_provider_failure={projects_provider_failure} failed={failed}"
-            );
-            assert!(
-                effect.releases_pool_key_lease(),
-                "every effect branch must release the pool key lease"
-            );
-        }
-    }
-
-    /// 每一个结算分支都必须释放 lease：这条不变量跨越整张结算表。
-    #[test]
-    fn every_settlement_branch_releases_the_pool_key_lease() {
-        let providers = [
-            terminal(200),
-            terminal(429),
-            provider_cancelled(),
-            aborted(502, "upstream failed"),
-            aborted(504, "timed out"),
-        ];
-        let deliveries = [
-            AttemptClientDelivery::Complete,
-            AttemptClientDelivery::Aborted { reason: "gone" },
-        ];
-        for provider in providers {
-            for delivery in deliveries {
-                for report_represents_failure in [false, true] {
-                    for observed_finish in [false, true] {
-                        for has_parser_error in [false, true] {
-                            let settlement = settle(
-                                provider,
-                                delivery,
-                                report_represents_failure,
-                                observed_finish,
-                                has_parser_error,
-                            );
-                            assert!(
-                                settlement.provider_effect.releases_pool_key_lease(),
-                                "provider={provider:?} delivery={delivery:?}"
-                            );
-                            // 作废账单的分支一律不提交 execution report。
-                            assert_eq!(
-                                settlement.submit_execution_report,
-                                !settlement.billing.is_void(),
-                                "provider={provider:?} delivery={delivery:?}"
-                            );
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

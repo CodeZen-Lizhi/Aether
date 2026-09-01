@@ -114,7 +114,6 @@ async fn gateway_executes_openai_responses_sync_via_local_decision_gate_with_loc
             provider_id: "provider-openai-cli-local-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-local-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -128,8 +127,6 @@ async fn gateway_executes_openai_responses_sync_via_local_decision_gate_with_loc
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-openai-cli-local-1".to_string(),
             global_model_id: "global-model-openai-cli-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -159,7 +156,6 @@ async fn gateway_executes_openai_responses_sync_via_local_decision_gate_with_loc
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -219,7 +215,6 @@ async fn gateway_executes_openai_responses_sync_via_local_decision_gate_with_loc
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-openai-cli-local"})),
@@ -624,7 +619,6 @@ async fn gateway_waits_for_api_key_concurrency_slot_then_executes_openai_respons
             provider_id: "provider-openai-cli-local-limit-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-local-limit-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -638,8 +632,6 @@ async fn gateway_waits_for_api_key_concurrency_slot_then_executes_openai_respons
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-openai-cli-local-limit-1".to_string(),
             global_model_id: "global-model-openai-cli-local-limit-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -667,17 +659,7 @@ async fn gateway_waits_for_api_key_concurrency_slot_then_executes_openai_respons
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -722,7 +704,6 @@ async fn gateway_waits_for_api_key_concurrency_slot_then_executes_openai_respons
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             None,
@@ -1017,7 +998,6 @@ async fn gateway_executes_openai_responses_sync_after_api_key_concurrency_wait_b
             provider_id: "provider-openai-cli-local-timeout-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-local-timeout-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -1031,8 +1011,6 @@ async fn gateway_executes_openai_responses_sync_after_api_key_concurrency_wait_b
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-openai-cli-local-timeout-1".to_string(),
             global_model_id: "global-model-openai-cli-local-timeout-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -1060,17 +1038,7 @@ async fn gateway_executes_openai_responses_sync_after_api_key_concurrency_wait_b
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -1115,7 +1083,6 @@ async fn gateway_executes_openai_responses_sync_after_api_key_concurrency_wait_b
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             None,
@@ -1388,7 +1355,6 @@ async fn gateway_returns_openai_responses_error_for_local_sync_failure_impl() {
             provider_id: "provider-openai-cli-local-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-local-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -1402,8 +1368,6 @@ async fn gateway_returns_openai_responses_error_for_local_sync_failure_impl() {
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-openai-cli-local-1".to_string(),
             global_model_id: "global-model-openai-cli-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -1433,7 +1397,6 @@ async fn gateway_returns_openai_responses_error_for_local_sync_failure_impl() {
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -1489,7 +1452,6 @@ async fn gateway_returns_openai_responses_error_for_local_sync_failure_impl() {
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-openai-cli-local"})),
@@ -1642,14 +1604,6 @@ async fn gateway_returns_openai_responses_error_for_local_sync_failure_impl() {
     upstream_handle.abort();
 }
 
-#[test]
-fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cli_sync_failure() {
-    run_cli_sync_test(
-        "gateway_returns_openai_responses_error_for_local_cross_format_gemini_cli_sync_failure",
-        gateway_returns_openai_responses_error_for_local_cross_format_gemini_cli_sync_failure_impl,
-    );
-}
-
 async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cli_sync_failure_impl(
 ) {
     #[derive(Debug, Clone)]
@@ -1702,7 +1656,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cl
             provider_id: "provider-openai-cli-gemini-local-1".to_string(),
             provider_name: "gemini_cli".to_string(),
             provider_type: "gemini_cli".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-gemini-local-1".to_string(),
             endpoint_api_format: "gemini:generate_content".to_string(),
@@ -1716,8 +1669,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cl
             key_api_formats: Some(vec!["gemini:generate_content".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"gemini:generate_content": 1})),
             model_id: "model-openai-cli-gemini-local-1".to_string(),
             global_model_id: "global-model-openai-cli-gemini-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -1745,17 +1696,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cl
             "gemini_cli".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -1802,7 +1743,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cl
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"gemini:generate_content": 1})),
             None,
             None,
             None,
@@ -2109,7 +2049,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_sy
             provider_id: "provider-openai-cli-claude-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-claude-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -2123,8 +2062,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_sy
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-openai-cli-claude-local-1".to_string(),
             global_model_id: "global-model-openai-cli-claude-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2152,17 +2089,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_sy
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2209,7 +2136,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_sy
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             None,
@@ -2495,7 +2421,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_ch
             provider_id: "provider-openai-cli-claude-chat-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-claude-chat-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -2509,8 +2434,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_ch
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-openai-cli-claude-chat-local-1".to_string(),
             global_model_id: "global-model-openai-cli-claude-chat-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2538,17 +2461,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_ch
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2595,7 +2508,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_ch
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             None,
@@ -2884,7 +2796,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_ch
             provider_id: "provider-openai-cli-gemini-chat-local-1".to_string(),
             provider_name: "gemini".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-gemini-chat-local-1".to_string(),
             endpoint_api_format: "gemini:generate_content".to_string(),
@@ -2898,8 +2809,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_ch
             key_api_formats: Some(vec!["gemini:generate_content".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"gemini:generate_content": 1})),
             model_id: "model-openai-cli-gemini-chat-local-1".to_string(),
             global_model_id: "global-model-openai-cli-gemini-chat-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2927,17 +2836,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_ch
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2984,7 +2883,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_ch
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"gemini:generate_content": 1})),
             None,
             None,
             None,
@@ -3212,599 +3110,5 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_ch
 
     gateway_handle.abort();
     execution_runtime_handle.abort();
-    upstream_handle.abort();
-}
-
-#[test]
-fn gateway_executes_codex_cli_sync_via_local_decision_gate_after_oauth_refresh() {
-    run_cli_sync_test(
-        "gateway_executes_codex_cli_sync_via_local_decision_gate_after_oauth_refresh",
-        gateway_executes_codex_cli_sync_via_local_decision_gate_after_oauth_refresh_impl,
-    );
-}
-
-async fn gateway_executes_codex_cli_sync_via_local_decision_gate_after_oauth_refresh_impl() {
-    #[derive(Debug, Clone)]
-    struct SeenExecutionRuntimeSyncRequest {
-        trace_id: String,
-        url: String,
-        model: String,
-        authorization: String,
-        x_client_request_id: String,
-        session_id: String,
-        thread_id: String,
-        prompt_cache_key: String,
-        stream_present: bool,
-        plan_stream: bool,
-    }
-
-    #[derive(Debug, Clone)]
-    struct SeenRefreshRequest {
-        content_type: String,
-        body: String,
-    }
-
-    fn hash_api_key(value: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(value.as_bytes());
-        format!("{:x}", hasher.finalize())
-    }
-
-    fn sample_auth_snapshot(api_key_id: &str, user_id: &str) -> StoredAuthApiKeySnapshot {
-        StoredAuthApiKeySnapshot::new(
-            user_id.to_string(),
-            "alice".to_string(),
-            Some("alice@example.com".to_string()),
-            "user".to_string(),
-            "local".to_string(),
-            true,
-            false,
-            Some(serde_json::json!(["openai", "codex"])),
-            Some(serde_json::json!(["openai:responses"])),
-            Some(serde_json::json!(["gpt-5.4"])),
-            api_key_id.to_string(),
-            Some("default".to_string()),
-            true,
-            false,
-            false,
-            Some(60),
-            Some(5),
-            Some(4_102_444_800_i64),
-            Some(serde_json::json!(["openai", "codex"])),
-            Some(serde_json::json!(["openai:responses"])),
-            Some(serde_json::json!(["gpt-5.4"])),
-        )
-        .expect("auth snapshot should build")
-    }
-
-    fn sample_candidate_row() -> StoredMinimalCandidateSelectionRow {
-        StoredMinimalCandidateSelectionRow {
-            provider_id: "provider-codex-cli-local-1".to_string(),
-            provider_name: "codex".to_string(),
-            provider_type: "codex".to_string(),
-            provider_priority: 10,
-            provider_is_active: true,
-            endpoint_id: "endpoint-codex-cli-local-1".to_string(),
-            endpoint_api_format: "openai:responses".to_string(),
-            endpoint_api_family: Some("openai".to_string()),
-            endpoint_kind: Some("cli".to_string()),
-            endpoint_is_active: true,
-            key_id: "key-codex-cli-local-1".to_string(),
-            key_name: "oauth".to_string(),
-            key_auth_type: "oauth".to_string(),
-            key_is_active: true,
-            key_api_formats: Some(vec!["openai:responses".to_string()]),
-            key_allowed_models: None,
-            key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
-            model_id: "model-codex-cli-local-1".to_string(),
-            global_model_id: "global-model-codex-cli-local-1".to_string(),
-            global_model_name: "gpt-5.4".to_string(),
-            global_model_mappings: None,
-            global_model_supports_streaming: Some(true),
-            model_provider_model_name: "gpt-5.4".to_string(),
-            model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
-                name: "gpt-5.4".to_string(),
-                priority: 1,
-                api_formats: Some(vec!["openai:responses".to_string()]),
-                endpoint_ids: None,
-                operations: None,
-            }]),
-            model_supports_streaming: Some(true),
-            model_is_active: true,
-            model_is_available: true,
-        }
-    }
-
-    fn sample_provider_catalog_provider() -> StoredProviderCatalogProvider {
-        StoredProviderCatalogProvider::new(
-            "provider-codex-cli-local-1".to_string(),
-            "codex".to_string(),
-            Some("https://chatgpt.com".to_string()),
-            "codex".to_string(),
-        )
-        .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
-    }
-
-    fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
-        StoredProviderCatalogEndpoint::new(
-            "endpoint-codex-cli-local-1".to_string(),
-            "provider-codex-cli-local-1".to_string(),
-            "openai:responses".to_string(),
-            Some("openai".to_string()),
-            Some("cli".to_string()),
-            true,
-        )
-        .expect("endpoint should build")
-        .with_transport_fields(
-            "https://chatgpt.com/backend-api/codex".to_string(),
-            None,
-            None,
-            Some(2),
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("endpoint transport should build")
-    }
-
-    fn sample_provider_catalog_key() -> StoredProviderCatalogKey {
-        let encrypted_auth_config = encrypt_python_fernet_plaintext(
-            DEVELOPMENT_ENCRYPTION_KEY,
-            r#"{"provider_type":"codex","refresh_token":"rt-codex-local-123"}"#,
-        )
-        .expect("auth config should encrypt");
-        StoredProviderCatalogKey::new(
-            "key-codex-cli-local-1".to_string(),
-            "provider-codex-cli-local-1".to_string(),
-            "oauth".to_string(),
-            "oauth".to_string(),
-            None,
-            true,
-        )
-        .expect("key should build")
-        .with_transport_fields(
-            Some(serde_json::json!(["openai:responses"])),
-            encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "__placeholder__")
-                .expect("placeholder api key should encrypt"),
-            Some(encrypted_auth_config),
-            None,
-            Some(serde_json::json!({"openai:responses": 1})),
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("key transport should build")
-    }
-
-    let seen_execution_runtime = Arc::new(Mutex::new(None::<SeenExecutionRuntimeSyncRequest>));
-    let seen_execution_runtime_clone = Arc::clone(&seen_execution_runtime);
-    let seen_report = Arc::new(Mutex::new(false));
-    let seen_report_clone = Arc::clone(&seen_report);
-    let seen_refresh = Arc::new(Mutex::new(None::<SeenRefreshRequest>));
-    let seen_refresh_clone = Arc::clone(&seen_refresh);
-    let refresh_hits = Arc::new(Mutex::new(0usize));
-    let refresh_hits_clone = Arc::clone(&refresh_hits);
-    let decision_hits = Arc::new(Mutex::new(0usize));
-    let decision_hits_clone = Arc::clone(&decision_hits);
-    let plan_hits = Arc::new(Mutex::new(0usize));
-    let plan_hits_clone = Arc::clone(&plan_hits);
-    let public_hits = Arc::new(Mutex::new(0usize));
-    let public_hits_clone = Arc::clone(&public_hits);
-
-    let upstream = Router::new()
-        .route(
-            "/api/internal/gateway/decision-sync",
-            any(move |_request: Request| {
-                let decision_hits_inner = Arc::clone(&decision_hits_clone);
-                async move {
-                    *decision_hits_inner.lock().expect("mutex should lock") += 1;
-                    Json(json!({"action": "proxy_public"}))
-                }
-            }),
-        )
-        .route(
-            "/api/internal/gateway/plan-sync",
-            any(move |_request: Request| {
-                let plan_hits_inner = Arc::clone(&plan_hits_clone);
-                async move {
-                    *plan_hits_inner.lock().expect("mutex should lock") += 1;
-                    Json(json!({"action": "proxy_public"}))
-                }
-            }),
-        )
-        .route(
-            "/api/internal/gateway/report-sync",
-            any(move |request: Request| {
-                let seen_report_inner = Arc::clone(&seen_report_clone);
-                async move {
-                    let (_parts, body) = request.into_parts();
-                    let _raw_body = to_bytes(body, usize::MAX).await.expect("body should read");
-                    *seen_report_inner.lock().expect("mutex should lock") = true;
-                    Json(json!({"ok": true}))
-                }
-            }),
-        )
-        .route(
-            "/v1/responses",
-            any(move |_request: Request| {
-                let public_hits_inner = Arc::clone(&public_hits_clone);
-                async move {
-                    *public_hits_inner.lock().expect("mutex should lock") += 1;
-                    Json(json!({"unexpected": true}))
-                }
-            }),
-        );
-
-    let refresh = Router::new().route(
-        "/oauth/token",
-        any(move |request: Request| {
-            let seen_refresh_inner = Arc::clone(&seen_refresh_clone);
-            let refresh_hits_inner = Arc::clone(&refresh_hits_clone);
-            async move {
-                *refresh_hits_inner.lock().expect("mutex should lock") += 1;
-                let (parts, body) = request.into_parts();
-                let raw_body = to_bytes(body, usize::MAX).await.expect("body should read");
-                *seen_refresh_inner.lock().expect("mutex should lock") = Some(SeenRefreshRequest {
-                    content_type: parts
-                        .headers
-                        .get(http::header::CONTENT_TYPE)
-                        .and_then(|value| value.to_str().ok())
-                        .unwrap_or_default()
-                        .to_string(),
-                    body: String::from_utf8(raw_body.to_vec())
-                        .expect("refresh body should be utf8"),
-                });
-                Json(json!({
-                    "access_token": "refreshed-codex-access-token",
-                    "refresh_token": "rt-codex-local-456",
-                    "token_type": "Bearer",
-                    "expires_in": 3600
-                }))
-            }
-        }),
-    );
-
-    let execution_runtime = Router::new().route(
-        "/v1/execute/sync",
-        any(move |request: Request| {
-            let seen_execution_runtime_inner = Arc::clone(&seen_execution_runtime_clone);
-            async move {
-                let (parts, body) = request.into_parts();
-                let raw_body = to_bytes(body, usize::MAX).await.expect("body should read");
-                let payload: serde_json::Value = serde_json::from_slice(&raw_body)
-                    .expect("execution runtime payload should parse");
-                *seen_execution_runtime_inner
-                    .lock()
-                    .expect("mutex should lock") = Some(SeenExecutionRuntimeSyncRequest {
-                    trace_id: parts
-                        .headers
-                        .get(TRACE_ID_HEADER)
-                        .and_then(|value| value.to_str().ok())
-                        .unwrap_or_default()
-                        .to_string(),
-                    url: payload
-                        .get("url")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    model: payload
-                        .get("body")
-                        .and_then(|value| value.get("json_body"))
-                        .and_then(|value| value.get("model"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    authorization: payload
-                        .get("headers")
-                        .and_then(|value| value.get("authorization"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    x_client_request_id: payload
-                        .get("headers")
-                        .and_then(|value| value.get("x-client-request-id"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    session_id: payload
-                        .get("headers")
-                        .and_then(|value| value.get("session-id"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    thread_id: payload
-                        .get("headers")
-                        .and_then(|value| value.get("thread-id"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    prompt_cache_key: payload
-                        .get("body")
-                        .and_then(|value| value.get("json_body"))
-                        .and_then(|value| value.get("prompt_cache_key"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    stream_present: payload
-                        .get("body")
-                        .and_then(|value| value.get("json_body"))
-                        .and_then(|value| value.get("stream"))
-                        .and_then(|value| value.as_bool())
-                        .unwrap_or(false),
-                    plan_stream: payload
-                        .get("stream")
-                        .and_then(|value| value.as_bool())
-                        .unwrap_or(false),
-                });
-                Json(json!({
-                    "request_id": "trace-codex-cli-local-123",
-                    "status_code": 200,
-                    "headers": {
-                        "content-type": "text/event-stream"
-                    },
-                    "body": {
-                        "body_bytes_b64": base64::engine::general_purpose::STANDARD.encode(
-                            concat!(
-                                "event: response.created\n",
-                                "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp-codex-local-123\",\"object\":\"response\",\"model\":\"gpt-5.4\",\"status\":\"in_progress\",\"output\":[]}}\n\n",
-                                "event: response.output_text.delta\n",
-                                "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hello from Codex\"}\n\n",
-                                "event: response.completed\n",
-                                "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-codex-local-123\",\"object\":\"response\",\"model\":\"gpt-5.4\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"total_tokens\":3}}}\n\n"
-                            )
-                        )
-                    },
-                    "telemetry": {
-                        "elapsed_ms": 37
-                    }
-                }))
-            }
-        }),
-    );
-
-    let client_api_key = "sk-client-codex-cli-local";
-    let auth_repository = Arc::new(InMemoryAuthApiKeySnapshotRepository::seed(vec![(
-        Some(hash_api_key(client_api_key)),
-        sample_auth_snapshot("key-codex-cli-local-123", "user-codex-cli-local-123"),
-    )]));
-    let candidate_selection_repository =
-        Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-            sample_candidate_row(),
-        ]));
-    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![sample_provider_catalog_provider()],
-        vec![sample_provider_catalog_endpoint()],
-        vec![sample_provider_catalog_key()],
-    ));
-
-    let (upstream_url, upstream_handle) = start_server(upstream).await;
-    let (refresh_url, refresh_handle) = start_server(refresh).await;
-    let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
-    let oauth_refresh =
-        crate::provider_transport::LocalOAuthRefreshCoordinator::with_adapters_for_tests(vec![
-            Arc::new(
-                crate::provider_transport::oauth_refresh::GenericOAuthRefreshAdapter::default()
-                    .with_token_url_for_tests("codex", format!("{refresh_url}/oauth/token")),
-            ),
-        ]);
-    let gateway_state = build_state_with_execution_runtime_override(execution_runtime_url.clone())
-    .with_data_state_for_tests(
-        crate::data::GatewayDataState::with_auth_candidate_selection_provider_catalog_and_request_candidate_repository_for_tests(
-            auth_repository.clone(),
-            candidate_selection_repository.clone(),
-            provider_catalog_repository.clone(),
-            Arc::new(InMemoryRequestCandidateRepository::default()),
-            DEVELOPMENT_ENCRYPTION_KEY,
-        ),
-    )
-    .with_oauth_refresh_coordinator_for_tests(oauth_refresh);
-    let gateway = build_router_with_state(gateway_state);
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let response = reqwest::Client::new()
-        .post(format!("{gateway_url}/v1/responses"))
-        .header(http::header::CONTENT_TYPE, "application/json")
-        .header(
-            http::header::AUTHORIZATION,
-            format!("Bearer {client_api_key}"),
-        )
-        .header(TRACE_ID_HEADER, "trace-codex-cli-local-123")
-        .body("{\"model\":\"gpt-5.4\",\"input\":\"hello\"}")
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let response_json: serde_json::Value = response.json().await.expect("body should parse");
-    assert_eq!(response_json["id"], "resp-codex-local-123");
-    assert_eq!(
-        response_json["output"][0]["content"][0]["text"],
-        "Hello from Codex"
-    );
-
-    let seen_refresh_request = seen_refresh
-        .lock()
-        .expect("mutex should lock")
-        .clone()
-        .expect("refresh request should be captured");
-    assert_eq!(
-        seen_refresh_request.content_type,
-        "application/x-www-form-urlencoded"
-    );
-    assert!(seen_refresh_request
-        .body
-        .contains("grant_type=refresh_token"));
-    assert!(seen_refresh_request
-        .body
-        .contains("client_id=app_EMoamEEZ73f0CkXaXp7hrann"));
-    assert!(seen_refresh_request
-        .body
-        .contains("refresh_token=rt-codex-local-123"));
-    assert_eq!(*refresh_hits.lock().expect("mutex should lock"), 1);
-
-    let seen_execution_runtime_request = seen_execution_runtime
-        .lock()
-        .expect("mutex should lock")
-        .clone()
-        .expect("execution runtime sync should be captured");
-    assert_eq!(
-        seen_execution_runtime_request.trace_id,
-        "trace-codex-cli-local-123"
-    );
-    assert_eq!(
-        seen_execution_runtime_request.url,
-        "https://chatgpt.com/backend-api/codex/responses"
-    );
-    assert_eq!(seen_execution_runtime_request.model, "gpt-5.4");
-    assert_eq!(
-        seen_execution_runtime_request.authorization,
-        "Bearer refreshed-codex-access-token"
-    );
-    assert_eq!(
-        seen_execution_runtime_request.x_client_request_id,
-        seen_execution_runtime_request.thread_id
-    );
-    assert_eq!(
-        seen_execution_runtime_request.session_id,
-        seen_execution_runtime_request.thread_id
-    );
-    assert!(seen_execution_runtime_request.prompt_cache_key.is_empty());
-    assert_ne!(
-        seen_execution_runtime_request.thread_id,
-        seen_execution_runtime_request.trace_id
-    );
-    assert!(seen_execution_runtime_request.stream_present);
-    assert!(seen_execution_runtime_request.plan_stream);
-
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert!(
-        !*seen_report.lock().expect("mutex should lock"),
-        "report-sync should stay local when request candidate persistence is available"
-    );
-
-    assert_eq!(*decision_hits.lock().expect("mutex should lock"), 0);
-    assert_eq!(*plan_hits.lock().expect("mutex should lock"), 0);
-    assert_eq!(*public_hits.lock().expect("mutex should lock"), 0);
-
-    let persisted_transport_state =
-        crate::data::GatewayDataState::with_provider_transport_reader_for_tests(
-            provider_catalog_repository.clone(),
-            DEVELOPMENT_ENCRYPTION_KEY,
-        );
-    let persisted_transport = persisted_transport_state
-        .read_provider_transport_snapshot(
-            "provider-codex-cli-local-1",
-            "endpoint-codex-cli-local-1",
-            "key-codex-cli-local-1",
-        )
-        .await
-        .expect("provider transport should read")
-        .expect("provider transport should exist");
-    assert_eq!(
-        persisted_transport.key.decrypted_api_key,
-        "refreshed-codex-access-token"
-    );
-    assert!(persisted_transport.key.expires_at_unix_secs.is_some());
-    let persisted_auth_config: serde_json::Value = serde_json::from_str(
-        persisted_transport
-            .key
-            .decrypted_auth_config
-            .as_deref()
-            .expect("persisted auth config should exist"),
-    )
-    .expect("persisted auth config should parse");
-    assert_eq!(persisted_auth_config["provider_type"], "codex");
-    assert_eq!(persisted_auth_config["refresh_token"], "rt-codex-local-456");
-    assert_eq!(persisted_auth_config["token_type"], "Bearer");
-    assert!(persisted_auth_config["updated_at"].as_u64().is_some());
-    assert_eq!(
-        persisted_auth_config["expires_at"].as_u64(),
-        persisted_transport.key.expires_at_unix_secs
-    );
-
-    *seen_execution_runtime.lock().expect("mutex should lock") = None;
-    *seen_report.lock().expect("mutex should lock") = false;
-
-    gateway_handle.abort();
-
-    let oauth_refresh =
-        crate::provider_transport::LocalOAuthRefreshCoordinator::with_adapters_for_tests(vec![
-            Arc::new(
-                crate::provider_transport::oauth_refresh::GenericOAuthRefreshAdapter::default()
-                    .with_token_url_for_tests("codex", format!("{refresh_url}/oauth/token")),
-            ),
-        ]);
-    let gateway_state = build_state_with_execution_runtime_override(execution_runtime_url.clone())
-    .with_data_state_for_tests(
-        crate::data::GatewayDataState::with_auth_candidate_selection_provider_catalog_and_request_candidate_repository_for_tests(
-            auth_repository,
-            candidate_selection_repository,
-            provider_catalog_repository,
-            Arc::new(InMemoryRequestCandidateRepository::default()),
-            DEVELOPMENT_ENCRYPTION_KEY,
-        ),
-    )
-    .with_oauth_refresh_coordinator_for_tests(oauth_refresh);
-    let gateway = build_router_with_state(gateway_state);
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let response = reqwest::Client::new()
-        .post(format!("{gateway_url}/v1/responses"))
-        .header(http::header::CONTENT_TYPE, "application/json")
-        .header(
-            http::header::AUTHORIZATION,
-            format!("Bearer {client_api_key}"),
-        )
-        .header(TRACE_ID_HEADER, "trace-codex-cli-local-456")
-        .body("{\"model\":\"gpt-5.4\",\"input\":\"hello again\"}")
-        .send()
-        .await
-        .expect("second request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let response_json: serde_json::Value = response.json().await.expect("body should parse");
-    assert_eq!(response_json["id"], "resp-codex-local-123");
-    assert_eq!(*refresh_hits.lock().expect("mutex should lock"), 1);
-
-    let seen_execution_runtime_request = seen_execution_runtime
-        .lock()
-        .expect("mutex should lock")
-        .clone()
-        .expect("second execution runtime sync should be captured");
-    assert_eq!(
-        seen_execution_runtime_request.trace_id,
-        "trace-codex-cli-local-456"
-    );
-    assert_eq!(
-        seen_execution_runtime_request.authorization,
-        "Bearer refreshed-codex-access-token"
-    );
-    assert!(seen_execution_runtime_request.stream_present);
-    assert!(seen_execution_runtime_request.plan_stream);
-
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert!(
-        !*seen_report.lock().expect("mutex should lock"),
-        "second report-sync should stay local when request candidate persistence is available"
-    );
-
-    gateway_handle.abort();
-    execution_runtime_handle.abort();
-    refresh_handle.abort();
     upstream_handle.abort();
 }

@@ -78,8 +78,6 @@ fn sort_model_rows(
     rows.sort_by(|left, right| {
         left.global_model_name
             .cmp(&right.global_model_name)
-            .then(left.provider_priority.cmp(&right.provider_priority))
-            .then(left.key_internal_priority.cmp(&right.key_internal_priority))
             .then(left.provider_id.cmp(&right.provider_id))
             .then(left.endpoint_id.cmp(&right.endpoint_id))
             .then(left.key_id.cmp(&right.key_id))

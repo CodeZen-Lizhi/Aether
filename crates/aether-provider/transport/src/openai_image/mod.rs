@@ -189,11 +189,6 @@ mod tests {
         assert_eq!(url, "https://api.openai.com/v1/images/edits?trace=1");
     }
 
-
-
-
-
-
     #[test]
     fn custom_openai_image_transport_uses_standard_policy() {
         let transport = sample_transport();
@@ -237,7 +232,10 @@ mod tests {
             headers.get("accept"),
             Some(&"text/event-stream".to_string())
         );
-        assert_eq!(headers.get("x-image-route"), Some(&"generic-route".to_string()));
+        assert_eq!(
+            headers.get("x-image-route"),
+            Some(&"generic-route".to_string())
+        );
     }
 
     #[test]

@@ -83,7 +83,6 @@ async fn gateway_executes_gemini_video_create_via_local_decision_gate_with_local
             provider_id: "provider-gemini-video-local-1".to_string(),
             provider_name: "gemini".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-gemini-video-local-1".to_string(),
             endpoint_api_format: "gemini:video".to_string(),
@@ -97,8 +96,6 @@ async fn gateway_executes_gemini_video_create_via_local_decision_gate_with_local
             key_api_formats: Some(vec!["gemini:video".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(json!({"gemini:video": 1})),
             model_id: "model-gemini-video-local-1".to_string(),
             global_model_id: "global-model-gemini-video-local-1".to_string(),
             global_model_name: "veo-3".to_string(),
@@ -128,7 +125,6 @@ async fn gateway_executes_gemini_video_create_via_local_decision_gate_with_local
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -185,7 +181,6 @@ async fn gateway_executes_gemini_video_create_via_local_decision_gate_with_local
             Some(json!(["gemini:video"])),
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-upstream-gemini-video")
                 .expect("api key should encrypt"),
-            None,
             None,
             Some(json!({"gemini:video": 1})),
             None,

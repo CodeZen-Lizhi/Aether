@@ -21,8 +21,8 @@ pub use mutations::{
     HeaderMutation, MutationError, MutationPlan,
 };
 pub use policy::{
-    resolve_routing_policy, MatchedRoutingRule, ResolvedRoutingPolicy, RoutingPolicyError,
-    RoutingPolicyInput,
+    resolve_routing_policy, resolve_routing_policy_simplified, MatchedRoutingRule,
+    ResolvedRoutingPolicy, RoutingPolicyError, RoutingPolicyInput,
 };
 pub use ranking::{
     rank_vector_for_candidate, CandidateKind, RankingOverlay, RoutingCandidateFacts,

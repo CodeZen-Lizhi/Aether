@@ -15,9 +15,6 @@ pub use types::PendingMigrationInfo;
 #[cfg(any(feature = "mysql", feature = "sqlite"))]
 use sqlx::migrate::MigrateError;
 
-
-
-
 #[cfg(feature = "sqlite")]
 pub async fn run_sqlite_migrations(pool: &sqlx::SqlitePool) -> Result<(), MigrateError> {
     sqlite::run_migrations(pool).await

@@ -66,7 +66,9 @@ fn key_has_auth_type_overrides(key: &StoredProviderCatalogKey) -> bool {
         .is_some_and(|items| !items.is_empty())
 }
 
-pub(crate) fn provider_key_auth_semantics(key: &StoredProviderCatalogKey) -> ProviderKeyAuthSemantics {
+pub(crate) fn provider_key_auth_semantics(
+    key: &StoredProviderCatalogKey,
+) -> ProviderKeyAuthSemantics {
     let auth_type = normalized_auth_type(key);
     let credential_kind = if matches!(auth_type.as_str(), "service_account" | "vertex_ai") {
         ProviderKeyCredentialKind::ServiceAccount

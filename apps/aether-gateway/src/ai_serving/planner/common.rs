@@ -106,12 +106,10 @@ mod tests {
     use super::{
         endpoint_config_forces_body_stream_field, enforce_provider_body_stream_policy,
         extract_requested_model_from_request, extract_standard_requested_model,
-        resolve_upstream_is_stream_for_provider,
-        RequestedModelFamily,
+        resolve_upstream_is_stream_for_provider, RequestedModelFamily,
     };
     use axum::http::Request;
     use serde_json::json;
-
 
     #[test]
     fn enforces_provider_body_stream_policy_for_body_and_streamless_formats() {

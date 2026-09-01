@@ -8,6 +8,11 @@ pub enum SchedulerRankingMode {
     #[default]
     CacheAffinity,
     LoadBalance,
+    /// R10: cost-priority mode. Within one requested model, candidates rank by
+    /// their per-format rate multiplier ascending (cheapest key first); equal
+    /// multipliers fall back to the priority slot, then the seeded hash.
+    /// Session affinity still outranks cost in the comparator chain.
+    Economy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -35,7 +40,35 @@ pub struct SchedulerRankableCandidate {
     pub format_preference: (u8, u8),
     pub health_bucket: Option<ProviderKeyHealthBucket>,
     pub health_score: f64,
+    /// P1-4: gateway-local in-flight request count for this key at ranking
+    /// time. Only participates when the ranking context enables the signal;
+    /// `None` (or equal counts) falls through to later comparators. Lower is
+    /// better.
+    pub inflight_count: Option<u32>,
+    /// P1-5: EWMA latency (milliseconds) observed for this key. Samples below
+    /// the minimum are treated as absent so cold keys are not penalized.
+    /// Lower is better.
+    pub latency_ewma_ms: Option<LatencyEwma>,
+    /// R10: this candidate's rate multiplier for the request's api format
+    /// (from the key's `rate_multipliers` map). Only participates when the
+    /// ranking mode is Economy. Absent defaults to 1.0 (neutral).
+    pub rate_multiplier: f64,
     pub original_index: usize,
+}
+
+/// P1-5: latency EWMA snapshot used purely for ranking. The live tracker
+/// (gateway side) owns the update math; this is the immutable view handed to
+/// the comparator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatencyEwma {
+    pub samples: u32,
+    pub ewma_ms: f64,
+}
+
+impl LatencyEwma {
+    /// Minimum samples before the EWMA participates in ranking. Below this
+    /// the signal is noise from a cold start, not information.
+    pub const MIN_SAMPLES: u32 = 5;
 }
 
 impl SchedulerRankableCandidate {
@@ -59,6 +92,9 @@ impl SchedulerRankableCandidate {
             format_preference: (0, 0),
             health_bucket: None,
             health_score: 1.0,
+            inflight_count: None,
+            latency_ewma_ms: None,
+            rate_multiplier: 1.0,
             original_index,
         }
     }
@@ -98,6 +134,14 @@ impl SchedulerRankableCandidate {
         self.health_score = score;
         self
     }
+
+    /// R10: set this candidate's Economy-mode rate multiplier.
+    pub fn with_rate_multiplier(mut self, value: f64) -> Self {
+        if value.is_finite() && value > 0.0 {
+            self.rate_multiplier = value;
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +150,12 @@ pub struct SchedulerRankingContext {
     pub ranking_mode: SchedulerRankingMode,
     pub include_health: bool,
     pub load_balance_seed: u64,
+    /// P1-4: when true, the in-flight count participates in ranking (after
+    /// health, before the seeded hash). Data lives on the candidate.
+    pub include_inflight: bool,
+    /// P1-5: when true, latency EWMA participates after in-flight. Collection
+    /// can run with ranking disabled (observe-first rollout).
+    pub include_latency: bool,
 }
 
 impl Default for SchedulerRankingContext {
@@ -114,6 +164,8 @@ impl Default for SchedulerRankingContext {
             priority_mode: SchedulerPriorityMode::Provider,
             ranking_mode: SchedulerRankingMode::CacheAffinity,
             include_health: false,
+            include_inflight: false,
+            include_latency: false,
             load_balance_seed: 0,
         }
     }

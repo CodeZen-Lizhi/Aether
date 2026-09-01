@@ -3,15 +3,12 @@ use crate::handlers::shared::unix_secs_to_rfc3339;
 use crate::maintenance::{inspect_proxy_upgrade_rollout, ProxyUpgradeRolloutStatus};
 use crate::GatewayError;
 use aether_admin::system::{
-build_admin_proxy_fleet_metrics_payload_response,
-build_admin_proxy_node_event_payload,
-build_admin_proxy_node_events_payload_response,
-build_admin_proxy_node_metrics_payload_response,
-build_admin_proxy_node_payload,
-build_admin_proxy_nodes_data_unavailable_response,
-build_admin_proxy_nodes_invalid_status_response,
-build_admin_proxy_nodes_list_payload_response,
-build_admin_proxy_nodes_not_found_response,
+    build_admin_proxy_fleet_metrics_payload_response, build_admin_proxy_node_event_payload,
+    build_admin_proxy_node_events_payload_response,
+    build_admin_proxy_node_metrics_payload_response, build_admin_proxy_node_payload,
+    build_admin_proxy_nodes_data_unavailable_response,
+    build_admin_proxy_nodes_invalid_status_response, build_admin_proxy_nodes_list_payload_response,
+    build_admin_proxy_nodes_not_found_response,
 };
 use axum::{body::Body, response::Response};
 

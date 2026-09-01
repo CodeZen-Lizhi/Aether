@@ -8,15 +8,10 @@ use crate::handlers::admin::system::shared::export::{
 use crate::handlers::shared::{system_config_string, unix_secs_to_rfc3339};
 use crate::GatewayError;
 use aether_admin::system::{
-serialize_admin_system_users_export_wallet,
-AdminSystemConfigDocument,
-AdminSystemConfigEntry,
-AdminSystemConfigGlobalModel,
-AdminSystemConfigLdap,
-AdminSystemConfigOAuthProvider,
-AdminSystemConfigProxyNode,
-ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
-ADMIN_SYSTEM_USERS_EXPORT_VERSION,
+    serialize_admin_system_users_export_wallet, AdminSystemConfigDocument, AdminSystemConfigEntry,
+    AdminSystemConfigGlobalModel, AdminSystemConfigLdap, AdminSystemConfigOAuthProvider,
+    AdminSystemConfigProxyNode, ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
+    ADMIN_SYSTEM_USERS_EXPORT_VERSION,
 };
 use aether_data_contracts::repository::global_models::AdminGlobalModelListQuery;
 use chrono::Utc;
@@ -292,9 +287,7 @@ impl<'a> AdminAppState<'a> {
 
         let standalone_keys_data = standalone_api_keys
             .iter()
-            .map(|key| {
-                self.build_admin_system_users_export_api_key_payload(key, None, false)
-            })
+            .map(|key| self.build_admin_system_users_export_api_key_payload(key, None, false))
             .collect::<Vec<_>>();
 
         Ok(json!({

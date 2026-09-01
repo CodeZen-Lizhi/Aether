@@ -132,11 +132,9 @@ async fn gateway_provider_checkin_runs_local_query_balance_for_configured_provid
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_routing_fields(10)
         .with_transport_fields(
             true,
             false,
-            true,
             None,
             None,
             None,
@@ -262,17 +260,7 @@ async fn gateway_provider_checkin_counts_anyrouter_auto_signin_as_success() {
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_routing_fields(10)
-        .with_transport_fields(
-            true,
-            false,
-            true,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(json!({
+        .with_transport_fields(true, false, None, None, None, None, None, Some(json!({
                 "provider_ops": {
                     "architecture_id": "anyrouter",
                     "base_url": ops_url,
@@ -287,8 +275,7 @@ async fn gateway_provider_checkin_counts_anyrouter_auto_signin_as_success() {
                         }
                     }
                 }
-            })),
-        )
+            })))
     }
 
     let sign_in_hits = Arc::new(Mutex::new(0usize));

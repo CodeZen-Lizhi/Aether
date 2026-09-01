@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use aether_ai_serving::{
-build_ai_execution_report_context,
-AiExecutionReportContextParts,
-AiRequestOrigin,
+    build_ai_execution_report_context, AiExecutionReportContextParts, AiRequestOrigin,
 };
 use aether_routing_core::ResolvedRoutingPolicy;
 use aether_runtime_state::RuntimeLockLease;
@@ -20,7 +18,7 @@ use crate::client_session_affinity::{
 };
 use crate::orchestration::{
     insert_pool_key_lease_report_context_fields, ExecutionAttemptIdentity,
-    ROUTING_POOL_POLICY_OVERRIDE_REPORT_FIELD, SCHEDULER_AFFINITY_EPOCH_REPORT_FIELD,
+    SCHEDULER_AFFINITY_EPOCH_REPORT_FIELD,
 };
 use crate::scheduler::affinity::insert_scheduler_affinity_policy_report_context_field;
 
@@ -108,15 +106,6 @@ pub(crate) fn build_local_execution_report_context(
     }
     insert_pool_key_lease_report_context_fields(&mut extra_fields, parts.pool_key_lease);
     insert_scheduler_affinity_policy_report_context_field(&mut extra_fields, parts.routing_policy);
-    if let Some(override_policy) = parts
-        .routing_policy
-        .and_then(|policy| policy.pool_policy_overrides.get(parts.provider_id))
-        .filter(|override_policy| !override_policy.scheduling_presets.is_empty())
-    {
-        if let Ok(value) = serde_json::to_value(override_policy) {
-            extra_fields.insert(ROUTING_POOL_POLICY_OVERRIDE_REPORT_FIELD.to_string(), value);
-        }
-    }
     if let Some(epoch) = parts.scheduler_affinity_epoch {
         extra_fields.insert(
             SCHEDULER_AFFINITY_EPOCH_REPORT_FIELD.to_string(),
@@ -139,7 +128,6 @@ pub(crate) fn build_local_execution_report_context(
         candidate_id: parts.candidate_id,
         candidate_index: parts.attempt_identity.candidate_index,
         retry_index: parts.attempt_identity.retry_index,
-        pool_key_index: parts.attempt_identity.pool_key_index,
         model: parts.model,
         provider_name: parts.provider_name,
         provider_id: parts.provider_id,
@@ -197,19 +185,6 @@ fn insert_request_path_fields(
         .or_insert_with(|| Value::String(path_and_query));
 }
 
-pub(crate) fn provider_stream_event_api_format_for_provider_type(
-    provider_type: &str,
-) -> Option<&'static str> {
-    ai_provider_stream_event_api_format_for_provider_type(provider_type)
-}
-
-pub(crate) fn insert_provider_stream_event_api_format(
-    extra_fields: &mut Map<String, Value>,
-    provider_type: &str,
-) {
-    insert_ai_provider_stream_event_api_format(extra_fields, provider_type);
-}
-
 pub(crate) fn insert_native_client_envelope_name(
     extra_fields: &mut Map<String, Value>,
     envelope_name: &str,
@@ -241,37 +216,10 @@ mod tests {
     use aether_scheduler_core::ClientSessionAffinity;
     use serde_json::{json, Map, Value};
 
-    use super::{
-        build_local_execution_report_context, provider_stream_event_api_format_for_provider_type,
-        LocalExecutionReportContextParts,
-    };
+    use super::{build_local_execution_report_context, LocalExecutionReportContextParts};
     use crate::ai_serving::ExecutionRuntimeAuthContext;
     use crate::ai_serving::RequestOrigin;
     use crate::orchestration::ExecutionAttemptIdentity;
-
-    #[test]
-    fn codex_provider_uses_openai_responses_stream_event_format() {
-        assert_eq!(
-            provider_stream_event_api_format_for_provider_type("codex"),
-            Some("openai:responses")
-        );
-        assert_eq!(
-            provider_stream_event_api_format_for_provider_type("CODEX"),
-            Some("openai:responses")
-        );
-    }
-
-    #[test]
-    fn ordinary_providers_do_not_override_stream_event_format() {
-        assert_eq!(
-            provider_stream_event_api_format_for_provider_type("openai"),
-            None
-        );
-        assert_eq!(
-            provider_stream_event_api_format_for_provider_type("anthropic"),
-            None
-        );
-    }
 
     #[test]
     fn local_execution_report_context_records_request_origin_and_session_affinity() {

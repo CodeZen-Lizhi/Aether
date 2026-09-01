@@ -1,7 +1,6 @@
 use aether_ai_serving::{
-append_ai_execution_contract_fields_to_value,
-append_ai_ranking_metadata_to_object,
-build_ai_candidate_metadata_from_candidate,
+    append_ai_execution_contract_fields_to_value, append_ai_ranking_metadata_to_object,
+    build_ai_candidate_metadata_from_candidate,
 };
 use aether_scheduler_core::{SchedulerMinimalCandidateSelectionCandidate, SchedulerRankingOutcome};
 use serde_json::{Map, Value};
@@ -148,7 +147,6 @@ mod tests {
                 provider_type: "codex".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: true,
                 concurrent_limit: None,
                 max_retries: None,
@@ -189,7 +187,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: Some(json!({
@@ -215,7 +212,6 @@ mod tests {
                 provider_type: "claude_code".to_string(),
                 website: Some("https://nekocode.ai".to_string()),
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: true,
                 concurrent_limit: None,
                 max_retries: None,
@@ -253,7 +249,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,

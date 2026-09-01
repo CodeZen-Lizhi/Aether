@@ -6,10 +6,8 @@ use super::support::{
 use crate::handlers::admin::request::AdminAppState;
 use crate::GatewayError;
 use aether_admin::system::{
-AdminSystemConfigEndpoint,
-AdminSystemConfigProvider,
-AdminSystemConfigProviderKey,
-AdminSystemConfigProviderModel,
+    AdminSystemConfigEndpoint, AdminSystemConfigProvider, AdminSystemConfigProviderKey,
+    AdminSystemConfigProviderModel,
 };
 use aether_data_contracts::repository::global_models::AdminProviderModelListQuery;
 use std::collections::BTreeMap;
@@ -84,13 +82,9 @@ pub(crate) async fn build_admin_system_export_providers_payload(
 
             let mut keys = keys_by_provider.remove(&provider.id).unwrap_or_default();
             keys.sort_by(|left, right| {
-                left.internal_priority
-                    .cmp(&right.internal_priority)
-                    .then(
-                        left.created_at_unix_ms
-                            .unwrap_or(0)
-                            .cmp(&right.created_at_unix_ms.unwrap_or(0)),
-                    )
+                left.created_at_unix_ms
+                    .unwrap_or(0)
+                    .cmp(&right.created_at_unix_ms.unwrap_or(0))
                     .then(left.id.cmp(&right.id))
             });
             let keys_data = keys
@@ -119,8 +113,6 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         api_formats: Some(api_formats.clone()),
                         supported_endpoints: Some(api_formats),
                         rate_multipliers: key.rate_multipliers.clone(),
-                        internal_priority: Some(key.internal_priority),
-                        global_priority_by_format: key.global_priority_by_format.clone(),
                         auth_type_by_format: key.auth_type_by_format.clone(),
                         allow_auth_channel_mismatch_formats: key
                             .allow_auth_channel_mismatch_formats
@@ -213,8 +205,6 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                 billing_type: provider.billing_type.clone(),
                 monthly_quota_usd: provider.monthly_quota_usd,
                 quota_reset_day: provider.quota_reset_day,
-                provider_priority: Some(provider.provider_priority),
-                keep_priority_on_conversion: Some(provider.keep_priority_on_conversion),
                 enable_format_conversion: Some(provider.enable_format_conversion),
                 is_active: provider.is_active,
                 concurrent_limit: provider.concurrent_limit,

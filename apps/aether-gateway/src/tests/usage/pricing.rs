@@ -241,7 +241,6 @@ fn sample_candidate_row(spec: ProviderSpec) -> StoredMinimalCandidateSelectionRo
         provider_id: spec.provider_id.to_string(),
         provider_name: spec.provider_name.to_string(),
         provider_type: "custom".to_string(),
-        provider_priority: 10,
         provider_is_active: true,
         endpoint_id: spec.endpoint_id.to_string(),
         endpoint_api_format: spec.api_format.to_string(),
@@ -255,8 +254,6 @@ fn sample_candidate_row(spec: ProviderSpec) -> StoredMinimalCandidateSelectionRo
         key_api_formats: Some(vec![spec.api_format.to_string()]),
         key_allowed_models: None,
         key_capabilities: None,
-        key_internal_priority: 5,
-        key_global_priority_by_format: Some(single_format_priority_map(spec.api_format)),
         model_id: spec.model_id.to_string(),
         global_model_id: spec.global_model_id.to_string(),
         global_model_name: spec.global_model_name.to_string(),
@@ -284,17 +281,7 @@ fn sample_provider_catalog_provider(spec: ProviderSpec) -> StoredProviderCatalog
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(
-        true,
-        false,
-        false,
-        None,
-        Some(2),
-        None,
-        Some(20.0),
-        None,
-        None,
-    )
+    .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
 }
 
 fn sample_provider_catalog_endpoint(spec: ProviderSpec) -> StoredProviderCatalogEndpoint {
@@ -350,7 +337,6 @@ fn sample_provider_catalog_key(spec: ProviderSpec) -> StoredProviderCatalogKey {
         None,
         None,
         Some(single_format_priority_map(spec.api_format)),
-        None,
         None,
         None,
         None,

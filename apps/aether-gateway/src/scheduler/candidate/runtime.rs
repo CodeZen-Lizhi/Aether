@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use aether_admin::provider::{
-status as admin_provider_status_pure,
-};
+use aether_admin::provider::status as admin_provider_status_pure;
 use aether_data_contracts::repository::candidates::StoredRequestCandidate;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 use aether_scheduler_core::{

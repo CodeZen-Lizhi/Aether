@@ -279,9 +279,8 @@ async fn fetch_and_persist_key_models(
         return Ok(KeyFetchDisposition::Skipped);
     }
 
-    let result =
-        match fetch_models_from_transports(state, &transports).await {
-            Ok(result) => result,
+    let result = match fetch_models_from_transports(state, &transports).await {
+        Ok(result) => result,
         Err(err) => {
             persist_key_fetch_failure(state, &target.key, now_unix_secs, err.clone()).await?;
             warn!(
@@ -417,11 +416,9 @@ mod tests {
 
     use crate::GatewayError;
     use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-GatewayProviderTransportSnapshot,
-};
+        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
+    };
 
     #[derive(Clone, Default)]
     struct TestState {

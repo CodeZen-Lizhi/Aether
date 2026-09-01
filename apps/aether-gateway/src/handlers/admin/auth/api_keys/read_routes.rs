@@ -51,8 +51,10 @@ pub(super) async fn build_admin_list_api_keys_response(
         .collect::<Vec<_>>();
     let wallet_lookup_started_at = Instant::now();
     // Wallets removed: no wallet metadata attached to key payloads.
-    let wallets_by_api_key_id: std::collections::BTreeMap<String, aether_data::repository::wallet::StoredWalletSnapshot> =
-        std::collections::BTreeMap::new();
+    let wallets_by_api_key_id: std::collections::BTreeMap<
+        String,
+        aether_data::repository::wallet::StoredWalletSnapshot,
+    > = std::collections::BTreeMap::new();
     let wallet_lookup_ms = wallet_lookup_started_at.elapsed().as_millis() as u64;
 
     let api_keys = paged_records
@@ -141,10 +143,5 @@ pub(super) async fn build_admin_api_key_detail_response(
         ));
     }
 
-    Ok(Json(build_admin_api_key_detail_payload(
-        state,
-        &record,
-        None,
-    ))
-    .into_response())
+    Ok(Json(build_admin_api_key_detail_payload(state, &record, None)).into_response())
 }

@@ -22,11 +22,14 @@ use tokio::sync::Mutex as TokioMutex;
 use tracing::warn;
 
 use super::{
-    classify_failure_disposition, local_failover_error_message, project_local_adaptive_rate_limit,
-    project_local_adaptive_success, project_local_failure_health, project_local_key_circuit_closed,
-    project_local_key_circuit_failure, project_local_success_health,
-    resolve_local_failover_analysis_for_attempt, FailureScope, LocalFailoverAnalysis,
-    LocalFailoverClassification,
+    circuit_ramp_active, circuit_success_rate_breached, classify_failure_disposition,
+    local_failover_error_message, project_local_adaptive_rate_limit,
+    project_local_adaptive_success, project_local_failure_health,
+    project_local_key_circuit_closed_with_ramp,
+    project_local_key_circuit_failure_with_success_rate, project_local_key_circuit_open,
+    project_local_ramp_success_health, project_local_rate_limit_cooldown,
+    project_local_success_health, resolve_local_failover_analysis_for_attempt, FailureScope,
+    LocalFailoverAnalysis, LocalFailoverClassification,
 };
 use crate::client_session_affinity::{
     client_session_affinity_from_report_context_value, CLIENT_SESSION_AFFINITY_REPORT_CONTEXT_FIELD,
@@ -188,6 +191,9 @@ pub(crate) struct LocalAdaptiveRateLimitEffect<'a> {
 pub(crate) struct LocalHealthFailureEffect {
     pub(crate) status_code: u16,
     pub(crate) classification: LocalFailoverClassification,
+    /// Parsed `Retry-After` seconds when the failure carried one (P0-2).
+    /// Only meaningful for 429 failures; `None` elsewhere.
+    pub(crate) retry_after_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -205,7 +211,6 @@ pub(crate) enum LocalExecutionEffect<'a> {
     AdaptiveSuccess(LocalAdaptiveSuccessEffect),
 }
 
-#[derive(Debug)]
 /// Inputs for the terminal effects of a failed streaming attempt.
 ///
 /// The status/body are deliberately supplied by the transport-specific caller:
@@ -349,6 +354,7 @@ pub(crate) async fn apply_local_stream_failure_effects(
         LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
             status_code: effect.status_code,
             classification: analysis.classification,
+            retry_after_secs: None,
         }),
     )
     .await;
@@ -543,6 +549,35 @@ fn resolve_ttfb_ms(telemetry: Option<&ExecutionTelemetry>) -> Option<u64> {
     telemetry.and_then(|telemetry| telemetry.ttfb_ms.or(telemetry.elapsed_ms))
 }
 
+/// P1-5: record one latency observation into the in-memory EWMA tracker.
+/// Streaming attempts surface `candidate_ttfb_ms` (what the client feels);
+/// sync attempts fall back to `candidate_elapsed_ms`. Absent timing simply
+/// skips the observation — the tracker stays a pure signal, never a gate.
+fn record_scheduler_latency_observation(context: LocalExecutionEffectContext<'_>) {
+    let Some(report_context) = context.report_context else {
+        return;
+    };
+    let latency_ms = report_context
+        .get("candidate_ttfb_ms")
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            report_context
+                .get("candidate_elapsed_ms")
+                .and_then(Value::as_u64)
+        });
+    let Some(latency_ms) = latency_ms else {
+        return;
+    };
+    let tracker = crate::scheduler::latency_tracker::SchedulerLatencyTracker::shared();
+    tracker.record(
+        context.plan.provider_id.as_str(),
+        context.plan.endpoint_id.as_str(),
+        context.plan.key_id.as_str(),
+        context.plan.provider_api_format.as_str(),
+        latency_ms,
+    );
+}
+
 async fn record_attempt_failure_effect(
     state: &AppState,
     context: LocalExecutionEffectContext<'_>,
@@ -556,6 +591,17 @@ async fn record_attempt_failure_effect(
         return;
     }
 
+    unbind_scheduler_affinity_for_failed_candidate(state, context).await;
+}
+
+/// P0-3: remove the session-affinity binding pointing at the failed candidate's
+/// key/endpoint. Reused by the 429 cooldown and credential-dead circuit paths,
+/// which must not keep steering a session back onto a key that just entered a
+/// cooldown window or an open circuit.
+async fn unbind_scheduler_affinity_for_failed_candidate(
+    state: &AppState,
+    context: LocalExecutionEffectContext<'_>,
+) {
     if let Some(cache_key) = local_scheduler_affinity_cache_key(context.report_context) {
         let Some(failed_target) = local_scheduler_affinity_target(context.plan) else {
             return;
@@ -576,6 +622,159 @@ async fn record_attempt_failure_effect(
             let _ = state.remove_scheduler_affinity_cache_entry(&cache_key);
         }
     }
+}
+
+/// P0-2: project a 429 into the per-format rate-limit cooldown on the key row.
+async fn record_rate_limit_cooldown_effect(
+    state: &AppState,
+    context: LocalExecutionEffectContext<'_>,
+    effect: LocalHealthFailureEffect,
+) {
+    let api_format = context.plan.provider_api_format.trim();
+    if api_format.is_empty() {
+        return;
+    }
+    let Some(auth_config_fence) =
+        capture_local_execution_auth_config_fence(state, context.plan).await
+    else {
+        return;
+    };
+
+    let effect_lock = PROVIDER_KEY_EFFECT_LOCKS.lock_for(&context.plan.key_id);
+    let _effect_guard = effect_lock.lock().await;
+    let observed_at_unix_secs = current_unix_secs();
+
+    for _ in 0..PROVIDER_KEY_STATE_CAS_MAX_ATTEMPTS {
+        let Some(current_key) = state
+            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&context.plan.key_id))
+            .await
+            .ok()
+            .and_then(|mut keys| keys.drain(..).next())
+        else {
+            return;
+        };
+        if auth_config_fence
+            .encrypted_auth_config()
+            .is_some_and(|expected| current_key.encrypted_auth_config.as_deref() != Some(expected))
+        {
+            return;
+        }
+        let Some(health_by_format) = project_local_rate_limit_cooldown(
+            current_key.health_by_format.as_ref(),
+            api_format,
+            observed_at_unix_secs,
+            effect.retry_after_secs,
+        ) else {
+            // Anti write-amplification gate declined the write: the existing
+            // window already covers the new deadline within tolerance.
+            return;
+        };
+        let update = ProviderCatalogKeyHealthStateUpdate {
+            key_id: context.plan.key_id.clone(),
+            expected_encrypted_auth_config: auth_config_fence
+                .encrypted_auth_config()
+                .map(ToOwned::to_owned),
+            expected_health_by_format: current_key.health_by_format.clone(),
+            expected_circuit_breaker_by_format: current_key.circuit_breaker_by_format.clone(),
+            health_by_format: Some(health_by_format),
+            circuit_breaker_by_format: current_key.circuit_breaker_by_format,
+        };
+        match state
+            .compare_and_update_provider_catalog_key_health_state(&update)
+            .await
+        {
+            Ok(true) => return,
+            Ok(false) => tokio::task::yield_now().await,
+            Err(err) => {
+                warn!(
+                    "gateway orchestration effects: failed to persist rate-limit cooldown for provider {} key {}: {:?}",
+                    context.plan.provider_id, context.plan.key_id, err
+                );
+                return;
+            }
+        }
+    }
+    warn!(
+        "gateway orchestration effects: rate-limit cooldown CAS retries exhausted for provider {} key {}",
+        context.plan.provider_id, context.plan.key_id
+    );
+}
+
+/// P0-1 fast lane: a credential-dead failure (401/403/quota) trips the long
+/// circuit immediately instead of waiting for 8 consecutive failures. Reuses
+/// the existing hard-block circuit projection so probe/backoff semantics are
+/// identical to the legacy path.
+async fn record_credential_dead_circuit_effect(
+    state: &AppState,
+    context: LocalExecutionEffectContext<'_>,
+    effect: LocalHealthFailureEffect,
+) {
+    let api_format = context.plan.provider_api_format.trim();
+    if api_format.is_empty() {
+        return;
+    }
+    let Some(auth_config_fence) =
+        capture_local_execution_auth_config_fence(state, context.plan).await
+    else {
+        return;
+    };
+
+    let effect_lock = PROVIDER_KEY_EFFECT_LOCKS.lock_for(&context.plan.key_id);
+    let _effect_guard = effect_lock.lock().await;
+    let observed_at_unix_secs = current_unix_secs();
+
+    for _ in 0..PROVIDER_KEY_STATE_CAS_MAX_ATTEMPTS {
+        let Some(current_key) = state
+            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&context.plan.key_id))
+            .await
+            .ok()
+            .and_then(|mut keys| keys.drain(..).next())
+        else {
+            return;
+        };
+        if auth_config_fence
+            .encrypted_auth_config()
+            .is_some_and(|expected| current_key.encrypted_auth_config.as_deref() != Some(expected))
+        {
+            return;
+        }
+        let circuit_breaker_by_format = project_local_key_circuit_open(
+            current_key.circuit_breaker_by_format.as_ref(),
+            api_format,
+            &format!("credential_dead_{}", effect.status_code),
+            observed_at_unix_secs,
+            current_key.max_probe_interval_minutes,
+        )
+        .or_else(|| current_key.circuit_breaker_by_format.clone());
+        let update = ProviderCatalogKeyHealthStateUpdate {
+            key_id: context.plan.key_id.clone(),
+            expected_encrypted_auth_config: auth_config_fence
+                .encrypted_auth_config()
+                .map(ToOwned::to_owned),
+            expected_health_by_format: current_key.health_by_format.clone(),
+            expected_circuit_breaker_by_format: current_key.circuit_breaker_by_format,
+            health_by_format: current_key.health_by_format,
+            circuit_breaker_by_format,
+        };
+        match state
+            .compare_and_update_provider_catalog_key_health_state(&update)
+            .await
+        {
+            Ok(true) => return,
+            Ok(false) => tokio::task::yield_now().await,
+            Err(err) => {
+                warn!(
+                    "gateway orchestration effects: failed to persist credential-dead circuit for provider {} key {}: {:?}",
+                    context.plan.provider_id, context.plan.key_id, err
+                );
+                return;
+            }
+        }
+    }
+    warn!(
+        "gateway orchestration effects: credential-dead circuit CAS retries exhausted for provider {} key {}",
+        context.plan.provider_id, context.plan.key_id
+    );
 }
 
 async fn record_adaptive_rate_limit_effect(
@@ -871,6 +1070,43 @@ async fn record_health_failure_effect(
     context: LocalExecutionEffectContext<'_>,
     effect: LocalHealthFailureEffect,
 ) {
+    let failure_class =
+        aether_scheduler_core::UpstreamFailureClass::from_status_code(effect.status_code);
+
+    match failure_class {
+        // 429: rate limiting, not a fault. Project the cooldown window (P0-2),
+        // unbind the session affinity from this key (P0-3), and skip the
+        // failure-health / circuit accounting entirely (P0-1).
+        aether_scheduler_core::UpstreamFailureClass::RateLimited => {
+            record_rate_limit_cooldown_effect(state, context, effect).await;
+            unbind_scheduler_affinity_for_failed_candidate(state, context).await;
+        }
+        // 401/403/quota: the credential is dead — trip the long circuit on the
+        // first failure instead of eight (P0-1 fast lane) and unbind affinity.
+        aether_scheduler_core::UpstreamFailureClass::CredentialDead => {
+            if !local_candidate_failure_should_apply_key_effects(
+                &context.plan.provider_api_format,
+                effect.classification,
+                effect.status_code,
+            ) {
+                return;
+            }
+            record_credential_dead_circuit_effect(state, context, effect).await;
+            unbind_scheduler_affinity_for_failed_candidate(state, context).await;
+        }
+        // 5xx / transport: legacy accounting (60s/8-failure cooldown +
+        // 8-consecutive-failure circuit), unchanged.
+        aether_scheduler_core::UpstreamFailureClass::Transient => {
+            record_transient_failure_effect(state, context, effect).await;
+        }
+    }
+}
+
+async fn record_transient_failure_effect(
+    state: &AppState,
+    context: LocalExecutionEffectContext<'_>,
+    effect: LocalHealthFailureEffect,
+) {
     if !local_candidate_failure_should_apply_key_effects(
         &context.plan.provider_api_format,
         effect.classification,
@@ -922,12 +1158,28 @@ async fn record_health_failure_effect(
             .and_then(|value| value.get("consecutive_failures"))
             .and_then(Value::as_u64)
             .unwrap_or(0);
-        let circuit_breaker_by_format = project_local_key_circuit_failure(
+        // P1-7: a failure during the post-close recovery ramp re-opens the
+        // circuit immediately, continuing the exponential probe ladder.
+        // P1-6: the rolling success-rate verdict opens the circuit even when
+        // the consecutive ladder is below threshold (flapping keys).
+        let ramp_active =
+            circuit_ramp_active(current_key.circuit_breaker_by_format.as_ref(), api_format);
+        let success_rate_breached = if ramp_active {
+            Some(true)
+        } else {
+            Some(circuit_success_rate_breached(
+                current_key.circuit_breaker_by_format.as_ref(),
+                api_format,
+                observed_at_unix_secs,
+            ))
+        };
+        let circuit_breaker_by_format = project_local_key_circuit_failure_with_success_rate(
             current_key.circuit_breaker_by_format.as_ref(),
             api_format,
             observed_at_unix_secs,
             consecutive_failures,
             current_key.max_probe_interval_minutes,
+            success_rate_breached,
         )
         .or_else(|| current_key.circuit_breaker_by_format.clone());
         let update = ProviderCatalogKeyHealthStateUpdate {
@@ -967,6 +1219,7 @@ async fn record_health_success_effect(
     _effect: LocalHealthSuccessEffect,
 ) {
     remember_successful_local_scheduler_affinity(state, context).await;
+    record_scheduler_latency_observation(context);
 
     let api_format = context.plan.provider_api_format.trim();
     if api_format.is_empty() {
@@ -1001,15 +1254,34 @@ async fn record_health_success_effect(
         {
             return;
         }
-        let Some(health_by_format) =
+        // P1-7: success during the recovery ramp decrements the counter and
+        // raises health partway (health ramp), a final ramp success clears it
+        // to full 1.0; a plain success (no ramp) keeps the legacy full reset.
+        let ramp_active =
+            circuit_ramp_active(current_key.circuit_breaker_by_format.as_ref(), api_format);
+        let projected_health = if ramp_active {
+            project_local_ramp_success_health(
+                current_key.health_by_format.as_ref(),
+                current_key.circuit_breaker_by_format.as_ref(),
+                api_format,
+            )
+        } else {
             project_local_success_health(current_key.health_by_format.as_ref(), api_format)
-        else {
+        };
+        let Some(health_by_format) = projected_health else {
             return;
         };
-        let circuit_breaker_update_owned = current_key
-            .circuit_breaker_by_format
-            .as_ref()
-            .and_then(|current| project_local_key_circuit_closed(Some(current), api_format));
+        let circuit_breaker_update_owned =
+            current_key
+                .circuit_breaker_by_format
+                .as_ref()
+                .and_then(|current| {
+                    project_local_key_circuit_closed_with_ramp(
+                        Some(current),
+                        api_format,
+                        current_key.health_by_format.as_ref(),
+                    )
+                });
         if current_key.health_by_format.as_ref() == Some(&health_by_format)
             && circuit_breaker_update_owned.as_ref()
                 == current_key.circuit_breaker_by_format.as_ref()
@@ -1026,8 +1298,8 @@ async fn record_health_success_effect(
             }
             persist_gate_checked = true;
         }
-        let circuit_breaker_by_format = circuit_breaker_update_owned
-            .or_else(|| current_key.circuit_breaker_by_format.clone());
+        let circuit_breaker_by_format =
+            circuit_breaker_update_owned.or_else(|| current_key.circuit_breaker_by_format.clone());
         let update = ProviderCatalogKeyHealthStateUpdate {
             key_id: context.plan.key_id.clone(),
             expected_encrypted_auth_config: auth_config_fence
@@ -1152,8 +1424,6 @@ fn local_candidate_failure_should_apply_key_effects(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-    use std::sync::Arc;
     use aether_contracts::{ExecutionPlan, RequestBody};
     use aether_crypto::{encrypt_python_fernet_plaintext, DEVELOPMENT_ENCRYPTION_KEY};
     use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
@@ -1168,6 +1438,8 @@ mod tests {
     use aether_test_support::ManagedRedisServer;
     use aether_usage_runtime::GatewaySyncReportRequest;
     use serde_json::{json, Value};
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     use super::{
         apply_local_execution_effect, apply_local_stream_failure_effects,
@@ -1243,8 +1515,6 @@ mod tests {
             telemetry: None,
         }
     }
-    #[test]
-    #[test]
     fn session_affinity() -> ClientSessionAffinity {
         ClientSessionAffinity::new(
             Some("generic".to_string()),
@@ -1324,7 +1594,6 @@ mod tests {
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-test")
                 .expect("api key should encrypt"),
             None,
-            None,
             Some(serde_json::json!({"openai:chat": 1})),
             None,
             None,
@@ -1346,7 +1615,6 @@ mod tests {
                     .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
             )
     }
-    #[tokio::test]
     fn health_state_with_key(key: StoredProviderCatalogKey) -> AppState {
         let repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
             vec![sample_health_provider()],
@@ -1546,8 +1814,6 @@ mod tests {
             Some(affinity_target)
         );
     }
-    #[tokio::test]
-    #[tokio::test]
     #[tokio::test]
     async fn attempt_failure_keeps_scheduler_affinity_for_non_failure_status() {
         let state = AppState::new().expect("gateway state should build");
@@ -2030,7 +2296,6 @@ mod tests {
         );
     }
     #[test]
-    #[test]
     fn anthropic_non_credential_failures_do_not_apply_key_wide_effects() {
         assert!(!local_candidate_failure_should_apply_key_effects(
             "claude:messages",
@@ -2079,31 +2344,6 @@ mod tests {
         ));
     }
     #[tokio::test]
-    #[test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
     async fn health_failure_projection_updates_key_health_for_format() {
         let state = health_state();
         let plan = sample_plan();
@@ -2117,6 +2357,7 @@ mod tests {
             LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                 status_code: 503,
                 classification: LocalFailoverClassification::RetryUpstreamFailure,
+                retry_after_secs: None,
             }),
         )
         .await;
@@ -2161,6 +2402,7 @@ mod tests {
             LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                 status_code: 503,
                 classification: LocalFailoverClassification::RetryUpstreamFailure,
+                retry_after_secs: None,
             }),
         )
         .await;
@@ -2198,6 +2440,7 @@ mod tests {
                 LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                     status_code: 503,
                     classification: LocalFailoverClassification::RetryUpstreamFailure,
+                    retry_after_secs: None,
                 }),
             )
             .await;
@@ -2246,6 +2489,7 @@ mod tests {
                     LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                         status_code: 503,
                         classification: LocalFailoverClassification::RetryUpstreamFailure,
+                        retry_after_secs: None,
                     }),
                 )
                 .await;
@@ -2280,7 +2524,6 @@ mod tests {
         assert_eq!(circuit["reason"], json!("consecutive_failures_8"));
     }
     #[tokio::test]
-    #[tokio::test]
     async fn health_success_projection_resets_key_health_for_format() {
         let state = health_state();
         let plan = sample_plan();
@@ -2294,6 +2537,7 @@ mod tests {
             LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                 status_code: 503,
                 classification: LocalFailoverClassification::RetryUpstreamFailure,
+                retry_after_secs: None,
             }),
         )
         .await;
@@ -2376,6 +2620,7 @@ mod tests {
             LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                 status_code: 503,
                 classification: LocalFailoverClassification::RetryUpstreamFailure,
+                retry_after_secs: None,
             }),
         )
         .await;
@@ -2533,7 +2778,6 @@ mod tests {
             Some(target)
         );
     }
-    #[tokio::test]
     #[tokio::test]
     async fn adaptive_rate_limit_effect_ignores_fixed_limit_key() {
         let state = fixed_limit_state();

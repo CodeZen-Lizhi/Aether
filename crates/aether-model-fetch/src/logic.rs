@@ -774,10 +774,7 @@ mod tests {
     #[test]
     fn build_models_fetch_url_supports_bigmodel_coding_paas_root() {
         assert_eq!(
-            build_models_fetch_url(
-                "openai:chat",
-                "https://open.bigmodel.cn/api/coding/paas/v4",
-            ),
+            build_models_fetch_url("openai:chat", "https://open.bigmodel.cn/api/coding/paas/v4",),
             Some((
                 "https://open.bigmodel.cn/api/coding/paas/v4/models".to_string(),
                 "openai:chat".to_string()
@@ -826,10 +823,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            build_models_fetch_url(
-                "openai:responses",
-                "https://proxy.example.com/api",
-            ),
+            build_models_fetch_url("openai:responses", "https://proxy.example.com/api",),
             Some((
                 "https://proxy.example.com/api/models".to_string(),
                 "openai:responses".to_string()
@@ -966,5 +960,4 @@ mod tests {
             .get("stale-model")
             .is_none());
     }
-
 }

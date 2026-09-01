@@ -124,8 +124,7 @@ async fn gateway_handles_admin_provider_strategy_billing_locally_returns_service
             "quota_reset_day": 30,
             "quota_last_reset_at": "2024-03-21T00:00:00Z",
             "quota_expires_at": "2024-04-21T00:00:00Z",
-            "rpm_limit": 20,
-            "provider_priority": 5
+            "rpm_limit": 20
         })),
         PROVIDER_STRATEGY_DATA_UNAVAILABLE_MESSAGE,
     )
@@ -305,7 +304,6 @@ async fn gateway_updates_admin_provider_strategy_billing_locally_with_trusted_ad
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["provider"]["id"], "provider-openai");
     assert_eq!(payload["provider"]["billing_type"], "monthly_quota");
-    assert_eq!(payload["provider"]["provider_priority"], 100);
 
     let updated = provider_catalog_repository
         .list_providers_by_ids(&["provider-openai".to_string()])
@@ -315,7 +313,6 @@ async fn gateway_updates_admin_provider_strategy_billing_locally_with_trusted_ad
     assert_eq!(updated[0].monthly_quota_usd, Some(50.0));
     assert_eq!(updated[0].monthly_used_usd, Some(12.5));
     assert_eq!(updated[0].quota_reset_day, Some(30));
-    assert_eq!(updated[0].provider_priority, 100);
     assert_eq!(
         updated[0].quota_last_reset_at_unix_secs,
         Some(1_772_323_200)

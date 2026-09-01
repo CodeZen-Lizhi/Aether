@@ -56,17 +56,7 @@ mod tests {
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            concurrent_limit,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, concurrent_limit, None, None, None, None, None)
     }
 
     #[test]

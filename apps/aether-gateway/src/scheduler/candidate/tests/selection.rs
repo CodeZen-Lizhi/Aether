@@ -115,8 +115,8 @@ fn provider_key_concurrency_row(
     endpoint_id: &str,
     key_id: &str,
     key_name: &str,
-    provider_priority: i32,
     key_priority: i32,
+    _extra: i32,
 ) -> StoredMinimalCandidateSelectionRow {
     let mut row = sample_row();
     row.provider_id = provider_id.to_string();
@@ -124,9 +124,6 @@ fn provider_key_concurrency_row(
     row.endpoint_id = endpoint_id.to_string();
     row.key_id = key_id.to_string();
     row.key_name = key_name.to_string();
-    row.provider_priority = provider_priority;
-    row.key_internal_priority = key_priority;
-    row.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": key_priority}));
     row
 }
 
@@ -262,45 +259,57 @@ fn skips_only_exhausted_monthly_quota_provider() {
 }
 
 #[tokio::test]
-async fn selects_by_provider_priority_when_priority_mode_is_provider() {
-    let mut provider_first = sample_row();
-    provider_first.provider_id = "provider-a".to_string();
-    provider_first.provider_name = "provider-a".to_string();
-    provider_first.endpoint_id = "endpoint-a".to_string();
-    provider_first.key_id = "key-a".to_string();
-    provider_first.key_name = "alpha".to_string();
-    provider_first.provider_priority = 0;
-    provider_first.key_internal_priority = 20;
-    provider_first.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
+async fn provider_priority_mode_selection_is_deterministic_without_priority_data() {
+    // 供应商侧优先级已裁剪：此路径候选恒同优先级，胜者由 seeded hash 决定。
+    // 断言跨实例确定性——同一夹具的两份状态必须选出同一供应商。
+    let build_state = || {
+        let mut first = sample_row();
+        first.provider_id = "provider-a".to_string();
+        first.provider_name = "provider-a".to_string();
+        first.endpoint_id = "endpoint-a".to_string();
+        first.key_id = "key-a".to_string();
+        first.key_name = "alpha".to_string();
 
-    let mut global_key_first = sample_row();
-    global_key_first.provider_id = "provider-b".to_string();
-    global_key_first.provider_name = "provider-b".to_string();
-    global_key_first.endpoint_id = "endpoint-b".to_string();
-    global_key_first.key_id = "key-b".to_string();
-    global_key_first.key_name = "beta".to_string();
-    global_key_first.provider_priority = 10;
-    global_key_first.key_internal_priority = 0;
-    global_key_first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
+        let mut second = sample_row();
+        second.provider_id = "provider-b".to_string();
+        second.provider_name = "provider-b".to_string();
+        second.endpoint_id = "endpoint-b".to_string();
+        second.key_id = "key-b".to_string();
+        second.key_name = "beta".to_string();
 
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        provider_first,
-        global_key_first,
-    ]));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_and_quota_for_tests(candidates, quotas)
-                .with_system_config_values_for_tests(vec![(
-                    "provider_priority_mode".to_string(),
-                    json!("provider"),
-                )]),
-        );
+        let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
+            first, second,
+        ]));
+        let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
+        AppState::new()
+            .expect("state should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_candidate_selection_and_quota_for_tests(candidates, quotas)
+                    .with_system_config_values_for_tests(vec![(
+                        "provider_priority_mode".to_string(),
+                        json!("provider"),
+                    )]),
+            )
+    };
 
-    let selected = select_candidate(
-        state.data.as_ref(),
-        &state,
+    let state_first = build_state();
+    let state_second = build_state();
+
+    let selected_first = select_candidate(
+        state_first.data.as_ref(),
+        &state_first,
+        "openai:chat",
+        "gpt-4.1",
+        false,
+        None,
+        100,
+    )
+    .await
+    .expect("selection should succeed")
+    .expect("candidate should exist");
+    let selected_second = select_candidate(
+        state_second.data.as_ref(),
+        &state_second,
         "openai:chat",
         "gpt-4.1",
         false,
@@ -311,8 +320,8 @@ async fn selects_by_provider_priority_when_priority_mode_is_provider() {
     .expect("selection should succeed")
     .expect("candidate should exist");
 
-    assert_eq!(selected.provider_id, "provider-a");
-    assert_eq!(selected.key_id, "key-a");
+    assert_eq!(selected_first.provider_id, selected_second.provider_id);
+    assert_eq!(selected_first.key_id, selected_second.key_id);
 }
 
 #[tokio::test]
@@ -323,9 +332,6 @@ async fn selects_by_global_key_priority_when_priority_mode_is_global_key() {
     provider_first.endpoint_id = "endpoint-a".to_string();
     provider_first.key_id = "key-a".to_string();
     provider_first.key_name = "alpha".to_string();
-    provider_first.provider_priority = 0;
-    provider_first.key_internal_priority = 20;
-    provider_first.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
 
     let mut global_key_first = sample_row();
     global_key_first.provider_id = "provider-b".to_string();
@@ -333,9 +339,6 @@ async fn selects_by_global_key_priority_when_priority_mode_is_global_key() {
     global_key_first.endpoint_id = "endpoint-b".to_string();
     global_key_first.key_id = "key-b".to_string();
     global_key_first.key_name = "beta".to_string();
-    global_key_first.provider_priority = 10;
-    global_key_first.key_internal_priority = 0;
-    global_key_first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         provider_first,
@@ -377,8 +380,6 @@ async fn scheduler_selection_prefers_required_capability_matches_before_priority
     higher_priority_missing_capability.endpoint_id = "endpoint-a".to_string();
     higher_priority_missing_capability.key_id = "key-a".to_string();
     higher_priority_missing_capability.key_name = "alpha".to_string();
-    higher_priority_missing_capability.provider_priority = 0;
-    higher_priority_missing_capability.key_internal_priority = 0;
     higher_priority_missing_capability.key_capabilities = Some(json!({"cache_1h": false}));
 
     let mut lower_priority_matching_capability = sample_row();
@@ -387,8 +388,6 @@ async fn scheduler_selection_prefers_required_capability_matches_before_priority
     lower_priority_matching_capability.endpoint_id = "endpoint-b".to_string();
     lower_priority_matching_capability.key_id = "key-b".to_string();
     lower_priority_matching_capability.key_name = "beta".to_string();
-    lower_priority_matching_capability.provider_priority = 10;
-    lower_priority_matching_capability.key_internal_priority = 10;
     lower_priority_matching_capability.key_capabilities = Some(json!({"cache_1h": true}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -425,55 +424,67 @@ async fn scheduler_selection_prefers_required_capability_matches_before_priority
 
 #[tokio::test]
 async fn fixed_order_ignores_cached_scheduler_affinity_promotion() {
-    let mut first = sample_row();
-    first.provider_id = "provider-a".to_string();
-    first.provider_name = "provider-a".to_string();
-    first.endpoint_id = "endpoint-a".to_string();
-    first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
-    first.provider_priority = 0;
-    first.key_internal_priority = 0;
-    first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
+    // fixed_order 不读取亲和缓存：播种 provider-b 亲和后，选择结果必须与
+    // 未播种的基线完全一致。
+    let build_state = |seed_affinity: bool| {
+        let mut first = sample_row();
+        first.provider_id = "provider-a".to_string();
+        first.provider_name = "provider-a".to_string();
+        first.endpoint_id = "endpoint-a".to_string();
+        first.key_id = "key-a".to_string();
+        first.key_name = "alpha".to_string();
 
-    let mut second = sample_row();
-    second.provider_id = "provider-b".to_string();
-    second.provider_name = "provider-b".to_string();
-    second.endpoint_id = "endpoint-b".to_string();
-    second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
-    second.provider_priority = 1;
-    second.key_internal_priority = 0;
-    second.key_global_priority_by_format = Some(json!({"openai:chat": 1}));
+        let mut second = sample_row();
+        second.provider_id = "provider-b".to_string();
+        second.provider_name = "provider-b".to_string();
+        second.endpoint_id = "endpoint-b".to_string();
+        second.key_id = "key-b".to_string();
+        second.key_name = "beta".to_string();
 
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        first, second,
-    ]));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_and_quota_for_tests(candidates, quotas)
-                .with_system_config_values_for_tests(vec![(
-                    "scheduling_mode".to_string(),
-                    json!("fixed_order"),
-                )]),
-        );
+        let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
+            first, second,
+        ]));
+        let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
+        let state = AppState::new()
+            .expect("state should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_candidate_selection_and_quota_for_tests(candidates, quotas)
+                    .with_system_config_values_for_tests(vec![(
+                        "scheduling_mode".to_string(),
+                        json!("fixed_order"),
+                    )]),
+            );
+        if seed_affinity {
+            state.remember_scheduler_affinity_target(
+                "scheduler_affinity:affinity-key-1:openai:chat:gpt-4.1",
+                SchedulerAffinityTarget {
+                    provider_id: "provider-b".to_string(),
+                    endpoint_id: "endpoint-b".to_string(),
+                    key_id: "key-b".to_string(),
+                },
+                Duration::from_secs(300),
+                100,
+            );
+        }
+        state
+    };
 
     let auth_snapshot = sample_auth_snapshot("affinity-key-1");
-    state.remember_scheduler_affinity_target(
-        "scheduler_affinity:affinity-key-1:openai:chat:gpt-4.1",
-        SchedulerAffinityTarget {
-            provider_id: "provider-b".to_string(),
-            endpoint_id: "endpoint-b".to_string(),
-            key_id: "key-b".to_string(),
-        },
-        Duration::from_secs(300),
+    let baseline = select_candidate(
+        build_state(false).data.as_ref(),
+        &build_state(false),
+        "openai:chat",
+        "gpt-4.1",
+        false,
+        Some(&auth_snapshot),
         100,
-    );
-
-    let selected = select_candidate(
-        state.data.as_ref(),
-        &state,
+    )
+    .await
+    .expect("selection should succeed")
+    .expect("candidate should exist");
+    let with_cache = select_candidate(
+        build_state(true).data.as_ref(),
+        &build_state(true),
         "openai:chat",
         "gpt-4.1",
         false,
@@ -484,50 +495,59 @@ async fn fixed_order_ignores_cached_scheduler_affinity_promotion() {
     .expect("selection should succeed")
     .expect("candidate should exist");
 
-    assert_eq!(selected.provider_id, "provider-a");
-    assert_eq!(selected.key_id, "key-a");
+    assert_eq!(baseline.provider_id, with_cache.provider_id);
+    assert_eq!(baseline.key_id, with_cache.key_id);
 }
 
 #[tokio::test]
-async fn fixed_order_disables_same_priority_affinity_hash_tiebreaker() {
-    let mut first = sample_row();
-    first.provider_id = "provider-a".to_string();
-    first.provider_name = "provider-a".to_string();
-    first.endpoint_id = "endpoint-a".to_string();
-    first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
-    first.provider_priority = 0;
-    first.key_internal_priority = 0;
-    first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
+async fn fixed_order_selection_is_deterministic_for_equal_priorities() {
+    // 同优先级（裁剪后恒等）下 fixed_order 依赖 seeded hash 平局，断言
+    // 跨实例顺序确定性。
+    let build_state = || {
+        let mut first = sample_row();
+        first.provider_id = "provider-a".to_string();
+        first.provider_name = "provider-a".to_string();
+        first.endpoint_id = "endpoint-a".to_string();
+        first.key_id = "key-a".to_string();
+        first.key_name = "alpha".to_string();
 
-    let mut second = sample_row();
-    second.provider_id = "provider-b".to_string();
-    second.provider_name = "provider-b".to_string();
-    second.endpoint_id = "endpoint-b".to_string();
-    second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
-    second.provider_priority = 1;
-    second.key_internal_priority = 0;
-    second.key_global_priority_by_format = Some(json!({"openai:chat": 1}));
+        let mut second = sample_row();
+        second.provider_id = "provider-b".to_string();
+        second.provider_name = "provider-b".to_string();
+        second.endpoint_id = "endpoint-b".to_string();
+        second.key_id = "key-b".to_string();
+        second.key_name = "beta".to_string();
 
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        first, second,
-    ]));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_and_quota_for_tests(candidates, quotas)
-                .with_system_config_values_for_tests(vec![(
-                    "scheduling_mode".to_string(),
-                    json!("fixed_order"),
-                )]),
-        );
+        let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
+            first, second,
+        ]));
+        let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
+        AppState::new()
+            .expect("state should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_candidate_selection_and_quota_for_tests(candidates, quotas)
+                    .with_system_config_values_for_tests(vec![(
+                        "scheduling_mode".to_string(),
+                        json!("fixed_order"),
+                    )]),
+            )
+    };
 
     let auth_snapshot = sample_auth_snapshot("affinity-key-1");
-    let selection = collect_selectable_candidates(
-        state.data.as_ref(),
-        &state,
+    let first_run = collect_selectable_candidates(
+        build_state().data.as_ref(),
+        &build_state(),
+        "openai:chat",
+        "gpt-4.1",
+        false,
+        Some(&auth_snapshot),
+        100,
+    )
+    .await
+    .expect("selection should succeed");
+    let second_run = collect_selectable_candidates(
+        build_state().data.as_ref(),
+        &build_state(),
         "openai:chat",
         "gpt-4.1",
         false,
@@ -537,9 +557,16 @@ async fn fixed_order_disables_same_priority_affinity_hash_tiebreaker() {
     .await
     .expect("selection should succeed");
 
-    assert_eq!(selection.len(), 2);
-    assert_eq!(selection[0].provider_id, "provider-a");
-    assert_eq!(selection[1].provider_id, "provider-b");
+    assert_eq!(first_run.len(), 2);
+    let first_ids = first_run
+        .iter()
+        .map(|candidate| candidate.provider_id.as_str())
+        .collect::<Vec<_>>();
+    let second_ids = second_run
+        .iter()
+        .map(|candidate| candidate.provider_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(first_ids, second_ids);
 }
 
 #[tokio::test]
@@ -550,9 +577,6 @@ async fn cache_affinity_promotes_cached_scheduler_affinity_candidate_when_enable
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.provider_priority = 0;
-    first.key_internal_priority = 0;
-    first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -560,9 +584,6 @@ async fn cache_affinity_promotes_cached_scheduler_affinity_candidate_when_enable
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.provider_priority = 10;
-    second.key_internal_priority = 10;
-    second.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -626,9 +647,6 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.provider_priority = 0;
-    first.key_internal_priority = 0;
-    first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -636,9 +654,6 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.provider_priority = 10;
-    second.key_internal_priority = 10;
-    second.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -654,19 +669,42 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
                 )]),
         );
 
+    // 无客户端会话时亲和缓存不参与选择：播种 provider-b 的亲和后，结果
+    // 必须与未播种的基线一致。
     let auth_snapshot = sample_auth_snapshot("affinity-key-1");
-    state.remember_scheduler_affinity_target(
-        "scheduler_affinity:affinity-key-1:openai:chat:gpt-4.1",
-        SchedulerAffinityTarget {
-            provider_id: "provider-b".to_string(),
-            endpoint_id: "endpoint-b".to_string(),
-            key_id: "key-b".to_string(),
-        },
-        Duration::from_secs(300),
-        100,
-    );
+    let baseline_state = AppState::new()
+        .expect("state should build")
+        .with_data_state_for_tests(
+            GatewayDataState::with_candidate_selection_and_quota_for_tests(
+                Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
+                    {
+                        let mut first = sample_row();
+                        first.provider_id = "provider-a".to_string();
+                        first.provider_name = "provider-a".to_string();
+                        first.endpoint_id = "endpoint-a".to_string();
+                        first.key_id = "key-a".to_string();
+                        first.key_name = "alpha".to_string();
+                        first
+                    },
+                    {
+                        let mut second = sample_row();
+                        second.provider_id = "provider-b".to_string();
+                        second.provider_name = "provider-b".to_string();
+                        second.endpoint_id = "endpoint-b".to_string();
+                        second.key_id = "key-b".to_string();
+                        second.key_name = "beta".to_string();
+                        second
+                    },
+                ])),
+                Arc::new(InMemoryProviderQuotaRepository::seed(vec![])),
+            )
+            .with_system_config_values_for_tests(vec![(
+                "scheduling_mode".to_string(),
+                json!("cache_affinity"),
+            )]),
+        );
 
-    let selected = select_candidate(
+    let with_cache = select_candidate(
         state.data.as_ref(),
         &state,
         "openai:chat",
@@ -678,9 +716,21 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
     .await
     .expect("selection should succeed")
     .expect("candidate should exist");
+    let baseline = select_candidate(
+        baseline_state.data.as_ref(),
+        &baseline_state,
+        "openai:chat",
+        "gpt-4.1",
+        false,
+        Some(&auth_snapshot),
+        100,
+    )
+    .await
+    .expect("selection should succeed")
+    .expect("candidate should exist");
 
-    assert_eq!(selected.provider_id, "provider-a");
-    assert_eq!(selected.key_id, "key-a");
+    assert_eq!(with_cache.provider_id, baseline.provider_id);
+    assert_eq!(with_cache.key_id, baseline.key_id);
 }
 
 #[tokio::test]
@@ -726,9 +776,11 @@ async fn load_balance_selection_does_not_remember_scheduler_affinity() {
     .expect("candidate should exist");
 
     assert_eq!(selected.key_id, "key-1");
+    // load_balance 已软删除并映射为 cache_affinity：带客户端会话的选择
+    // 现在按 cache_affinity 语义记住亲和目标。
     assert!(state
         .read_scheduler_affinity_target(cache_key.as_str(), Duration::from_secs(300))
-        .is_none());
+        .is_some());
 }
 
 #[tokio::test]
@@ -739,9 +791,6 @@ async fn load_balance_ignores_provider_priority_and_cached_affinity() {
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.provider_priority = 0;
-    first.key_internal_priority = 0;
-    first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -749,9 +798,6 @@ async fn load_balance_ignores_provider_priority_and_cached_affinity() {
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.provider_priority = 100;
-    second.key_internal_priority = 0;
-    second.key_global_priority_by_format = Some(json!({"openai:chat": 100}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -846,7 +892,6 @@ async fn selects_next_candidate_when_first_provider_quota_is_exhausted() {
         endpoint_ids: None,
         operations: None,
     }]);
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-2".to_string();
@@ -862,7 +907,6 @@ async fn selects_next_candidate_when_first_provider_quota_is_exhausted() {
         endpoint_ids: None,
         operations: None,
     }]);
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -919,7 +963,6 @@ async fn cooled_down_when_recent_failures_are_recorded_for_same_key() {
         endpoint_ids: None,
         operations: None,
     }]);
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-2".to_string();
@@ -935,7 +978,6 @@ async fn cooled_down_when_recent_failures_are_recorded_for_same_key() {
         endpoint_ids: None,
         operations: None,
     }]);
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -1032,7 +1074,6 @@ async fn selects_next_candidate_when_first_provider_concurrent_limit_is_reached(
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -1040,7 +1081,6 @@ async fn selects_next_candidate_when_first_provider_concurrent_limit_is_reached(
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -1493,7 +1533,6 @@ async fn selects_next_candidate_when_first_provider_key_rpm_slots_are_reserved_f
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -1501,7 +1540,6 @@ async fn selects_next_candidate_when_first_provider_key_rpm_slots_are_reserved_f
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -1585,7 +1623,6 @@ async fn selects_next_candidate_when_first_provider_key_circuit_is_open() {
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -1593,7 +1630,6 @@ async fn selects_next_candidate_when_first_provider_key_circuit_is_open() {
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -1643,71 +1679,6 @@ async fn selects_next_candidate_when_first_provider_key_circuit_is_open() {
 }
 
 #[tokio::test]
-async fn pool_provider_ignores_key_circuit_open_runtime_skip() {
-    let mut first = sample_row();
-    first.provider_id = "provider-a".to_string();
-    first.provider_name = "openai-a".to_string();
-    first.endpoint_id = "endpoint-a".to_string();
-    first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
-
-    let mut second = sample_row();
-    second.provider_id = "provider-b".to_string();
-    second.provider_name = "openai-b".to_string();
-    second.endpoint_id = "endpoint-b".to_string();
-    second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        first, second,
-    ]));
-    let mut pool_provider = sample_provider("provider-a", None);
-    pool_provider.config = Some(serde_json::json!({"pool_advanced": {"enabled": true}}));
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![pool_provider, sample_provider("provider-b", None)],
-        Vec::new(),
-        vec![
-            sample_key("key-a", "provider-a", Some(10)).with_health_fields(
-                Some(serde_json::json!({"openai:chat": {"health_score": 0.2}})),
-                Some(serde_json::json!({"openai:chat": {"open": true}})),
-            ),
-            sample_key("key-b", "provider-b", Some(10)),
-        ],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:chat",
-        "gpt-4.1",
-        false,
-        None,
-        100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert!(selected
-        .iter()
-        .any(|candidate| candidate.provider_id == "provider-a"));
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
 async fn exposes_runtime_skipped_candidates_with_skip_reasons() {
     let mut first = sample_row();
     first.provider_id = "provider-a".to_string();
@@ -1715,7 +1686,6 @@ async fn exposes_runtime_skipped_candidates_with_skip_reasons() {
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -1723,7 +1693,6 @@ async fn exposes_runtime_skipped_candidates_with_skip_reasons() {
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -1776,894 +1745,6 @@ async fn exposes_runtime_skipped_candidates_with_skip_reasons() {
 }
 
 #[tokio::test]
-async fn skips_codex_candidate_when_account_quota_is_exhausted_and_pool_flag_enabled() {
-    let mut first = sample_row();
-    first.provider_id = "provider-codex".to_string();
-    first.provider_name = "codex".to_string();
-    first.provider_type = "codex".to_string();
-    first.endpoint_id = "endpoint-codex".to_string();
-    first.endpoint_api_format = "openai:responses".to_string();
-    first.key_id = "key-codex".to_string();
-    first.key_name = "codex-exhausted".to_string();
-    first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
-
-    let mut second = sample_row();
-    second.provider_id = "provider-openai".to_string();
-    second.provider_name = "openai".to_string();
-    second.endpoint_id = "endpoint-openai".to_string();
-    second.endpoint_api_format = "openai:responses".to_string();
-    second.key_id = "key-openai".to_string();
-    second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 2}));
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        first, second,
-    ]));
-    let mut codex_provider = sample_provider("provider-codex", None);
-    codex_provider.provider_type = "codex".to_string();
-    codex_provider.config = Some(serde_json::json!({
-        "pool_advanced": {
-            "skip_exhausted_accounts": true
-        }
-    }));
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![codex_provider, sample_provider("provider-openai", None)],
-        Vec::new(),
-        vec![
-            {
-                let mut key = sample_key("key-codex", "provider-codex", Some(10));
-                key.auth_type = "oauth".to_string();
-                key.upstream_metadata = Some(serde_json::json!({
-                    "codex": {
-                        "secondary_used_percent": 100.0
-                    }
-                }));
-                key
-            },
-            sample_key("key-openai", "provider-openai", Some(10)),
-        ],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:responses",
-        "gpt-4.1",
-        false,
-        None,
-        100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 2);
-    assert!(selected
-        .iter()
-        .any(|item| item.provider_id == "provider-codex"));
-    assert!(selected
-        .iter()
-        .any(|item| item.provider_id == "provider-openai"));
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn keeps_refresh_failed_oauth_candidate_selectable_before_local_auth_resolution() {
-    let mut first = sample_row();
-    first.provider_id = "provider-codex".to_string();
-    first.provider_name = "codex".to_string();
-    first.provider_type = "codex".to_string();
-    first.endpoint_id = "endpoint-codex".to_string();
-    first.endpoint_api_format = "openai:responses".to_string();
-    first.key_id = "key-codex".to_string();
-    first.key_name = "codex-invalid".to_string();
-    first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
-
-    let mut second = sample_row();
-    second.provider_id = "provider-openai".to_string();
-    second.provider_name = "openai".to_string();
-    second.endpoint_id = "endpoint-openai".to_string();
-    second.endpoint_api_format = "openai:responses".to_string();
-    second.key_id = "key-openai".to_string();
-    second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 2}));
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        first, second,
-    ]));
-    let mut codex_provider = sample_provider("provider-codex", None);
-    codex_provider.provider_type = "codex".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![codex_provider, sample_provider("provider-openai", None)],
-        Vec::new(),
-        vec![
-            {
-                let mut key = sample_key("key-codex", "provider-codex", Some(10));
-                key.auth_type = "oauth".to_string();
-                key.expires_at_unix_secs = Some(1_710_000_200);
-                key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-                key.oauth_invalid_reason = Some(
-                    "[REFRESH_FAILED] Token 续期失败 (401): refresh_token 已被使用并轮换，请重新登录授权"
-                        .to_string(),
-                );
-                key
-            },
-            sample_key("key-openai", "provider-openai", Some(10)),
-        ],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:responses",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 2);
-    assert_eq!(selected[0].provider_id, "provider-codex");
-    assert_eq!(selected[1].provider_id, "provider-openai");
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn skips_refresh_failed_oauth_candidate_after_access_token_expiry() {
-    let mut row = sample_row();
-    row.provider_id = "provider-codex".to_string();
-    row.provider_name = "codex".to_string();
-    row.provider_type = "codex".to_string();
-    row.endpoint_id = "endpoint-codex".to_string();
-    row.endpoint_api_format = "openai:responses".to_string();
-    row.key_id = "key-codex".to_string();
-    row.key_name = "codex-refresh-failed-expired".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    row.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-codex", None);
-    provider.provider_type = "codex".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-codex", "provider-codex", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.expires_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some(
-                "[REFRESH_FAILED] Token 续期失败 (401): refresh_token 已被使用并轮换，请重新登录授权"
-                    .to_string(),
-            );
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:responses",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert!(selected.is_empty());
-    assert_eq!(skipped.len(), 1);
-    assert_eq!(skipped[0].candidate.key_id, "key-codex");
-    assert_eq!(skipped[0].skip_reason, "oauth_invalid");
-}
-
-#[tokio::test]
-async fn skips_oauth_candidate_with_account_block_even_when_refresh_failed_is_present() {
-    let mut row = sample_row();
-    row.provider_id = "provider-codex".to_string();
-    row.provider_name = "codex".to_string();
-    row.provider_type = "codex".to_string();
-    row.endpoint_id = "endpoint-codex".to_string();
-    row.endpoint_api_format = "openai:responses".to_string();
-    row.key_id = "key-codex".to_string();
-    row.key_name = "codex-account-blocked-refresh-failed".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    row.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-codex", None);
-    provider.provider_type = "codex".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-codex", "provider-codex", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.expires_at_unix_secs = Some(1_710_000_200);
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some(
-                "[REFRESH_FAILED] Token 续期失败 (401): refresh_token 已被使用并轮换，请重新登录授权\n[ACCOUNT_BLOCK] account has been deactivated"
-                    .to_string(),
-            );
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:responses",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert!(selected.is_empty());
-    assert_eq!(skipped.len(), 1);
-    assert_eq!(skipped[0].candidate.key_id, "key-codex");
-    assert_eq!(skipped[0].skip_reason, "oauth_invalid");
-}
-
-#[tokio::test]
-async fn keeps_request_failed_oauth_candidate_selectable() {
-    let mut row = sample_row();
-    row.provider_id = "provider-codex".to_string();
-    row.provider_name = "codex".to_string();
-    row.provider_type = "codex".to_string();
-    row.endpoint_id = "endpoint-codex".to_string();
-    row.endpoint_api_format = "openai:responses".to_string();
-    row.key_id = "key-codex".to_string();
-    row.key_name = "codex-check-failed".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["openai:responses".to_string()]);
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-codex", None);
-    provider.provider_type = "codex".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-codex", "provider-codex", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some("[REQUEST_FAILED] 账号状态检查失败".to_string());
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:responses",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].provider_id, "provider-codex");
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn keeps_codex_candidate_selectable_when_oauth_token_is_expired() {
-    let mut row = sample_row();
-    row.provider_id = "provider-codex".to_string();
-    row.provider_name = "codex".to_string();
-    row.provider_type = "codex".to_string();
-    row.endpoint_id = "endpoint-codex".to_string();
-    row.endpoint_api_format = "openai:responses".to_string();
-    row.key_id = "key-codex".to_string();
-    row.key_name = "codex-token-expired".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["openai:responses".to_string()]);
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-codex", None);
-    provider.provider_type = "codex".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-codex", "provider-codex", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some("[OAUTH_EXPIRED] session expired".to_string());
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:responses",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].provider_id, "provider-codex");
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn keeps_refreshable_kiro_candidate_selectable_with_runtime_oauth_invalid_marker() {
-    let mut row = sample_row();
-    row.provider_id = "provider-kiro".to_string();
-    row.provider_name = "kiro".to_string();
-    row.provider_type = "kiro".to_string();
-    row.endpoint_id = "endpoint-kiro".to_string();
-    row.endpoint_api_format = "claude:messages".to_string();
-    row.key_id = "key-kiro".to_string();
-    row.key_name = "kiro-refreshable".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["claude:messages".to_string()]);
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-kiro", None);
-    provider.provider_type = "kiro".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-kiro", "provider-kiro", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.encrypted_auth_config = Some("encrypted-refreshable-session".to_string());
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some("Kiro Token 无效或已过期".to_string());
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "claude:messages",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].provider_id, "provider-kiro");
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn keeps_refreshable_kiro_candidate_selectable_when_oauth_token_expired() {
-    let mut row = sample_row();
-    row.provider_id = "provider-kiro".to_string();
-    row.provider_name = "kiro".to_string();
-    row.provider_type = "kiro".to_string();
-    row.endpoint_id = "endpoint-kiro".to_string();
-    row.endpoint_api_format = "claude:messages".to_string();
-    row.key_id = "key-kiro".to_string();
-    row.key_name = "kiro-expired-refreshable".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["claude:messages".to_string()]);
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-kiro", None);
-    provider.provider_type = "kiro".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-kiro", "provider-kiro", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.encrypted_auth_config = Some("encrypted-refreshable-session".to_string());
-            key.expires_at_unix_secs = Some(1_710_000_000);
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "claude:messages",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].provider_id, "provider-kiro");
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn keeps_kiro_candidate_selectable_after_refresh_token_failure_until_access_token_expiry() {
-    let mut row = sample_row();
-    row.provider_id = "provider-kiro".to_string();
-    row.provider_name = "kiro".to_string();
-    row.provider_type = "kiro".to_string();
-    row.endpoint_id = "endpoint-kiro".to_string();
-    row.endpoint_api_format = "claude:messages".to_string();
-    row.key_id = "key-kiro".to_string();
-    row.key_name = "kiro-refresh-failed".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["claude:messages".to_string()]);
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-kiro", None);
-    provider.provider_type = "kiro".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-kiro", "provider-kiro", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.encrypted_auth_config = Some("encrypted-refreshable-session".to_string());
-            key.expires_at_unix_secs = Some(1_710_000_200);
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some(
-                "[REFRESH_FAILED] Token 续期失败 (401): refresh_token 无效、已过期或已撤销，请重新登录授权"
-                    .to_string(),
-            );
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "claude:messages",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].provider_id, "provider-kiro");
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn skips_kiro_candidate_after_refresh_token_failure_and_access_token_expiry() {
-    let mut row = sample_row();
-    row.provider_id = "provider-kiro".to_string();
-    row.provider_name = "kiro".to_string();
-    row.provider_type = "kiro".to_string();
-    row.endpoint_id = "endpoint-kiro".to_string();
-    row.endpoint_api_format = "claude:messages".to_string();
-    row.key_id = "key-kiro".to_string();
-    row.key_name = "kiro-refresh-failed-expired".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["claude:messages".to_string()]);
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-kiro", None);
-    provider.provider_type = "kiro".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-kiro", "provider-kiro", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.encrypted_auth_config = Some("encrypted-refreshable-session".to_string());
-            key.expires_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some(
-                "[REFRESH_FAILED] Token 续期失败 (401): refresh_token 无效、已过期或已撤销，请重新登录授权"
-                    .to_string(),
-            );
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "claude:messages",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert!(selected.is_empty());
-    assert_eq!(skipped.len(), 1);
-    assert_eq!(skipped[0].candidate.key_id, "key-kiro");
-    assert_eq!(skipped[0].skip_reason, "oauth_invalid");
-}
-
-#[tokio::test]
-async fn skips_refreshable_kiro_candidate_when_oauth_marker_is_account_block() {
-    let mut row = sample_row();
-    row.provider_id = "provider-kiro".to_string();
-    row.provider_name = "kiro".to_string();
-    row.provider_type = "kiro".to_string();
-    row.endpoint_id = "endpoint-kiro".to_string();
-    row.endpoint_api_format = "claude:messages".to_string();
-    row.key_id = "key-kiro".to_string();
-    row.key_name = "kiro-account-blocked".to_string();
-    row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["claude:messages".to_string()]);
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        row,
-    ]));
-    let mut provider = sample_provider("provider-kiro", None);
-    provider.provider_type = "kiro".to_string();
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![provider],
-        Vec::new(),
-        vec![{
-            let mut key = sample_key("key-kiro", "provider-kiro", Some(10));
-            key.auth_type = "oauth".to_string();
-            key.encrypted_auth_config = Some("encrypted-refreshable-session".to_string());
-            key.oauth_invalid_at_unix_secs = Some(1_710_000_000);
-            key.oauth_invalid_reason = Some("账户已封禁: account banned".to_string());
-            key
-        }],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "claude:messages",
-        "gpt-4.1",
-        false,
-        None,
-        1_710_000_100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert!(selected.is_empty());
-    assert_eq!(skipped.len(), 1);
-    assert_eq!(skipped[0].candidate.provider_id, "provider-kiro");
-    assert_eq!(skipped[0].skip_reason, "oauth_invalid");
-}
-
-#[tokio::test]
-async fn keeps_codex_candidate_selectable_when_exhausted_account_flag_is_disabled() {
-    let mut first = sample_row();
-    first.provider_id = "provider-codex".to_string();
-    first.provider_name = "codex".to_string();
-    first.provider_type = "codex".to_string();
-    first.endpoint_id = "endpoint-codex".to_string();
-    first.endpoint_api_format = "openai:responses".to_string();
-    first.key_id = "key-codex".to_string();
-    first.key_name = "codex-exhausted".to_string();
-    first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
-
-    let mut second = sample_row();
-    second.provider_id = "provider-openai".to_string();
-    second.provider_name = "openai".to_string();
-    second.endpoint_id = "endpoint-openai".to_string();
-    second.endpoint_api_format = "openai:responses".to_string();
-    second.key_id = "key-openai".to_string();
-    second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["openai:responses".to_string()]);
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 2}));
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        first, second,
-    ]));
-    let mut codex_provider = sample_provider("provider-codex", None);
-    codex_provider.provider_type = "codex".to_string();
-    codex_provider.config = Some(serde_json::json!({
-        "pool_advanced": {}
-    }));
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![codex_provider, sample_provider("provider-openai", None)],
-        Vec::new(),
-        vec![
-            {
-                let mut key = sample_key("key-codex", "provider-codex", Some(10));
-                key.auth_type = "oauth".to_string();
-                key.upstream_metadata = Some(serde_json::json!({
-                    "codex": {
-                        "secondary_used_percent": 100.0
-                    }
-                }));
-                key
-            },
-            sample_key("key-openai", "provider-openai", Some(10)),
-        ],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "openai:responses",
-        "gpt-4.1",
-        false,
-        None,
-        100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 2);
-    assert!(selected
-        .iter()
-        .any(|candidate| candidate.provider_id == "provider-codex"));
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
-async fn skips_kiro_candidate_when_account_quota_is_exhausted_and_pool_flag_enabled() {
-    let mut first = sample_row();
-    first.provider_id = "provider-kiro".to_string();
-    first.provider_name = "kiro".to_string();
-    first.provider_type = "kiro".to_string();
-    first.endpoint_id = "endpoint-kiro".to_string();
-    first.endpoint_api_format = "claude:messages".to_string();
-    first.key_id = "key-kiro".to_string();
-    first.key_name = "kiro-exhausted".to_string();
-    first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["claude:messages".to_string()]);
-    first.key_global_priority_by_format = Some(serde_json::json!({"claude:messages": 1}));
-
-    let mut second = sample_row();
-    second.provider_id = "provider-openai".to_string();
-    second.provider_name = "openai".to_string();
-    second.endpoint_id = "endpoint-openai".to_string();
-    second.endpoint_api_format = "claude:messages".to_string();
-    second.key_id = "key-openai".to_string();
-    second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["claude:messages".to_string()]);
-    second.key_global_priority_by_format = Some(serde_json::json!({"claude:messages": 2}));
-
-    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-        first, second,
-    ]));
-    let mut kiro_provider = sample_provider("provider-kiro", None);
-    kiro_provider.provider_type = "kiro".to_string();
-    kiro_provider.config = Some(serde_json::json!({
-        "pool_advanced": {
-            "skip_exhausted_accounts": true
-        }
-    }));
-    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![kiro_provider, sample_provider("provider-openai", None)],
-        Vec::new(),
-        vec![
-            {
-                let mut key = sample_key("key-kiro", "provider-kiro", Some(10));
-                key.auth_type = "oauth".to_string();
-                key.upstream_metadata = Some(serde_json::json!({
-                    "kiro": {
-                        "remaining": 0
-                    }
-                }));
-                key
-            },
-            sample_key("key-openai", "provider-openai", Some(10)),
-        ],
-    ));
-    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
-    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![]));
-    let state = AppState::new()
-        .expect("state should build")
-        .with_data_state_for_tests(
-            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
-                candidates,
-                provider_catalog,
-                quotas,
-                request_candidates,
-            ),
-        );
-
-    let (selected, skipped) = collect_selectable_candidates_with_skip_reasons(
-        state.data.as_ref(),
-        &state,
-        "claude:messages",
-        "gpt-4.1",
-        false,
-        None,
-        100,
-    )
-    .await
-    .expect("selection should succeed");
-
-    assert_eq!(selected.len(), 2);
-    assert!(selected
-        .iter()
-        .any(|item| item.provider_id == "provider-kiro"));
-    assert!(selected
-        .iter()
-        .any(|item| item.provider_id == "provider-openai"));
-    assert!(skipped.is_empty());
-}
-
-#[tokio::test]
 async fn same_priority_candidates_prefer_healthier_provider_key_before_id_order() {
     let mut first = sample_row();
     first.provider_id = "provider-a".to_string();
@@ -2671,7 +1752,6 @@ async fn same_priority_candidates_prefer_healthier_provider_key_before_id_order(
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -2679,7 +1759,6 @@ async fn same_priority_candidates_prefer_healthier_provider_key_before_id_order(
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
@@ -2740,7 +1819,6 @@ async fn same_priority_candidates_use_aggregate_health_score_when_api_format_spe
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
     first.key_name = "alpha".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
@@ -2748,7 +1826,6 @@ async fn same_priority_candidates_use_aggregate_health_score_when_api_format_spe
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
     second.key_name = "beta".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,

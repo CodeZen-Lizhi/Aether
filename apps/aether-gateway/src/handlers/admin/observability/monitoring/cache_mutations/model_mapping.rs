@@ -8,10 +8,10 @@ use super::super::cache_store::{
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::GatewayError;
 use aether_admin::observability::monitoring::{
-admin_monitoring_bad_request_response,
-build_admin_monitoring_model_mapping_delete_model_success_response,
-build_admin_monitoring_model_mapping_delete_provider_success_response,
-build_admin_monitoring_model_mapping_delete_success_response,
+    admin_monitoring_bad_request_response,
+    build_admin_monitoring_model_mapping_delete_model_success_response,
+    build_admin_monitoring_model_mapping_delete_provider_success_response,
+    build_admin_monitoring_model_mapping_delete_success_response,
 };
 use axum::{body::Body, response::Response};
 

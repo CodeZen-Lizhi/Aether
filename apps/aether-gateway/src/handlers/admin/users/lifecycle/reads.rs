@@ -64,12 +64,7 @@ pub(in super::super) async fn build_admin_list_users_response(
         .iter()
         .map(|row| row.id.clone())
         .collect::<Vec<_>>();
-    let (
-        auth_rows_result,
-        usage_totals_result,
-        memberships_result,
-        groups_result,
-    ) = tokio::join!(
+    let (auth_rows_result, usage_totals_result, memberships_result, groups_result) = tokio::join!(
         state.list_user_auth_by_ids(&user_ids),
         state.summarize_usage_totals_by_user_ids(&user_ids),
         state.list_user_group_memberships_by_user_ids(&user_ids),

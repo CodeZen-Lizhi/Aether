@@ -2,10 +2,9 @@ use super::snapshot::build_admin_monitoring_provider_name_by_id_and_keys;
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::GatewayError;
 use aether_admin::observability::monitoring::{
-admin_monitoring_bad_request_response,
-build_admin_monitoring_circuit_history_items,
-build_admin_monitoring_circuit_history_payload_response,
-parse_admin_monitoring_circuit_history_limit,
+    admin_monitoring_bad_request_response, build_admin_monitoring_circuit_history_items,
+    build_admin_monitoring_circuit_history_payload_response,
+    parse_admin_monitoring_circuit_history_limit,
 };
 use axum::{body::Body, response::Response};
 

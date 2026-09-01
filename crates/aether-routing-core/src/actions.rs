@@ -24,6 +24,7 @@ pub enum RoutingSchedulingMode {
     CacheAffinity,
     LoadBalance,
     FixedOrder,
+    Economy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

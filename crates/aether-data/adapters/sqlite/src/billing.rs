@@ -5,8 +5,7 @@ use aether_data_contracts::repository::billing::{
     AdminBillingCollectorRecord, AdminBillingCollectorWriteInput, AdminBillingMutationOutcome,
     AdminBillingPresetApplyResult, AdminBillingRuleRecord, AdminBillingRuleWriteInput,
     BillingPlanRecord, BillingPlanWriteInput, BillingReadRepository, StoredBillingModelContext,
-    UserDailyQuotaAvailabilityRecord,
-    UserPlanEntitlementRecord,
+    UserDailyQuotaAvailabilityRecord, UserPlanEntitlementRecord,
 };
 use aether_data_contracts::DataLayerError;
 
@@ -1120,7 +1119,6 @@ fn daily_quota_grants_from_entitlement(
 fn read_count_sqlite(row: &SqliteRow) -> Result<u64, DataLayerError> {
     Ok(row.try_get::<i64, _>("total").map_sql_err()?.max(0) as u64)
 }
-
 
 fn map_billing_plan_sqlite(row: &SqliteRow) -> Result<BillingPlanRecord, DataLayerError> {
     Ok(BillingPlanRecord {

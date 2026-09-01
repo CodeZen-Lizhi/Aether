@@ -7,8 +7,6 @@ use aether_scheduler_core::{
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-
-
 pub(crate) async fn build_admin_key_rpm_payload(
     state: &AdminAppState<'_>,
     key_id: &str,
@@ -213,9 +211,7 @@ pub(crate) async fn recover_all_admin_key_health(
             .unwrap_or_default();
         let api_formats = provider
             .as_ref()
-            .map(|provider| {
-                provider_key_effective_api_formats(&key)
-            })
+            .map(|provider| provider_key_effective_api_formats(&key))
             .unwrap_or_default();
         payload_items.push(json!({
             "key_id": key.id,

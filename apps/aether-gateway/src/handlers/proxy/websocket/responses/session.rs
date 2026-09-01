@@ -1776,50 +1776,6 @@ mod tests {
     }
 
     #[test]
-    fn cross_socket_continuation_rejects_an_effective_lite_mode_change() {
-        let mut decision: AiExecutionDecision = serde_json::from_value(json!({
-            "action": "local",
-            "provider_type": "codex",
-            "provider_api_format": "openai:responses",
-            "provider_request_headers": {}
-        }))
-        .expect("minimal Codex decision");
-        decision.provider_request_headers.insert(
-            crate::ai_serving::CODEX_RESPONSES_LITE_HEADER.to_string(),
-            "true".to_string(),
-        );
-        let normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol")
-            .with_provider_type_for_tests("codex");
-
-        let effective_lite =
-            super::planned_request_uses_codex_responses_lite(&decision, &normalization);
-        assert!(effective_lite);
-        assert!(super::responses_lite_contract_modes_match(
-            true,
-            effective_lite
-        ));
-
-        // A non-null context_management object suppresses the converged Lite
-        // contract/header even though the model capability remains enabled.
-        // A chain whose stored prefix used Lite must not cross that boundary.
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-5.6-sol",
-            "context_management": {"compact_threshold": 1_000}
-        }));
-        let effective_lite =
-            super::planned_request_uses_codex_responses_lite(&decision, &normalization);
-        assert!(!effective_lite);
-        assert!(!super::responses_lite_contract_modes_match(
-            true,
-            effective_lite
-        ));
-        assert!(super::responses_lite_contract_modes_match(
-            false,
-            effective_lite
-        ));
-    }
-
-    #[test]
     fn initial_named_stream_is_rejected_before_planning() {
         let initial = json!({
             "type": "response.create",

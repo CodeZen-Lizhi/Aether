@@ -1340,7 +1340,6 @@ async fn seed_provider_catalog(
             .with_transport_fields(
                 true,
                 false,
-                false,
                 None,
                 Some(0),
                 None,
@@ -1426,7 +1425,6 @@ fn catalog_key(
         Some(json!(["openai:responses"])),
         encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, secret)?,
         auth_config,
-        None,
         Some(json!({"openai:responses": 1})),
         Some(json!([PUBLIC_MODEL, UPSTREAM_MODEL])),
         None,

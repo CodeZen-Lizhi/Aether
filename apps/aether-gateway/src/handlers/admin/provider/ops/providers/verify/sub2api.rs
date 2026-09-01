@@ -5,10 +5,8 @@ use super::request::{
 use crate::handlers::admin::provider::ops::providers::config::persist_admin_provider_ops_runtime_credentials;
 use crate::handlers::admin::request::AdminAppState;
 use aether_admin::provider::ops::{
-admin_provider_ops_frontend_updated_credentials,
-admin_provider_ops_verify_failure,
-parse_verify_payload,
-ADMIN_PROVIDER_OPS_USER_AGENT,
+    admin_provider_ops_frontend_updated_credentials, admin_provider_ops_verify_failure,
+    parse_verify_payload, ADMIN_PROVIDER_OPS_USER_AGENT,
 };
 use aether_contracts::ProxySnapshot;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogProvider;

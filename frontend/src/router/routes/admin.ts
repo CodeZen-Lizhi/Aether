@@ -33,16 +33,6 @@ export const adminRoutes: RouteRecordRaw[] = [
         component: view(() => import('@/views/admin/RoutingProfiles.vue'))
       },
       {
-        path: 'routing/new',
-        name: 'RoutingProfileCreate',
-        component: view(() => import('@/views/admin/RoutingProfiles.vue'))
-      },
-      {
-        path: 'routing/:groupId',
-        name: 'RoutingProfileDetail',
-        component: view(() => import('@/views/admin/RoutingProfiles.vue'))
-      },
-      {
         path: 'usage',
         name: 'Usage',
         component: view(() => import('@/views/shared/Usage.vue'))

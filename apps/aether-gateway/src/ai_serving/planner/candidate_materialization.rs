@@ -1,13 +1,9 @@
 use aether_ai_serving::{
-ai_candidate_extra_data_with_ranking,
-run_ai_available_candidate_persistence,
-run_ai_candidate_materialization,
-run_ai_skipped_candidate_persistence,
-AiAvailableCandidatePersistencePort,
-AiCandidateMaterializationOutcome,
-AiCandidateMaterializationPort,
-AiCandidatePreselectionOutcome,
-AiSkippedCandidatePersistencePort,
+    ai_candidate_extra_data_with_ranking, run_ai_available_candidate_persistence,
+    run_ai_candidate_materialization, run_ai_skipped_candidate_persistence,
+    AiAvailableCandidatePersistencePort, AiCandidateMaterializationOutcome,
+    AiCandidateMaterializationPort, AiCandidatePreselectionOutcome,
+    AiSkippedCandidatePersistencePort,
 };
 use aether_dispatch_core::{DispatchSequence, DispatchSequenceItem};
 use aether_routing_core::{
@@ -1048,7 +1044,7 @@ async fn pop_attempt_from_items(
                 }
                 items.pop_front();
             }
-LocalExecutionCandidateAttemptSourceItem::RequestedModelPage { .. } => {
+            LocalExecutionCandidateAttemptSourceItem::RequestedModelPage { .. } => {
                 items.pop_front();
             }
         }
@@ -1702,7 +1698,7 @@ fn build_unpersisted_local_execution_candidate_attempts(
     attempts
 }
 
-a#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn persist_skipped_local_execution_candidate(
     state: &AppState,
     trace_id: &str,
@@ -1878,10 +1874,9 @@ mod tests {
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data_contracts::repository::candidates::RequestCandidateStatus;
     use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-};
+        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+        GatewayProviderTransportProvider,
+    };
     use aether_scheduler_core::{
         build_scheduler_affinity_cache_key_for_api_key_id,
         SchedulerMinimalCandidateSelectionCandidate, SchedulerPriorityMode, SchedulerRankingMode,
@@ -1928,7 +1923,6 @@ GatewayProviderTransportProvider,
                 provider_type: "codex".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -1966,7 +1960,6 @@ GatewayProviderTransportProvider,
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -2039,8 +2032,7 @@ GatewayProviderTransportProvider,
         candidate
     }
 
-    #[tokio::test]
-    async     #[test]
+    #[test]
     fn materialization_port_ignores_scheduler_affinity_when_cache_affinity_disabled() {
         let app = AppState::new().expect("state should build");
         let auth_snapshot = sample_auth_snapshot();
@@ -2417,79 +2409,5 @@ GatewayProviderTransportProvider,
             endpoint_2_attempt.eligible.candidate.endpoint_id,
             "endpoint-2"
         );
-    }
-
-    #[tokio::test]
-    async fn pool_internal_skipped_candidates_are_not_persisted() {
-        let repository = Arc::new(InMemoryRequestCandidateRepository::default());
-        let app = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(
-                GatewayDataState::with_request_candidate_repository_for_tests(Arc::clone(
-                    &repository,
-                )),
-            )
-            .without_request_candidate_queue_for_tests();
-
-        persist_skipped_local_execution_candidates(
-            &app,
-            "trace-pool-skipped",
-            "user-1",
-            "api-key-1",
-            None,
-            0,
-            vec![
-                SkippedLocalExecutionCandidate {
-                    candidate: sample_candidate("pool-skipped"),
-                    skip_reason: "pool_cooldown",
-                    transport: Some(sample_transport(
-                        "pool-skipped",
-                        Some(json!({ "pool_advanced": {} })),
-                    )),
-                    ranking: None,
-                    extra_data: None,
-                },
-                SkippedLocalExecutionCandidate {
-                    candidate: sample_candidate("normal-skipped"),
-                    skip_reason: "key_inactive",
-                    transport: None,
-                    ranking: Some(SchedulerRankingOutcome {
-                        original_index: 2,
-                        ranking_index: 1,
-                        priority_mode: SchedulerPriorityMode::Provider,
-                        ranking_mode: SchedulerRankingMode::CacheAffinity,
-                        priority_slot: 9,
-                        promoted_by: None,
-                        demoted_by: Some("cross_format"),
-                    }),
-                    extra_data: Some(json!({ "existing": "value" })),
-                },
-            ],
-            "persist skipped should not fail",
-            false,
-        )
-        .await;
-
-        let stored = app
-            .read_request_candidates_by_request_id("trace-pool-skipped")
-            .await
-            .expect("request candidates should read");
-        assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].key_id.as_deref(), Some("normal-skipped"));
-        assert_eq!(stored[0].candidate_index, 0);
-        let extra_data = stored[0]
-            .extra_data
-            .as_ref()
-            .and_then(serde_json::Value::as_object)
-            .expect("skipped ranking metadata should persist");
-        assert_eq!(extra_data.get("existing"), Some(&json!("value")));
-        assert_eq!(
-            extra_data.get("ranking_mode"),
-            Some(&json!("CacheAffinity"))
-        );
-        assert_eq!(extra_data.get("priority_mode"), Some(&json!("Provider")));
-        assert_eq!(extra_data.get("ranking_index"), Some(&json!(1)));
-        assert_eq!(extra_data.get("priority_slot"), Some(&json!(9)));
-        assert_eq!(extra_data.get("demoted_by"), Some(&json!("cross_format")));
     }
 }

@@ -256,10 +256,10 @@ mod tests {
     use super::{
         normalize_allow_auth_channel_mismatch_formats, normalize_api_format_json_object_keys,
         normalize_api_format_list, normalize_auth_type, normalize_auth_type_by_format,
-        normalize_chat_pii_redaction_config,
-        normalize_provider_type_input, normalize_rate_multipliers,
-        reconcile_allow_auth_channel_mismatch_formats, remove_responses_websocket_enabled,
-        set_responses_websocket_enabled, validate_responses_websocket_config,
+        normalize_chat_pii_redaction_config, normalize_provider_type_input,
+        normalize_rate_multipliers, reconcile_allow_auth_channel_mismatch_formats,
+        remove_responses_websocket_enabled, set_responses_websocket_enabled,
+        validate_responses_websocket_config,
     };
     use serde_json::json;
 
@@ -440,5 +440,4 @@ mod tests {
             Some(json!([]))
         );
     }
-
 }

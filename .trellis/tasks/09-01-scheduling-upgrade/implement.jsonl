@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/09-01-scheduling-upgrade/research/01-gateway-comparison.md", "reason": "四家网关调度源码对比研究——错误分类/冷却/熔断/动态信号的出处与取舍依据"}
+{"file": ".trellis/tasks/09-01-scheduling-upgrade/research/02-aether-current-state.md", "reason": "Aether 现状盘点——全链路文件定位、既有状态机制、四块短板"}
+{"file": ".trellis/tasks/09-01-scheduling-upgrade/design.md", "reason": "技术设计——数据结构/状态机/改动点总表/风险缓解"}

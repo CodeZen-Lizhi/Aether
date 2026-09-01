@@ -70,8 +70,7 @@ fn admin_wrapped_state_owns_api_key_and_proxy_capabilities() {
         );
     }
 
-    for path in [
-    ] {
+    for path in [] {
         let contents = read_workspace_file(path);
         assert!(
             !contents.contains("state.data.has_auth_api_key_writer()"),
@@ -132,45 +131,6 @@ fn admin_wrapped_state_owns_observability_capabilities() {
         assert!(
             !admin_request.contains(pattern),
             "handlers/admin/request/mod.rs should not expose deprecated unbounded usage helper {pattern}"
-        );
-    }
-}
-
-#[test]
-fn admin_wrapped_state_owns_provider_oauth_capabilities() {
-    let admin_request =
-        read_workspace_module_tree("apps/aether-gateway/src/handlers/admin/request/mod.rs");
-    for pattern in [
-        "pub(crate) fn cloned_app(&self) -> AppState",
-        "pub(crate) async fn save_provider_oauth_state(",
-        "pub(crate) async fn consume_provider_oauth_state(",
-        "pub(crate) async fn exchange_admin_provider_oauth_code(",
-        "pub(crate) async fn exchange_admin_provider_oauth_refresh_token(",
-        "pub(crate) async fn save_provider_oauth_batch_task_payload(",
-        "pub(crate) async fn read_provider_oauth_batch_task_payload(",
-        "pub(crate) async fn save_provider_oauth_device_session(",
-        "pub(crate) async fn read_provider_oauth_device_session(",
-        "pub(crate) async fn register_admin_kiro_device_oidc_client(",
-        "pub(crate) async fn start_admin_kiro_device_authorization(",
-        "pub(crate) async fn poll_admin_kiro_device_token(",
-        "pub(crate) async fn find_duplicate_provider_oauth_key(",
-        "pub(crate) async fn create_provider_oauth_catalog_key(",
-        "pub(crate) async fn update_existing_provider_oauth_catalog_key(",
-        "pub(crate) async fn refresh_provider_oauth_account_state_after_update(",
-        "pub(crate) async fn update_provider_catalog_key_oauth_credentials(",
-    ] {
-        assert!(
-            admin_request.contains(pattern),
-            "handlers/admin/request/mod.rs should expose provider oauth capability {pattern}"
-        );
-    }
-
-    for path in [
-    ] {
-        let contents = read_workspace_file(path);
-        assert!(
-            !contents.contains("state.app()"),
-            "{path} should use AdminAppState oauth capability instead of raw state.app()"
         );
     }
 }
@@ -423,7 +383,6 @@ fn admin_shared_does_not_own_system_core_routes_or_payloads() {
         "handlers/admin/shared/payloads.rs should not own AdminOAuthProviderUpsertRequest"
     );
 
-
     let admin_shared_mod =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/shared/mod.rs");
     assert!(
@@ -535,8 +494,7 @@ fn ai_serving_external_consumers_use_single_api_facade() {
         );
     }
 
-    for path in [
-    ] {
+    for path in [] {
         let contents = read_workspace_file(path);
         assert!(
             contents.contains("ai_serving::api"),
@@ -780,8 +738,7 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
 
 #[test]
 fn admin_second_layer_route_seams_use_wrapped_request_types() {
-    for file in [
-    ] {
+    for file in [] {
         let contents = read_workspace_file(file);
         assert!(
             contents.contains("state: &AdminAppState<'_>,"),
@@ -811,8 +768,7 @@ fn admin_second_layer_route_seams_use_wrapped_request_types() {
 
 #[test]
 fn admin_route_adjacent_owners_use_wrapped_state_types() {
-    for file in [
-    ] {
+    for file in [] {
         let contents = read_workspace_file(file);
         assert!(
             contents.contains("state: &AdminAppState<'_>,"),
@@ -824,8 +780,7 @@ fn admin_route_adjacent_owners_use_wrapped_state_types() {
         );
     }
 
-    for file in [
-    ] {
+    for file in [] {
         let contents = read_workspace_file(file);
         assert!(
             contents.contains("state: &AdminAppState<'_>,"),
@@ -846,8 +801,7 @@ fn admin_route_adjacent_owners_use_wrapped_state_types() {
         );
     }
 
-    for file in [
-    ] {
+    for file in [] {
         let contents = read_workspace_file(file);
         assert!(
             contents.contains("state: &AdminAppState<'_>,"),

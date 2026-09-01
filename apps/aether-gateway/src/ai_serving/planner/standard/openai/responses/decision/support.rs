@@ -31,10 +31,9 @@ use crate::ai_serving::planner::runtime_miss::set_local_runtime_miss_diagnostic_
 use crate::ai_serving::planner::spec_metadata::local_openai_responses_spec_metadata;
 use crate::ai_serving::planner::CandidateFailureDiagnostic;
 use crate::ai_serving::{
-    ai_local_execution_contract_for_formats,
-    openai_responses_request_operation, resolve_local_decision_execution_runtime_auth_context,
-    ExecutionRuntimeAuthContext, GatewayAuthApiKeySnapshot, GatewayControlDecision,
-    PlannerAppState,
+    ai_local_execution_contract_for_formats, openai_responses_request_operation,
+    resolve_local_decision_execution_runtime_auth_context, ExecutionRuntimeAuthContext,
+    GatewayAuthApiKeySnapshot, GatewayControlDecision, PlannerAppState,
 };
 use crate::client_session_affinity::client_session_affinity_from_parts;
 use crate::{AppState, GatewayError};

@@ -1,9 +1,6 @@
 use super::enabled_key_capability_short_names;
-use crate::handlers::shared::{parse_catalog_auth_config_json, unix_secs_to_rfc3339};
-use crate::provider_key_auth::{
-    provider_key_auth_config_is_agent_identity, provider_key_auth_config_uses_header_authorization,
-    provider_key_effective_api_formats,
-};
+use crate::handlers::shared::unix_secs_to_rfc3339;
+use crate::provider_key_auth::provider_key_effective_api_formats;
 use crate::AppState;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 use aether_scheduler_core::provider_key_circuit_payload_is_active_open_at;
@@ -12,22 +9,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn grouped_key_masked_label(
-    state: &AppState,
+    _state: &AppState,
     key: &StoredProviderCatalogKey,
-    provider_type: &str,
+    _provider_type: &str,
 ) -> &'static str {
     match key.auth_type.trim() {
         "service_account" | "vertex_ai" => "[Service Account]",
-        "oauth" => {
-            let auth_config = parse_catalog_auth_config_json(state, key);
-            if provider_key_auth_config_is_agent_identity(provider_type, auth_config.as_ref()) {
-                "[Agent Identity]"
-            } else if provider_key_auth_config_uses_header_authorization(auth_config.as_ref()) {
-                "[OAuth Header]"
-            } else {
-                "[OAuth Token]"
-            }
-        }
+        "oauth" => "[OAuth Token]",
         _ => "[API Key]",
     }
 }
@@ -89,13 +77,19 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
             .or_default()
             .push(endpoint);
     }
+    let provider_active_api_formats_by_provider: HashMap<String, Vec<String>> =
+        endpoints_by_provider
+            .iter()
+            .map(|(provider_id, endpoints)| {
+                (
+                    provider_id.clone(),
+                    crate::provider_key_auth::provider_active_api_formats(endpoints),
+                )
+            })
+            .collect();
 
     let mut keys = keys_result.ok().unwrap_or_default();
-    keys.sort_by(|left, right| {
-        left.internal_priority
-            .cmp(&right.internal_priority)
-            .then_with(|| left.id.cmp(&right.id))
-    });
+    keys.sort_by(|left, right| left.id.cmp(&right.id));
 
     let now_unix_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -122,12 +116,6 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
         } else {
             None
         };
-        let priority_by_format = key
-            .global_priority_by_format
-            .as_ref()
-            .and_then(serde_json::Value::as_object)
-            .cloned()
-            .unwrap_or_default();
         let health_by_format = key
             .health_by_format
             .as_ref()
@@ -141,7 +129,18 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
             .cloned()
             .unwrap_or_default();
         let capability_names = enabled_key_capability_short_names(key.capabilities.as_ref());
-        let api_formats = provider_key_effective_api_formats(&key);
+        // R11-6: keys without a configured `api_formats` list used to vanish
+        // from this view entirely. Fall back to the provider's active endpoint
+        // formats (the same join the scheduler uses to serve them) so the
+        // view shows every key that can actually take traffic. Selection is
+        // unaffected either way — this is display parity only.
+        let api_formats = match provider_key_effective_api_formats(&key) {
+            formats if !formats.is_empty() => formats,
+            _ => provider_active_api_formats_by_provider
+                .get(&key.provider_id)
+                .cloned()
+                .unwrap_or_default(),
+        };
         if api_formats.is_empty() {
             continue;
         }
@@ -161,8 +160,6 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
                 "name": key.name,
                 "auth_type": key.auth_type,
                 "api_key_masked": grouped_key_masked_label(state, &key, provider_type),
-                "internal_priority": key.internal_priority,
-                "global_priority_by_format": key.global_priority_by_format,
                 "rate_multipliers": key.rate_multipliers,
                 "is_active": key.is_active,
                 "provider_active": provider_is_active,
@@ -176,10 +173,6 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
                 "endpoint_base_url": endpoint_base_url_by_provider_and_format
                     .get(&(key.provider_id.clone(), api_format.clone()))
                     .cloned(),
-                "format_priority": priority_by_format
-                    .get(api_format)
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null),
                 "health_score": format_health
                     .get("health_score")
                     .and_then(serde_json::Value::as_f64)

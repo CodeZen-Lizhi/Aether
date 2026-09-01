@@ -10,11 +10,8 @@ mod provider_quota_routes;
 mod range;
 pub(crate) use self::range::{parse_bounded_u32, resolve_admin_usage_time_range};
 pub(crate) use aether_admin::observability::stats::{
-admin_stats_bad_request_response,
-aggregate_usage_stats,
-round_to,
-AdminStatsTimeRange,
-AdminStatsUsageFilter,
+    admin_stats_bad_request_response, aggregate_usage_stats, round_to, AdminStatsTimeRange,
+    AdminStatsUsageFilter,
 };
 
 pub(crate) async fn maybe_build_local_admin_stats_response(

@@ -26,6 +26,7 @@ use crate::ai_serving::planner::standard::{
     openai_responses_reasoning_replay_policy, request_body_build_failure_extra_data,
     request_conversion_failure_extra_data,
 };
+use crate::ai_serving::project_openai_image_api_request_body;
 use crate::ai_serving::transport::auth::{
     resolve_local_gemini_auth, resolve_local_openai_bearer_auth, resolve_local_standard_auth,
 };
@@ -37,11 +38,10 @@ use crate::ai_serving::transport::{
     ProviderOpenAiImageHeadersInput, StandardProviderRequestHeadersInput,
 };
 use crate::ai_serving::{
-    ai_local_execution_contract_for_formats, request_conversion_direct_auth,
-    request_conversion_kind, CandidateFailureDiagnostic, OpenAiImageOperation,
-    PlannerAppState,
+    ai_local_execution_contract_for_formats, api_format_alias_matches,
+    request_conversion_direct_auth, request_conversion_kind, CandidateFailureDiagnostic,
+    GatewayProviderTransportSnapshot, OpenAiImageOperation, PlannerAppState,
 };
-use crate::ai_serving::project_openai_image_api_request_body;
 use crate::ai_serving::{ConversionMode, ExecutionStrategy};
 use crate::{AppState, GatewayError};
 
@@ -358,8 +358,8 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
             force_body_stream_field,
             transport.provider.provider_type.as_str(),
             transport.endpoint.body_rules.as_ref(),
-            effective_headers,
             Some(input.auth_context.api_key_id.as_str()),
+            effective_headers,
             false,
         )
     } else if websocket_continuation {
@@ -371,6 +371,7 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
             transport.provider.provider_type.as_str(),
             provider_api_format,
             transport.endpoint.body_rules.as_ref(),
+            None,
             effective_headers,
             false,
         )
@@ -383,6 +384,7 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
             transport.provider.provider_type.as_str(),
             provider_api_format,
             transport.endpoint.body_rules.as_ref(),
+            None,
             effective_headers,
             false,
         )
@@ -1077,7 +1079,5 @@ mod tests {
         )
         .expect("DALL-E 3 single image request should project");
         assert_eq!(projected["quality"], "hd");
-
     }
 }
-

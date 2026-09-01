@@ -64,6 +64,8 @@ pub(super) fn rank_scheduler_candidates(
             priority_mode: ordering_config.priority_mode,
             ranking_mode: scheduler_ranking_mode(ordering_config.scheduling_mode),
             include_health: true,
+            include_inflight: false,
+            include_latency: false,
             load_balance_seed: now_unix_secs,
         },
     );
@@ -73,6 +75,8 @@ fn scheduler_ranking_mode(mode: SchedulerSchedulingMode) -> SchedulerRankingMode
     match mode {
         SchedulerSchedulingMode::FixedOrder => SchedulerRankingMode::FixedOrder,
         SchedulerSchedulingMode::CacheAffinity => SchedulerRankingMode::CacheAffinity,
+        #[allow(deprecated)]
         SchedulerSchedulingMode::LoadBalance => SchedulerRankingMode::LoadBalance,
+        SchedulerSchedulingMode::Economy => SchedulerRankingMode::Economy,
     }
 }

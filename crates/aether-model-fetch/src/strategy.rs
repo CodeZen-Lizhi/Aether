@@ -1,12 +1,10 @@
-use std::collections::{BTreeSet, BTreeMap};
 use aether_contracts::{ExecutionPlan, ExecutionResult};
 use aether_provider_transport::GatewayProviderTransportSnapshot;
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::logic::{aggregate_models_for_cache, extract_error_message, parse_models_response_page};
-use crate::transport::{
-    build_standard_models_fetch_execution_plan, ModelFetchTransportRuntime,
-};
+use crate::transport::{build_standard_models_fetch_execution_plan, ModelFetchTransportRuntime};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelsFetchOutcome {
@@ -400,10 +398,7 @@ mod tests {
             executed_urls: Arc::new(Mutex::new(Vec::new())),
             routes: vec![(
                 "https://one.example.com".to_string(),
-                Ok((
-                    200,
-                    json!({"data": [{"id": "gpt-5"}, {"id": "gpt-4.1"}]}),
-                )),
+                Ok((200, json!({"data": [{"id": "gpt-5"}, {"id": "gpt-4.1"}]}))),
             )],
         };
         let transports = vec![sample_transport(

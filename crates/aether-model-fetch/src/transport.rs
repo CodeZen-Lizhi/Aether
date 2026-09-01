@@ -223,26 +223,26 @@ fn build_standard_models_fetch_url(
     let api_format = transport.endpoint.api_format.trim().to_ascii_lowercase();
     if api_format.starts_with("gemini:") {
         let secret = resolve_local_gemini_auth(transport)
-            .and_then(|(name, value)| {
-                name.eq_ignore_ascii_case("x-goog-api-key").then_some(value)
-            })
+            .and_then(|(name, value)| name.eq_ignore_ascii_case("x-goog-api-key").then_some(value))
             .or_else(|| {
                 let secret = transport.key.decrypted_api_key.trim();
                 (!secret.is_empty()).then_some(secret.to_string())
             })
             .ok_or_else(|| "Gemini models fetch requires an API key".to_string())?;
 
-        let (url, _) = build_models_fetch_url(
-            &transport.endpoint.api_format,
-            &transport.endpoint.base_url,
-        )
-        .ok_or_else(|| "Rust models fetch does not support this provider format yet".to_string())?;
+        let (url, _) =
+            build_models_fetch_url(&transport.endpoint.api_format, &transport.endpoint.base_url)
+                .ok_or_else(|| {
+                    "Rust models fetch does not support this provider format yet".to_string()
+                })?;
         return Ok(append_query_param(url, "key", &secret));
     }
 
     let (mut url, _) =
         build_models_fetch_url(&transport.endpoint.api_format, &transport.endpoint.base_url)
-            .ok_or_else(|| "Rust models fetch does not support this provider format yet".to_string())?;
+            .ok_or_else(|| {
+                "Rust models fetch does not support this provider format yet".to_string()
+            })?;
 
     if api_format.starts_with("claude:")
         && !deepseek_anthropic_models_fetch_uses_openai_auth(&transport.endpoint.base_url)

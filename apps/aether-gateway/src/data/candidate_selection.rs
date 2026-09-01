@@ -438,9 +438,7 @@ mod tests {
         MinimalCandidateSelectionRowSource, StoredMinimalCandidateSelectionRow,
     };
     use aether_data::DataLayerError;
-    use aether_data_contracts::repository::candidate_selection::{
-        StoredRequestedModelCandidateRowsQuery,
-    };
+    use aether_data_contracts::repository::candidate_selection::StoredRequestedModelCandidateRowsQuery;
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

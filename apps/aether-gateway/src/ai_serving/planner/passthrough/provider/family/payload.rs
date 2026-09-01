@@ -1,10 +1,6 @@
 use serde_json::json;
 
-use aether_ai_serving::{
-AdaptationMode,
-AiRequestGzipPolicy,
-OriginalRequestPayload,
-};
+use aether_ai_serving::{AdaptationMode, AiRequestGzipPolicy, OriginalRequestPayload};
 use aether_contracts::{ExecutionResponseBodyMode, EXECUTION_RESPONSE_BODY_MODE_HEADER};
 
 use crate::ai_serving::ai_local_execution_contract_for_formats;

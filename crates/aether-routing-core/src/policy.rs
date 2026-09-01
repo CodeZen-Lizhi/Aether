@@ -93,6 +93,52 @@ pub fn resolve_routing_policy(
         apply_model_policy(&mut policy, model_policy);
     }
 
+    resolve_routing_rules_and_actions(&mut policy, config, input)?;
+    Ok(policy)
+}
+
+/// R11: simplified policy resolution for the single-strategy configuration
+/// surface. Per-model policies (区分模型) and the model allowlist gate
+/// (RestrictModels) are configuration dimensions the slim product no longer
+/// exposes; this entry keeps resolving legacy configs that still carry them
+/// by ignoring those dimensions instead of erroring — the group's unified
+/// default policy wins. Rules/actions still apply (headers/body patches,
+/// provider priority, scheduling mode) because those are the surviving
+/// configuration surface.
+pub fn resolve_routing_policy_simplified(
+    config: &RoutingGroupConfig,
+    input: RoutingPolicyInput<'_>,
+) -> Result<ResolvedRoutingPolicy, RoutingPolicyError> {
+    validate_routing_group_config(config)
+        .map_err(|error| RoutingPolicyError::InvalidConfig(error.to_string()))?;
+
+    // Deliberately silent (no tracing dependency in this crate): legacy
+    // configs carrying model_policies/allowed_models resolve to the unified
+    // default policy here; the gateway's routing trace already records the
+    // resolved policy fields, which is the observable signal for operators.
+
+    let mut policy = ResolvedRoutingPolicy {
+        group_id: input.group_id.map(str::to_string),
+        group_version: input.group_version,
+        selection_source: input.selection_source.to_string(),
+        requested_model: input.requested_model.to_string(),
+        resolved_model: input.resolved_model.to_string(),
+        priority_mode: config.default_policy.priority_mode,
+        scheduling_mode: config.default_policy.scheduling_mode,
+        ranking_overlay: RankingOverlay::default(),
+        mutation_plan: MutationPlan::default(),
+        matched_rules: Vec::new(),
+    };
+
+    resolve_routing_rules_and_actions(&mut policy, config, input)?;
+    Ok(policy)
+}
+
+fn resolve_routing_rules_and_actions(
+    policy: &mut ResolvedRoutingPolicy,
+    config: &RoutingGroupConfig,
+    input: RoutingPolicyInput<'_>,
+) -> Result<(), RoutingPolicyError> {
     let condition_context = RoutingConditionContext {
         model: input.requested_model,
         api_format: input.api_format,
@@ -117,12 +163,7 @@ pub fn resolve_routing_policy(
             continue;
         }
         for action in &rule.actions {
-            apply_action(
-                &mut policy,
-                action,
-                input.requested_model,
-                input.resolved_model,
-            )?;
+            apply_action(policy, action, input.requested_model, input.resolved_model)?;
         }
         policy.matched_rules.push(MatchedRoutingRule {
             id: rule.id.clone(),
@@ -134,7 +175,7 @@ pub fn resolve_routing_policy(
         }
     }
 
-    Ok(policy)
+    Ok(())
 }
 
 fn apply_model_policy(policy: &mut ResolvedRoutingPolicy, model_policy: &RoutingModelPolicy) {
@@ -199,6 +240,12 @@ fn apply_action(
                 .insert(provider_id.clone(), *priority);
         }
         RoutingAction::SetKeyPriority { key_id, priority } => {
+            // R11-4: key-level priority overrides are no longer part of the
+            // exposed configuration surface (key priority lives on the key
+            // entity). Legacy configs carrying this action still parse; the
+            // override is applied but the simplified UI never emits it — the
+            // action stays functional so old rule sets do not silently change
+            // behavior.
             policy
                 .ranking_overlay
                 .key_priority_overrides
@@ -474,5 +521,133 @@ mod tests {
             err,
             RoutingPolicyError::ModelNotAllowed("claude".to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod simplified_resolution_tests {
+    use serde_json::json;
+
+    use super::{resolve_routing_policy, resolve_routing_policy_simplified, RoutingPolicyInput};
+    use crate::model::RoutingGroupConfig;
+    use crate::{RoutingRulePhase, RoutingSchedulingMode};
+
+    fn input<'a>() -> RoutingPolicyInput<'a> {
+        let headers = Box::leak(Box::new(json!({})));
+        let body = Box::leak(Box::new(json!({"model": "gpt-5"})));
+        RoutingPolicyInput {
+            group_id: Some("group-1"),
+            group_version: Some(1),
+            selection_source: "system_default",
+            requested_model: "gpt-5",
+            resolved_model: "gpt-5",
+            api_format: "openai:chat",
+            user_id: Some("user-1"),
+            api_key_id: Some("key-1"),
+            headers,
+            body,
+            phase: RoutingRulePhase::ClientRequest,
+        }
+    }
+
+    #[test]
+    fn simplified_entry_ignores_model_allowlist_gate() {
+        // Legacy config gating a model the request does not name: the legacy
+        // entry errors, the simplified entry resolves with the unified
+        // default policy (R11-1/R11-2).
+        let config: RoutingGroupConfig = serde_json::from_value(json!({
+            "default_policy": {
+                "priority_mode": "provider",
+                "scheduling_mode": "cache_affinity"
+            },
+            "allowed_models": ["claude-*"],
+            "model_policies": [],
+            "rules": []
+        }))
+        .expect("config should parse");
+
+        assert!(resolve_routing_policy(&config, input()).is_err());
+        let policy = resolve_routing_policy_simplified(&config, input())
+            .expect("simplified resolution should succeed");
+        assert_eq!(policy.scheduling_mode, RoutingSchedulingMode::CacheAffinity);
+    }
+
+    #[test]
+    fn simplified_entry_ignores_model_policies() {
+        // A per-model policy carries provider/key overlays in the legacy
+        // entry; the simplified entry must not apply them (R11-1).
+        let config: RoutingGroupConfig = serde_json::from_value(json!({
+            "default_policy": {
+                "priority_mode": "provider",
+                "scheduling_mode": "fixed_order"
+            },
+            "allowed_models": [],
+            "model_policies": [{
+                "model": "gpt-5",
+                "allowed_providers": ["provider-special"],
+                "provider_priority_overrides": {"provider-special": 1}
+            }],
+            "rules": []
+        }))
+        .expect("config should parse");
+
+        let legacy =
+            resolve_routing_policy(&config, input()).expect("legacy resolution should succeed");
+        assert_eq!(
+            legacy
+                .ranking_overlay
+                .provider_priority("provider-special", i32::MAX),
+            1
+        );
+
+        let simplified = resolve_routing_policy_simplified(&config, input())
+            .expect("simplified resolution should succeed");
+        assert_eq!(
+            simplified
+                .ranking_overlay
+                .provider_priority("provider-special", i32::MAX),
+            i32::MAX
+        );
+        assert_eq!(
+            simplified.scheduling_mode,
+            RoutingSchedulingMode::FixedOrder
+        );
+    }
+
+    #[test]
+    fn simplified_entry_still_applies_rules_and_provider_priority() {
+        // The surviving configuration surface (rules → provider priority
+        // overlay) must keep working through the simplified entry.
+        let config: RoutingGroupConfig = serde_json::from_value(json!({
+            "default_policy": {
+                "priority_mode": "provider",
+                "scheduling_mode": "economy"
+            },
+            "allowed_models": [],
+            "model_policies": [],
+            "rules": [{
+                "id": "rule-1",
+                "priority": 1,
+                "enabled": true,
+                "phase": "client_request",
+                "conditions": {},
+                "actions": [{
+                    "type": "set_provider_priority",
+                    "provider_id": "provider-a",
+                    "priority": 5
+                }]
+            }]
+        }))
+        .expect("config should parse");
+
+        let policy = resolve_routing_policy_simplified(&config, input())
+            .expect("simplified resolution should succeed");
+        assert_eq!(
+            policy
+                .ranking_overlay
+                .provider_priority("provider-a", i32::MAX),
+            5
+        );
+        assert_eq!(policy.scheduling_mode, RoutingSchedulingMode::Economy);
     }
 }

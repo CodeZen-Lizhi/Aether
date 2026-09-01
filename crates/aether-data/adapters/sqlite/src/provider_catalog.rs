@@ -481,9 +481,7 @@ impl SqliteProviderCatalogReadRepository {
         })?;
         let order_by = match query.order {
             ProviderCatalogKeyListOrder::Name => "name ASC, id ASC",
-            ProviderCatalogKeyListOrder::CreatedAt => {
-                "COALESCE(created_at, 0) ASC, id ASC"
-            }
+            ProviderCatalogKeyListOrder::CreatedAt => "COALESCE(created_at, 0) ASC, id ASC",
             ProviderCatalogKeyListOrder::CreatedAtAsc => {
                 "created_at IS NULL ASC, created_at ASC, name ASC, id ASC"
             }

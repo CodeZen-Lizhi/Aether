@@ -95,8 +95,6 @@ impl DataReadRepositories {
         repositories
     }
 
-
-
     #[cfg(feature = "sqlite")]
     fn install_sqlite(&mut self, backend: &SqliteBackend) {
         if self.announcements.is_none() {

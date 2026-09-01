@@ -29,9 +29,6 @@ async fn compatible_required_capability_prefers_matching_keys_without_hard_filte
     higher_priority.endpoint_id = "endpoint-a".to_string();
     higher_priority.key_id = "key-a".to_string();
     higher_priority.key_name = "alpha".to_string();
-    higher_priority.provider_priority = 0;
-    higher_priority.key_internal_priority = 0;
-    higher_priority.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 0}));
     higher_priority.key_capabilities = Some(serde_json::json!({}));
 
     let mut capability_match = sample_row();
@@ -40,9 +37,6 @@ async fn compatible_required_capability_prefers_matching_keys_without_hard_filte
     capability_match.endpoint_id = "endpoint-b".to_string();
     capability_match.key_id = "key-b".to_string();
     capability_match.key_name = "beta".to_string();
-    capability_match.provider_priority = 10;
-    capability_match.key_internal_priority = 10;
-    capability_match.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 10}));
     capability_match.key_capabilities = Some(serde_json::json!({"cache_1h": true}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -142,8 +136,6 @@ async fn required_capability_without_model_uses_session_scoped_affinity() {
     fallback.key_name = "alpha".to_string();
     fallback.global_model_name = "gemini-2.5-pro".to_string();
     fallback.key_capabilities = Some(serde_json::json!({"gemini_files": true}));
-    fallback.key_global_priority_by_format =
-        Some(serde_json::json!({"gemini:generate_content": 0}));
 
     let mut session_target = fallback.clone();
     session_target.provider_id = "provider-b".to_string();
@@ -151,8 +143,6 @@ async fn required_capability_without_model_uses_session_scoped_affinity() {
     session_target.endpoint_id = "endpoint-b".to_string();
     session_target.key_id = "key-b".to_string();
     session_target.key_name = "beta".to_string();
-    session_target.key_global_priority_by_format =
-        Some(serde_json::json!({"gemini:generate_content": 10}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         fallback,

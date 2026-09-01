@@ -23,8 +23,7 @@ pub(crate) use self::attempt::{
     attempt_identity_from_report_context, build_local_attempt_identities,
     insert_pool_key_lease_report_context_fields, local_attempt_slot_count,
     local_execution_candidate_metadata_from_report_context, ExecutionAttemptIdentity,
-    LocalExecutionCandidateMetadata, ROUTING_POOL_POLICY_OVERRIDE_REPORT_FIELD,
-    SCHEDULER_AFFINITY_EPOCH_REPORT_FIELD,
+    LocalExecutionCandidateMetadata, SCHEDULER_AFFINITY_EPOCH_REPORT_FIELD,
 };
 pub(crate) use self::classifier::{
     classify_anthropic_failure_disposition, classify_failure_disposition, classify_local_failover,
@@ -45,9 +44,15 @@ pub(crate) use self::effects::{
     LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
     LocalHealthFailureEffect, LocalHealthSuccessEffect, LocalStreamFailureEffect,
 };
+pub(crate) const RATE_LIMIT_COOLDOWN_MAX_SECS: u64 = 600;
+
 pub(crate) use self::health::{
+    circuit_ramp_active, circuit_success_rate_breached, parse_retry_after_secs,
     project_local_failure_health, project_local_key_circuit_closed,
-    project_local_key_circuit_failure, project_local_success_health,
+    project_local_key_circuit_closed_with_ramp, project_local_key_circuit_failure,
+    project_local_key_circuit_failure_with_success_rate, project_local_key_circuit_open,
+    project_local_ramp_success_health, project_local_rate_limit_cooldown,
+    project_local_success_health,
 };
 pub(crate) use self::oauth_error::{
     oauth_status_may_be_invalid, oauth_status_proves_access_token_invalid,

@@ -12,8 +12,7 @@ pub(crate) use self::chat::{
 };
 pub(crate) use self::responses::{
     build_cross_format_openai_responses_request_body,
-    build_cross_format_openai_responses_upstream_url,
-    build_local_openai_responses_request_body,
+    build_cross_format_openai_responses_upstream_url, build_local_openai_responses_request_body,
     build_local_openai_responses_request_body_for_websocket_continuation,
     build_local_openai_responses_upstream_url,
 };

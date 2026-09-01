@@ -344,7 +344,7 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
         planner_state,
         transport,
         candidate,
-        request_conversion_direct_auth(transport, spec_metadata.api_format),
+        crate::ai_serving::request_pair_direct_auth(transport, provider_api_format),
         oauth_context,
     )
     .await

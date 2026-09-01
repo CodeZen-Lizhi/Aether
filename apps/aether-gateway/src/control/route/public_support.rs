@@ -97,9 +97,7 @@ pub(super) fn classify_public_support_route(
             "public:catalog",
             false,
         ))
-    } else if method == http::Method::GET
-        && matches!(normalized_path, "/api/auth/settings")
-    {
+    } else if method == http::Method::GET && matches!(normalized_path, "/api/auth/settings") {
         let route_kind = match normalized_path {
             "/api/auth/settings" => "settings",
             _ => "settings",
@@ -114,10 +112,7 @@ pub(super) fn classify_public_support_route(
     } else if matches!(method, &http::Method::GET | &http::Method::POST)
         && matches!(
             normalized_path,
-            "/api/auth/login"
-                | "/api/auth/refresh"
-                | "/api/auth/me"
-                | "/api/auth/logout"
+            "/api/auth/login" | "/api/auth/refresh" | "/api/auth/me" | "/api/auth/logout"
         )
     {
         let route_kind = match normalized_path {
@@ -441,7 +436,7 @@ pub(super) fn classify_public_support_route(
             "public:capabilities",
             false,
         ))
-        } else if method == http::Method::GET
+    } else if method == http::Method::GET
         && matches!(
             normalized_path,
             "/" | "/health" | "/v1/health" | "/v1/providers" | "/v1/test-connection"

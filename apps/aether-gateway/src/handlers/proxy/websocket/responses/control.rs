@@ -21,7 +21,6 @@ use crate::{AppState, GatewayError};
 
 const LOG_TARGET: &str = "aether_gateway::handlers::proxy::responses_ws";
 
-
 #[derive(Debug, Clone)]
 pub(super) struct ResponsesWebSocketTurnControl {
     pub(super) decision: GatewayControlDecision,

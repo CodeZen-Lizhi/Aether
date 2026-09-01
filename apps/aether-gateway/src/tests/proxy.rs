@@ -106,7 +106,6 @@ fn sample_provider_with_request_timeout(
     .with_transport_fields(
         true,
         false,
-        false,
         None,
         None,
         None,
@@ -179,7 +178,6 @@ fn sample_key(key_id: &str, provider_id: &str, node_id: &str) -> StoredProviderC
         None,
         Some(json!({"openai:chat": 1})),
         None,
-        None,
         Some(json!({
             "enabled": true,
             "mode": "tunnel",
@@ -207,7 +205,6 @@ fn sample_codex_key(key_id: &str, provider_id: &str, node_id: &str) -> StoredPro
         None,
         Some(json!({"openai:responses": 1})),
         None,
-        None,
         Some(json!({
             "enabled": true,
             "mode": "tunnel",
@@ -230,7 +227,7 @@ fn current_unix_secs() -> u64 {
 }
 
 #[tokio::test]
-    #[ignore = "expects 404 but upstream returns 502 on baseline too; upstream regression"]
+#[ignore = "expects 404 but upstream returns 502 on baseline too; upstream regression"]
 async fn gateway_rejects_unknown_path_locally_and_generates_trace_id() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);

@@ -28,8 +28,10 @@ impl AppState {
     pub(crate) async fn find_user_daily_quota_availability(
         &self,
         user_id: &str,
-    ) -> Result<Option<aether_data_contracts::repository::billing::UserDailyQuotaAvailabilityRecord>, GatewayError>
-    {
+    ) -> Result<
+        Option<aether_data_contracts::repository::billing::UserDailyQuotaAvailabilityRecord>,
+        GatewayError,
+    > {
         self.data
             .find_user_daily_quota_availability(user_id)
             .await
@@ -39,8 +41,10 @@ impl AppState {
     pub(crate) async fn find_user_daily_quota_availability_for_auth(
         &self,
         user_id: &str,
-    ) -> Result<Option<aether_data_contracts::repository::billing::UserDailyQuotaAvailabilityRecord>, GatewayError>
-    {
+    ) -> Result<
+        Option<aether_data_contracts::repository::billing::UserDailyQuotaAvailabilityRecord>,
+        GatewayError,
+    > {
         let user_id = user_id.trim();
         if user_id.is_empty() {
             return Ok(None);

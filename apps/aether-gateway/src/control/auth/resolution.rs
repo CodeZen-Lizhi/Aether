@@ -1057,14 +1057,8 @@ async fn resolve_antigravity_bearer_bridge_auth_context(
         }));
     };
 
-    let auth_context = build_data_backed_auth_context(
-        state,
-        snapshot,
-        auth_endpoint_signature,
-        None,
-        None,
-    )
-    .await;
+    let auth_context =
+        build_data_backed_auth_context(state, snapshot, auth_endpoint_signature, None, None).await;
     info!(
         event_name = "antigravity_bearer_bridge_auth_context_resolved",
         log_type = "event",

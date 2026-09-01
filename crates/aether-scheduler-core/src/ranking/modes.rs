@@ -7,7 +7,9 @@ use super::format::{
     compare_cross_format_demotion, compare_demoted_format_preference, compare_format_preference,
 };
 use super::priority::compare_candidate_priority_slot;
-use super::types::{SchedulerRankableCandidate, SchedulerRankingContext, SchedulerRankingMode};
+use super::types::{
+    LatencyEwma, SchedulerRankableCandidate, SchedulerRankingContext, SchedulerRankingMode,
+};
 
 pub(super) fn compare_rankable_candidates(
     left: &SchedulerRankableCandidate,
@@ -18,7 +20,37 @@ pub(super) fn compare_rankable_candidates(
         SchedulerRankingMode::FixedOrder => compare_fixed_order(left, right, context),
         SchedulerRankingMode::CacheAffinity => compare_cache_affinity(left, right, context),
         SchedulerRankingMode::LoadBalance => compare_load_balance_base(left, right, context),
+        SchedulerRankingMode::Economy => compare_economy(left, right, context),
     }
+}
+
+/// R10 Economy: cheapest-key-first within the requested model.
+///
+/// Affinity still outranks cost (prompt-cache stickiness beats a cheaper key),
+/// cross-format demotion and format preference keep their existing roles, and
+/// the multiplier itself replaces the priority slot. Equal multipliers fall
+/// back to the priority slot, then health, then the dynamic signals, then the
+/// seeded hash — mirroring the CacheAffinity tail for deterministic behavior.
+fn compare_economy(
+    left: &SchedulerRankableCandidate,
+    right: &SchedulerRankableCandidate,
+    context: SchedulerRankingContext,
+) -> Ordering {
+    left.capability_priority
+        .cmp(&right.capability_priority)
+        .then_with(|| right.cached_affinity_match.cmp(&left.cached_affinity_match))
+        .then_with(|| compare_cross_format_demotion(left, right))
+        .then_with(|| compare_demoted_format_preference(left, right))
+        .then_with(|| left.rate_multiplier.total_cmp(&right.rate_multiplier))
+        .then_with(|| compare_candidate_priority_slot(left, right, context.priority_mode))
+        .then(left.tunnel_bucket.cmp(&right.tunnel_bucket))
+        .then_with(|| compare_format_preference(left, right))
+        .then_with(|| compare_health(left, right, context.include_health))
+        .then_with(|| compare_inflight(left, right, context.include_inflight))
+        .then_with(|| compare_latency_ewma(left, right, context.include_latency))
+        .then_with(|| compare_affinity_or_seeded_hash(left, right, context.load_balance_seed))
+        .then_with(|| compare_candidate_identity_for_ranking(left, right))
+        .then(left.original_index.cmp(&right.original_index))
 }
 
 fn compare_fixed_order(
@@ -51,6 +83,8 @@ fn compare_cache_affinity(
         .then(left.tunnel_bucket.cmp(&right.tunnel_bucket))
         .then_with(|| compare_format_preference(left, right))
         .then_with(|| compare_health(left, right, context.include_health))
+        .then_with(|| compare_inflight(left, right, context.include_inflight))
+        .then_with(|| compare_latency_ewma(left, right, context.include_latency))
         .then_with(|| compare_affinity_or_seeded_hash(left, right, context.load_balance_seed))
         .then_with(|| compare_candidate_identity_for_ranking(left, right))
         .then(left.original_index.cmp(&right.original_index))
@@ -130,6 +164,48 @@ fn compare_health(
         .health_bucket
         .cmp(&left.health_bucket)
         .then_with(|| right.health_score.total_cmp(&left.health_score))
+}
+
+/// P1-4: in-flight count tiebreaker. Lower count wins (the idle key serves
+/// first). Absent counts are Equal so signal-less deployments keep the
+/// deterministic legacy ordering.
+fn compare_inflight(
+    left: &SchedulerRankableCandidate,
+    right: &SchedulerRankableCandidate,
+    include_inflight: bool,
+) -> Ordering {
+    if !include_inflight {
+        return Ordering::Equal;
+    }
+    match (left.inflight_count, right.inflight_count) {
+        (Some(left_count), Some(right_count)) => left_count.cmp(&right_count),
+        _ => Ordering::Equal,
+    }
+}
+
+/// P1-5: latency EWMA tiebreaker. Lower EWMA wins. A candidate with fewer
+/// than MIN_SAMPLES is treated as absent (cold start is not a signal), and
+/// when both sides are absent the comparison falls through.
+fn compare_latency_ewma(
+    left: &SchedulerRankableCandidate,
+    right: &SchedulerRankableCandidate,
+    include_latency: bool,
+) -> Ordering {
+    if !include_latency {
+        return Ordering::Equal;
+    }
+    let left_latency = left
+        .latency_ewma_ms
+        .filter(|latency| latency.samples >= LatencyEwma::MIN_SAMPLES);
+    let right_latency = right
+        .latency_ewma_ms
+        .filter(|latency| latency.samples >= LatencyEwma::MIN_SAMPLES);
+    match (left_latency, right_latency) {
+        (Some(left_latency), Some(right_latency)) => {
+            left_latency.ewma_ms.total_cmp(&right_latency.ewma_ms)
+        }
+        _ => Ordering::Equal,
+    }
 }
 
 fn compare_affinity_or_seeded_hash(

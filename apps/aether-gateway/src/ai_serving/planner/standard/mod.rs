@@ -64,10 +64,8 @@ pub(crate) use crate::ai_serving::{
     normalize_openai_responses_request_to_openai_chat_request, parse_openai_tool_result_content,
 };
 pub(crate) use aether_ai_serving::{
-openai_provider_request_contract_failure_extra_data,
-request_body_build_failure_extra_data,
-request_conversion_failure_extra_data,
-same_format_provider_request_body_failure_extra_data,
+    openai_provider_request_contract_failure_extra_data, request_body_build_failure_extra_data,
+    request_conversion_failure_extra_data, same_format_provider_request_body_failure_extra_data,
 };
 
 pub(crate) fn build_standard_upstream_url(
@@ -84,7 +82,6 @@ pub(crate) fn build_standard_upstream_url(
         Some(mapped_model),
         upstream_is_stream,
         parts.uri.query(),
-        None,
         None,
         provider_request_body,
     )

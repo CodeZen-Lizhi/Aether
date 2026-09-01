@@ -483,7 +483,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )
         .expect("key transport should build")
     }

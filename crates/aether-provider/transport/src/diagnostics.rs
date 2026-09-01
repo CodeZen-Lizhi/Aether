@@ -344,7 +344,6 @@ mod tests {
         assert!(diagnostics["request_pair"]["transport_unsupported_reason"].is_null());
     }
 
-
     #[test]
     fn request_trace_proxy_value_sanitizes_url_and_marks_config_source() {
         let transport = sample_transport();

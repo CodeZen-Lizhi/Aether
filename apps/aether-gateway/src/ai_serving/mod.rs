@@ -42,24 +42,22 @@ pub(crate) use self::planner::{
     build_local_video_sync_plan_and_reports_for_kind,
     build_openai_responses_stream_plan_from_decision,
     build_openai_responses_sync_plan_from_decision, build_passthrough_sync_plan_from_decision,
-    build_standard_family_stream_attempt_source,
-    build_standard_family_stream_plan_and_reports, build_standard_family_sync_attempt_source,
-    build_standard_family_sync_plan_and_reports, build_standard_stream_plan_from_decision,
-    build_standard_sync_plan_from_decision, candidate_auth_channel_skip_reason,
+    build_standard_family_stream_attempt_source, build_standard_family_stream_plan_and_reports,
+    build_standard_family_sync_attempt_source, build_standard_family_sync_plan_and_reports,
+    build_standard_stream_plan_from_decision, build_standard_sync_plan_from_decision,
+    candidate_auth_channel_skip_reason,
     maybe_build_pinned_stream_local_same_format_provider_decision_payload,
     maybe_build_responses_websocket_decision, maybe_build_stream_decision_payload,
     maybe_build_stream_plan_payload, maybe_build_sync_decision_payload,
     maybe_build_sync_plan_payload, planner_is_matching_stream_request,
-    read_candidate_transport_snapshot,
-    record_local_runtime_candidate_skip_reason, resolve_provider_chat_pii_redaction,
-    resolve_tunnel_scheduler_affinity_context, resolve_upstream_is_stream_for_provider,
-    set_local_openai_chat_execution_exhausted_diagnostic,
+    read_candidate_transport_snapshot, record_local_runtime_candidate_skip_reason,
+    resolve_provider_chat_pii_redaction, resolve_tunnel_scheduler_affinity_context,
+    resolve_upstream_is_stream_for_provider, set_local_openai_chat_execution_exhausted_diagnostic,
     set_local_openai_image_execution_exhausted_diagnostic, validate_final_openai_provider_request,
     CandidateFailureDiagnostic, CandidateFailureDiagnosticKind, EligibleLocalExecutionCandidate,
     GatewayAuthApiKeySnapshot, GatewayProviderTransportSnapshot, LocalExecutionAttemptSource,
-    LocalExecutionCandidateKind, PlannerAppState,
-    ResponsesWebSocketBodyNormalization, ResponsesWebSocketDecision,
-    ResponsesWebSocketPinnedCandidate, SkippedLocalExecutionCandidate,
+    LocalExecutionCandidateKind, PlannerAppState, ResponsesWebSocketBodyNormalization,
+    ResponsesWebSocketDecision, ResponsesWebSocketPinnedCandidate, SkippedLocalExecutionCandidate,
 };
 pub(crate) use self::pure::*;
 pub(crate) use self::response_history::{
@@ -78,15 +76,11 @@ pub(crate) use crate::control::{GatewayControlDecision, GatewayCredentialCarrier
 pub(crate) use crate::execution_runtime::{ConversionMode, ExecutionStrategy};
 pub(crate) use crate::headers::RequestOrigin;
 pub(crate) use aether_ai_serving::{
-ai_local_execution_contract_for_formats,
-augment_sync_report_context,
-build_ai_report_context_original_request_echo as build_report_context_original_request_echo,
-extract_ai_gemini_model_from_path as extract_gemini_model_from_path,
-generic_decision_missing_exact_provider_request as generic_decision_missing_exact_provider_request_impl,
-AiExecutionDecision,
-AiExecutionPlanPayload,
-AiStreamAttempt,
-AiSyncAttempt,
+    ai_local_execution_contract_for_formats, augment_sync_report_context,
+    build_ai_report_context_original_request_echo as build_report_context_original_request_echo,
+    extract_ai_gemini_model_from_path as extract_gemini_model_from_path,
+    generic_decision_missing_exact_provider_request as generic_decision_missing_exact_provider_request_impl,
+    AiExecutionDecision, AiExecutionPlanPayload, AiStreamAttempt, AiSyncAttempt,
 };
 
 pub(crate) fn build_provider_transport_request_url(
@@ -95,7 +89,6 @@ pub(crate) fn build_provider_transport_request_url(
     mapped_model: Option<&str>,
     upstream_is_stream: bool,
     request_query: Option<&str>,
-    kiro_api_region: Option<&str>,
     api_operation: Option<ApiOperation>,
 ) -> Option<String> {
     self::transport::build_transport_request_url(
@@ -105,7 +98,6 @@ pub(crate) fn build_provider_transport_request_url(
             mapped_model,
             upstream_is_stream,
             request_query,
-            kiro_api_region,
             api_operation,
         },
     )
@@ -117,7 +109,6 @@ pub(crate) fn build_provider_transport_request_url_for_request_body(
     mapped_model: Option<&str>,
     upstream_is_stream: bool,
     request_query: Option<&str>,
-    kiro_api_region: Option<&str>,
     api_operation: Option<ApiOperation>,
     provider_request_body: Option<&serde_json::Value>,
 ) -> Option<String> {
@@ -128,7 +119,6 @@ pub(crate) fn build_provider_transport_request_url_for_request_body(
             mapped_model,
             upstream_is_stream,
             request_query,
-            kiro_api_region,
             api_operation,
         },
         provider_request_body,

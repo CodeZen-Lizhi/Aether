@@ -1,7 +1,5 @@
 use aether_ai_serving::{
-run_ai_candidate_preselection,
-AiCandidatePreselectionOutcome,
-AiCandidatePreselectionPort,
+    run_ai_candidate_preselection, AiCandidatePreselectionOutcome, AiCandidatePreselectionPort,
 };
 use aether_data_contracts::repository::candidate_selection::StoredMinimalCandidateSelectionRow;
 use aether_routing_core::ResolvedRoutingPolicy;
@@ -595,7 +593,9 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
             SchedulerSchedulingMode::CacheAffinity => {
                 has_explicit_session_affinity(self.client_session_affinity.as_ref())
             }
+            #[allow(deprecated)]
             SchedulerSchedulingMode::LoadBalance => false,
+            SchedulerSchedulingMode::Economy => false,
         }
     }
 
@@ -1476,15 +1476,10 @@ mod tests {
     use crate::data::GatewayDataState;
     use crate::AppState;
     use aether_data::repository::candidate_selection::InMemoryMinimalCandidateSelectionReadRepository;
-    use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data::DataLayerError;
     use aether_data_contracts::repository::candidate_selection::{
         MinimalCandidateSelectionReadRepository, StoredApiFormatCandidateRowsQuery,
-        StoredPoolKeyCandidateRowsByKeyIdsQuery, StoredPoolKeyCandidateRowsQuery,
         StoredProviderModelMapping, StoredRequestedModelCandidateRowsQuery,
-    };
-    use aether_data_contracts::repository::provider_catalog::{
-        StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,
     };
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1570,7 +1565,6 @@ mod tests {
                     standard_candidate_row(
                         format!("fallback-provider-{index:04}").as_str(),
                         "openai:chat",
-                        i32::try_from(index).expect("test provider priority should fit"),
                     )
                 })
                 .collect())
@@ -1595,20 +1589,6 @@ mod tests {
         async fn list_for_exact_api_format_and_requested_model_page(
             &self,
             _query: &StoredRequestedModelCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pool_key_rows_for_group(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pool_key_rows_for_group_key_ids(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
         ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
             Ok(Vec::new())
         }
@@ -1649,20 +1629,6 @@ mod tests {
         async fn list_for_exact_api_format_and_requested_model_page(
             &self,
             _query: &StoredRequestedModelCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pool_key_rows_for_group(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pool_key_rows_for_group_key_ids(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
         ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
             Ok(Vec::new())
         }
@@ -1793,12 +1759,12 @@ mod tests {
 
     #[tokio::test]
     async fn fallback_can_supply_a_real_second_candidate_after_fast_path_page() {
-        let mut first = standard_candidate_row("provider-first", "openai:chat", 0);
+        let mut first = standard_candidate_row("provider-first", "openai:chat");
         first.global_model_name = "gpt-5".to_string();
         first.global_model_mappings = Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]);
         first.model_provider_model_name = "gpt-5.1".to_string();
 
-        let mut second = standard_candidate_row("provider-second", "openai:chat", 1);
+        let mut second = standard_candidate_row("provider-second", "openai:chat");
         second.global_model_name = "gpt-5".to_string();
         second.global_model_mappings = Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]);
         second.model_provider_model_name = "gpt-5-secondary".to_string();
@@ -1860,11 +1826,7 @@ mod tests {
     async fn routing_policy_collects_candidate_pages_before_final_ranking() {
         let rows = (0..300)
             .map(|index| {
-                standard_candidate_row(
-                    format!("provider-{index:03}").as_str(),
-                    "openai:chat",
-                    index,
-                )
+                standard_candidate_row(format!("provider-{index:03}").as_str(), "openai:chat")
             })
             .collect::<Vec<_>>();
         let repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
@@ -1885,10 +1847,8 @@ mod tests {
             resolved_model: "gpt-5".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            keep_priority_on_conversion: false,
             ranking_overlay: Default::default(),
             mutation_plan: Default::default(),
-            pool_policy_overrides: Default::default(),
             matched_rules: Vec::new(),
         };
         let mut cursor = LocalCandidatePreselectionPageCursor::new(
@@ -1948,10 +1908,8 @@ mod tests {
             resolved_model: "gpt-5".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            keep_priority_on_conversion: false,
             ranking_overlay: Default::default(),
             mutation_plan: Default::default(),
-            pool_policy_overrides: Default::default(),
             matched_rules: Vec::new(),
         };
         let mut cursor = LocalCandidatePreselectionPageCursor::new(
@@ -2049,7 +2007,10 @@ mod tests {
         cursor.ordering_config.scheduling_mode = SchedulerSchedulingMode::FixedOrder;
         assert!(cursor.should_cache_current_priority_resolved_page());
 
-        cursor.ordering_config.scheduling_mode = SchedulerSchedulingMode::LoadBalance;
+        #[allow(deprecated)]
+        {
+            cursor.ordering_config.scheduling_mode = SchedulerSchedulingMode::LoadBalance;
+        }
         assert!(!cursor.should_cache_current_priority_resolved_page());
     }
 
@@ -2058,7 +2019,6 @@ mod tests {
             provider_id: "provider-openai-responses-mapped-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-responses-mapped-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -2072,8 +2032,6 @@ mod tests {
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-openai-responses-mapped-1".to_string(),
             global_model_id: "global-model-openai-responses-mapped-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2090,13 +2048,11 @@ mod tests {
     fn standard_candidate_row(
         provider_id: &str,
         api_format: &str,
-        provider_priority: i32,
     ) -> StoredMinimalCandidateSelectionRow {
         StoredMinimalCandidateSelectionRow {
             provider_id: provider_id.to_string(),
             provider_name: provider_id.to_string(),
             provider_type: "custom".to_string(),
-            provider_priority,
             provider_is_active: true,
             endpoint_id: format!("endpoint-{provider_id}"),
             endpoint_api_format: api_format.to_string(),
@@ -2110,8 +2066,6 @@ mod tests {
             key_api_formats: Some(vec![api_format.to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 0,
-            key_global_priority_by_format: None,
             model_id: format!("model-{provider_id}"),
             global_model_id: "global-model-gpt-5".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2125,90 +2079,17 @@ mod tests {
         }
     }
 
-    fn provider_catalog_for_standard_row(
-        row: &StoredMinimalCandidateSelectionRow,
-        keep_priority_on_conversion: bool,
-    ) -> (
-        StoredProviderCatalogProvider,
-        StoredProviderCatalogEndpoint,
-        StoredProviderCatalogKey,
-    ) {
-        let provider = StoredProviderCatalogProvider::new(
-            row.provider_id.clone(),
-            row.provider_name.clone(),
-            Some("https://provider.example".to_string()),
-            row.provider_type.clone(),
-        )
-        .expect("provider should build")
-        .with_transport_fields(
-            true,
-            keep_priority_on_conversion,
-            true,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .with_routing_fields(row.provider_priority);
-        let endpoint = StoredProviderCatalogEndpoint::new(
-            row.endpoint_id.clone(),
-            row.provider_id.clone(),
-            row.endpoint_api_format.clone(),
-            row.endpoint_api_family.clone(),
-            row.endpoint_kind.clone(),
-            row.endpoint_is_active,
-        )
-        .expect("endpoint should build")
-        .with_transport_fields(
-            "https://provider.example/v1".to_string(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("endpoint transport should build");
-        let key = StoredProviderCatalogKey::new(
-            row.key_id.clone(),
-            row.provider_id.clone(),
-            row.key_name.clone(),
-            row.key_auth_type.clone(),
-            None,
-            row.key_is_active,
-        )
-        .expect("key should build")
-        .with_transport_fields(
-            Some(serde_json::json!([row.endpoint_api_format.clone()])),
-            "plain-upstream-key".to_string(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("key transport should build");
-        (provider, endpoint, key)
-    }
-
     fn opg_deepseek_row(
         endpoint_id: &str,
         api_format: &str,
         key_id: &str,
         key_name: &str,
         key_allowed_models: Vec<&str>,
-        key_internal_priority: i32,
     ) -> StoredMinimalCandidateSelectionRow {
         StoredMinimalCandidateSelectionRow {
             provider_id: "provider-opg".to_string(),
             provider_name: "OpenCode Go".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 1,
             provider_is_active: true,
             endpoint_id: endpoint_id.to_string(),
             endpoint_api_format: api_format.to_string(),
@@ -2227,8 +2108,6 @@ mod tests {
                     .collect(),
             ),
             key_capabilities: None,
-            key_internal_priority,
-            key_global_priority_by_format: None,
             model_id: "model-opg-deepseek-v4-pro".to_string(),
             global_model_id: "global-model-deepseek-v4-pro".to_string(),
             global_model_name: "deepseek-v4-pro".to_string(),
@@ -2447,7 +2326,6 @@ mod tests {
                     "key-opg-messages",
                     "OPG Key Messages",
                     vec!["glm-5", "glm-5.1", "minimax-m2.5", "minimax-m2.7"],
-                    1,
                 ),
                 opg_deepseek_row(
                     "endpoint-opg-openai",
@@ -2455,7 +2333,6 @@ mod tests {
                     "key-opg-completions",
                     "OPG Key Completions",
                     vec!["deepseek-v4-pro", "glm-5", "glm-5.1", "minimax-m2.7"],
-                    10,
                 ),
             ]));
         let data_state =
@@ -2498,266 +2375,6 @@ mod tests {
         assert_eq!(
             page.candidates[0].selected_provider_model_name,
             "deepseek-v4-pro"
-        );
-    }
-
-    #[tokio::test]
-    async fn first_page_includes_cross_format_candidates_that_keep_conversion_priority() {
-        let same_format = standard_candidate_row("provider-claude", "claude:messages", 10);
-        let keep_priority_cross =
-            standard_candidate_row("provider-openai-responses-keep", "openai:responses", 0);
-        let regular_cross =
-            standard_candidate_row("provider-openai-responses-regular", "openai:responses", 1);
-        let candidate_repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
-            Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed([
-                same_format.clone(),
-                keep_priority_cross.clone(),
-                regular_cross.clone(),
-            ]));
-        let catalog_items = [
-            provider_catalog_for_standard_row(&same_format, false),
-            provider_catalog_for_standard_row(&keep_priority_cross, true),
-            provider_catalog_for_standard_row(&regular_cross, false),
-        ];
-        let provider_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-            catalog_items
-                .iter()
-                .map(|(provider, _, _)| provider.clone())
-                .collect(),
-            catalog_items
-                .iter()
-                .map(|(_, endpoint, _)| endpoint.clone())
-                .collect(),
-            catalog_items
-                .iter()
-                .map(|(_, _, key)| key.clone())
-                .collect(),
-        ));
-        let data_state =
-            GatewayDataState::with_provider_catalog_and_minimal_candidate_selection_for_tests(
-                provider_repository,
-                candidate_repository,
-            )
-            .with_encryption_key_for_tests("development-key");
-        let app = AppState::new()
-            .expect("gateway state should build")
-            .with_data_state_for_tests(data_state);
-        let auth_snapshot = unrestricted_auth_snapshot();
-        let model_directive_policy =
-            crate::system_features::ModelDirectivePolicySnapshot::load(&app).await;
-        let mut cursor = LocalCandidatePreselectionPageCursor::new(
-            PlannerAppState::new(&app),
-            &model_directive_policy,
-            "claude:messages",
-            "gpt-5",
-            None,
-            false,
-            None,
-            &auth_snapshot,
-            None,
-            None,
-            None,
-            true,
-            LocalCandidatePreselectionKeyMode::ProviderEndpointKeyModelAndApiFormat,
-            true,
-            None,
-        )
-        .await;
-
-        let first_page = cursor
-            .next_page()
-            .await
-            .expect("preselection should succeed")
-            .expect("same-format and keep-priority conversion candidates should share first page");
-
-        assert_eq!(
-            first_page
-                .candidates
-                .iter()
-                .map(|candidate| candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-claude", "provider-openai-responses-keep"]
-        );
-
-        let (ranked, skipped) =
-            super::super::candidate_resolution::resolve_and_rank_logical_local_execution_candidates(
-                PlannerAppState::new(&app),
-                first_page.candidates,
-                "claude:messages",
-                Some("gpt-5"),
-                Some(&auth_snapshot),
-                None,
-                None,
-                None,
-                None,
-                None,
-                aether_ai_serving::AiCandidateResolutionMode::Standard,
-            )
-            .await;
-
-        assert!(skipped.is_empty());
-        assert_eq!(
-            ranked
-                .iter()
-                .map(|candidate| candidate.candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-openai-responses-keep", "provider-claude"]
-        );
-
-        let second_page = cursor
-            .next_page()
-            .await
-            .expect("preselection should continue")
-            .expect("regular conversion candidate should remain in a later page");
-        assert_eq!(
-            second_page
-                .candidates
-                .iter()
-                .map(|candidate| candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-openai-responses-regular"]
-        );
-    }
-
-    #[tokio::test]
-    async fn fixed_order_prefers_codex_responses_when_conversion_keeps_priority() {
-        let mut codex = standard_candidate_row("provider-codex", "openai:responses", 0);
-        codex.provider_type = "codex".to_string();
-        codex.key_auth_type = "oauth".to_string();
-        codex.global_model_name = "gpt-5.4-mini".to_string();
-        codex.model_provider_model_name = "gpt-5.4-mini".to_string();
-        let mut custom_chat = standard_candidate_row("provider-custom", "openai:chat", 10);
-        custom_chat.global_model_name = "gpt-5.4-mini".to_string();
-        custom_chat.model_provider_model_name = "gpt-5.4-mini".to_string();
-
-        let candidate_repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
-            Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed([
-                codex.clone(),
-                custom_chat.clone(),
-            ]));
-        let catalog_items = [
-            provider_catalog_for_standard_row(&codex, false),
-            provider_catalog_for_standard_row(&custom_chat, false),
-        ];
-        let provider_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-            catalog_items
-                .iter()
-                .map(|(provider, _, _)| provider.clone())
-                .collect(),
-            catalog_items
-                .iter()
-                .map(|(_, endpoint, _)| endpoint.clone())
-                .collect(),
-            catalog_items
-                .iter()
-                .map(|(_, _, key)| key.clone())
-                .collect(),
-        ));
-        let data_state =
-            GatewayDataState::with_provider_catalog_and_minimal_candidate_selection_for_tests(
-                provider_repository,
-                candidate_repository,
-            )
-            .with_encryption_key_for_tests("development-key")
-            .with_system_config_values_for_tests([
-                (
-                    "scheduling_mode".to_string(),
-                    serde_json::json!("fixed_order"),
-                ),
-                (
-                    "keep_priority_on_conversion".to_string(),
-                    serde_json::json!(true),
-                ),
-            ]);
-        let app = AppState::new()
-            .expect("gateway state should build")
-            .with_data_state_for_tests(data_state);
-        let auth_snapshot = unrestricted_auth_snapshot();
-        let model_directive_policy =
-            crate::system_features::ModelDirectivePolicySnapshot::load(&app).await;
-        let routing_policy = ResolvedRoutingPolicy {
-            group_id: Some("routing-group-codex-first".to_string()),
-            group_version: Some(1),
-            selection_source: "test".to_string(),
-            requested_model: "gpt-5.4-mini".to_string(),
-            resolved_model: "gpt-5.4-mini".to_string(),
-            priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
-            scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            keep_priority_on_conversion: false,
-            ranking_overlay: Default::default(),
-            mutation_plan: Default::default(),
-            pool_policy_overrides: Default::default(),
-            matched_rules: Vec::new(),
-        };
-        let mut cursor = LocalCandidatePreselectionPageCursor::new(
-            PlannerAppState::new(&app),
-            &model_directive_policy,
-            "openai:chat",
-            "gpt-5.4-mini",
-            None,
-            false,
-            None,
-            &auth_snapshot,
-            Some(&routing_policy),
-            None,
-            None,
-            true,
-            LocalCandidatePreselectionKeyMode::ProviderEndpointKeyModelAndApiFormat,
-            false,
-            None,
-        )
-        .await;
-
-        let first_page = cursor
-            .next_page()
-            .await
-            .expect("preselection should succeed")
-            .expect("Codex and custom candidates should share the priority page");
-        assert!(
-            first_page.skipped_candidates.is_empty(),
-            "priority page unexpectedly skipped candidates: {:?}",
-            first_page
-                .skipped_candidates
-                .iter()
-                .map(|candidate| {
-                    (
-                        candidate.candidate.provider_id.as_str(),
-                        candidate.skip_reason,
-                    )
-                })
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(
-            first_page
-                .candidates
-                .iter()
-                .map(|candidate| candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-custom", "provider-codex"]
-        );
-        let (ranked, skipped) =
-            super::super::candidate_resolution::resolve_and_rank_logical_local_execution_candidates(
-                PlannerAppState::new(&app),
-                first_page.candidates,
-                "openai:chat",
-                Some("gpt-5.4-mini"),
-                Some(&auth_snapshot),
-                None,
-                None,
-                Some(&routing_policy),
-                None,
-                None,
-                aether_ai_serving::AiCandidateResolutionMode::Standard,
-            )
-            .await;
-
-        assert!(skipped.is_empty());
-        assert_eq!(
-            ranked
-                .iter()
-                .map(|candidate| candidate.candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-codex", "provider-custom"]
         );
     }
 }

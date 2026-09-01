@@ -149,8 +149,7 @@ pub(super) async fn maybe_handle(
         .ok()
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
-    let api_formats =
-        provider_key_effective_api_formats(&updated);
+    let api_formats = provider_key_effective_api_formats(&updated);
 
     Ok(Some(
         Json(state.build_admin_provider_key_response(

@@ -105,6 +105,13 @@ pub fn candidate_runtime_skip_reason_with_state(
         {
             return Some("key_circuit_open");
         }
+        if crate::provider_key_rate_limit_cooldown_active_at(
+            provider_key,
+            candidate.endpoint_api_format.as_str(),
+            now_unix_secs,
+        ) {
+            return Some("key_rate_limit_cooldown");
+        }
         if crate::provider_key_health_score(provider_key, candidate.endpoint_api_format.as_str())
             .is_some_and(|score| score <= 0.0)
         {

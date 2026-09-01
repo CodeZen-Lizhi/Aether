@@ -1,7 +1,5 @@
 use crate::handlers::shared::{json_string_list, unix_secs_to_rfc3339};
-use crate::provider_key_auth::{
-    provider_key_auth_semantics, provider_key_configured_api_formats,
-};
+use crate::provider_key_auth::{provider_key_auth_semantics, provider_key_configured_api_formats};
 use crate::AppState;
 use aether_admin::provider::quota as admin_provider_quota_pure;
 use aether_admin::provider::status as admin_provider_status_pure;
@@ -1514,23 +1512,14 @@ fn build_grok_quota_status_snapshot(
 ) -> Option<Value> {
     let metadata = provider_quota_metadata_bucket(upstream_metadata, "grok")?;
     let observed_at_unix_secs = provider_quota_timestamp_unix_secs(metadata.get("updated_at"));
-    let inferred_pool_tier = grok_pool_tier_from_quota_bucket(metadata);
-    let pool_tier = provider_quota_metadata_string(metadata, &["pool_tier", "tier"])
-        .or_else(|| inferred_pool_tier.map(ToOwned::to_owned));
+    let pool_tier = provider_quota_metadata_string(metadata, &["pool_tier", "tier"]);
     let plan_type = provider_quota_metadata_string(metadata, &["plan_type", "plan"])
         .or_else(|| pool_tier.clone());
-    let supported_windows = grok_supported_quota_windows_for_tier(pool_tier.as_deref());
     let windows = provider_quota_model_bucket(metadata)
         .map(|models| {
             models
                 .iter()
                 .filter_map(|(model_name, item)| {
-                    if !supported_windows
-                        .iter()
-                        .any(|(quota_key, _)| *quota_key == model_name.as_str())
-                    {
-                        return None;
-                    }
                     model_quota_window_snapshot(
                         model_name,
                         item.as_object()?,
@@ -2325,10 +2314,7 @@ pub(crate) fn build_admin_provider_key_response(
     payload.insert("oauth_plan_type".to_string(), serde_json::Value::Null);
     payload.insert("oauth_account_id".to_string(), serde_json::Value::Null);
     payload.insert("oauth_account_name".to_string(), serde_json::Value::Null);
-    payload.insert(
-        "oauth_account_user_id".to_string(),
-        serde_json::Value::Null,
-    );
+    payload.insert("oauth_account_user_id".to_string(), serde_json::Value::Null);
     payload.insert(
         "oauth_organizations".to_string(),
         serde_json::Value::Array(Vec::new()),
@@ -2515,7 +2501,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )
         .expect("key transport should build")
     }
@@ -2563,53 +2548,12 @@ mod tests {
             None,
             None,
             None,
-            None,
         )
         .expect("key transport should build");
 
         let masked = masked_catalog_api_key(&state, &key);
         assert!(masked.contains("***"));
         assert_ne!(masked, "***ERROR***");
-    }
-
-    #[test]
-    fn provider_aware_mask_labels_agent_identity_without_exposing_placeholder() {
-        let state = AppState::new().expect("gateway should build");
-        let encrypted_placeholder =
-            encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "__placeholder__")
-                .expect("placeholder ciphertext should build");
-        let encrypted_auth_config = encrypt_python_fernet_plaintext(
-            DEVELOPMENT_ENCRYPTION_KEY,
-            r#"{"provider_type":"codex","auth_mode":"agentIdentity","agent_runtime_id":"runtime-1","agent_private_key":"base64-private-key","task_id":"task-1"}"#,
-        )
-        .expect("auth config ciphertext should build");
-        let key = StoredProviderCatalogKey::new(
-            "key-agent".to_string(),
-            "provider-codex".to_string(),
-            "agent".to_string(),
-            "oauth".to_string(),
-            None,
-            true,
-        )
-        .expect("key should build")
-        .with_transport_fields(
-            Some(json!(["openai:responses"])),
-            encrypted_placeholder,
-            Some(encrypted_auth_config),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("key transport should build");
-
-        assert_eq!(
-            masked_catalog_api_key_for_provider(&state, &key, "codex"),
-            "[Agent Identity]"
-        );
-        assert!(!masked_catalog_api_key_for_provider(&state, &key, "codex").contains("placeholder"));
     }
 
     #[test]
@@ -3797,26 +3741,6 @@ mod tests {
         );
         assert_eq!(account.get("blocked"), Some(&json!(true)));
         assert_eq!(account.get("source"), Some(&json!("oauth_invalid")));
-    }
-
-    #[test]
-    fn provider_key_status_snapshot_payload_upgrades_deleted_agent_runtime_to_invalid() {
-        let mut key = sample_catalog_key();
-        key.auth_type = "oauth".to_string();
-        key.oauth_invalid_at_unix_secs = Some(1_784_728_663);
-        key.oauth_invalid_reason =
-            Some("[REQUEST_FAILED] Agent runtime has been deleted.".to_string());
-
-        let payload = provider_key_status_snapshot_payload(&key, "codex");
-        let oauth = payload
-            .get("oauth")
-            .and_then(Value::as_object)
-            .expect("oauth snapshot should be object");
-
-        assert_eq!(oauth.get("code"), Some(&json!("invalid")));
-        assert_eq!(oauth.get("label"), Some(&json!("已失效")));
-        assert_eq!(oauth.get("invalid_at"), Some(&json!(1_784_728_663u64)));
-        assert_eq!(oauth.get("requires_reauth"), Some(&json!(true)));
     }
 
     #[test]

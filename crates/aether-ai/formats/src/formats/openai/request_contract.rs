@@ -143,8 +143,10 @@ fn validate_final_openai_provider_request_contract(
 mod tests {
     use serde_json::json;
 
-    use super::{finalize_openai_provider_request, validate_openai_provider_request_contract,
-        OpenAiProviderRequestFinalization};
+    use super::{
+        finalize_openai_provider_request, validate_openai_provider_request_contract,
+        OpenAiProviderRequestFinalization,
+    };
 
     fn finalization_for(
         source_api_format: &'static str,

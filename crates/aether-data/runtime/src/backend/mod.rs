@@ -147,13 +147,11 @@ impl DataBackends {
         &self.config
     }
 
-
     pub fn database_driver(&self) -> Option<DatabaseDriver> {
         self.config
             .effective_database()
             .map(|database| database.driver)
     }
-
 
     #[cfg(feature = "sqlite")]
     pub fn sqlite(&self) -> Option<&SqliteBackend> {

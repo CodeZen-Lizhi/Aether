@@ -13,13 +13,13 @@ use super::{
     GeminiFileMappingWriteRepository, GlobalModelReadRepository, GlobalModelWriteRepository,
     ManagementTokenReadRepository, ManagementTokenWriteRepository,
     MinimalCandidateSelectionReadRepository, OAuthProviderReadRepository,
-    OAuthProviderWriteRepository, PoolMemberScoreWriteRepository, PoolScoreReadRepository,
-    ProviderCatalogReadRepository, ProviderCatalogWriteRepository, ProviderQuotaReadRepository,
-    ProviderQuotaWriteRepository, ProxyNodeReadRepository, ProxyNodeWriteRepository,
-    RequestCandidateReadRepository, RequestCandidateWriteRepository, RoutingGroupReadRepository,
-    RoutingGroupWriteRepository, SettlementWriteRepository, StoredSystemConfigEntry,
-    StoredUserPreferenceRecord, UsageReadRepository, UsageWriteRepository, UserReadRepository,
-    VideoTaskReadRepository, VideoTaskWriteRepository, WalletReadRepository, WalletWriteRepository,
+    OAuthProviderWriteRepository, ProviderCatalogReadRepository, ProviderCatalogWriteRepository,
+    ProviderQuotaReadRepository, ProviderQuotaWriteRepository, ProxyNodeReadRepository,
+    ProxyNodeWriteRepository, RequestCandidateReadRepository, RequestCandidateWriteRepository,
+    RoutingGroupReadRepository, RoutingGroupWriteRepository, SettlementWriteRepository,
+    StoredSystemConfigEntry, StoredUserPreferenceRecord, UsageReadRepository, UsageWriteRepository,
+    UserReadRepository, VideoTaskReadRepository, VideoTaskWriteRepository, WalletReadRepository,
+    WalletWriteRepository,
 };
 
 mod announcements;

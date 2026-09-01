@@ -150,8 +150,9 @@ pub fn resolve_transport_profile_id(
 pub fn resolve_transport_profile(
     transport: &GatewayProviderTransportSnapshot,
 ) -> Option<ResolvedTransportProfile> {
-    resolve_transport_profile_from_fingerprint(transport.key.fingerprint.as_ref())
-        .or_else(|| resolve_transport_profile_from_provider_config(transport.provider.config.as_ref()))
+    resolve_transport_profile_from_fingerprint(transport.key.fingerprint.as_ref()).or_else(|| {
+        resolve_transport_profile_from_provider_config(transport.provider.config.as_ref())
+    })
 }
 
 fn resolve_transport_profile_from_provider_config(
@@ -560,9 +561,6 @@ mod tests {
         assert_eq!(profile.backend, "reqwest_rustls");
     }
 
-
-
-
     #[test]
     fn maps_string_transport_profile_to_resolved_profile() {
         let profile = resolve_transport_profile(&sample_transport()).expect("profile");
@@ -599,12 +597,4 @@ mod tests {
         assert!(resolve_transport_profile(&transport).is_none());
         assert!(!transport_profile_is_configured(&transport));
     }
-
-
-
-
-
-
-
-
 }

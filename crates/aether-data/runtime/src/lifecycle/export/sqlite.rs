@@ -546,7 +546,7 @@ fn sqlite_integer_column_is_boolean(column_name: &str) -> bool {
     column_name.starts_with("is_")
         || column_name.starts_with("has_")
         || column_name.starts_with("supports_")
-                || column_name.starts_with("enable_")
+        || column_name.starts_with("enable_")
         || column_name.starts_with("use_")
         || matches!(
             column_name,

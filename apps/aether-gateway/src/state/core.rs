@@ -37,8 +37,8 @@ use super::super::async_task::{
 };
 use super::super::cache::{
     AuthApiKeyLastUsedCache, AuthContextCache, AuthSnapshotCache, DashboardResponseCache,
-    JsonValueCache, SchedulerAffinityCache, SchedulerAffinitySnapshotEntry, SchedulerAffinityTarget,
-    SystemConfigCache, SystemConfigInflightRegistration, ValueCache,
+    JsonValueCache, SchedulerAffinityCache, SchedulerAffinitySnapshotEntry,
+    SchedulerAffinityTarget, SystemConfigCache, SystemConfigInflightRegistration, ValueCache,
 };
 use super::super::data::{GatewayDataConfig, GatewayDataState};
 use super::super::fallback_metrics;
@@ -74,7 +74,8 @@ const SYSTEM_CONFIG_CACHE_TTL: Duration = Duration::from_secs(30);
 // invalidation can therefore take at most this bounded interval to appear.
 const SYSTEM_CONFIG_CACHE_MAX_STALENESS: Duration = Duration::from_secs(5 * 60);
 const SCHEDULER_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &["enable_format_conversion"];
-const AUTH_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &[crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY];
+const AUTH_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] =
+    &[crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY];
 const FRONTDOOR_RPM_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &["rate_limit_per_minute"];
 const METRIC_SNAPSHOT_REFRESH_TIMEOUT: Duration = Duration::from_secs(4);
 const METRIC_SNAPSHOT_PREWARM_TIMEOUT: Duration = Duration::from_secs(12);
@@ -114,7 +115,6 @@ fn system_config_key_affects_provider_transport_snapshot(key: &str) -> bool {
 }
 
 impl AppState {
-
     fn usage_worker_queue_for(
         runtime_state: &Arc<RuntimeState>,
     ) -> Option<Arc<dyn RuntimeQueueStore>> {
@@ -378,12 +378,6 @@ impl AppState {
             #[cfg(test)]
             turnstile_siteverify_timeout_override: None,
             #[cfg(test)]
-            provider_oauth_state_store: None,
-            #[cfg(test)]
-            provider_oauth_device_session_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
-            #[cfg(test)]
-            provider_oauth_batch_task_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
-            #[cfg(test)]
             auth_session_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
             #[cfg(test)]
             auth_email_verification_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
@@ -417,8 +411,6 @@ impl AppState {
             admin_monitoring_cache_affinity_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
             #[cfg(test)]
             admin_monitoring_redis_key_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
-            #[cfg(test)]
-            provider_oauth_token_url_overrides: Arc::new(StdMutex::new(HashMap::new())),
         })
     }
 
@@ -4111,8 +4103,6 @@ mod tests {
             .expect("admin read should retry immediately after failed prewarm");
     }
 
-    
-
     #[tokio::test]
     async fn system_config_reads_use_short_lived_cache_until_app_invalidation() {
         let state = AppState::new()
@@ -4255,57 +4245,6 @@ mod tests {
                 .expect("hard-stale system config read should succeed"),
             Some(json!("new"))
         );
-    }
-
-    #[tokio::test]
-    async fn system_config_entry_write_refreshes_cache_and_scheduler_affinity_for_routing_keys() {
-        let state = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(
-                GatewayDataState::disabled().with_system_config_values_for_tests([(
-                    "keep_priority_on_conversion".to_string(),
-                    json!(false),
-                )]),
-            );
-        let cache_key = "scheduler_affinity:api-key-1:openai:chat:gpt-5";
-        let ttl = std::time::Duration::from_secs(300);
-
-        assert_eq!(
-            state
-                .read_system_config_json_value("keep_priority_on_conversion")
-                .await
-                .expect("system config read should succeed"),
-            Some(json!(false))
-        );
-        state.remember_scheduler_affinity_target(
-            cache_key,
-            SchedulerAffinityTarget {
-                provider_id: "provider-old".to_string(),
-                endpoint_id: "endpoint-old".to_string(),
-                key_id: "key-old".to_string(),
-            },
-            ttl,
-            128,
-        );
-        assert!(state
-            .read_scheduler_affinity_target(cache_key, ttl)
-            .is_some());
-
-        let initial_epoch = state.scheduler_affinity_epoch();
-        state
-            .upsert_system_config_entry("keep_priority_on_conversion", &json!(true), None)
-            .await
-            .expect("admin config write should succeed");
-
-        assert_eq!(
-            state
-                .read_system_config_json_value("keep_priority_on_conversion")
-                .await
-                .expect("system config read should use refreshed cache"),
-            Some(json!(true))
-        );
-        assert!(state.scheduler_affinity_epoch() > initial_epoch);
-        assert_eq!(state.read_scheduler_affinity_target(cache_key, ttl), None);
     }
 
     #[tokio::test]

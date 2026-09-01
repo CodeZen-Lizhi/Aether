@@ -42,10 +42,7 @@ pub(crate) use crate::orchestration::{
     append_local_failover_policy_to_value, LocalFailoverAnalysis, LocalFailoverDecision,
 };
 pub(crate) use aether_ai_serving::AdaptationMode;
-pub(crate) use aether_ai_serving::{
-ConversionMode,
-ExecutionStrategy,
-};
+pub(crate) use aether_ai_serving::{ConversionMode, ExecutionStrategy};
 
 pub(crate) fn ai_attempt_retry_scope_from_failure_disposition(
     disposition: crate::orchestration::FailureDisposition,

@@ -5,21 +5,12 @@ use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::query_param_value;
 use crate::GatewayError;
 use aether_admin::observability::usage::{
-admin_usage_bad_request_response,
-admin_usage_data_unavailable_response,
-admin_usage_has_fallback,
-admin_usage_is_failed,
-admin_usage_matches_search,
-admin_usage_matches_username,
-admin_usage_parse_ids,
-admin_usage_parse_limit,
-admin_usage_parse_offset,
-admin_usage_provider_key_name,
-admin_usage_record_json,
-build_admin_usage_active_requests_response,
-build_admin_usage_records_response,
-build_admin_usage_summary_stats_response_from_summary,
-ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
+    admin_usage_bad_request_response, admin_usage_data_unavailable_response,
+    admin_usage_has_fallback, admin_usage_is_failed, admin_usage_matches_search,
+    admin_usage_matches_username, admin_usage_parse_ids, admin_usage_parse_limit,
+    admin_usage_parse_offset, admin_usage_provider_key_name, admin_usage_record_json,
+    build_admin_usage_active_requests_response, build_admin_usage_records_response,
+    build_admin_usage_summary_stats_response_from_summary, ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
 };
 use aether_data::repository::users::StoredUserSummary;
 use aether_data_contracts::repository::{

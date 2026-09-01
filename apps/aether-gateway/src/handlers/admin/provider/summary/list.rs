@@ -24,9 +24,23 @@ pub(crate) async fn build_admin_providers_payload(
     if matches!(is_active, Some(false)) {
         providers.retain(|provider| !provider.is_active);
     }
+    // R11-5: mirror the scheduler's view — the provider list is ordered by
+    // the default routing group's provider priority overrides (ascending;
+    // unconfigured providers sink to the tail, ties break by name), and the
+    // resolved priority ships in the payload so the UI shows the same number
+    // the scheduler uses.
+    let provider_priorities = read_system_default_provider_priorities(state).await;
     providers.sort_by(|left, right| {
-        left.provider_priority
-            .cmp(&right.provider_priority)
+        let left_priority = provider_priorities
+            .get(&left.id)
+            .copied()
+            .unwrap_or(i32::MAX);
+        let right_priority = provider_priorities
+            .get(&right.id)
+            .copied()
+            .unwrap_or(i32::MAX);
+        left_priority
+            .cmp(&right_priority)
             .then_with(|| left.name.cmp(&right.name))
     });
 
@@ -86,10 +100,12 @@ pub(crate) async fn build_admin_providers_payload(
                 json!({
                     "id": provider_id.clone(),
                     "name": provider.name,
+                    "priority": provider_priorities
+                        .get(&provider_id)
+                        .copied(),
                     "api_format": endpoint.map(|item| item.api_format.clone()),
                     "base_url": endpoint.map(|item| item.base_url.clone()),
                     "api_key": has_any_key_by_provider.contains(&provider_id).then_some("***"),
-                    "priority": provider.provider_priority,
                     "is_active": provider.is_active,
                     "created_at": provider.created_at_unix_ms.and_then(unix_secs_to_rfc3339),
                     "updated_at": provider.updated_at_unix_secs.and_then(unix_secs_to_rfc3339),
@@ -97,4 +113,34 @@ pub(crate) async fn build_admin_providers_payload(
             })
             .collect(),
     ))
+}
+
+async fn read_system_default_provider_priorities(
+    state: &crate::AppState,
+) -> std::collections::HashMap<String, i32> {
+    use aether_data_contracts::repository::routing_profiles::RoutingGroupLookupKey;
+    let Ok(Some(group)) = state
+        .find_routing_group(RoutingGroupLookupKey::SystemDefault)
+        .await
+    else {
+        return std::collections::HashMap::new();
+    };
+    let config = match serde_json::from_value::<aether_routing_core::RoutingGroupConfig>(
+        group.config_json,
+    ) {
+        Ok(config) => config,
+        Err(_) => return std::collections::HashMap::new(),
+    };
+    config
+        .rules
+        .iter()
+        .flat_map(|rule| rule.actions.iter())
+        .filter_map(|action| match action {
+            aether_routing_core::RoutingAction::SetProviderPriority {
+                provider_id,
+                priority,
+            } => Some((provider_id.clone(), *priority)),
+            _ => None,
+        })
+        .collect()
 }

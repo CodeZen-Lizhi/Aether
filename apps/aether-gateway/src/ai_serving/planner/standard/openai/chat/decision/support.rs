@@ -20,8 +20,7 @@ use crate::ai_serving::planner::materialization_policy::{
 };
 use crate::ai_serving::planner::CandidateFailureDiagnostic;
 use crate::ai_serving::{
-    ai_local_execution_contract_for_formats,
-    ExecutionRuntimeAuthContext, PlannerAppState,
+    ai_local_execution_contract_for_formats, ExecutionRuntimeAuthContext, PlannerAppState,
 };
 use crate::AppState;
 

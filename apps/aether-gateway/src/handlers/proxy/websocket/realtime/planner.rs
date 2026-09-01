@@ -27,11 +27,8 @@ pub(super) struct PlannedRealtimeCandidate {
 }
 
 pub(super) struct RealtimePoolLeaseGuard {
-    state: AppState,
-    report_context: Option<serde_json::Value>,
     renewal_task: Option<tokio::task::JoinHandle<()>>,
     healthy: Arc<AtomicBool>,
-    armed: bool,
 }
 
 impl RealtimePoolLeaseGuard {
@@ -61,11 +58,8 @@ impl RealtimePoolLeaseGuard {
             })
         });
         Self {
-            state: state.clone(),
-            report_context,
             renewal_task,
             healthy,
-            armed: true,
         }
     }
 
@@ -77,12 +71,6 @@ impl RealtimePoolLeaseGuard {
         if let Some(task) = self.renewal_task.take() {
             task.abort();
         }
-        crate::orchestration::release_pool_key_lease_from_report_context(
-            &self.state,
-            self.report_context.as_ref(),
-        )
-        .await;
-        self.armed = false;
     }
 }
 
@@ -90,20 +78,6 @@ impl Drop for RealtimePoolLeaseGuard {
     fn drop(&mut self) {
         if let Some(task) = self.renewal_task.take() {
             task.abort();
-        }
-        if !self.armed {
-            return;
-        }
-        let state = self.state.clone();
-        let report_context = self.report_context.take();
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(async move {
-                crate::orchestration::release_pool_key_lease_from_report_context(
-                    &state,
-                    report_context.as_ref(),
-                )
-                .await;
-            });
         }
     }
 }
@@ -134,11 +108,6 @@ pub(super) async fn plan_realtime_candidate(
         .as_deref()
         != Some("openai:realtime")
     {
-        crate::orchestration::release_pool_key_lease_from_report_context(
-            state,
-            execution.report_context.as_ref(),
-        )
-        .await;
         return Ok(None);
     }
 

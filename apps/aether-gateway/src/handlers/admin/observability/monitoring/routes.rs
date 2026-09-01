@@ -33,10 +33,7 @@ use super::trace::{
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::attach_admin_audit_response;
 use crate::GatewayError;
-use aether_admin::observability::monitoring::{
-match_admin_monitoring_route,
-AdminMonitoringRoute,
-};
+use aether_admin::observability::monitoring::{match_admin_monitoring_route, AdminMonitoringRoute};
 use axum::{body::Body, http, response::Response};
 
 pub(crate) async fn maybe_build_local_admin_monitoring_response(
@@ -51,7 +48,7 @@ pub(crate) async fn maybe_build_local_admin_monitoring_response(
     };
 
     match route {
-                AdminMonitoringRoute::ResilienceStatus => Ok(Some(
+        AdminMonitoringRoute::ResilienceStatus => Ok(Some(
             build_admin_monitoring_resilience_status_response(state).await?,
         )),
         AdminMonitoringRoute::ResilienceErrorStats => Ok(Some(
@@ -119,7 +116,7 @@ pub(crate) async fn maybe_build_local_admin_monitoring_response(
         AdminMonitoringRoute::SystemStatus => Ok(Some(
             build_admin_monitoring_system_status_response(state).await?,
         )),
-                        AdminMonitoringRoute::TraceRequest => Ok(Some(attach_admin_audit_response(
+        AdminMonitoringRoute::TraceRequest => Ok(Some(attach_admin_audit_response(
             build_admin_monitoring_trace_request_response(state, request_context).await?,
             "admin_monitoring_request_trace_viewed",
             "view_request_trace",

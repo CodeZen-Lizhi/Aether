@@ -23,12 +23,12 @@ use crate::execution_runtime::submission::{
 };
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
-    apply_local_execution_effect, classify_failure_disposition,
+    apply_local_execution_effect, classify_failure_disposition, parse_retry_after_secs,
     resolve_local_failover_analysis_for_attempt,
     resolve_local_transport_failover_analysis_for_attempt, with_upstream_response_report_context,
     LocalAdaptiveRateLimitEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
-    LocalExecutionEffectContext, LocalFailoverAnalysis, LocalFailoverDecision,
-    LocalHealthFailureEffect,
+    LocalExecutionEffectContext, LocalFailoverAnalysis, LocalFailoverClassification,
+    LocalFailoverDecision, LocalHealthFailureEffect,
 };
 use crate::request_candidate_runtime::record_report_request_candidate_status;
 use crate::request_diagnostics::attach_current_request_diagnostics_and_candidate_timing_to_report_context;
@@ -372,6 +372,11 @@ async fn record_stream_sync_failure(
                 plan,
                 report_context,
             },
+            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                status_code: payload.status_code,
+                classification: failure_analysis.classification,
+                retry_after_secs: None,
+            }),
         )
         .await;
     }
@@ -409,6 +414,10 @@ async fn record_stream_sync_failure(
         LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
             status_code: payload.status_code,
             classification: failure_analysis.classification,
+            retry_after_secs: parse_retry_after_secs(
+                payload.headers.get("retry-after").map(String::as_str),
+                crate::clock::current_unix_secs(),
+            ),
         }),
     )
     .await;
@@ -677,6 +686,12 @@ async fn handle_prefetch_transport_stream_failure(
 ) -> Result<Option<Response<Body>>, GatewayError> {
     let error_type = stream_failure_body_field(&payload, "type").unwrap_or("internal");
     let error_message = stream_failure_body_field(&payload, "message").unwrap_or_default();
+    let analysis = resolve_local_transport_failover_analysis_for_attempt(
+        state,
+        plan,
+        payload.report_context.as_ref(),
+    )
+    .await;
     if matches!(error_type, "first_byte_timeout" | "read_timeout") {
         apply_local_execution_effect(
             state,
@@ -684,16 +699,14 @@ async fn handle_prefetch_transport_stream_failure(
                 plan,
                 report_context: payload.report_context.as_ref(),
             },
+            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                status_code: payload.status_code,
+                classification: LocalFailoverClassification::UseDefault,
+                retry_after_secs: None,
+            }),
         )
         .await;
     }
-
-    let analysis = resolve_local_transport_failover_analysis_for_attempt(
-        state,
-        plan,
-        payload.report_context.as_ref(),
-    )
-    .await;
     let retrying_next_candidate = retry_scope_out.is_some()
         && matches!(analysis.decision, LocalFailoverDecision::RetryNextCandidate);
     if !retrying_next_candidate {

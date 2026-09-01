@@ -667,6 +667,149 @@ fn json_value_as_f64(value: &serde_json::Value) -> Option<f64> {
         .or_else(|| value.as_u64().map(|raw| raw as f64))
 }
 
+/// Upstream failure taxonomy for scheduling state (P0-1).
+///
+/// The class decides which per-key state a failure feeds:
+/// - `CredentialDead` — 401/403/quota-exhausted: the credential itself is unusable;
+///   one failure trips the long circuit (fast lane) instead of 8 consecutive misses.
+/// - `RateLimited` — 429: normal business throttling, not a fault. Feeds only the
+///   rate-limit cooldown window (P0-2) and adaptive RPM learning; never counts
+///   toward the failure cooldown or circuit consecutive-failure counters.
+/// - `Transient` — 5xx/transport: keeps the legacy 60s/8-failure cooldown and
+///   8-consecutive-failure circuit accounting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpstreamFailureClass {
+    CredentialDead,
+    RateLimited,
+    Transient,
+}
+
+impl UpstreamFailureClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CredentialDead => "credential_dead",
+            Self::RateLimited => "rate_limited",
+            Self::Transient => "transient",
+        }
+    }
+
+    /// Classify purely from the HTTP status code. Error-body keyword hints are
+    /// intentionally NOT consulted here: the classifier layer owns policy text
+    /// matching, and this function stays a cheap, total mapping usable from
+    /// scheduler-core without the policy engine.
+    pub fn from_status_code(status_code: u16) -> Self {
+        match status_code {
+            401 | 402 | 403 => Self::CredentialDead,
+            429 => Self::RateLimited,
+            _ => Self::Transient,
+        }
+    }
+}
+
+/// Per-format rate-limit cooldown state stored inside `health_by_format` (P0-2).
+///
+/// A 429 sets `rate_limit_cooldown_until_unix_secs`; until then the key is
+/// skipped by selection. `consecutive_rate_limits` drives the exponential
+/// fallback (30s → 1m → 2m → 4m, capped at 10m) when the upstream omits
+/// `Retry-After`. Any non-429 outcome clears both fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderKeyRateLimitCooldown {
+    pub until_unix_secs: u64,
+    pub consecutive_rate_limits: u64,
+}
+
+pub const RATE_LIMIT_COOLDOWN_BASE_SECS: u64 = 30;
+pub const RATE_LIMIT_COOLDOWN_MAX_SECS: u64 = 600;
+
+impl ProviderKeyRateLimitCooldown {
+    /// Project the next cooldown after a 429 observed at `observed_at_unix_secs`.
+    /// `retry_after_secs` (from the upstream header) wins when present and sane;
+    /// otherwise the exponential ladder advances with the consecutive count.
+    pub fn project(
+        current: Option<Self>,
+        observed_at_unix_secs: u64,
+        retry_after_secs: Option<u64>,
+    ) -> Self {
+        let previous = current.unwrap_or(Self {
+            until_unix_secs: 0,
+            consecutive_rate_limits: 0,
+        });
+        let consecutive = previous.consecutive_rate_limits.saturating_add(1);
+        let cooldown_secs = match retry_after_secs
+            .filter(|value| *value > 0 && *value <= RATE_LIMIT_COOLDOWN_MAX_SECS)
+        {
+            Some(value) => value,
+            None => {
+                let shift = u32::try_from(consecutive.saturating_sub(1)).unwrap_or(u32::MAX);
+                RATE_LIMIT_COOLDOWN_BASE_SECS
+                    .saturating_mul(1u64.checked_shl(shift).unwrap_or(u64::MAX))
+                    .min(RATE_LIMIT_COOLDOWN_MAX_SECS)
+            }
+        };
+        Self {
+            until_unix_secs: observed_at_unix_secs.saturating_add(cooldown_secs),
+            consecutive_rate_limits: consecutive,
+        }
+    }
+
+    pub fn from_health_payload(payload: &serde_json::Value) -> Option<Self> {
+        let payload = payload.as_object()?;
+        let until = payload
+            .get("rate_limit_cooldown_until_unix_secs")
+            .and_then(serde_json::Value::as_u64)?;
+        let consecutive = payload
+            .get("consecutive_rate_limits")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        Some(Self {
+            until_unix_secs: until,
+            consecutive_rate_limits: consecutive,
+        })
+    }
+
+    pub fn to_json(self) -> serde_json::Value {
+        serde_json::json!({
+            "rate_limit_cooldown_until_unix_secs": self.until_unix_secs,
+            "consecutive_rate_limits": self.consecutive_rate_limits,
+        })
+    }
+}
+
+/// True while the key's per-format rate-limit cooldown is still active (P0-2).
+pub fn provider_key_rate_limit_cooldown_active_at(
+    key: &StoredProviderCatalogKey,
+    api_format: &str,
+    now_unix_secs: u64,
+) -> bool {
+    key.health_by_format
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .and_then(|values| values.get(api_format))
+        .and_then(ProviderKeyRateLimitCooldown::from_health_payload)
+        .is_some_and(|cooldown| now_unix_secs < cooldown.until_unix_secs)
+}
+
+/// Read the current per-format rate-limit cooldown snapshot (P0-2).
+pub fn provider_key_rate_limit_cooldown(
+    key: &StoredProviderCatalogKey,
+    api_format: &str,
+) -> Option<ProviderKeyRateLimitCooldown> {
+    key.health_by_format
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .and_then(|values| values.get(api_format))
+        .and_then(ProviderKeyRateLimitCooldown::from_health_payload)
+}
+
+/// Parse a rate-limit cooldown straight out of a `health_by_format` entry
+/// payload (P0-2). Shared with the orchestration projection layer so the
+/// read and write sides agree on the field names.
+pub fn provider_key_rate_limit_cooldown_payload(
+    payload: &serde_json::Value,
+) -> Option<ProviderKeyRateLimitCooldown> {
+    ProviderKeyRateLimitCooldown::from_health_payload(payload)
+}
+
 #[cfg(test)]
 mod tests {
     use aether_data_contracts::repository::candidates::{
@@ -1441,6 +1584,159 @@ mod tests {
         assert_eq!(
             provider_key_health_bucket(&healthy, "openai:chat"),
             Some(ProviderKeyHealthBucket::Healthy)
+        );
+    }
+}
+#[cfg(test)]
+mod rate_limit_cooldown_tests {
+    use serde_json::json;
+
+    use super::{
+        provider_key_rate_limit_cooldown_active_at, provider_key_rate_limit_cooldown_payload,
+        ProviderKeyRateLimitCooldown, UpstreamFailureClass, RATE_LIMIT_COOLDOWN_MAX_SECS,
+    };
+    use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
+
+    #[test]
+    fn failure_class_maps_status_codes() {
+        assert_eq!(
+            UpstreamFailureClass::from_status_code(401),
+            UpstreamFailureClass::CredentialDead
+        );
+        assert_eq!(
+            UpstreamFailureClass::from_status_code(402),
+            UpstreamFailureClass::CredentialDead
+        );
+        assert_eq!(
+            UpstreamFailureClass::from_status_code(403),
+            UpstreamFailureClass::CredentialDead
+        );
+        assert_eq!(
+            UpstreamFailureClass::from_status_code(429),
+            UpstreamFailureClass::RateLimited
+        );
+        assert_eq!(
+            UpstreamFailureClass::from_status_code(500),
+            UpstreamFailureClass::Transient
+        );
+        assert_eq!(
+            UpstreamFailureClass::from_status_code(503),
+            UpstreamFailureClass::Transient
+        );
+        assert_eq!(
+            UpstreamFailureClass::from_status_code(400),
+            UpstreamFailureClass::Transient
+        );
+        assert_eq!(
+            UpstreamFailureClass::as_str(UpstreamFailureClass::CredentialDead),
+            "credential_dead"
+        );
+        assert_eq!(
+            UpstreamFailureClass::as_str(UpstreamFailureClass::RateLimited),
+            "rate_limited"
+        );
+        assert_eq!(
+            UpstreamFailureClass::as_str(UpstreamFailureClass::Transient),
+            "transient"
+        );
+    }
+
+    #[test]
+    fn cooldown_projection_uses_retry_after_when_present() {
+        let projected = ProviderKeyRateLimitCooldown::project(None, 1_000, Some(30));
+        assert_eq!(projected.until_unix_secs, 1_030);
+        assert_eq!(projected.consecutive_rate_limits, 1);
+    }
+
+    #[test]
+    fn cooldown_projection_rejects_absurd_retry_after() {
+        // Over-cap and zero Retry-After fall back to the exponential ladder.
+        assert_eq!(
+            ProviderKeyRateLimitCooldown::project(None, 1_000, Some(0)).until_unix_secs,
+            1_030
+        );
+        assert_eq!(
+            ProviderKeyRateLimitCooldown::project(None, 1_000, Some(9_999)).until_unix_secs,
+            1_030
+        );
+    }
+
+    #[test]
+    fn cooldown_projection_ladder_doubles_and_caps() {
+        let now = 1_000u64;
+        let first = ProviderKeyRateLimitCooldown::project(None, now, None);
+        assert_eq!(first.until_unix_secs, now + 30);
+        assert_eq!(first.consecutive_rate_limits, 1);
+
+        let second = ProviderKeyRateLimitCooldown::project(Some(first), now, None);
+        assert_eq!(second.until_unix_secs, now + 60);
+        assert_eq!(second.consecutive_rate_limits, 2);
+
+        let third = ProviderKeyRateLimitCooldown::project(Some(second), now, None);
+        assert_eq!(third.until_unix_secs, now + 120);
+
+        // Ladder saturates at the cap regardless of consecutive count.
+        let many = ProviderKeyRateLimitCooldown {
+            until_unix_secs: now,
+            consecutive_rate_limits: 20,
+        };
+        let capped = ProviderKeyRateLimitCooldown::project(Some(many), now, None);
+        assert_eq!(capped.until_unix_secs, now + RATE_LIMIT_COOLDOWN_MAX_SECS);
+    }
+
+    fn key_with_cooldown(format: &str, until: u64) -> StoredProviderCatalogKey {
+        let mut key = StoredProviderCatalogKey::new(
+            "key-a".to_string(),
+            "provider-a".to_string(),
+            "primary".to_string(),
+            "api_key".to_string(),
+            None,
+            true,
+        )
+        .expect("provider key should build");
+        key.health_by_format = Some(json!({
+            format: {
+                "rate_limit_cooldown_until_unix_secs": until,
+                "consecutive_rate_limits": 2,
+            }
+        }));
+        key
+    }
+
+    #[test]
+    fn cooldown_active_before_deadline_and_inactive_after() {
+        let key = key_with_cooldown("openai:chat", 2_000);
+        assert!(provider_key_rate_limit_cooldown_active_at(
+            &key,
+            "openai:chat",
+            1_999
+        ));
+        assert!(!provider_key_rate_limit_cooldown_active_at(
+            &key,
+            "openai:chat",
+            2_000
+        ));
+        // Different format is untouched.
+        assert!(!provider_key_rate_limit_cooldown_active_at(
+            &key,
+            "claude:messages",
+            1_999
+        ));
+    }
+
+    #[test]
+    fn cooldown_payload_roundtrip() {
+        let cooldown = ProviderKeyRateLimitCooldown {
+            until_unix_secs: 1_234,
+            consecutive_rate_limits: 3,
+        };
+        let payload = cooldown.to_json();
+        let parsed = provider_key_rate_limit_cooldown_payload(&payload);
+        assert_eq!(parsed, Some(cooldown));
+        // Missing fields parse to None.
+        assert_eq!(
+            provider_key_rate_limit_cooldown_payload(&json!({"consecutive_rate_limits": 3})),
+            None
         );
     }
 }

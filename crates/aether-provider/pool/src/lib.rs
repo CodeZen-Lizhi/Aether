@@ -125,7 +125,9 @@ mod tests {
                 }]
             }
         }));
-        assert!(provider_pool_key_account_quota_exhausted(&exhausted, "custom"));
+        assert!(provider_pool_key_account_quota_exhausted(
+            &exhausted, "custom"
+        ));
 
         let mut expired = sample_key(None);
         expired.status_snapshot = Some(json!({
@@ -142,6 +144,8 @@ mod tests {
                 }]
             }
         }));
-        assert!(!provider_pool_key_account_quota_exhausted(&expired, "custom"));
+        assert!(!provider_pool_key_account_quota_exhausted(
+            &expired, "custom"
+        ));
     }
 }

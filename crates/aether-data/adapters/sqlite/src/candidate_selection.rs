@@ -615,10 +615,7 @@ fn mapping_scope_matches(
 fn key_auth_channel_matches(row: &CandidateSelectionRow, _api_format: &str) -> bool {
     // Only non-OAuth key credentials participate in candidate selection now
     // that the provider catalog has no OAuth-backed provider types.
-    !row.row
-        .key_auth_type
-        .trim()
-        .eq_ignore_ascii_case("oauth")
+    !row.row.key_auth_type.trim().eq_ignore_ascii_case("oauth")
 }
 
 fn dedupe_candidate_selection_rows(

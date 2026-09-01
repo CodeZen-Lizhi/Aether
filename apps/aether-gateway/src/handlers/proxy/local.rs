@@ -49,4 +49,3 @@ pub(super) async fn maybe_build_local_admin_proxy_response(
     ))
     .await
 }
-

@@ -11,7 +11,6 @@ use super::super::{
 };
 use crate::ai_serving::planner::common::enforce_provider_body_stream_policy;
 use crate::ai_serving::planner::redaction::sanitize_upstream_url_for_log;
-use crate::ai_serving::provider_adaptation_requires_eventstream_accept;
 use crate::ai_serving::transport::{
     build_standard_plan_fallback_headers, build_standard_plan_fallback_openai_chat_url,
     build_standard_plan_fallback_openai_responses_url, StandardPlanFallbackAcceptPolicy,
@@ -178,24 +177,9 @@ pub(crate) fn build_openai_responses_stream_plan_from_decision(
         return Ok(None);
     };
 
-    let envelope_name = payload
-        .report_context
-        .as_ref()
-        .and_then(|context| context.get("envelope_name"))
-        .and_then(serde_json::Value::as_str);
     let effective_upstream_is_stream =
         effective_stream_accept_mode(payload.upstream_is_stream, &provider_request_body_value);
-    let accept_policy = if effective_upstream_is_stream
-        && provider_adaptation_requires_eventstream_accept(
-            envelope_name,
-            core.provider_api_format.as_str(),
-        ) {
-        StandardPlanFallbackAcceptPolicy::ProviderEventStreamIfMissing
-    } else if envelope_name.is_some() {
-        StandardPlanFallbackAcceptPolicy::TextEventStreamIfStreaming
-    } else {
-        StandardPlanFallbackAcceptPolicy::TextEventStreamIfStreamingOrWildcard
-    };
+    let accept_policy = StandardPlanFallbackAcceptPolicy::TextEventStreamIfStreamingOrWildcard;
     let mut provider_request_headers =
         build_standard_plan_fallback_headers(StandardPlanFallbackHeadersInput {
             request_headers: &parts.headers,

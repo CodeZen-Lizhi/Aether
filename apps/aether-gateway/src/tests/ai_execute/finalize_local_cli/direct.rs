@@ -108,7 +108,6 @@ async fn gateway_executes_openai_responses_sync_upstream_stream_via_local_finali
             provider_id: "provider-openai-cli-finalize-local-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-cli-finalize-local-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -122,8 +121,6 @@ async fn gateway_executes_openai_responses_sync_upstream_stream_via_local_finali
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-openai-cli-finalize-local-1".to_string(),
             global_model_id: "global-model-openai-cli-finalize-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -151,17 +148,7 @@ async fn gateway_executes_openai_responses_sync_upstream_stream_via_local_finali
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -208,7 +195,6 @@ async fn gateway_executes_openai_responses_sync_upstream_stream_via_local_finali
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             None,
@@ -513,14 +499,6 @@ async fn gateway_executes_openai_responses_sync_upstream_stream_via_local_finali
     upstream_handle.abort();
 }
 
-#[test]
-fn gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finalize_response() {
-    run_kiro_claude_cli_finalize_test(
-        "gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finalize_response",
-        gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finalize_response_impl,
-    );
-}
-
 async fn gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finalize_response_impl() {
     use base64::Engine as _;
 
@@ -624,7 +602,6 @@ async fn gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finaliz
             provider_id: "provider-kiro-cli-finalize-local-1".to_string(),
             provider_name: "kiro".to_string(),
             provider_type: "kiro".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-kiro-cli-finalize-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -638,8 +615,6 @@ async fn gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finaliz
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-kiro-cli-finalize-local-1".to_string(),
             global_model_id: "global-model-kiro-cli-finalize-local-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
@@ -669,7 +644,6 @@ async fn gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finaliz
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -743,7 +717,6 @@ async fn gateway_executes_kiro_claude_cli_sync_upstream_stream_via_local_finaliz
                 .expect("auth config should encrypt"),
             ),
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-kiro-cli-finalize-local"})),

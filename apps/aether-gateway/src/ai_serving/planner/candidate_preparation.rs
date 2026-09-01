@@ -1,7 +1,6 @@
 use aether_ai_serving::{
-prepare_ai_header_authenticated_candidate,
-resolve_ai_candidate_mapped_model,
-AiPreparedHeaderAuthenticatedCandidate,
+    prepare_ai_header_authenticated_candidate, resolve_ai_candidate_mapped_model,
+    AiPreparedHeaderAuthenticatedCandidate,
 };
 use aether_scheduler_core::SchedulerMinimalCandidateSelectionCandidate;
 use tracing::warn;
@@ -65,11 +64,9 @@ pub(crate) fn resolve_candidate_mapped_model(
 #[cfg(test)]
 mod tests {
     use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-GatewayProviderTransportSnapshot,
-};
+        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
+    };
     use aether_scheduler_core::SchedulerMinimalCandidateSelectionCandidate;
 
     use super::{prepare_header_authenticated_candidate, OauthPreparationContext};

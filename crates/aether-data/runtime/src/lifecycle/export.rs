@@ -619,7 +619,6 @@ fn normalize_imported_binary(
     }
 }
 
-
 pub fn encode_jsonl(records: &[DataExportRecord]) -> Result<String, DataLayerError> {
     validate_export_records(records)?;
 
@@ -1386,7 +1385,6 @@ fn sqlite_copy_affinity(column: &SqliteCopyColumn) -> SqliteCopyAffinity {
     }
 }
 
-
 #[cfg(all(feature = "postgres", feature = "sqlite"))]
 fn is_postgres_date_column(column: &PostgresImportColumn) -> bool {
     column.data_type == "date" || column.udt_name == "date"
@@ -1568,7 +1566,6 @@ fn bind_sqlite_json_value<'q>(
         }
     })
 }
-
 
 #[cfg(any(feature = "mysql", feature = "sqlite"))]
 fn filter_import_payload(

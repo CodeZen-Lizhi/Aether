@@ -449,35 +449,34 @@ pub(crate) fn public_support_local_requires_buffered_body(
                     request_context.request_method.clone(),
                     decision.route_kind.as_deref(),
                 ),
-                (
-                    Some("auth"),
-                    http::Method::POST,
-                    Some("login"),
-                ) | (
-                    Some("users_me"),
-                    http::Method::PUT,
-                    Some(
-                        "update_detail"
-                            | "model_capabilities_update"
-                            | "preferences_update"
-                            | "api_key_update"
-                            | "management_token_update"
-                            | "api_key_providers_update"
-                            | "api_key_capabilities_update",
+                (Some("auth"), http::Method::POST, Some("login"),)
+                    | (
+                        Some("users_me"),
+                        http::Method::PUT,
+                        Some(
+                            "update_detail"
+                                | "model_capabilities_update"
+                                | "preferences_update"
+                                | "api_key_update"
+                                | "management_token_update"
+                                | "api_key_providers_update"
+                                | "api_key_capabilities_update",
+                        ),
+                    )
+                    | (
+                        Some("users_me"),
+                        http::Method::PATCH,
+                        Some("password" | "session_update" | "api_key_patch"),
+                    )
+                    | (
+                        Some("users_me"),
+                        http::Method::POST,
+                        Some(
+                            "api_keys_create"
+                                | "api_key_install_session_create"
+                                | "management_tokens_create",
+                        ),
                     ),
-                ) | (
-                    Some("users_me"),
-                    http::Method::PATCH,
-                    Some("password" | "session_update" | "api_key_patch"),
-                ) | (
-                    Some("users_me"),
-                    http::Method::POST,
-                    Some(
-                        "api_keys_create"
-                            | "api_key_install_session_create"
-                            | "management_tokens_create",
-                    ),
-                ),
             )
         })
 }

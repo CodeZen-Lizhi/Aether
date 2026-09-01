@@ -3,8 +3,7 @@ use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::build_admin_usage_counter_health_payload;
 use crate::GatewayError;
 use aether_admin::observability::monitoring::{
-admin_monitoring_bad_request_response,
-build_admin_monitoring_system_status_payload_response,
+    admin_monitoring_bad_request_response, build_admin_monitoring_system_status_payload_response,
 };
 use aether_data_contracts::repository::usage::{
     UsageAuditSummaryQuery, UsageMonitoringErrorCountQuery,

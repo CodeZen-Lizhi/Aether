@@ -27,11 +27,12 @@ use crate::ai_serving::transport::local_openai_chat_transport_unsupported_reason
 use crate::ai_serving::transport::{
     build_openai_image_headers, build_openai_image_upstream_url,
     build_standard_provider_request_headers, openai_image_transport_unsupported_reason,
-    resolve_openai_image_auth, ProviderOpenAiImageHeadersInput, StandardProviderRequestHeadersInput,
+    resolve_openai_image_auth, ProviderOpenAiImageHeadersInput,
+    StandardProviderRequestHeadersInput,
 };
 use crate::ai_serving::{
-    ai_local_execution_contract_for_formats, request_conversion_direct_auth,
-    request_conversion_kind, project_openai_image_api_request_body, CandidateFailureDiagnostic,
+    ai_local_execution_contract_for_formats, project_openai_image_api_request_body,
+    request_conversion_direct_auth, request_conversion_kind, CandidateFailureDiagnostic,
     GatewayProviderTransportSnapshot, OpenAiImageOperation,
 };
 use crate::ai_serving::{ConversionMode, ExecutionStrategy};
@@ -181,8 +182,6 @@ pub(crate) async fn resolve_local_openai_chat_candidate_payload_parts(
     );
     let body_json = redaction.body_json.as_ref();
     let effective_headers = input.effective_headers(&parts.headers);
-
-
 
     if provider_api_format == "openai:chat" {
         if let Some(skip_reason) = local_openai_chat_transport_unsupported_reason(transport) {
@@ -639,9 +638,7 @@ pub(crate) async fn resolve_local_openai_chat_candidate_payload_parts(
 }
 
 #[allow(clippy::too_many_arguments)]
-
 #[allow(clippy::too_many_arguments)]
-
 #[allow(clippy::too_many_arguments)]
 async fn resolve_openai_chat_to_openai_image_payload_parts(
     state: &AppState,
@@ -899,7 +896,6 @@ fn openai_image_operation_from_summary(summary: &Value) -> Option<OpenAiImageOpe
     }
 }
 
-
 fn copy_openai_chat_image_option(
     body_json: &Value,
     image_options: &mut serde_json::Map<String, Value>,
@@ -1005,22 +1001,69 @@ fn openai_image_inputs_as_api_urls(images: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-
-
-
 #[allow(clippy::too_many_arguments)]
-
 #[allow(clippy::too_many_arguments)]
-
 #[cfg(test)]
 mod tests {
+
+    fn sample_custom_deepseek_responses_transport() -> GatewayProviderTransportSnapshot {
+        GatewayProviderTransportSnapshot {
+            provider: GatewayProviderTransportProvider {
+                id: "provider-1".to_string(),
+                name: "deepseek".to_string(),
+                provider_type: "custom".to_string(),
+                website: None,
+                is_active: true,
+                enable_format_conversion: true,
+                concurrent_limit: None,
+                max_retries: None,
+                proxy: None,
+                request_timeout_secs: None,
+                stream_first_byte_timeout_secs: None,
+                config: None,
+            },
+            endpoint: GatewayProviderTransportEndpoint {
+                id: "endpoint-1".to_string(),
+                provider_id: "provider-1".to_string(),
+                api_format: "openai:responses".to_string(),
+                api_family: Some("openai".to_string()),
+                endpoint_kind: Some("responses".to_string()),
+                is_active: true,
+                base_url: "https://api.deepseek.com/v1".to_string(),
+                header_rules: None,
+                body_rules: None,
+                max_retries: None,
+                custom_path: None,
+                config: None,
+                format_acceptance_config: None,
+                proxy: None,
+            },
+            key: GatewayProviderTransportKey {
+                id: "key-1".to_string(),
+                provider_id: "provider-1".to_string(),
+                name: "key".to_string(),
+                auth_type: "bearer".to_string(),
+                is_active: true,
+                api_formats: Some(vec!["openai:responses".to_string()]),
+                auth_type_by_format: None,
+                allow_auth_channel_mismatch_formats: None,
+                allowed_models: None,
+                capabilities: None,
+                rate_multipliers: None,
+                expires_at_unix_secs: None,
+                proxy: None,
+                fingerprint: None,
+                upstream_metadata: None,
+                decrypted_api_key: "test-api-key".to_string(),
+                decrypted_auth_config: None,
+            },
+        }
+    }
     use super::*;
     use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-GatewayProviderTransportSnapshot,
-};
+        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
+    };
     use aether_scheduler_core::SchedulerMinimalCandidateSelectionCandidate;
 
     fn sample_auth_snapshot() -> crate::ai_serving::GatewayAuthApiKeySnapshot {
@@ -1076,185 +1119,6 @@ GatewayProviderTransportSnapshot,
             routing_context: None,
             model_directive_policy: Default::default(),
         }
-    }
-
-    fn sample_gemini_cli_transport() -> GatewayProviderTransportSnapshot {
-        GatewayProviderTransportSnapshot {
-            provider: GatewayProviderTransportProvider {
-                id: "provider-1".to_string(),
-                name: "gemini".to_string(),
-                provider_type: "gemini_cli".to_string(),
-                website: None,
-                is_active: true,
-                keep_priority_on_conversion: false,
-                enable_format_conversion: true,
-                concurrent_limit: None,
-                max_retries: None,
-                proxy: None,
-                request_timeout_secs: None,
-                stream_first_byte_timeout_secs: None,
-                config: None,
-            },
-            endpoint: GatewayProviderTransportEndpoint {
-                id: "endpoint-1".to_string(),
-                provider_id: "provider-1".to_string(),
-                api_format: "gemini:generate_content".to_string(),
-                api_family: Some("gemini".to_string()),
-                endpoint_kind: Some("generate_content".to_string()),
-                is_active: true,
-                base_url: "https://cloudcode-pa.googleapis.com".to_string(),
-                header_rules: None,
-                body_rules: None,
-                max_retries: None,
-                custom_path: Some("/v1internal:{action}".to_string()),
-                config: None,
-                format_acceptance_config: None,
-                proxy: None,
-            },
-            key: GatewayProviderTransportKey {
-                id: "key-1".to_string(),
-                provider_id: "provider-1".to_string(),
-                name: "key".to_string(),
-                auth_type: "bearer".to_string(),
-                is_active: true,
-                api_formats: Some(vec!["gemini:generate_content".to_string()]),
-                auth_type_by_format: None,
-                allow_auth_channel_mismatch_formats: None,
-                allowed_models: None,
-                capabilities: None,
-                rate_multipliers: None,
-                global_priority_by_format: Some(json!({
-                    "gemini:generate_content": 1,
-                })),
-                expires_at_unix_secs: None,
-                proxy: None,
-                fingerprint: None,
-                upstream_metadata: Some(json!({
-                    "gemini_cli": {
-                        "project_id": "test-project"
-                    }
-                })),
-                decrypted_api_key: "oauth-access-token".to_string(),
-                decrypted_auth_config: None,
-            },
-        }
-    }
-
-    fn sample_gemini_cli_eligible() -> EligibleLocalExecutionCandidate {
-        EligibleLocalExecutionCandidate {
-            kind: crate::ai_serving::planner::candidate_resolution::LocalExecutionCandidateKind::SingleKey,
-            candidate: SchedulerMinimalCandidateSelectionCandidate {
-                provider_id: "provider-1".to_string(),
-                provider_name: "gemini".to_string(),
-                provider_type: "gemini_cli".to_string(),
-                provider_priority: 1,
-                endpoint_id: "endpoint-1".to_string(),
-                endpoint_api_format: "gemini:generate_content".to_string(),
-                key_id: "key-1".to_string(),
-                key_name: "key".to_string(),
-                key_auth_type: "bearer".to_string(),
-                key_internal_priority: 1,
-                key_global_priority_for_format: Some(1),
-                key_capabilities: None,
-                model_id: "model-1".to_string(),
-                global_model_id: "global-model-1".to_string(),
-                global_model_name: "gemini-2.5-pro".to_string(),
-                selected_provider_model_name: "gemini-2.5-pro".to_string(),
-                supports_streaming: true,
-                mapping_matched_model: None,
-            },
-            transport: Arc::new(sample_gemini_cli_transport()),
-            provider_api_format: "gemini:generate_content".to_string(),
-            orchestration: crate::orchestration::LocalExecutionCandidateMetadata::default(),
-            ranking: None,
-        }
-    }
-
-    fn sample_antigravity_transport() -> GatewayProviderTransportSnapshot {
-        let mut transport = sample_gemini_cli_transport();
-        transport.provider.name = "antigravity".to_string();
-        transport.provider.provider_type = "antigravity".to_string();
-        transport.endpoint.base_url = "https://antigravity.googleapis.com".to_string();
-        transport.endpoint.custom_path = None;
-        transport.key.auth_type = "bearer".to_string();
-        transport.key.decrypted_api_key = "imported-antigravity-token".to_string();
-        transport.key.upstream_metadata = None;
-        transport.key.decrypted_auth_config = Some(
-            json!({
-                "provider_type": "antigravity",
-                "project_id": "test-antigravity-project",
-                "client_version": "1.2.3",
-                "session_id": "sess-antigravity-chat",
-                "access_token_import_temporary": true,
-                "headers": {
-                    "Authorization": "Bearer imported-antigravity-token"
-                }
-            })
-            .to_string(),
-        );
-        transport
-    }
-
-    fn sample_antigravity_eligible() -> EligibleLocalExecutionCandidate {
-        let mut eligible = sample_gemini_cli_eligible();
-        eligible.candidate.provider_name = "antigravity".to_string();
-        eligible.candidate.provider_type = "antigravity".to_string();
-        eligible.transport = Arc::new(sample_antigravity_transport());
-        eligible
-    }
-
-    fn sample_openai_chat_eligible(provider_type: &str) -> EligibleLocalExecutionCandidate {
-        let mut transport = sample_gemini_cli_transport();
-        transport.provider.name = provider_type.to_string();
-        transport.provider.provider_type = provider_type.to_string();
-        transport.endpoint.api_format = "openai:chat".to_string();
-        transport.endpoint.api_family = Some("openai".to_string());
-        transport.endpoint.endpoint_kind = Some("chat_completions".to_string());
-        transport.endpoint.base_url = if provider_type == "grok" {
-            "https://grok.com".to_string()
-        } else {
-            "https://api.openai.test".to_string()
-        };
-        transport.endpoint.custom_path = None;
-        transport.key.api_formats = Some(vec!["openai:chat".to_string()]);
-        transport.key.upstream_metadata = None;
-        if provider_type == "grok" {
-            transport.key.auth_type = "oauth".to_string();
-            transport.key.decrypted_api_key.clear();
-            transport.key.decrypted_auth_config =
-                Some(json!({ "sso_token": "test-session" }).to_string());
-        } else {
-            transport.key.auth_type = "bearer".to_string();
-            transport.key.decrypted_api_key = "test-api-key".to_string();
-            transport.key.decrypted_auth_config = None;
-        }
-
-        let mut eligible = sample_gemini_cli_eligible();
-        eligible.candidate.provider_name = provider_type.to_string();
-        eligible.candidate.provider_type = provider_type.to_string();
-        eligible.candidate.endpoint_api_format = "openai:chat".to_string();
-        eligible.candidate.global_model_name = "gpt-5.6-sol".to_string();
-        eligible.candidate.selected_provider_model_name = "gpt-5.6-sol".to_string();
-        eligible.transport = Arc::new(transport);
-        eligible.provider_api_format = "openai:chat".to_string();
-        eligible
-    }
-
-    fn sample_custom_deepseek_responses_transport() -> GatewayProviderTransportSnapshot {
-        let mut transport = sample_gemini_cli_transport();
-        transport.provider.name = "deepseek".to_string();
-        transport.provider.provider_type = "custom".to_string();
-        transport.endpoint.api_format = "openai:responses".to_string();
-        transport.endpoint.api_family = Some("openai".to_string());
-        transport.endpoint.endpoint_kind = Some("responses".to_string());
-        transport.endpoint.base_url = "https://api.deepseek.com/v1".to_string();
-        transport.endpoint.custom_path = None;
-        transport.key.api_formats = Some(vec!["openai:responses".to_string()]);
-        transport.key.auth_type = "bearer".to_string();
-        transport.key.decrypted_api_key = "test-api-key".to_string();
-        transport.key.decrypted_auth_config = None;
-        transport.key.upstream_metadata = None;
-        transport
     }
 
     fn sample_custom_directive_input() -> LocalOpenAiChatDecisionInput {
@@ -1343,359 +1207,6 @@ GatewayProviderTransportSnapshot,
                 None,
             );
         input
-    }
-
-    #[tokio::test]
-    async fn alias_reasoning_directive_is_constrained_by_the_mapped_openai_model() {
-        let state = AppState::new().expect("state should build");
-        let request = http::Request::builder()
-            .method("POST")
-            .uri("/v1/chat/completions")
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(())
-            .expect("request should build");
-        let (parts, _) = request.into_parts();
-        let body_json = json!({
-            "model": "deployment-alias-max",
-            "messages": [{"role": "user", "content": "hello"}]
-        });
-
-        let mut supported = sample_openai_chat_eligible("custom");
-        supported.candidate.selected_provider_model_name = "gpt-5.6-sol".to_string();
-        let payload = resolve_local_openai_chat_candidate_payload_parts(
-            &state,
-            &parts,
-            "trace-alias-max-gpt-5.6-sol",
-            &body_json,
-            &sample_alias_max_directive_input(),
-            None,
-            &supported,
-            0,
-            "candidate-0",
-            "openai_chat_sync",
-            "openai_chat_sync_success",
-            false,
-        )
-        .await
-        .expect("candidate resolution should not fail")
-        .expect("GPT-5.6 candidate should build a payload");
-        assert_eq!(payload.provider_request_body["reasoning_effort"], "max");
-
-        let mut unsupported = sample_openai_chat_eligible("custom");
-        unsupported.candidate.selected_provider_model_name = "gpt-5.4".to_string();
-        let payload = resolve_local_openai_chat_candidate_payload_parts(
-            &state,
-            &parts,
-            "trace-alias-max-gpt-5.4",
-            &body_json,
-            &sample_alias_max_directive_input(),
-            None,
-            &unsupported,
-            0,
-            "candidate-0",
-            "openai_chat_sync",
-            "openai_chat_sync_success",
-            false,
-        )
-        .await
-        .expect("candidate resolution should not fail");
-        assert!(payload.is_none(), "GPT-5.4 must reject the max directive");
-    }
-
-    #[tokio::test]
-    async fn custom_policy_suffix_patch_is_applied_after_candidate_mapping() {
-        let state = AppState::new().expect("state should build");
-        let request = http::Request::builder()
-            .method("POST")
-            .uri("/v1/chat/completions")
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(())
-            .expect("request should build");
-        let (parts, _) = request.into_parts();
-        let body_json = json!({
-            "model": "deployment-alias-VendorFuture",
-            "messages": [{"role": "user", "content": "hello"}]
-        });
-        let mut input = sample_input();
-        input.requested_model = "deployment-alias-VendorFuture".to_string();
-        input.model_directive_policy =
-            crate::system_features::ModelDirectivePolicySnapshot::from_config_values(
-                Some(&json!(true)),
-                Some(&json!({
-                    "reasoning_effort": {
-                        "api_formats": {
-                            "openai:chat": {
-                                "suffixes": ["VendorFuture"],
-                                "mappings": {
-                                    "VendorFuture": {
-                                        "reasoning_effort": "high"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                })),
-            );
-        let payload = resolve_local_openai_chat_candidate_payload_parts(
-            &state,
-            &parts,
-            "trace-custom-policy-suffix",
-            &body_json,
-            &input,
-            None,
-            &sample_openai_chat_eligible("custom"),
-            0,
-            "candidate-0",
-            "openai_chat_sync",
-            "openai_chat_sync_success",
-            false,
-        )
-        .await
-        .expect("candidate resolution should not fail")
-        .expect("custom directive candidate should build a payload");
-
-        assert_eq!(payload.provider_request_body["model"], "gpt-5.6-sol");
-        assert_eq!(payload.provider_request_body["reasoning_effort"], "high");
-    }
-
-    #[tokio::test]
-    async fn same_format_and_grok_chat_apply_the_same_custom_directive_finalization() {
-        let state = AppState::new().expect("state should build");
-        let request = http::Request::builder()
-            .method("POST")
-            .uri("/v1/chat/completions")
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(())
-            .expect("request should build");
-        let (parts, _) = request.into_parts();
-        let body_json = json!({
-            "model": "gpt-5.6-sol-high",
-            "messages": [{"role": "user", "content": "hello"}],
-            "stream": true
-        });
-
-        for provider_type in ["custom", "grok"] {
-            let payload = resolve_local_openai_chat_candidate_payload_parts(
-                &state,
-                &parts,
-                &format!("trace-directive-{provider_type}"),
-                &body_json,
-                &sample_custom_directive_input(),
-                None,
-                &sample_openai_chat_eligible(provider_type),
-                0,
-                "candidate-0",
-                OPENAI_CHAT_STREAM_PLAN_KIND,
-                "openai_chat_stream_success",
-                true,
-            )
-            .await
-            .expect("candidate resolution should not fail")
-            .expect("same-format candidate should build a payload");
-
-            assert_eq!(
-                payload.provider_request_body["reasoning_effort"], "low",
-                "custom mapping must be authoritative for {provider_type}"
-            );
-            assert_eq!(
-                payload.provider_request_body["stream"], true,
-                "stream policy must be re-applied after mapping for {provider_type}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn openai_chat_to_gemini_cli_wraps_cross_format_body_in_v1internal_envelope() {
-        let state = AppState::new().expect("state should build");
-        let request = http::Request::builder()
-            .method("POST")
-            .uri("/v1/chat/completions")
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(())
-            .expect("request should build");
-        let (parts, _) = request.into_parts();
-        let body_json = json!({
-            "model": "gemini-2.5-pro",
-            "messages": [{"role": "user", "content": "hello"}],
-            "generationConfig": {"temperature": 0.2},
-            "stream": true
-        });
-
-        let payload = resolve_local_openai_chat_candidate_payload_parts(
-            &state,
-            &parts,
-            "trace-openai-chat-gemini-cli",
-            &body_json,
-            &sample_input(),
-            None,
-            &sample_gemini_cli_eligible(),
-            0,
-            "candidate-0",
-            OPENAI_CHAT_STREAM_PLAN_KIND,
-            "openai_chat_stream_success",
-            true,
-        )
-        .await
-        .expect("candidate resolution should not fail")
-        .expect("gemini_cli candidate should build a payload");
-
-        assert_eq!(
-            payload.upstream_url,
-            "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse"
-        );
-        assert_eq!(
-            payload.envelope_name,
-            Some(GEMINI_CLI_V1INTERNAL_ENVELOPE_NAME)
-        );
-        assert_eq!(
-            payload
-                .provider_request_headers
-                .get("user-agent")
-                .map(String::as_str),
-            Some(crate::ai_serving::transport::GEMINI_CLI_USER_AGENT)
-        );
-        assert_eq!(payload.provider_request_body["model"], "gemini-2.5-pro");
-        assert_eq!(payload.provider_request_body["project"], "test-project");
-        assert_eq!(
-            payload.provider_request_body["user_prompt_id"],
-            "trace-openai-chat-gemini-cli"
-        );
-        assert!(payload.provider_request_body.get("contents").is_none());
-        assert!(payload
-            .provider_request_body
-            .get("generationConfig")
-            .is_none());
-        assert!(payload.provider_request_body["request"]
-            .get("contents")
-            .is_some());
-    }
-
-    #[tokio::test]
-    async fn openai_chat_to_antigravity_wraps_cross_format_body_in_v1internal_envelope() {
-        let state = AppState::new().expect("state should build");
-        let request = http::Request::builder()
-            .method("POST")
-            .uri("/v1/chat/completions")
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(())
-            .expect("request should build");
-        let (parts, _) = request.into_parts();
-        let body_json = json!({
-            "model": "gemini-3.5-flash",
-            "messages": [{"role": "user", "content": "hello"}],
-            "stream": true
-        });
-
-        let payload = resolve_local_openai_chat_candidate_payload_parts(
-            &state,
-            &parts,
-            "trace-openai-chat-antigravity",
-            &body_json,
-            &sample_input(),
-            None,
-            &sample_antigravity_eligible(),
-            0,
-            "candidate-0",
-            OPENAI_CHAT_STREAM_PLAN_KIND,
-            "openai_chat_stream_success",
-            true,
-        )
-        .await
-        .expect("candidate resolution should not fail")
-        .expect("antigravity candidate should build a payload");
-
-        assert_eq!(
-            payload.upstream_url,
-            "https://antigravity.googleapis.com/v1internal:streamGenerateContent?alt=sse"
-        );
-        assert_eq!(payload.envelope_name, Some("antigravity:v1internal"));
-        assert_eq!(
-            payload
-                .provider_request_headers
-                .get("authorization")
-                .map(String::as_str),
-            Some("Bearer imported-antigravity-token")
-        );
-        assert_eq!(
-            payload
-                .provider_request_headers
-                .get("x-client-name")
-                .map(String::as_str),
-            Some("antigravity")
-        );
-        assert_eq!(
-            payload
-                .provider_request_headers
-                .get("x-client-version")
-                .map(String::as_str),
-            Some("1.2.3")
-        );
-        assert_eq!(
-            payload
-                .provider_request_headers
-                .get("x-vscode-sessionid")
-                .map(String::as_str),
-            Some("sess-antigravity-chat")
-        );
-        assert_eq!(
-            payload.provider_request_body["project"],
-            "test-antigravity-project"
-        );
-        assert_eq!(
-            payload.provider_request_body["requestId"],
-            "trace-openai-chat-antigravity"
-        );
-        assert_eq!(payload.provider_request_body["model"], "gemini-2.5-pro");
-        assert_eq!(
-            payload.provider_request_body["userAgent"],
-            "antigravity/cli/1.0.16 (aidev_client; os_type=linux; arch=arm64; auth_method=consumer)"
-        );
-        assert_eq!(payload.provider_request_body["requestType"], "agent");
-        assert!(payload.provider_request_body.get("contents").is_none());
-        assert!(payload.provider_request_body["request"]
-            .get("contents")
-            .is_some());
-        assert!(payload.provider_request_body["request"]
-            .get("model")
-            .is_none());
-    }
-
-    #[test]
-    fn chatgpt_web_chat_image_bridge_body_uses_internal_web_shape() {
-        let body_json = json!({
-            "model": "gpt-image-2",
-            "messages": [
-                {"role": "system", "content": "Use crisp vector-like shapes."},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Draw a glass city"},
-                        {"type": "image_url", "image_url": {"url": "https://example.com/ref.png"}}
-                    ]
-                }
-            ],
-            "size": "1536x1024",
-            "output_format": "webp",
-            "web_model": "gpt-5-image-test"
-        });
-
-        let (provider_body, summary) =
-            build_chatgpt_web_image_provider_body_from_openai_chat_body(&body_json, "gpt-image-2")
-                .expect("chat image body should convert");
-
-        assert_eq!(provider_body["operation"], "edit");
-        assert_eq!(provider_body["model"], "gpt-image-2");
-        assert_eq!(provider_body["web_model"], "gpt-5-image-test");
-        assert_eq!(
-            provider_body["prompt"],
-            "Use crisp vector-like shapes.\nDraw a glass city"
-        );
-        assert_eq!(provider_body["size"], "1536x1024");
-        assert_eq!(provider_body["ratio"], "3:2");
-        assert_eq!(provider_body["output_format"], "webp");
-        assert_eq!(provider_body["images"][0], "https://example.com/ref.png");
-        assert_eq!(summary["operation"], "edit");
-        assert_eq!(summary["output_format"], "webp");
     }
 
     #[test]

@@ -1015,7 +1015,6 @@ async fn sync_transport_error_policy_stops_or_retries_candidates_end_to_end_impl
         let mut second_candidate = sample_local_openai_candidate_row();
         second_candidate.key_id = "key-openai-usage-local-2".to_string();
         second_candidate.key_name = "secondary".to_string();
-        second_candidate.key_internal_priority = second_candidate.key_internal_priority - 1;
         let candidate_selection_repository =
             Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
                 sample_local_openai_candidate_row(),
@@ -1738,7 +1737,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             provider_id: "provider-claude-cli-usage-local-miss-1".to_string(),
             provider_name: "RightCode".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-usage-local-miss-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -1752,8 +1750,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-claude-cli-usage-local-miss-1".to_string(),
             global_model_id: "global-model-claude-cli-usage-local-miss-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
@@ -1781,17 +1777,7 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -1837,7 +1823,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             None,
             None,
             Some(serde_json::json!({"openai:responses": 1})),
-            None,
             None,
             None,
             None,
@@ -2063,7 +2048,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             provider_id: "provider-claude-cli-usage-local-miss-large-1".to_string(),
             provider_name: "RightCode".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-usage-local-miss-large-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -2077,8 +2061,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-claude-cli-usage-local-miss-large-1".to_string(),
             global_model_id: "global-model-claude-cli-usage-local-miss-large-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
@@ -2106,17 +2088,7 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
+        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2162,7 +2134,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             None,
             None,
             Some(serde_json::json!({"openai:responses": 1})),
-            None,
             None,
             None,
             None,

@@ -144,7 +144,7 @@ fn unrestricted_models_snapshot(api_key_id: &str, user_id: &str) -> StoredAuthAp
     .expect("snapshot should build")
 }
 
-fn sample_provider(id: &str, name: &str, priority: i32) -> StoredProviderCatalogProvider {
+fn sample_provider(id: &str, name: &str, _priority: i32) -> StoredProviderCatalogProvider {
     StoredProviderCatalogProvider::new(
         id.to_string(),
         name.to_string(),
@@ -152,7 +152,6 @@ fn sample_provider(id: &str, name: &str, priority: i32) -> StoredProviderCatalog
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_routing_fields(priority)
 }
 
 fn sample_endpoint(
@@ -209,7 +208,6 @@ fn sample_key(
         None,
         None,
         None,
-        None,
     )
     .expect("key transport should build")
 }
@@ -258,13 +256,12 @@ fn sample_models_candidate_row(
     provider_name: &str,
     api_format: &str,
     global_model_name: &str,
-    provider_priority: i32,
+    _provider_priority: i32,
 ) -> StoredMinimalCandidateSelectionRow {
     StoredMinimalCandidateSelectionRow {
         provider_id: provider_id.to_string(),
         provider_name: provider_name.to_string(),
         provider_type: "custom".to_string(),
-        provider_priority,
         provider_is_active: true,
         endpoint_id: format!("endpoint-{provider_id}"),
         endpoint_api_format: api_format.to_string(),
@@ -278,8 +275,6 @@ fn sample_models_candidate_row(
         key_api_formats: Some(vec![api_format.to_string()]),
         key_allowed_models: None,
         key_capabilities: None,
-        key_internal_priority: 50,
-        key_global_priority_by_format: None,
         model_id: format!("model-{provider_id}-{global_model_name}"),
         global_model_id: format!("global-{global_model_name}"),
         global_model_name: global_model_name.to_string(),

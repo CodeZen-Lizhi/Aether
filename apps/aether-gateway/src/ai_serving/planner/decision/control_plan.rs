@@ -28,8 +28,7 @@ use crate::ai_serving::planner::route::{
 use crate::ai_serving::GatewayControlDecision;
 use crate::{AiExecutionDecision, AiExecutionPlanPayload, AppState, GatewayError};
 use aether_ai_serving::{
-build_ai_stream_execution_plan_payload,
-build_ai_sync_execution_plan_payload,
+    build_ai_stream_execution_plan_payload, build_ai_sync_execution_plan_payload,
 };
 
 pub(crate) async fn maybe_build_sync_plan_payload_impl(

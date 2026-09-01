@@ -46,14 +46,6 @@ where
     }
 }
 
-#[test]
-fn gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_candidate() {
-    run_stream_provider_test(
-        "gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_candidate",
-        gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_candidate_impl,
-    );
-}
-
 async fn gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_candidate_impl() {
     use base64::Engine as _;
 
@@ -155,7 +147,6 @@ async fn gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_cand
             provider_id: "provider-kiro-cli-local-stream-1".to_string(),
             provider_name: "kiro".to_string(),
             provider_type: "kiro".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-kiro-cli-local-stream-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -169,8 +160,6 @@ async fn gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_cand
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-kiro-cli-local-stream-1".to_string(),
             global_model_id: "global-model-kiro-cli-local-stream-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
@@ -200,7 +189,6 @@ async fn gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_cand
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -273,7 +261,6 @@ async fn gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_cand
                 .expect("auth config should encrypt"),
             ),
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             Some(
@@ -675,7 +662,6 @@ async fn gateway_executes_claude_cli_stream_via_local_decision_gate_without_wait
             provider_id: "provider-claude-cli-local-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -689,8 +675,6 @@ async fn gateway_executes_claude_cli_stream_via_local_decision_gate_without_wait
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-cli-local-1".to_string(),
             global_model_id: "global-model-claude-cli-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
@@ -720,7 +704,6 @@ async fn gateway_executes_claude_cli_stream_via_local_decision_gate_without_wait
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -775,7 +758,6 @@ async fn gateway_executes_claude_cli_stream_via_local_decision_gate_without_wait
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-claude-cli-local"})),
@@ -1141,7 +1123,6 @@ async fn gateway_executes_claude_code_cli_stream_via_local_decision_gate_with_lo
             provider_id: "provider-claude-code-cli-local-1".to_string(),
             provider_name: "claude_code".to_string(),
             provider_type: "claude_code".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-code-cli-local-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -1155,8 +1136,6 @@ async fn gateway_executes_claude_code_cli_stream_via_local_decision_gate_with_lo
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-code-cli-local-1".to_string(),
             global_model_id: "global-model-claude-code-cli-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
@@ -1186,7 +1165,6 @@ async fn gateway_executes_claude_code_cli_stream_via_local_decision_gate_with_lo
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -1248,7 +1226,6 @@ async fn gateway_executes_claude_code_cli_stream_via_local_decision_gate_with_lo
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             Some(
@@ -1683,7 +1660,6 @@ async fn gateway_executes_claude_chat_stream_via_local_decision_gate_with_local_
             provider_id: "provider-claude-chat-local-stream-1".to_string(),
             provider_name: "claude".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-chat-local-stream-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
@@ -1697,8 +1673,6 @@ async fn gateway_executes_claude_chat_stream_via_local_decision_gate_with_local_
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"claude:messages": 1})),
             model_id: "model-claude-chat-local-stream-1".to_string(),
             global_model_id: "global-model-claude-chat-local-stream-1".to_string(),
             global_model_name: "claude-sonnet-4-5".to_string(),
@@ -1728,7 +1702,6 @@ async fn gateway_executes_claude_chat_stream_via_local_decision_gate_with_local_
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -1786,7 +1759,6 @@ async fn gateway_executes_claude_chat_stream_via_local_decision_gate_with_local_
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"claude:messages": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-claude-chat-stream"})),

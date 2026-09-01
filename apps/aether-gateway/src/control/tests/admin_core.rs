@@ -21,8 +21,6 @@ fn classifies_admin_endpoint_health_api_formats_as_admin_proxy_route() {
     assert!(!decision.is_execution_runtime_candidate());
 }
 
-
-
 #[test]
 fn classifies_admin_system_config_export_as_admin_proxy_route() {
     let headers = headers(&[]);
@@ -369,7 +367,6 @@ fn classifies_admin_list_providers_as_admin_proxy_route() {
     );
     assert!(!decision.is_execution_runtime_candidate());
 }
-
 
 #[test]
 fn classifies_admin_oauth_supported_types_as_admin_proxy_route() {

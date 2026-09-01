@@ -304,6 +304,3 @@ pub(crate) fn provider_pool_quota_snapshot_exhausted_decision(
     }
     Some(exhausted)
 }
-
-
-

@@ -88,7 +88,6 @@ async fn gateway_executes_openai_video_create_via_local_decision_gate_with_local
             provider_id: "provider-openai-video-local-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-video-local-1".to_string(),
             endpoint_api_format: "openai:video".to_string(),
@@ -102,8 +101,6 @@ async fn gateway_executes_openai_video_create_via_local_decision_gate_with_local
             key_api_formats: Some(vec!["openai:video".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(json!({"openai:video": 1})),
             model_id: "model-openai-video-local-1".to_string(),
             global_model_id: "global-model-openai-video-local-1".to_string(),
             global_model_name: "sora-2".to_string(),
@@ -133,7 +130,6 @@ async fn gateway_executes_openai_video_create_via_local_decision_gate_with_local
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -190,7 +186,6 @@ async fn gateway_executes_openai_video_create_via_local_decision_gate_with_local
             Some(json!(["openai:video"])),
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-upstream-openai-video")
                 .expect("api key should encrypt"),
-            None,
             None,
             Some(json!({"openai:video": 1})),
             None,

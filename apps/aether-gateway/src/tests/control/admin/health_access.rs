@@ -14,8 +14,8 @@ use http::StatusCode;
 use serde_json::json;
 
 use super::super::{
-    build_router_with_state, issue_test_admin_access_token, sample_endpoint,
-    sample_key, sample_ldap_module_config, sample_management_token, sample_oauth_module_provider,
+    build_router_with_state, issue_test_admin_access_token, sample_endpoint, sample_key,
+    sample_ldap_module_config, sample_management_token, sample_oauth_module_provider,
     sample_provider, sample_request_candidate, start_server, AppState,
 };
 use crate::constants::{

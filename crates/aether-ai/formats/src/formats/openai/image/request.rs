@@ -125,9 +125,7 @@ pub fn resolve_requested_openai_image_model_for_request(
 
 pub fn default_model_for_openai_image_operation(operation: OpenAiImageOperation) -> &'static str {
     match operation {
-        OpenAiImageOperation::Generate | OpenAiImageOperation::Edit => {
-            OPENAI_IMAGE_DEFAULT_MODEL
-        }
+        OpenAiImageOperation::Generate | OpenAiImageOperation::Edit => OPENAI_IMAGE_DEFAULT_MODEL,
     }
 }
 

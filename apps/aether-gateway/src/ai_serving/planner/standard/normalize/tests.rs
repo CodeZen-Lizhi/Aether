@@ -1,8 +1,6 @@
 use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-GatewayProviderTransportSnapshot,
+    GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+    GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
 };
 use http::Request;
 use serde_json::{json, Value};
@@ -29,7 +27,6 @@ fn sample_transport(base_url: &str, api_format: &str) -> GatewayProviderTranspor
             provider_type: "codex".to_string(),
             website: None,
             is_active: true,
-            keep_priority_on_conversion: false,
             enable_format_conversion: false,
             concurrent_limit: None,
             max_retries: None,
@@ -66,7 +63,6 @@ fn sample_transport(base_url: &str, api_format: &str) -> GatewayProviderTranspor
             allowed_models: None,
             capabilities: None,
             rate_multipliers: None,
-            global_priority_by_format: None,
             expires_at_unix_secs: None,
             proxy: None,
             fingerprint: None,
@@ -182,7 +178,7 @@ fn local_openai_responses_wrapper_preserves_body_order_after_edits() {
         "codex",
         "openai:responses",
         None,
-        Some("key-123"),
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -311,7 +307,7 @@ fn local_codex_compact_wrapper_applies_the_complete_request_projection() {
         "codex",
         "openai:responses",
         None,
-        Some("key-123"),
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -324,7 +320,7 @@ fn local_codex_compact_wrapper_applies_the_complete_request_projection() {
         "codex",
         "openai:responses:compact",
         None,
-        Some("key-123"),
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -667,7 +663,7 @@ fn omits_codex_prompt_cache_key_for_openai_responses_cross_format_requests() {
         false,
         "codex",
         None,
-        Some("key-123"),
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -694,7 +690,7 @@ fn omits_codex_prompt_cache_key_for_openai_chat_cross_format_requests() {
         false,
         false,
         None,
-        Some("key-123"),
+        None,
         &http::HeaderMap::new(),
         false,
     )

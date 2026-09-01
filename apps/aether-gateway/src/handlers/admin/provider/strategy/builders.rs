@@ -27,16 +27,10 @@ pub(crate) struct AdminProviderStrategyBillingRequest {
     pub(super) quota_expires_at: Option<String>,
     #[serde(default)]
     pub(super) rpm_limit: Option<i32>,
-    #[serde(default = "default_provider_strategy_provider_priority")]
-    pub(super) provider_priority: i32,
 }
 
 fn default_provider_strategy_quota_reset_day() -> u64 {
     30
-}
-
-fn default_provider_strategy_provider_priority() -> i32 {
-    100
 }
 
 pub(crate) fn build_provider_strategy_list_response() -> Response<Body> {
@@ -95,13 +89,6 @@ pub(crate) async fn build_provider_strategy_update_billing_response(
         )
             .into_response());
     }
-    if !(0..=10_000).contains(&payload.provider_priority) {
-        return Ok((
-            http::StatusCode::BAD_REQUEST,
-            Json(json!({ "detail": "provider_priority 必须在 0 到 10000 之间" })),
-        )
-            .into_response());
-    }
 
     let quota_last_reset_at_unix_secs = match payload.quota_last_reset_at.as_deref() {
         Some(value) => match parse_optional_rfc3339_unix_secs(value, "quota_last_reset_at") {
@@ -142,17 +129,14 @@ pub(crate) async fn build_provider_strategy_update_billing_response(
     };
 
     let _ignored_rpm_limit = payload.rpm_limit;
-    let updated = existing
-        .clone()
-        .with_billing_fields(
-            Some(billing_type.clone()),
-            payload.monthly_quota_usd,
-            synced_monthly_used_usd,
-            Some(payload.quota_reset_day),
-            quota_last_reset_at_unix_secs,
-            quota_expires_at_unix_secs,
-        )
-        .with_routing_fields(payload.provider_priority);
+    let updated = existing.clone().with_billing_fields(
+        Some(billing_type.clone()),
+        payload.monthly_quota_usd,
+        synced_monthly_used_usd,
+        Some(payload.quota_reset_day),
+        quota_last_reset_at_unix_secs,
+        quota_expires_at_unix_secs,
+    );
     let Some(updated) = state
         .app()
         .update_provider_catalog_provider(&updated)
@@ -167,7 +151,6 @@ pub(crate) async fn build_provider_strategy_update_billing_response(
             "id": updated.id,
             "name": updated.name,
             "billing_type": billing_type,
-            "provider_priority": updated.provider_priority,
         },
     }))
     .into_response())

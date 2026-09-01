@@ -6,8 +6,7 @@ use crate::handlers::admin::provider::shared::payloads::{
 use crate::handlers::admin::shared::{normalize_json_array, normalize_json_object};
 use crate::GatewayError;
 use aether_admin::provider::{
-models as admin_provider_models_pure,
-models_write as admin_provider_models_write_pure,
+    models as admin_provider_models_pure, models_write as admin_provider_models_write_pure,
 };
 use aether_data_contracts::repository::global_models::{
     AdminProviderModelListQuery, StoredAdminProviderModel, UpsertAdminProviderModelRecord,

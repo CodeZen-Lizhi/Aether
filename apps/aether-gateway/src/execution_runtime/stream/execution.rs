@@ -9,10 +9,7 @@ use std::sync::{
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use aether_ai_serving::{
-AiAttemptExecutionOutcome,
-AiAttemptRetryScope,
-};
+use aether_ai_serving::{AiAttemptExecutionOutcome, AiAttemptRetryScope};
 use aether_contracts::{
     ExecutionPlan, ExecutionResponseObservation, ExecutionStreamTerminalSummary,
     ExecutionTelemetry, StandardizedUsage, StreamFrame, StreamFramePayload,
@@ -67,10 +64,9 @@ use crate::ai_serving::api::{
     extract_stream_terminal_error_body, maybe_bridge_standard_sync_json_to_stream,
     maybe_build_stream_response_rewriter, StreamingStandardTerminalObserver,
     CLAUDE_CHAT_STREAM_PLAN_KIND, CLAUDE_CLI_STREAM_PLAN_KIND, GEMINI_CHAT_STREAM_PLAN_KIND,
-    GEMINI_INTERACTIONS_STREAM_PLAN_KIND,
-    OPENAI_CHAT_STREAM_PLAN_KIND, OPENAI_IMAGE_STREAM_PLAN_KIND,
-    OPENAI_RESPONSES_COMPACT_STREAM_PLAN_KIND, OPENAI_RESPONSES_STREAM_PLAN_KIND,
-    UPSTREAM_IS_STREAM_KEY,
+    GEMINI_INTERACTIONS_STREAM_PLAN_KIND, OPENAI_CHAT_STREAM_PLAN_KIND,
+    OPENAI_IMAGE_STREAM_PLAN_KIND, OPENAI_RESPONSES_COMPACT_STREAM_PLAN_KIND,
+    OPENAI_RESPONSES_STREAM_PLAN_KIND, UPSTREAM_IS_STREAM_KEY,
 };
 use crate::ai_serving::is_openai_responses_family_format;
 use crate::api::response::{
@@ -107,12 +103,11 @@ use crate::execution_runtime::{
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
     apply_local_execution_effect, build_local_error_flow_metadata, classify_failure_disposition,
-    cyber_continue_failover_enabled,
-    trace_upstream_response_body, with_error_flow_report_context,
-    with_upstream_response_report_context, FailureDisposition, FailureTokenAction,
-    LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
-    LocalExecutionEffect, LocalExecutionEffectContext, LocalFailoverAnalysis,
-    LocalHealthFailureEffect, LocalHealthSuccessEffect,
+    cyber_continue_failover_enabled, parse_retry_after_secs, trace_upstream_response_body,
+    with_error_flow_report_context, with_upstream_response_report_context, FailureDisposition,
+    FailureTokenAction, LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect,
+    LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
+    LocalFailoverAnalysis, LocalHealthFailureEffect, LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::{
     acquire_provider_pool_in_flight_guard, ProviderPoolInFlightGuard,
@@ -912,17 +907,6 @@ async fn execute_in_process_stream(
     }
 }
 
-async fn execute_in_process_stream_with_oauth_retry(
-    state: &AppState,
-    plan: &mut ExecutionPlan,
-    trace_id: &str,
-    report_context: Option<&Value>,
-) -> Result<DirectUpstreamStreamExecution, InProcessStreamExecutionError> {
-    let mut execution = execute_in_process_stream(state, plan, trace_id).await?;
-    apply_stream_summary_report_context(&mut execution, report_context);
-    Ok(execution)
-}
-
 #[derive(Debug)]
 struct PrefetchedStreamFailure {
     status_code: u16,
@@ -1314,10 +1298,7 @@ impl DirectPassthroughFinalizer {
                 chunk.as_ref(),
             );
         }
-        if let Some(error_body_json) = core
-            .provider_error_inspection
-            .observe(chunk.as_ref())
-        {
+        if let Some(error_body_json) = core.provider_error_inspection.observe(chunk.as_ref()) {
             let error_status_code = resolve_provider_stream_error_status_code(
                 core.plan.provider_api_format.as_str(),
                 core.status_code,
@@ -1748,14 +1729,6 @@ impl DirectPassthroughFinalizerCore {
                     report_context: usage_payload.report_context.as_ref(),
                 },
                 LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
-            )
-            .await;
-            apply_local_execution_effect(
-                &state,
-                LocalExecutionEffectContext {
-                    plan: &plan,
-                    report_context: usage_payload.report_context.as_ref(),
-                },
             )
             .await;
         }
@@ -2268,7 +2241,7 @@ async fn execute_stream_from_direct_passthrough(
     if passthrough_mode == DirectPassthroughMode::Inline {
         let direct_stream_finalize_kind =
             resolve_core_stream_direct_finalize_report_kind(plan_kind);
-        let normalized_stream_report_context = report_context.cloned();
+        let normalized_stream_report_context = report_context.clone();
         let stream_usage_report_context = normalized_stream_report_context.clone().or_else(|| {
             Some(serde_json::json!({
                 "provider_api_format": plan.provider_api_format.as_str(),
@@ -2355,7 +2328,7 @@ async fn execute_stream_from_direct_passthrough(
     let lifecycle_seed_for_report = lifecycle_seed;
     let direct_stream_finalize_kind_owned =
         resolve_core_stream_direct_finalize_report_kind(plan_kind);
-    let normalized_stream_report_context_owned = report_context_owned.cloned();
+    let normalized_stream_report_context_owned = report_context_owned.clone();
     let stream_started_at_for_report = stream_started_at;
     observe_gateway_stage_trace_ms(
         &mut stage_trace,
@@ -2895,14 +2868,6 @@ async fn execute_stream_from_direct_passthrough(
                 LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
             )
             .await;
-            apply_local_execution_effect(
-                &state_for_report,
-                LocalExecutionEffectContext {
-                    plan: &plan_for_report,
-                    report_context: usage_payload.report_context.as_ref(),
-                },
-            )
-            .await;
         }
         record_stream_terminal_usage(
             &state_for_report,
@@ -2979,104 +2944,6 @@ async fn execute_stream_from_direct_passthrough(
 }
 
 #[allow(clippy::too_many_arguments)] // internal function, grouping would add unnecessary indirection
-pub(crate) fn execute_execution_runtime_stream<'a>(
-    state: &'a AppState,
-    plan: ExecutionPlan,
-    trace_id: &'a str,
-    decision: &'a GatewayControlDecision,
-    plan_kind: &'a str,
-    report_kind: Option<String>,
-    report_context: Option<serde_json::Value>,
-) -> Pin<Box<dyn Future<Output = Result<Option<Response<Body>>, GatewayError>> + Send + 'a>> {
-    Box::pin(execute_execution_runtime_stream_inner(
-        state,
-        plan,
-        trace_id,
-        decision,
-        plan_kind,
-        report_kind,
-        report_context,
-        None,
-        None,
-    ))
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn execute_execution_runtime_stream_with_retry_scope<'a>(
-    state: &'a AppState,
-    plan: ExecutionPlan,
-    trace_id: &'a str,
-    decision: &'a GatewayControlDecision,
-    plan_kind: &'a str,
-    report_kind: Option<String>,
-    report_context: Option<serde_json::Value>,
-) -> Pin<
-    Box<
-        dyn Future<Output = Result<AiAttemptExecutionOutcome<Response<Body>>, GatewayError>>
-            + Send
-            + 'a,
-    >,
-> {
-    Box::pin(async move {
-        let mut retry_scope = AiAttemptRetryScope::Candidate;
-        let mut fallback_response = None;
-        let response = execute_execution_runtime_stream_inner(
-            state,
-            plan,
-            trace_id,
-            decision,
-            plan_kind,
-            report_kind,
-            report_context,
-            Some(&mut retry_scope),
-            Some(&mut fallback_response),
-        )
-        .await?;
-        Ok(match response {
-            Some(response) => AiAttemptExecutionOutcome::Responded(response),
-            None => AiAttemptExecutionOutcome::Retry {
-                scope: retry_scope,
-                fallback_response,
-            },
-        })
-    })
-}
-
-async fn maybe_build_stream_transport_error_stop_response(
-    state: &AppState,
-    plan: &ExecutionPlan,
-    report_context: Option<&Value>,
-    trace_id: &str,
-    decision: &GatewayControlDecision,
-    error_type: &str,
-    error_message: &str,
-    elapsed_ms: u64,
-) -> Result<Option<Response<Body>>, GatewayError> {
-    let analysis = crate::orchestration::resolve_local_transport_failover_analysis_for_attempt(
-        state,
-        plan,
-        report_context,
-    )
-    .await;
-    if !matches!(analysis.decision, LocalFailoverDecision::StopLocalFailover) {
-        return Ok(None);
-    }
-
-    crate::execution_runtime::build_transport_error_stop_response(
-        state,
-        plan,
-        report_context,
-        trace_id,
-        decision,
-        http::StatusCode::BAD_GATEWAY.as_u16(),
-        error_type,
-        error_message,
-        elapsed_ms,
-    )
-    .await
-    .map(Some)
-}
-
 async fn execute_execution_runtime_stream_inner(
     state: &AppState,
     mut plan: ExecutionPlan,
@@ -3555,6 +3422,115 @@ async fn execute_execution_runtime_stream_inner(
     }
 }
 
+async fn execute_in_process_stream_with_oauth_retry(
+    state: &AppState,
+    plan: &mut ExecutionPlan,
+    trace_id: &str,
+    report_context: Option<&Value>,
+) -> Result<DirectUpstreamStreamExecution, InProcessStreamExecutionError> {
+    let mut execution = execute_in_process_stream(state, plan, trace_id).await?;
+    apply_stream_summary_report_context(&mut execution, report_context);
+    Ok(execution)
+}
+
+pub(crate) fn execute_execution_runtime_stream<'a>(
+    state: &'a AppState,
+    plan: ExecutionPlan,
+    trace_id: &'a str,
+    decision: &'a GatewayControlDecision,
+    plan_kind: &'a str,
+    report_kind: Option<String>,
+    report_context: Option<serde_json::Value>,
+) -> Pin<Box<dyn Future<Output = Result<Option<Response<Body>>, GatewayError>> + Send + 'a>> {
+    Box::pin(execute_execution_runtime_stream_inner(
+        state,
+        plan,
+        trace_id,
+        decision,
+        plan_kind,
+        report_kind,
+        report_context,
+        None,
+        None,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_execution_runtime_stream_with_retry_scope<'a>(
+    state: &'a AppState,
+    plan: ExecutionPlan,
+    trace_id: &'a str,
+    decision: &'a GatewayControlDecision,
+    plan_kind: &'a str,
+    report_kind: Option<String>,
+    report_context: Option<serde_json::Value>,
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<AiAttemptExecutionOutcome<Response<Body>>, GatewayError>>
+            + Send
+            + 'a,
+    >,
+> {
+    Box::pin(async move {
+        let mut retry_scope = AiAttemptRetryScope::Candidate;
+        let mut fallback_response = None;
+        let response = execute_execution_runtime_stream_inner(
+            state,
+            plan,
+            trace_id,
+            decision,
+            plan_kind,
+            report_kind,
+            report_context,
+            Some(&mut retry_scope),
+            Some(&mut fallback_response),
+        )
+        .await?;
+        Ok(match response {
+            Some(response) => AiAttemptExecutionOutcome::Responded(response),
+            None => AiAttemptExecutionOutcome::Retry {
+                scope: retry_scope,
+                fallback_response,
+            },
+        })
+    })
+}
+
+async fn maybe_build_stream_transport_error_stop_response(
+    state: &AppState,
+    plan: &ExecutionPlan,
+    report_context: Option<&Value>,
+    trace_id: &str,
+    decision: &GatewayControlDecision,
+    error_type: &str,
+    error_message: &str,
+    elapsed_ms: u64,
+) -> Result<Option<Response<Body>>, GatewayError> {
+    let analysis = crate::orchestration::resolve_local_transport_failover_analysis_for_attempt(
+        state,
+        plan,
+        report_context,
+    )
+    .await;
+    if !matches!(analysis.decision, LocalFailoverDecision::StopLocalFailover) {
+        return Ok(None);
+    }
+
+    crate::execution_runtime::build_transport_error_stop_response(
+        state,
+        plan,
+        report_context,
+        trace_id,
+        decision,
+        http::StatusCode::BAD_GATEWAY.as_u16(),
+        error_type,
+        error_message,
+        elapsed_ms,
+    )
+    .await
+    .map(Some)
+}
+
 fn decode_stream_data_chunk(
     chunk_b64: Option<&str>,
     text: Option<&str>,
@@ -3619,7 +3595,6 @@ fn plan_kind_uses_text_event_stream(plan_kind: &str) -> bool {
             | CLAUDE_CHAT_STREAM_PLAN_KIND
             | CLAUDE_CLI_STREAM_PLAN_KIND
             | GEMINI_CHAT_STREAM_PLAN_KIND
-            | GEMINI_CLI_STREAM_PLAN_KIND
             | GEMINI_INTERACTIONS_STREAM_PLAN_KIND
     )
 }
@@ -4867,6 +4842,10 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                 status_code,
                 classification: failover_analysis.classification,
+                retry_after_secs: parse_retry_after_secs(
+                    headers.get("retry-after").map(String::as_str),
+                    crate::clock::current_unix_secs(),
+                ),
             }),
         )
         .await;
@@ -5101,7 +5080,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     }
 
     let direct_stream_finalize_kind = resolve_core_stream_direct_finalize_report_kind(plan_kind);
-    let normalized_stream_report_context = report_context.cloned();
+    let normalized_stream_report_context = report_context.clone();
     let upstream_headers = headers.clone();
     let mut local_stream_rewriter =
         maybe_build_stream_response_rewriter(normalized_stream_report_context.as_ref());
@@ -6215,8 +6194,8 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                             &mut provider_body_truncated,
                         );
                         let normalized_chunk = chunk;
-                        let provider_private_error_body_json = provider_error_inspection
-                            .observe(&normalized_chunk);
+                        let provider_private_error_body_json =
+                            provider_error_inspection.observe(&normalized_chunk);
                         if let (Some(observer), Some(report_context)) = (
                             stream_usage_observer.as_mut(),
                             stream_usage_report_context.as_ref(),
@@ -6777,14 +6756,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
             )
             .await;
-            apply_local_execution_effect(
-                &state_for_report,
-                LocalExecutionEffectContext {
-                    plan: &plan_for_report,
-                    report_context: usage_payload.report_context.as_ref(),
-                },
-            )
-            .await;
         }
         record_stream_terminal_usage(
             &state_for_report,
@@ -6896,10 +6867,7 @@ mod tests {
     };
     use std::time::{Duration, Instant};
 
-    use aether_ai_serving::{
-AiAttemptExecutionOutcome,
-AiAttemptRetryScope,
-};
+    use aether_ai_serving::{AiAttemptExecutionOutcome, AiAttemptRetryScope};
     use aether_contracts::{
         ExecutionError, ExecutionErrorKind, ExecutionPhase, ExecutionPlan,
         ExecutionStreamTerminalSummary, ExecutionTelemetry, ExecutionTimeouts, RequestBody,
@@ -6949,15 +6917,14 @@ AiAttemptRetryScope,
         client_format_allows_proxy_generated_sse_control_blocks,
         direct_upstream_response_byte_stream, encode_terminal_sse_error_event_for_plan,
         ensure_stream_terminal_summary_for_missing_observed_finish,
-        execute_execution_runtime_stream, execute_in_process_stream_with_oauth_retry,
-        execute_stream_from_frame_stream, execute_stream_from_frame_stream_with_retry_scope,
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary, merge_stream_terminal_summary,
+        execute_execution_runtime_stream, execute_stream_from_frame_stream,
+        execute_stream_from_frame_stream_with_retry_scope, merge_stream_terminal_summary,
         normalize_declared_stream_response_headers, parse_direct_passthrough_mode,
-        prefetch_direct_stream_error_body, prefetched_openai_responses_body_has_output_boundary,
+        prefetched_openai_responses_body_has_output_boundary,
         record_sync_terminal_usage_with_handoff,
         record_sync_terminal_usage_with_handoff_after_spawn,
-        resolve_provider_stream_error_status_code, select_direct_anthropic_prefetch_wait,
-        should_limit_direct_finalize_prefetch, should_normalize_declared_stream_response_headers,
+        resolve_provider_stream_error_status_code, should_limit_direct_finalize_prefetch,
+        should_normalize_declared_stream_response_headers,
         should_probe_success_failover_before_stream, should_skip_direct_finalize_prefetch,
         stream_chunk_contains_sse_done, stream_requires_observed_terminal_event,
         stream_terminal_summary_missing_observed_finish,
@@ -7003,7 +6970,6 @@ AiAttemptRetryScope,
         .with_transport_fields(
             true,
             false,
-            false,
             None,
             Some(3),
             None,
@@ -7043,7 +7009,6 @@ AiAttemptRetryScope,
         .with_transport_fields(
             Some(json!([plan.provider_api_format.clone()])),
             "plain-upstream-key".to_string(),
-            None,
             None,
             Some(json!({ "openai:chat": 1 })),
             None,
@@ -7111,7 +7076,6 @@ AiAttemptRetryScope,
             None,
             None,
             None,
-            None,
         )
         .expect("key transport should build");
 
@@ -7150,25 +7114,6 @@ AiAttemptRetryScope,
                 ..ExecutionTimeouts::default()
             }),
         }
-    }
-
-    fn agent_identity_test_auth_config(task_id: &str) -> Value {
-        json!({
-            "provider_type": "codex",
-            "auth_mode": "agentIdentity",
-            "agent_runtime_id": "runtime-test",
-            "agent_private_key": "MC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH",
-            "task_id": task_id
-        })
-    }
-
-    fn generic_oauth_test_auth_config(provider_type: &str) -> Value {
-        json!({
-            "provider_type": provider_type,
-            "access_token": "stale-access-token",
-            "refresh_token": "refresh-token",
-            "expires_at": 4_102_444_800_u64
-        })
     }
 
     async fn collect_direct_execution_body(
@@ -7697,747 +7642,6 @@ AiAttemptRetryScope,
 
     fn test_state() -> AppState {
         AppState::new().expect("gateway state should build")
-    }
-
-    #[tokio::test]
-    async fn agent_identity_stream_error_prefetch_is_bounded_and_replayed() {
-        let upstream_body = format!(
-            "{}{}",
-            "x".repeat(crate::execution_runtime::MAX_ERROR_BODY_BYTES),
-            "body-after-inspection-limit"
-        );
-        let expected_body = upstream_body.clone().into_bytes();
-        let listener = crate::test_support::bind_loopback_listener()
-            .await
-            .expect("listener should bind");
-        let addr = listener.local_addr().expect("address should resolve");
-        let server = tokio::spawn(async move {
-            let app = Router::new().route(
-                "/responses",
-                any(move || {
-                    let body = upstream_body.clone();
-                    async move { (StatusCode::UNAUTHORIZED, body) }
-                }),
-            );
-            axum::serve(listener, app)
-                .await
-                .expect("server should start");
-        });
-        let plan =
-            direct_stream_test_plan("bounded-agent-error", format!("http://{addr}/responses"));
-        let mut execution = crate::execution_runtime::DirectSyncExecutionRuntime::new()
-            .execute_stream(&plan)
-            .await
-            .expect("stream headers should execute");
-
-        let inspected = prefetch_direct_stream_error_body(&mut execution)
-            .await
-            .expect("error body should be inspected");
-
-        assert_eq!(
-            inspected.len(),
-            crate::execution_runtime::MAX_ERROR_BODY_BYTES
-        );
-        let replayed = collect_direct_execution_body(execution)
-            .await
-            .expect("prefetched response should replay");
-        assert_eq!(replayed, expected_body);
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn non_agent_stream_401_is_not_prefetched_and_body_passes_through() {
-        let upstream_body = br#"{"error":{"code":"ordinary_unauthorized","message":"sign in"}}"#;
-        let listener = crate::test_support::bind_loopback_listener()
-            .await
-            .expect("listener should bind");
-        let addr = listener.local_addr().expect("address should resolve");
-        let server = tokio::spawn(async move {
-            let app = Router::new().route(
-                "/responses",
-                any(|| async {
-                    (
-                        StatusCode::UNAUTHORIZED,
-                        [(header::CONTENT_TYPE, "application/json")],
-                        upstream_body.as_slice(),
-                    )
-                }),
-            );
-            axum::serve(listener, app)
-                .await
-                .expect("server should start");
-        });
-        let mut plan = direct_stream_test_plan("non-agent-401", format!("http://{addr}/responses"));
-        plan.provider_name = Some("openai".to_string());
-        let repository = provider_catalog_for_stream_auth_plan(&plan, "openai", "api_key", None);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_provider_transport_reader_for_tests(
-                    Arc::new(repository),
-                    DEVELOPMENT_ENCRYPTION_KEY,
-                ),
-            );
-
-        let execution = execute_in_process_stream_with_oauth_retry(
-            &state,
-            &mut plan,
-            "trace-non-agent-401",
-            None,
-        )
-        .await
-        .expect("stream request should execute");
-
-        assert!(execution.prefetched_body.is_empty());
-        let replayed = collect_direct_execution_body(execution)
-            .await
-            .expect("response body should pass through");
-        assert_eq!(replayed, upstream_body);
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn agent_identity_stream_non_task_401_replays_original_body_without_refresh() {
-        let upstream_body =
-            br#"{"error":{"code":"account_disabled","message":"account unavailable"}}"#;
-        let listener = crate::test_support::bind_loopback_listener()
-            .await
-            .expect("listener should bind");
-        let addr = listener.local_addr().expect("address should resolve");
-        let task_registration_hits = Arc::new(AtomicUsize::new(0));
-        let task_registration_hits_for_server = Arc::clone(&task_registration_hits);
-        let server = tokio::spawn(async move {
-            let app = Router::new()
-                .route(
-                    "/responses",
-                    any(|| async {
-                        (
-                            StatusCode::UNAUTHORIZED,
-                            [(header::CONTENT_TYPE, "application/json")],
-                            upstream_body.as_slice(),
-                        )
-                    }),
-                )
-                .route(
-                    "/api/accounts/v1/agent/runtime-test/task/register",
-                    any(move || {
-                        let hits = Arc::clone(&task_registration_hits_for_server);
-                        async move {
-                            hits.fetch_add(1, Ordering::SeqCst);
-                            Json(json!({"task_id": "unexpected-task"}))
-                        }
-                    }),
-                );
-            axum::serve(listener, app)
-                .await
-                .expect("server should start");
-        });
-        let mut plan =
-            direct_stream_test_plan("agent-non-task-401", format!("http://{addr}/responses"));
-        let repository = Arc::new(provider_catalog_for_stream_auth_plan(
-            &plan,
-            "codex",
-            "oauth",
-            Some(agent_identity_test_auth_config("task-old")),
-        ));
-        let oauth_refresh =
-            aether_provider_transport::LocalOAuthRefreshCoordinator::with_adapters_for_tests(vec![
-                Arc::new(
-                    aether_provider_transport::CodexAgentIdentityRefreshAdapter::default()
-                        .with_auth_api_base_url_for_tests(format!("http://{addr}/api/accounts")),
-                ),
-            ]);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_provider_catalog_repository_for_tests(
-                    repository,
-                )
-                .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
-            )
-            .with_oauth_refresh_coordinator_for_tests(oauth_refresh);
-
-        let execution = execute_in_process_stream_with_oauth_retry(
-            &state,
-            &mut plan,
-            "trace-agent-non-task-401",
-            None,
-        )
-        .await
-        .expect("stream request should execute");
-
-        assert!(!execution.prefetched_body.is_empty());
-        assert_eq!(task_registration_hits.load(Ordering::SeqCst), 0);
-        let replayed = collect_direct_execution_body(execution)
-            .await
-            .expect("response body should replay");
-        assert_eq!(replayed, upstream_body);
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn agent_identity_stream_invalid_task_refreshes_and_retries_once() {
-        let upstream_hits = Arc::new(AtomicUsize::new(0));
-        let upstream_hits_for_server = Arc::clone(&upstream_hits);
-        let task_registration_hits = Arc::new(AtomicUsize::new(0));
-        let task_registration_hits_for_server = Arc::clone(&task_registration_hits);
-        let observed_authorization = Arc::new(Mutex::new(Vec::<String>::new()));
-        let observed_authorization_for_server = Arc::clone(&observed_authorization);
-        let listener = crate::test_support::bind_loopback_listener()
-            .await
-            .expect("listener should bind");
-        let addr = listener.local_addr().expect("address should resolve");
-        let server = tokio::spawn(async move {
-            let app = Router::new()
-                .route(
-                    "/responses",
-                    any(move |request: Request| {
-                        let hits = Arc::clone(&upstream_hits_for_server);
-                        let authorizations = Arc::clone(&observed_authorization_for_server);
-                        async move {
-                            let authorization = request
-                                .headers()
-                                .get(header::AUTHORIZATION)
-                                .and_then(|value| value.to_str().ok())
-                                .unwrap_or_default()
-                                .to_string();
-                            authorizations
-                                .lock()
-                                .expect("authorization mutex should lock")
-                                .push(authorization);
-                            if hits.fetch_add(1, Ordering::SeqCst) == 0 {
-                                (
-                                    StatusCode::UNAUTHORIZED,
-                                    Json(json!({
-                                        "error": {
-                                            "code": "invalid_task_id",
-                                            "message": "registered task expired"
-                                        }
-                                    })),
-                                )
-                                    .into_response()
-                            } else {
-                                (StatusCode::OK, Json(json!({"ok": true}))).into_response()
-                            }
-                        }
-                    }),
-                )
-                .route(
-                    "/api/accounts/v1/agent/runtime-test/task/register",
-                    any(move || {
-                        let hits = Arc::clone(&task_registration_hits_for_server);
-                        async move {
-                            hits.fetch_add(1, Ordering::SeqCst);
-                            Json(json!({"task_id": "task-new"}))
-                        }
-                    }),
-                );
-            axum::serve(listener, app)
-                .await
-                .expect("server should start");
-        });
-        let mut plan =
-            direct_stream_test_plan("agent-invalid-task", format!("http://{addr}/responses"));
-        let repository = Arc::new(provider_catalog_for_stream_auth_plan(
-            &plan,
-            "codex",
-            "oauth",
-            Some(agent_identity_test_auth_config("task-old")),
-        ));
-        let oauth_refresh =
-            aether_provider_transport::LocalOAuthRefreshCoordinator::with_adapters_for_tests(vec![
-                Arc::new(
-                    aether_provider_transport::CodexAgentIdentityRefreshAdapter::default()
-                        .with_auth_api_base_url_for_tests(format!("http://{addr}/api/accounts")),
-                ),
-            ]);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_provider_catalog_repository_for_tests(
-                    repository,
-                )
-                .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
-            )
-            .with_oauth_refresh_coordinator_for_tests(oauth_refresh);
-        let transport = state
-            .read_provider_transport_snapshot(&plan.provider_id, &plan.endpoint_id, &plan.key_id)
-            .await
-            .expect("transport should load")
-            .expect("transport should exist");
-        let initial_authorization = match state
-            .resolve_local_oauth_request_auth(&transport)
-            .await
-            .expect("initial Agent Identity auth should resolve")
-            .expect("initial Agent Identity auth should exist")
-        {
-            aether_provider_transport::LocalResolvedOAuthRequestAuth::Header { name, value } => {
-                assert_eq!(name, "authorization");
-                value
-            }
-            aether_provider_transport::LocalResolvedOAuthRequestAuth::Kiro(_) => {
-                panic!("Agent Identity should resolve to header auth")
-            }
-        };
-        assert!(
-            aether_provider_transport::codex_agent_identity_authorization_matches_transport(
-                &transport,
-                &initial_authorization,
-            )
-        );
-        plan.headers
-            .insert("authorization".to_string(), initial_authorization.clone());
-
-        let execution = execute_in_process_stream_with_oauth_retry(
-            &state,
-            &mut plan,
-            "trace-agent-invalid-task",
-            None,
-        )
-        .await
-        .expect("stream request should recover");
-
-        assert_eq!(execution.status_code, 200);
-        assert!(execution.prefetched_body.is_empty());
-        assert_eq!(upstream_hits.load(Ordering::SeqCst), 2);
-        assert_eq!(task_registration_hits.load(Ordering::SeqCst), 1);
-        let authorizations = observed_authorization
-            .lock()
-            .expect("authorization mutex should lock");
-        assert_eq!(authorizations.len(), 2);
-        assert_eq!(authorizations[0], initial_authorization);
-        assert!(authorizations[1].starts_with("AgentAssertion "));
-        assert_ne!(authorizations[1], authorizations[0]);
-        drop(authorizations);
-        let replayed = collect_direct_execution_body(execution)
-            .await
-            .expect("retried response body should read");
-        assert_eq!(
-            serde_json::from_slice::<Value>(&replayed).expect("response should be JSON"),
-            json!({"ok": true})
-        );
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn native_anthropic_embedded_auth_error_refreshes_oauth_and_retries_once() {
-        let upstream_hits = Arc::new(AtomicUsize::new(0));
-        let upstream_hits_for_server = Arc::clone(&upstream_hits);
-        let refresh_hits = Arc::new(AtomicUsize::new(0));
-        let refresh_hits_for_server = Arc::clone(&refresh_hits);
-        let observed_authorization = Arc::new(Mutex::new(Vec::<String>::new()));
-        let observed_authorization_for_server = Arc::clone(&observed_authorization);
-        let listener = crate::test_support::bind_loopback_listener()
-            .await
-            .expect("listener should bind");
-        let addr = listener.local_addr().expect("address should resolve");
-        let server = tokio::spawn(async move {
-            let app = Router::new()
-                .route(
-                    "/v1/messages",
-                    any(move |request: Request| {
-                        let hits = Arc::clone(&upstream_hits_for_server);
-                        let authorizations = Arc::clone(&observed_authorization_for_server);
-                        async move {
-                            authorizations
-                                .lock()
-                                .expect("authorization mutex should lock")
-                                .push(
-                                    request
-                                        .headers()
-                                        .get(header::AUTHORIZATION)
-                                        .and_then(|value| value.to_str().ok())
-                                        .unwrap_or_default()
-                                        .to_string(),
-                                );
-                            let body = if hits.fetch_add(1, Ordering::SeqCst) == 0 {
-                                concat!(
-                                    "event: error\n",
-                                    "data: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"expired token\"}}\n\n",
-                                )
-                            } else {
-                                concat!(
-                                    "event: message_start\n",
-                                    "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
-                                    "event: message_stop\n",
-                                    "data: {\"type\":\"message_stop\"}\n\n",
-                                )
-                            };
-                            (
-                                StatusCode::OK,
-                                [(header::CONTENT_TYPE, "text/event-stream")],
-                                body,
-                            )
-                                .into_response()
-                        }
-                    }),
-                )
-                .route(
-                    "/oauth/token",
-                    any(move || {
-                        let hits = Arc::clone(&refresh_hits_for_server);
-                        async move {
-                            hits.fetch_add(1, Ordering::SeqCst);
-                            Json(json!({
-                                "access_token": "fresh-access-token",
-                                "refresh_token": "fresh-refresh-token",
-                                "expires_in": 3600,
-                                "token_type": "Bearer"
-                            }))
-                        }
-                    }),
-                );
-            axum::serve(listener, app)
-                .await
-                .expect("server should start");
-        });
-
-        let mut plan = native_anthropic_stream_plan("anthropic-embedded-oauth-refresh");
-        plan.url = format!("http://{addr}/v1/messages");
-        plan.provider_name = Some("claude_code".to_string());
-        plan.headers.insert(
-            "authorization".to_string(),
-            "Bearer stale-access-token".to_string(),
-        );
-        let repository = Arc::new(provider_catalog_for_stream_auth_plan(
-            &plan,
-            "claude_code",
-            "oauth",
-            Some(generic_oauth_test_auth_config("claude_code")),
-        ));
-        let oauth_refresh =
-            aether_provider_transport::LocalOAuthRefreshCoordinator::with_adapters_for_tests(vec![
-                Arc::new(
-                    aether_provider_transport::GenericOAuthRefreshAdapter::default()
-                        .with_token_url_for_tests(
-                            "claude_code",
-                            format!("http://{addr}/oauth/token"),
-                        ),
-                ),
-            ]);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_provider_catalog_repository_for_tests(
-                    repository,
-                )
-                .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
-            )
-            .with_oauth_refresh_coordinator_for_tests(oauth_refresh);
-
-        let execution = execute_in_process_stream_with_oauth_retry(
-            &state,
-            &mut plan,
-            "trace-anthropic-embedded-oauth-refresh",
-            None,
-        )
-        .await
-        .expect("embedded authentication error should recover");
-        let replayed = collect_direct_execution_body(execution)
-            .await
-            .expect("retried response should read");
-
-        assert_eq!(upstream_hits.load(Ordering::SeqCst), 2);
-        assert_eq!(refresh_hits.load(Ordering::SeqCst), 1);
-        assert!(String::from_utf8_lossy(&replayed).contains("event: message_start"));
-        assert_eq!(
-            observed_authorization
-                .lock()
-                .expect("authorization mutex should lock")
-                .as_slice(),
-            [
-                "Bearer stale-access-token".to_string(),
-                "Bearer fresh-access-token".to_string(),
-            ]
-        );
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn native_anthropic_http_permission_error_does_not_refresh_oauth() {
-        let upstream_hits = Arc::new(AtomicUsize::new(0));
-        let upstream_hits_for_server = Arc::clone(&upstream_hits);
-        let refresh_hits = Arc::new(AtomicUsize::new(0));
-        let refresh_hits_for_server = Arc::clone(&refresh_hits);
-        let permission_body = concat!(
-            "{\"type\":\"error\",\"error\":{",
-            "\"type\":\"permission_error\",",
-            "\"message\":\"this token is not authorized for the workspace\"}}",
-        );
-        let listener = crate::test_support::bind_loopback_listener()
-            .await
-            .expect("listener should bind");
-        let addr = listener.local_addr().expect("address should resolve");
-        let server = tokio::spawn(async move {
-            let app = Router::new()
-                .route(
-                    "/v1/messages",
-                    any(move || {
-                        let hits = Arc::clone(&upstream_hits_for_server);
-                        async move {
-                            hits.fetch_add(1, Ordering::SeqCst);
-                            (
-                                StatusCode::FORBIDDEN,
-                                [(header::CONTENT_TYPE, "application/json")],
-                                permission_body,
-                            )
-                        }
-                    }),
-                )
-                .route(
-                    "/oauth/token",
-                    any(move || {
-                        let hits = Arc::clone(&refresh_hits_for_server);
-                        async move {
-                            hits.fetch_add(1, Ordering::SeqCst);
-                            Json(json!({
-                                "access_token": "unexpected-access-token",
-                                "refresh_token": "unexpected-refresh-token",
-                                "expires_in": 3600,
-                                "token_type": "Bearer"
-                            }))
-                        }
-                    }),
-                );
-            axum::serve(listener, app)
-                .await
-                .expect("server should start");
-        });
-
-        let mut plan = native_anthropic_stream_plan("anthropic-http-oauth-permission");
-        plan.url = format!("http://{addr}/v1/messages");
-        plan.provider_name = Some("claude_code".to_string());
-        plan.headers.insert(
-            "authorization".to_string(),
-            "Bearer stale-access-token".to_string(),
-        );
-        let repository = Arc::new(provider_catalog_for_stream_auth_plan(
-            &plan,
-            "claude_code",
-            "oauth",
-            Some(generic_oauth_test_auth_config("claude_code")),
-        ));
-        let oauth_refresh =
-            aether_provider_transport::LocalOAuthRefreshCoordinator::with_adapters_for_tests(vec![
-                Arc::new(
-                    aether_provider_transport::GenericOAuthRefreshAdapter::default()
-                        .with_token_url_for_tests(
-                            "claude_code",
-                            format!("http://{addr}/oauth/token"),
-                        ),
-                ),
-            ]);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_provider_catalog_repository_for_tests(
-                    repository,
-                )
-                .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
-            )
-            .with_oauth_refresh_coordinator_for_tests(oauth_refresh);
-
-        let execution = execute_in_process_stream_with_oauth_retry(
-            &state,
-            &mut plan,
-            "trace-anthropic-http-oauth-permission",
-            None,
-        )
-        .await
-        .expect("permission response should remain available");
-        assert_eq!(execution.status_code, StatusCode::FORBIDDEN.as_u16());
-        let replayed = collect_direct_execution_body(execution)
-            .await
-            .expect("permission response should replay");
-
-        assert_eq!(upstream_hits.load(Ordering::SeqCst), 1);
-        assert_eq!(refresh_hits.load(Ordering::SeqCst), 0);
-        assert_eq!(replayed, permission_body.as_bytes());
-        server.abort();
-    }
-
-    #[test]
-    fn native_anthropic_oauth_prefetch_respects_short_first_byte_timeout() {
-        let now = Instant::now();
-        let precommit_started_at = now
-            .checked_sub(Duration::from_millis(10))
-            .expect("precommit start should be representable");
-        let upstream_started_at = now
-            .checked_sub(Duration::from_millis(90))
-            .expect("upstream start should be representable");
-
-        let first_byte_wait = select_direct_anthropic_prefetch_wait(
-            precommit_started_at,
-            Duration::from_millis(750),
-            upstream_started_at,
-            Some(Duration::from_millis(100)),
-            false,
-            now,
-        );
-        assert_eq!(first_byte_wait.remaining, Duration::from_millis(10));
-        assert!(!first_byte_wait.commit_on_timeout);
-
-        let precommit_wait = select_direct_anthropic_prefetch_wait(
-            now.checked_sub(Duration::from_millis(750))
-                .expect("precommit start should be representable"),
-            Duration::from_millis(750),
-            upstream_started_at,
-            Some(Duration::from_secs(5)),
-            false,
-            now,
-        );
-        assert!(precommit_wait.remaining.is_zero());
-        assert!(precommit_wait.commit_on_timeout);
-    }
-
-    #[tokio::test]
-    async fn native_anthropic_oauth_pending_events_do_not_start_a_second_precommit_wait() {
-        let request_id = "anthropic-oauth-single-precommit";
-        let plan = native_anthropic_stream_plan(request_id);
-        let provider_catalog = provider_catalog_for_plan(&plan, None);
-        let data_state = crate::data::GatewayDataState::with_provider_transport_reader_for_tests(
-            Arc::new(provider_catalog),
-            DEVELOPMENT_ENCRYPTION_KEY,
-        );
-        let state = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(data_state);
-        let frame_stream = stream! {
-            yield Ok::<Bytes, std::io::Error>(ndjson_frame(StreamFrame {
-                frame_type: StreamFrameType::Headers,
-                payload: StreamFramePayload::Headers {
-                    status_code: 200,
-                    headers: BTreeMap::from([(
-                        "content-type".to_string(),
-                        "text/event-stream".to_string(),
-                    )]),
-                    response_observation: None,
-                },
-            }));
-            yield Ok::<Bytes, std::io::Error>(ndjson_frame(StreamFrame {
-                frame_type: StreamFrameType::Data,
-                payload: StreamFramePayload::Data {
-                    chunk_b64: None,
-                    text: Some(": ping\n\n".to_string()),
-                },
-            }));
-            yield Ok::<Bytes, std::io::Error>(ndjson_frame(StreamFrame {
-                frame_type: StreamFrameType::Data,
-                payload: StreamFramePayload::Data {
-                    chunk_b64: None,
-                    text: Some(
-                        "event: future_event\ndata: {\"type\":\"future_event\",\"value\":1}\n\n"
-                            .to_string(),
-                    ),
-                },
-            }));
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            yield Ok::<Bytes, std::io::Error>(ndjson_frame(StreamFrame::eof()));
-        }
-        .boxed();
-        let response = tokio::time::timeout(
-            Duration::from_millis(300),
-            execute_stream_from_frame_stream_with_retry_scope(
-                &state,
-                plan,
-                "trace-anthropic-oauth-single-precommit",
-                &test_decision(),
-                "claude_chat_stream",
-                Some("claude_chat_stream_success".to_string()),
-                Some(json!({
-                    "request_id": request_id,
-                    "candidate_id": format!("candidate-{request_id}"),
-                    "candidate_index": 0,
-                    "retry_index": 0,
-                    "provider_api_format": "claude:messages",
-                    "client_api_format": "claude:messages"
-                })),
-                crate::clock::current_unix_ms(),
-                Instant::now(),
-                RequestStageTrace::from_env(),
-                true,
-                frame_stream,
-                true,
-                None,
-                None,
-                None,
-                None,
-            ),
-        )
-        .await
-        .expect("the committed OAuth prefetch must not be followed by another 750 ms wait")
-        .expect("frame stream execution should resolve");
-
-        assert!(response.is_some());
-    }
-
-    #[tokio::test]
-    async fn native_anthropic_embedded_auth_error_does_not_refresh_api_key() {
-        let upstream_hits = Arc::new(AtomicUsize::new(0));
-        let upstream_hits_for_server = Arc::clone(&upstream_hits);
-        let listener = crate::test_support::bind_loopback_listener()
-            .await
-            .expect("listener should bind");
-        let addr = listener.local_addr().expect("address should resolve");
-        let upstream_body = concat!(
-            "event: error\n",
-            "data: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid key\"}}\n\n",
-        );
-        let server = tokio::spawn(async move {
-            let app = Router::new().route(
-                "/v1/messages",
-                any(move || {
-                    let hits = Arc::clone(&upstream_hits_for_server);
-                    async move {
-                        hits.fetch_add(1, Ordering::SeqCst);
-                        (
-                            StatusCode::OK,
-                            [(header::CONTENT_TYPE, "text/event-stream")],
-                            upstream_body,
-                        )
-                    }
-                }),
-            );
-            axum::serve(listener, app)
-                .await
-                .expect("server should start");
-        });
-
-        let mut plan = native_anthropic_stream_plan("anthropic-embedded-api-key");
-        plan.url = format!("http://{addr}/v1/messages");
-        plan.provider_name = Some("claude_code".to_string());
-        plan.headers
-            .insert("x-api-key".to_string(), "invalid-api-key".to_string());
-        let repository = Arc::new(provider_catalog_for_stream_auth_plan(
-            &plan,
-            "claude_code",
-            "api_key",
-            None,
-        ));
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_provider_catalog_repository_for_tests(
-                    repository,
-                )
-                .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
-            );
-
-        let execution = execute_in_process_stream_with_oauth_retry(
-            &state,
-            &mut plan,
-            "trace-anthropic-embedded-api-key",
-            None,
-        )
-        .await
-        .expect("API-key error response should remain available");
-        let replayed = collect_direct_execution_body(execution)
-            .await
-            .expect("prefetched API-key error should replay");
-
-        assert_eq!(upstream_hits.load(Ordering::SeqCst), 1);
-        assert_eq!(replayed, upstream_body.as_bytes());
-        server.abort();
     }
 
     struct BlockingStreamingRequestCandidateRepository {
@@ -9511,731 +8715,6 @@ AiAttemptRetryScope,
             Some(summary),
             true
         ));
-    }
-
-    #[tokio::test]
-    async fn kiro_stream_summary_applies_prompt_cache_usage_from_original_request() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "system": [
-                {
-                    "type": "text",
-                    "text": "cacheable system ".repeat(600),
-                    "cache_control": {"type": "ephemeral"}
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "cacheable prompt ".repeat(1200),
-                            "cache_control": {"type": "ephemeral"}
-                        }
-                    ]
-                }
-            ]
-        });
-        let report_context = json!({
-            "original_request_body": request_body,
-            "kiro_simulated_cache_enabled": true,
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-cache-stream".into(),
-            candidate_id: Some("cand-kiro-cache-stream".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-cache-stream".into(),
-            endpoint_id: "endpoint-kiro-cache-stream".into(),
-            key_id: "key-kiro-cache-stream".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = test_state();
-
-        let mut first_summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 6_000,
-                output_tokens: 17,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&report_context),
-            &mut first_summary,
-        )
-        .await;
-        let first_usage = first_summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("first usage should exist");
-        assert!(first_usage.cache_creation_tokens > 0);
-        assert_eq!(first_usage.cache_read_tokens, 0);
-
-        let mut second_summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 6_000,
-                output_tokens: 19,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&report_context),
-            &mut second_summary,
-        )
-        .await;
-        let second_usage = second_summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("second usage should exist");
-        assert!(second_usage.cache_read_tokens > 0);
-        assert_eq!(second_usage.cache_creation_tokens, 0);
-        assert!(second_usage.input_tokens < 6_000);
-        assert_eq!(second_usage.output_tokens, 19);
-    }
-
-    #[tokio::test]
-    async fn kiro_stream_summary_reads_cached_prefix_within_prompt_cache_lookback_window() {
-        let first_request_body = json!({
-            "model": "claude-sonnet-4.6",
-            "messages": [{
-                "role": "user",
-                "content": [{
-                    "type": "text",
-                    "text": "shared first turn ".repeat(600),
-                    "cache_control": {"type": "ephemeral"}
-                }]
-            }]
-        });
-        let mut second_messages = vec![json!({
-            "role": "user",
-            "content": [{
-                "type": "text",
-                "text": "shared first turn ".repeat(600)
-            }]
-        })];
-        for index in 0..12 {
-            second_messages.push(json!({
-                "role": if index % 2 == 0 { "assistant" } else { "user" },
-                "content": format!("intermediate stream turn {index}")
-            }));
-        }
-        second_messages.push(json!({
-            "role": "user",
-            "content": [{
-                "type": "text",
-                "text": "new tail turn ".repeat(600),
-                "cache_control": {"type": "ephemeral"}
-            }]
-        }));
-        let second_request_body = json!({
-            "model": "claude-sonnet-4.6",
-            "messages": second_messages
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-cache-stream-long-tail".into(),
-            candidate_id: Some("cand-kiro-cache-stream-long-tail".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-cache-stream-long-tail".into(),
-            endpoint_id: "endpoint-kiro-cache-stream-long-tail".into(),
-            key_id: "key-kiro-cache-stream-long-tail".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-sonnet-4.6".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let first_report_context = json!({
-            "original_request_body": first_request_body,
-            "kiro_simulated_cache_enabled": true,
-        });
-        let second_report_context = json!({
-            "original_request_body": second_request_body,
-            "kiro_simulated_cache_enabled": true,
-        });
-        let state = test_state();
-
-        let mut first_summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 4_000,
-                output_tokens: 17,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&first_report_context),
-            &mut first_summary,
-        )
-        .await;
-        let first_usage = first_summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("first usage should exist");
-        assert!(first_usage.cache_creation_tokens > 0);
-        assert_eq!(first_usage.cache_read_tokens, 0);
-
-        let mut second_summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 8_000,
-                output_tokens: 19,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&second_report_context),
-            &mut second_summary,
-        )
-        .await;
-        let second_usage = second_summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("second usage should exist");
-        assert!(
-            second_usage.cache_read_tokens > 0,
-            "stream summary should reuse the far earlier cached prefix"
-        );
-        assert!(second_usage.cache_creation_tokens > 0);
-        assert_eq!(second_usage.output_tokens, 19);
-    }
-
-    #[tokio::test]
-    async fn kiro_stream_summary_seeds_input_tokens_without_cache_control() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "system": [
-                {
-                    "type": "text",
-                    "text": "non cacheable system ".repeat(400)
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "non cacheable prompt ".repeat(800)
-                        }
-                    ]
-                }
-            ]
-        });
-        let report_context = json!({
-            "original_request_body": request_body,
-            "kiro_simulated_cache_enabled": true,
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-non-cache".into(),
-            candidate_id: Some("cand-kiro-non-cache".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-non-cache".into(),
-            endpoint_id: "endpoint-kiro-non-cache".into(),
-            key_id: "key-kiro-non-cache".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = test_state();
-
-        let mut summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 0,
-                output_tokens: 13,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&report_context),
-            &mut summary,
-        )
-        .await;
-
-        let usage = summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("usage should exist");
-
-        assert!(usage.input_tokens > 0);
-        assert_eq!(usage.cache_creation_tokens, 0);
-        assert_eq!(usage.cache_read_tokens, 0);
-        assert_eq!(usage.output_tokens, 13);
-    }
-
-    #[tokio::test]
-    async fn kiro_stream_summary_bills_existing_cache_usage_when_input_is_zero() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "system": [
-                {
-                    "type": "text",
-                    "text": "cached system ".repeat(800)
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "cached prompt ".repeat(1400)
-                        }
-                    ]
-                }
-            ]
-        });
-        let report_context = json!({
-            "original_request_body": request_body,
-            "kiro_simulated_cache_enabled": true,
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-existing-cache".into(),
-            candidate_id: Some("cand-kiro-existing-cache".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-existing-cache".into(),
-            endpoint_id: "endpoint-kiro-existing-cache".into(),
-            key_id: "key-kiro-existing-cache".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = test_state();
-
-        let mut summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 0,
-                output_tokens: 23,
-                cache_read_tokens: 200,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&report_context),
-            &mut summary,
-        )
-        .await;
-
-        let usage = summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("usage should exist");
-
-        assert!(usage.input_tokens > 0);
-        assert_eq!(usage.cache_read_tokens, 200);
-        assert_eq!(usage.cache_creation_tokens, 0);
-        assert_eq!(usage.output_tokens, 23);
-    }
-
-    #[tokio::test]
-    async fn kiro_stream_summary_clears_cache_usage_when_simulated_cache_disabled() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "system": [
-                {
-                    "type": "text",
-                    "text": "disabled cache summary system ".repeat(800),
-                    "cache_control": {"type": "ephemeral"}
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "disabled cache summary prompt ".repeat(1400),
-                            "cache_control": {"type": "ephemeral"}
-                        }
-                    ]
-                }
-            ]
-        });
-        let report_context = json!({
-            "original_request_body": request_body,
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-summary-cache-disabled".into(),
-            candidate_id: Some("cand-kiro-summary-cache-disabled".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-summary-cache-disabled".into(),
-            endpoint_id: "endpoint-kiro-summary-cache-disabled".into(),
-            key_id: "key-kiro-summary-cache-disabled".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = test_state();
-
-        let mut summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 0,
-                output_tokens: 23,
-                cache_creation_tokens: 500,
-                cache_read_tokens: 700,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&report_context),
-            &mut summary,
-        )
-        .await;
-
-        let usage = summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("usage should exist");
-
-        assert!(usage.input_tokens > 0);
-        assert_eq!(usage.cache_creation_tokens, 0);
-        assert_eq!(usage.cache_read_tokens, 0);
-        assert_eq!(usage.output_tokens, 23);
-    }
-
-    #[tokio::test]
-    async fn kiro_stream_summary_does_not_subtract_cache_from_already_billed_input() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "cached history ".repeat(400),
-                            "cache_control": {"type": "ephemeral"}
-                        },
-                        {
-                            "type": "text",
-                            "text": "new user turn"
-                        }
-                    ]
-                }
-            ]
-        });
-        let report_context = json!({
-            "original_request_body": request_body,
-            "input_tokens": 24_770,
-            "cache_creation_input_tokens": 175,
-            "cache_read_input_tokens": 24_463,
-            "kiro_simulated_cache_enabled": true
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-billed-input".into(),
-            candidate_id: Some("cand-kiro-billed-input".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-billed-input".into(),
-            endpoint_id: "endpoint-kiro-billed-input".into(),
-            key_id: "key-kiro-billed-input".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = test_state();
-
-        let mut summary = Some(ExecutionStreamTerminalSummary {
-            standardized_usage: Some(StandardizedUsage {
-                input_tokens: 132,
-                output_tokens: 167,
-                cache_creation_tokens: 175,
-                cache_read_tokens: 24_463,
-                ..StandardizedUsage::new()
-            }),
-            ..ExecutionStreamTerminalSummary::default()
-        });
-
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            Some(&report_context),
-            &mut summary,
-        )
-        .await;
-
-        let usage = summary
-            .as_ref()
-            .and_then(|summary| summary.standardized_usage.as_ref())
-            .expect("usage should exist");
-
-        assert_eq!(usage.input_tokens, 132);
-        assert_eq!(usage.cache_creation_tokens, 175);
-        assert_eq!(usage.cache_read_tokens, 24_463);
-        assert_eq!(usage.output_tokens, 167);
-    }
-
-    #[tokio::test]
-    async fn kiro_report_context_seeds_input_tokens_from_original_request_body() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "system": [
-                {
-                    "type": "text",
-                    "text": "seeded system ".repeat(600)
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "seeded prompt ".repeat(1200)
-                        }
-                    ]
-                }
-            ]
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-seed".into(),
-            candidate_id: Some("cand-kiro-seed".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-seed".into(),
-            endpoint_id: "endpoint-kiro-seed".into(),
-            key_id: "key-kiro-seed".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let mut report_context = Some(json!({
-            "original_request_body": request_body,
-            "kiro_simulated_cache_enabled": true,
-        }));
-
-        super::seed_kiro_report_context_input_tokens(&plan, &mut report_context);
-
-        let input_tokens = report_context
-            .as_ref()
-            .and_then(|context| context.get("input_tokens"))
-            .and_then(Value::as_u64)
-            .expect("kiro input tokens should be seeded");
-        assert!(input_tokens > 0);
-    }
-
-    #[tokio::test]
-    async fn kiro_report_context_seeds_prompt_cache_usage_before_stream_rewrite() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "system": [
-                {
-                    "type": "text",
-                    "text": "cache seed system ".repeat(600),
-                    "cache_control": {"type": "ephemeral"}
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "cache seed prompt ".repeat(1200),
-                            "cache_control": {"type": "ephemeral"}
-                        }
-                    ]
-                }
-            ]
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-cache-seed".into(),
-            candidate_id: Some("cand-kiro-cache-seed".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-cache-seed".into(),
-            endpoint_id: "endpoint-kiro-cache-seed".into(),
-            key_id: "key-kiro-cache-seed".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let mut report_context = Some(json!({
-            "original_request_body": request_body,
-            "kiro_simulated_cache_enabled": true,
-        }));
-        let state = AppState::new().expect("gateway state should build");
-
-        super::seed_kiro_report_context_input_tokens(&plan, &mut report_context);
-        super::seed_kiro_report_context_prompt_cache_usage(&state, &plan, &mut report_context)
-            .await;
-
-        let context = report_context.as_ref().expect("context should exist");
-        assert!(context
-            .get("input_tokens")
-            .and_then(Value::as_u64)
-            .is_some_and(|value| value > 0));
-        assert!(context
-            .get("cache_creation_input_tokens")
-            .and_then(Value::as_u64)
-            .is_some_and(|value| value > 0));
-        assert_eq!(
-            context
-                .get("cache_read_input_tokens")
-                .and_then(Value::as_u64),
-            Some(0)
-        );
-    }
-
-    #[tokio::test]
-    async fn kiro_report_context_skips_prompt_cache_usage_when_disabled() {
-        let request_body = json!({
-            "model": "claude-opus-4-7",
-            "system": [
-                {
-                    "type": "text",
-                    "text": "disabled cache system ".repeat(600),
-                    "cache_control": {"type": "ephemeral"}
-                }
-            ],
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "disabled cache prompt ".repeat(1200),
-                            "cache_control": {"type": "ephemeral"}
-                        }
-                    ]
-                }
-            ]
-        });
-        let plan = ExecutionPlan {
-            request_id: "req-kiro-cache-disabled".into(),
-            candidate_id: Some("cand-kiro-cache-disabled".into()),
-            provider_name: Some("Kiro".into()),
-            provider_id: "provider-kiro-cache-disabled".into(),
-            endpoint_id: "endpoint-kiro-cache-disabled".into(),
-            key_id: "key-kiro-cache-disabled".into(),
-            method: "POST".into(),
-            url: "https://q.us-east-1.amazonaws.com/generateAssistantResponse?beta=true".into(),
-            headers: BTreeMap::new(),
-            content_type: Some("application/json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({"conversationState": {}})),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "claude:messages".into(),
-            model_name: Some("claude-opus-4-7".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let mut report_context = Some(json!({
-            "original_request_body": request_body,
-        }));
-        let state = AppState::new().expect("gateway state should build");
-
-        super::seed_kiro_report_context_input_tokens(&plan, &mut report_context);
-        super::seed_kiro_report_context_prompt_cache_usage(&state, &plan, &mut report_context)
-            .await;
-
-        let context = report_context.as_ref().expect("context should exist");
-        assert!(context
-            .get("input_tokens")
-            .and_then(Value::as_u64)
-            .is_some_and(|value| value > 0));
-        assert_eq!(context.get("cache_creation_input_tokens"), None);
-        assert_eq!(context.get("cache_read_input_tokens"), None);
     }
 
     #[test]
@@ -11609,282 +10088,6 @@ AiAttemptRetryScope,
             next_chunk.is_err(),
             "stream total_ms must not synthesize a keepalive, image failure, or close the response body"
         );
-    }
-
-    #[tokio::test]
-    async fn execute_stream_from_frame_stream_treats_windsurf_connect_trailer_error_as_failure() {
-        let usage_repository = Arc::new(InMemoryUsageReadRepository::default());
-        let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::default());
-        let state = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                    Arc::clone(&request_candidate_repository),
-                    Arc::clone(&usage_repository),
-                ),
-            )
-            .with_usage_runtime_for_tests(UsageRuntimeConfig {
-                enabled: true,
-                ..UsageRuntimeConfig::default()
-            });
-        let plan = ExecutionPlan {
-            request_id: "req-windsurf-connect-error".into(),
-            candidate_id: Some("cand-windsurf-connect-error".into()),
-            provider_name: Some("windsurf".into()),
-            provider_id: "provider-windsurf".into(),
-            endpoint_id: "endpoint-windsurf-chat".into(),
-            key_id: "key-windsurf".into(),
-            method: "POST".into(),
-            url: "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage?beta=true".into(),
-            headers: BTreeMap::from([
-                ("content-type".into(), "application/connect+json".into()),
-                ("accept".into(), "application/connect+json".into()),
-            ]),
-            content_type: Some("application/connect+json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({
-                "model": "claude-sonnet-4",
-                "messages": [],
-                "stream": true
-            })),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "openai:chat".into(),
-            model_name: Some("claude-sonnet-4".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = state.with_data_state_for_tests(
-            crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                Arc::clone(&request_candidate_repository),
-                Arc::clone(&usage_repository),
-            )
-            .with_provider_catalog_reader(Arc::new(provider_catalog_stop_429_for_plan(&plan)))
-            .with_encryption_key_for_tests("development-key"),
-        );
-        let trailer_error = connect_json_frame(
-            2,
-            br#"{"error":{"code":"resource_exhausted","message":"an internal error occurred"}}"#,
-        );
-        let trailer_error_b64 = base64::engine::general_purpose::STANDARD.encode(trailer_error);
-        let frame = format!(
-            "{{\"type\":\"data\",\"payload\":{{\"kind\":\"data\",\"chunk_b64\":\"{trailer_error_b64}\"}}}}\n"
-        );
-        let frame_stream = stream! {
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"application/connect+json\"}}}\n",
-            ));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from(frame));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n",
-            ));
-        }
-        .boxed();
-
-        let response = execute_stream_from_frame_stream(
-            &state,
-            plan,
-            "trace-windsurf-connect-error",
-            &test_decision(),
-            "claude_chat_stream",
-            Some("claude_chat_stream_success".to_string()),
-            Some(json!({
-                "request_id": "req-windsurf-connect-error",
-                "candidate_id": "cand-windsurf-connect-error",
-                "candidate_index": 0,
-                "retry_index": 0,
-                "provider_api_format": "openai:chat",
-                "client_api_format": "claude:messages",
-                "needs_conversion": true,
-                "has_envelope": true,
-                "envelope_name": "windsurf:GetChatMessage"
-            })),
-            crate::clock::current_unix_ms(),
-            Instant::now(),
-            RequestStageTrace::from_env(),
-            true,
-            frame_stream,
-            None,
-        )
-        .await
-        .expect("execution should succeed")
-        .expect("execution should return a client response");
-
-        let status = response.status();
-        let body = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("response body should read");
-        let body_json: Value =
-            serde_json::from_slice(&body).expect("response body should decode as json");
-        assert_eq!(status.as_u16(), 429);
-        assert_eq!(body_json["type"], json!("error"));
-        assert_eq!(body_json["error"]["type"], json!("rate_limit_error"));
-        assert_eq!(body_json["error"]["code"], json!("resource_exhausted"));
-        assert_eq!(
-            body_json["error"]["message"],
-            json!("an internal error occurred")
-        );
-
-        let candidates = tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                let candidates = request_candidate_repository
-                    .list_by_request_id("req-windsurf-connect-error")
-                    .await
-                    .expect("request candidates should read");
-                if candidates
-                    .first()
-                    .is_some_and(|candidate| candidate.status == RequestCandidateStatus::Failed)
-                {
-                    break candidates;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("candidate should be marked failed");
-        assert_eq!(candidates[0].status_code, Some(429));
-        assert_eq!(
-            candidates[0].error_type.as_deref(),
-            Some("resource_exhausted")
-        );
-    }
-
-    #[tokio::test]
-    async fn execute_stream_from_frame_stream_decodes_non_success_windsurf_connect_error_body() {
-        let usage_repository = Arc::new(InMemoryUsageReadRepository::default());
-        let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::default());
-        let state = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                    Arc::clone(&request_candidate_repository),
-                    Arc::clone(&usage_repository),
-                ),
-            )
-            .with_usage_runtime_for_tests(UsageRuntimeConfig {
-                enabled: true,
-                ..UsageRuntimeConfig::default()
-            });
-        let plan = ExecutionPlan {
-            request_id: "req-windsurf-connect-429".into(),
-            candidate_id: Some("cand-windsurf-connect-429".into()),
-            provider_name: Some("windsurf".into()),
-            provider_id: "provider-windsurf".into(),
-            endpoint_id: "endpoint-windsurf-chat".into(),
-            key_id: "key-windsurf".into(),
-            method: "POST".into(),
-            url: "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage?beta=true".into(),
-            headers: BTreeMap::from([
-                ("content-type".into(), "application/connect+json".into()),
-                ("accept".into(), "application/connect+json".into()),
-            ]),
-            content_type: Some("application/connect+json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({
-                "model": "claude-sonnet-4",
-                "messages": [],
-                "stream": true
-            })),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "openai:chat".into(),
-            model_name: Some("claude-sonnet-4".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = state.with_data_state_for_tests(
-            crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                Arc::clone(&request_candidate_repository),
-                Arc::clone(&usage_repository),
-            )
-            .with_provider_catalog_reader(Arc::new(provider_catalog_stop_429_for_plan(&plan)))
-            .with_encryption_key_for_tests("development-key"),
-        );
-        let connect_error = connect_json_frame(
-            2,
-            br#"{"error":{"code":"resource_exhausted","message":"quota exhausted"}}"#,
-        );
-        let connect_error_b64 = base64::engine::general_purpose::STANDARD.encode(connect_error);
-        let frame_stream = stream! {
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":429,\"headers\":{\"content-type\":\"application/connect+json\"}}}\n",
-            ));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from(format!(
-                "{{\"type\":\"data\",\"payload\":{{\"kind\":\"data\",\"chunk_b64\":\"{connect_error_b64}\"}}}}\n"
-            )));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n",
-            ));
-        }
-        .boxed();
-
-        let response = execute_stream_from_frame_stream(
-            &state,
-            plan,
-            "trace-windsurf-connect-429",
-            &test_decision(),
-            "claude_chat_stream",
-            Some("claude_chat_stream_success".to_string()),
-            Some(json!({
-                "request_id": "req-windsurf-connect-429",
-                "candidate_id": "cand-windsurf-connect-429",
-                "candidate_index": 0,
-                "retry_index": 0,
-                "provider_api_format": "openai:chat",
-                "client_api_format": "claude:messages",
-                "needs_conversion": true,
-                "has_envelope": true,
-                "envelope_name": "windsurf:GetChatMessage"
-            })),
-            crate::clock::current_unix_ms(),
-            Instant::now(),
-            RequestStageTrace::from_env(),
-            true,
-            frame_stream,
-            None,
-        )
-        .await
-        .expect("execution should succeed")
-        .expect("execution should return a client response");
-
-        assert_eq!(response.status().as_u16(), 429);
-        let body = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("response body should read");
-        let body_json: Value =
-            serde_json::from_slice(&body).expect("response body should decode as json");
-        assert_eq!(body_json["type"], json!("error"));
-        assert_eq!(body_json["error"]["type"], json!("rate_limit_error"));
-        assert_eq!(body_json["error"]["code"], json!("resource_exhausted"));
-        assert_eq!(body_json["error"]["message"], json!("quota exhausted"));
-
-        let record = tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if let Some(usage) = usage_repository
-                    .find_by_request_id("req-windsurf-connect-429")
-                    .await
-                    .expect("usage should read")
-                    .filter(|usage| usage.status == "failed")
-                {
-                    break usage;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("usage should be written");
-        assert_eq!(record.status_code, Some(429));
-        assert_eq!(
-            record
-                .response_body
-                .as_ref()
-                .and_then(|body| body.get("error"))
-                .and_then(|error| error.get("code")),
-            Some(&json!("resource_exhausted"))
-        );
-        assert!(record.response_body_ref.is_none());
     }
 
     #[tokio::test]

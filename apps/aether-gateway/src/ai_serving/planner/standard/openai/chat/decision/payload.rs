@@ -3,7 +3,7 @@ use crate::ai_serving::planner::common::OPENAI_CHAT_STREAM_PLAN_KIND;
 use crate::ai_serving::planner::decision_input::apply_provider_request_routing_policy_to_decision;
 use crate::ai_serving::planner::report_context::{
     build_local_execution_report_context, insert_native_client_envelope_name,
-    insert_provider_stream_event_api_format, LocalExecutionReportContextParts,
+    LocalExecutionReportContextParts,
 };
 use crate::ai_serving::planner::{
     build_ai_execution_decision_response, resolve_transport_request_encoding_policy,
@@ -76,7 +76,6 @@ pub(crate) async fn maybe_build_local_openai_chat_decision_payload_for_candidate
     let upstream_is_stream =
         crate::ai_serving::planner::common::resolve_upstream_is_stream_for_provider(
             resolved.transport.endpoint.config.as_ref(),
-            resolved.transport.provider.provider_type.as_str(),
             resolved.provider_api_format.as_str(),
             upstream_is_stream,
             false,
@@ -115,10 +114,6 @@ pub(crate) async fn maybe_build_local_openai_chat_decision_payload_for_candidate
         );
         insert_native_client_envelope_name(&mut extra_fields, envelope_name, parts.uri.path());
     }
-    insert_provider_stream_event_api_format(
-        &mut extra_fields,
-        resolved.transport.provider.provider_type.as_str(),
-    );
     if let Some(image_request_summary) = resolved.image_request_summary.as_ref() {
         extra_fields.insert("image_request".to_string(), image_request_summary.clone());
     }

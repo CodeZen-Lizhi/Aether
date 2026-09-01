@@ -49,10 +49,9 @@ mod tests {
 
     use aether_dispatch_core::DispatchCandidateRef;
     use aether_provider_transport::snapshot::{
-GatewayProviderTransportEndpoint,
-GatewayProviderTransportKey,
-GatewayProviderTransportProvider,
-};
+        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
+        GatewayProviderTransportProvider,
+    };
     use aether_scheduler_core::SchedulerMinimalCandidateSelectionCandidate;
 
     use super::dispatch_ref_for_local_candidate;
@@ -80,11 +79,14 @@ GatewayProviderTransportProvider,
                 provider_id: "provider-1".to_string(),
                 provider_name: "Provider 1".to_string(),
                 provider_type: "custom".to_string(),
+                provider_priority: 0,
                 endpoint_id: "endpoint-1".to_string(),
                 endpoint_api_format: "openai:chat".to_string(),
                 key_id: "key-1".to_string(),
                 key_name: "Key 1".to_string(),
                 key_auth_type: "api_key".to_string(),
+                key_internal_priority: 0,
+                key_global_priority_for_format: None,
                 key_capabilities: None,
                 model_id: "model-1".to_string(),
                 global_model_id: "global-model-1".to_string(),

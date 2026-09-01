@@ -3,7 +3,6 @@ mod api_keys;
 mod endpoints;
 mod health_access;
 mod models;
-mod pool;
 mod provider_ops;
 mod provider_query;
 mod provider_strategy;

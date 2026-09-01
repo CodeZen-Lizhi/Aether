@@ -892,7 +892,6 @@ impl ChatPiiRedactionRuntimeConfig {
     }
 }
 
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct MaskChatRequestOptions {
     /// This bit is derived from the selected provider configuration, never

@@ -74,7 +74,6 @@ async fn gateway_executes_gemini_chat_stream_via_local_decision_gate_with_local_
             provider_id: "provider-gemini-chat-local-stream-1".to_string(),
             provider_name: "gemini".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-gemini-chat-local-stream-1".to_string(),
             endpoint_api_format: "gemini:generate_content".to_string(),
@@ -88,8 +87,6 @@ async fn gateway_executes_gemini_chat_stream_via_local_decision_gate_with_local_
             key_api_formats: Some(vec!["gemini:generate_content".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"gemini:generate_content": 1})),
             model_id: "model-gemini-chat-local-stream-1".to_string(),
             global_model_id: "global-model-gemini-chat-local-stream-1".to_string(),
             global_model_name: "gemini-2.5-pro".to_string(),
@@ -119,7 +116,6 @@ async fn gateway_executes_gemini_chat_stream_via_local_decision_gate_with_local_
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -178,7 +174,6 @@ async fn gateway_executes_gemini_chat_stream_via_local_decision_gate_with_local_
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"gemini:generate_content": 1})),
             None,
             None,
             Some(serde_json::json!({"enabled": true, "node_id":"proxy-node-gemini-chat-stream"})),

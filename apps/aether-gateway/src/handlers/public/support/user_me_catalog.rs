@@ -13,9 +13,9 @@ use axum::{
 use serde_json::json;
 
 use super::{
-    build_auth_error_response, query_param_value,
-    resolve_authenticated_local_user, sanitize_public_model_config_for_user, AppState,
-    GatewayPublicRequestContext, USERS_ME_AVAILABLE_MODELS_FETCH_LIMIT,
+    build_auth_error_response, query_param_value, resolve_authenticated_local_user,
+    sanitize_public_model_config_for_user, AppState, GatewayPublicRequestContext,
+    USERS_ME_AVAILABLE_MODELS_FETCH_LIMIT,
 };
 
 const USERS_ME_MODEL_CATALOG_UNAVAILABLE_DETAIL: &str = "用户模型目录暂不可用";
@@ -342,11 +342,7 @@ pub(super) async fn handle_users_me_providers_get(
                 || allowed_provider_names.contains(&provider.provider_type.to_ascii_lowercase())
         });
     }
-    providers.sort_by(|left, right| {
-        left.provider_priority
-            .cmp(&right.provider_priority)
-            .then_with(|| left.name.cmp(&right.name))
-    });
+    providers.sort_by(|left, right| left.name.cmp(&right.name));
 
     let provider_ids = providers
         .iter()
@@ -432,7 +428,6 @@ pub(super) async fn handle_users_me_providers_get(
                 let provider_id = provider.id.clone();
                 let mut payload = json!({
                     "id": provider_id.clone(),
-                    "provider_priority": provider.provider_priority,
                     "endpoints": endpoints_by_provider.remove(&provider_id).unwrap_or_default(),
                     "models": models_by_provider.remove(&provider_id).unwrap_or_default(),
                 });

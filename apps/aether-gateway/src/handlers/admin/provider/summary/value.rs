@@ -70,9 +70,7 @@ pub(crate) fn build_admin_provider_summary_value(
         keys_by_endpoint.entry(endpoint.id.clone()).or_default();
     }
     for key in keys {
-        for api_format in
-            provider_key_effective_api_formats(key)
-        {
+        for api_format in provider_key_effective_api_formats(key) {
             if let Some(endpoint_id) = format_to_endpoint_id.get(&api_format) {
                 keys_by_endpoint
                     .entry(endpoint_id.clone())
@@ -183,8 +181,6 @@ pub(crate) fn build_admin_provider_summary_value(
         "provider_type": provider.provider_type.clone(),
         "description": provider.description.clone(),
         "website": provider.website.clone(),
-        "provider_priority": provider.provider_priority,
-        "keep_priority_on_conversion": provider.keep_priority_on_conversion,
         "enable_format_conversion": provider.enable_format_conversion,
         "is_active": provider.is_active,
         "billing_type": billing_type,
@@ -218,10 +214,6 @@ pub(crate) fn build_admin_provider_summary_value(
         "ops_architecture_id": ops_architecture_id,
         "kiro_simulated_cache_enabled": kiro_simulated_cache_enabled,
         "codex_cyber_flag_passthrough_enabled": codex_cyber_flag_passthrough_enabled(&provider.provider_type, provider.config.as_ref()),
-        "codex_fingerprint_convergence_enabled": crate::provider_transport::codex_fingerprint_convergence_enabled(
-            &provider.provider_type,
-            provider.config.as_ref(),
-        ),
         "responses_websocket_enabled": responses_websocket_adapter(&provider.provider_type, provider.config.as_ref()).is_some(),
         "ops_quota_alert_enabled": ops_quota_alert_enabled,
         "created_at": endpoint_timestamp_or_now(provider.created_at_unix_ms, now_unix_secs),

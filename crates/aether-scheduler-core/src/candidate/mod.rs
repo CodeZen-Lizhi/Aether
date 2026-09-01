@@ -44,7 +44,6 @@ mod tests {
             provider_id: format!("provider-{id}"),
             provider_name: format!("Provider {id}"),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: format!("endpoint-{id}"),
             endpoint_api_format: "openai:chat".to_string(),
@@ -58,8 +57,6 @@ mod tests {
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: Some(serde_json::json!({"cache_1h": true})),
-            key_internal_priority: 50,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 2})),
             model_id: format!("model-{id}"),
             global_model_id: format!("global-model-{id}"),
             global_model_name: "gpt-5".to_string(),
@@ -86,12 +83,12 @@ mod tests {
             provider_id: format!("provider-{id}"),
             provider_name: format!("Provider {id}"),
             provider_type: "openai".to_string(),
-            provider_priority: 0,
             endpoint_id: format!("endpoint-{id}"),
             endpoint_api_format: "openai:chat".to_string(),
             key_id: format!("key-{id}"),
             key_name: format!("key-{id}"),
             key_auth_type: "bearer".to_string(),
+            provider_priority: 0,
             key_internal_priority: 0,
             key_global_priority_for_format: None,
             key_capabilities: capabilities,
@@ -304,9 +301,7 @@ mod tests {
     #[test]
     fn enumeration_preserves_theoretical_candidate_order_without_final_sorting() {
         let mut later_priority = sample_row("1");
-        later_priority.provider_priority = 10;
         let mut earlier_priority = sample_row("2");
-        earlier_priority.provider_priority = 0;
 
         let candidates =
             super::enumerate_minimal_candidate_selection(EnumerateMinimalCandidateSelectionInput {
@@ -353,11 +348,9 @@ mod tests {
     fn requested_capability_priority_counts_missing_compatible_capabilities() {
         let mut missing_capability = sample_row("1");
         missing_capability.key_capabilities = Some(serde_json::json!({"cache_1h": false}));
-        missing_capability.provider_priority = 0;
 
         let mut matching_capability = sample_row("2");
         matching_capability.key_capabilities = Some(serde_json::json!({"cache_1h": true}));
-        matching_capability.provider_priority = 10;
 
         let required_capabilities = serde_json::json!({"cache_1h": true});
         let candidates =

@@ -15,11 +15,9 @@ use crate::maintenance::{
 };
 use crate::GatewayError;
 use aether_admin::system::{
-admin_proxy_node_event_node_id_from_path,
-admin_proxy_node_metrics_node_id_from_path,
-build_admin_proxy_node_payload,
-build_admin_proxy_nodes_data_unavailable_response,
-build_admin_proxy_nodes_not_found_response,
+    admin_proxy_node_event_node_id_from_path, admin_proxy_node_metrics_node_id_from_path,
+    build_admin_proxy_node_payload, build_admin_proxy_nodes_data_unavailable_response,
+    build_admin_proxy_nodes_not_found_response,
 };
 use aether_contracts::tunnel::{
     TUNNEL_RELAY_FORWARDED_BY_HEADER, TUNNEL_RELAY_OWNER_INSTANCE_HEADER,

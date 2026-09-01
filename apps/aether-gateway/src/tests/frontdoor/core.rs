@@ -203,8 +203,6 @@ async fn gateway_serves_frontend_routes_and_assets_without_shadowing_public_api(
     assert_eq!(payload["site_name"], "Aether");
     assert_eq!(payload["site_subtitle"], "AI Gateway");
 
-
-
     gateway_handle.abort();
     let _ = fs::remove_dir_all(&static_dir);
 }

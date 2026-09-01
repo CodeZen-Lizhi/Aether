@@ -20,9 +20,10 @@ use crate::ai_serving::planner::materialization_policy::{
     build_local_candidate_persistence_policy, LocalCandidatePersistencePolicyKind,
 };
 use crate::ai_serving::planner::spec_metadata::local_openai_image_spec_metadata;
-use crate::ai_serving::{request_candidate_api_formats,
-    resolve_local_decision_execution_runtime_auth_context, CandidateFailureDiagnostic,
-    ExecutionRuntimeAuthContext, GatewayControlDecision, PlannerAppState,
+use crate::ai_serving::{
+    request_candidate_api_formats, resolve_local_decision_execution_runtime_auth_context,
+    CandidateFailureDiagnostic, ExecutionRuntimeAuthContext, GatewayControlDecision,
+    PlannerAppState,
 };
 use crate::client_session_affinity::client_session_affinity_from_parts;
 use crate::clock::current_unix_secs;

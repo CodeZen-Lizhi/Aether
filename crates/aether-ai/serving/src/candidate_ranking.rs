@@ -11,6 +11,7 @@ pub enum AiRankingSchedulingMode {
     FixedOrder,
     CacheAffinity,
     LoadBalance,
+    Economy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +19,12 @@ pub struct AiRankingContextConfig {
     pub priority_mode: SchedulerPriorityMode,
     pub scheduling_mode: AiRankingSchedulingMode,
     pub load_balance_seed: u64,
+    /// P1-4: enable the in-flight count comparator (after health, before the
+    /// seeded hash). Defaults false — opt-in rollout.
+    pub include_inflight: bool,
+    /// P1-5: enable the latency EWMA comparator (after in-flight). Collection
+    /// can run with ranking disabled (observe-first rollout).
+    pub include_latency: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -100,6 +107,8 @@ pub fn ai_ranking_context(config: AiRankingContextConfig) -> SchedulerRankingCon
         priority_mode: config.priority_mode,
         ranking_mode: ai_ranking_mode(config.scheduling_mode),
         include_health: false,
+        include_inflight: false,
+        include_latency: false,
         load_balance_seed: config.load_balance_seed,
     }
 }
@@ -108,6 +117,7 @@ fn ai_ranking_mode(mode: AiRankingSchedulingMode) -> SchedulerRankingMode {
     match mode {
         AiRankingSchedulingMode::FixedOrder => SchedulerRankingMode::FixedOrder,
         AiRankingSchedulingMode::CacheAffinity => SchedulerRankingMode::CacheAffinity,
+        AiRankingSchedulingMode::Economy => SchedulerRankingMode::Economy,
         AiRankingSchedulingMode::LoadBalance => SchedulerRankingMode::LoadBalance,
     }
 }
@@ -237,6 +247,9 @@ mod tests {
                 format_preference: (0, 0),
                 health_bucket: None,
                 health_score: 1.0,
+                inflight_count: None,
+                latency_ewma_ms: None,
+                rate_multiplier: 1.0,
                 original_index,
             })
         }
@@ -246,6 +259,8 @@ mod tests {
                 priority_mode: SchedulerPriorityMode::Provider,
                 ranking_mode: self.ranking_mode,
                 include_health: false,
+                include_inflight: false,
+                include_latency: false,
                 load_balance_seed: 0,
             }
         }

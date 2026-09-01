@@ -12,8 +12,7 @@ use super::response::{
 };
 use crate::ai_serving::{
     maybe_build_sync_finalize_outcome, GatewayControlDecision,
-    ANTIGRAVITY_V1INTERNAL_ENVELOPE_NAME, GEMINI_CHAT_SYNC_FINALIZE_REPORT_KIND,
-    OPENAI_IMAGE_SYNC_FINALIZE_REPORT_KIND,
+    GEMINI_CHAT_SYNC_FINALIZE_REPORT_KIND, OPENAI_IMAGE_SYNC_FINALIZE_REPORT_KIND,
 };
 use crate::clock::{current_unix_ms, current_unix_secs};
 use crate::execution_runtime;
@@ -21,34 +20,14 @@ use crate::handlers::admin::provider::shared::model_test_capabilities::{
     admin_provider_model_supports_image_generation, admin_provider_model_test_capabilities_payload,
 };
 use crate::handlers::admin::request::{AdminAppState, AdminGatewayProviderTransportSnapshot};
-use crate::handlers::shared::provider_pool::{
-    admin_provider_pool_config_from_config_value, read_admin_provider_pool_runtime_state,
-    AdminProviderPoolConfig, AdminProviderPoolRuntimeState,
-};
 use crate::handlers::shared::{
     parse_catalog_auth_config_json, provider_key_health_summary,
     provider_key_status_snapshot_payload,
 };
 use crate::model_fetch::ModelFetchRuntimeState;
-use crate::provider_key_auth::{
-    provider_key_auth_semantics, provider_key_configured_api_formats,
-    provider_key_inherits_provider_api_formats,
-};
-use crate::provider_transport::antigravity::{
-    build_antigravity_safe_v1internal_request, build_antigravity_static_identity_headers,
-    classify_local_antigravity_request_support, AntigravityEnvelopeRequestType,
-    AntigravityRequestEnvelopeSupport, AntigravityRequestSideSupport,
-    AntigravityRequestSideUnsupportedReason,
-};
-use crate::provider_transport::kiro::{
-    build_kiro_generate_assistant_response_url, build_kiro_provider_headers,
-    build_kiro_provider_request_body, supports_local_kiro_request_transport_with_network,
-    KiroProviderHeadersInput, KIRO_ENVELOPE_NAME,
-};
+use crate::provider_key_auth::{provider_key_auth_semantics, provider_key_configured_api_formats};
 use crate::usage::GatewaySyncReportRequest;
 use crate::{AppState, GatewayError};
-use aether_admin::provider::pool as admin_provider_pool_pure;
-use aether_ai_serving::{};
 use aether_contracts::{ExecutionPlan, RequestBody};
 use aether_data_contracts::repository::candidate_selection::{
     StoredMinimalCandidateSelectionRow, StoredProviderModelMapping,
@@ -61,8 +40,7 @@ use aether_data_contracts::repository::provider_catalog::{
 };
 use aether_model_fetch::{
     aggregate_models_for_cache, fetch_models_from_transports, json_string_list,
-    model_catalog_upstream_metadata, preset_models_for_provider, selected_models_fetch_endpoints,
-    upstream_metadata_namespace_updates,
+    selected_models_fetch_endpoints, upstream_metadata_namespace_updates,
 };
 use axum::{
     body::{to_bytes, Body},
@@ -73,7 +51,6 @@ use axum::{
 use base64::Engine as _;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use uuid::Uuid;
 
 pub(crate) const ADMIN_PROVIDER_QUERY_LOCAL_TEST_MODEL_MESSAGE: &str =
@@ -89,9 +66,7 @@ const ADMIN_PROVIDER_QUERY_NO_ACTIVE_TEST_CANDIDATE_DETAIL: &str =
     "No active endpoint or API key found";
 const ADMIN_PROVIDER_QUERY_INVALID_MAPPED_MODEL_DETAIL: &str =
     "mapped_model_name is not valid for the selected model and endpoint";
-const ANTIGRAVITY_PROVIDER_CACHE_KEY_PREFIX: &str = "upstream_models_provider:";
 const DEFAULT_PROVIDER_QUERY_TEST_MESSAGE: &str = "Hello! This is a test message.";
-static PROVIDER_QUERY_POOL_LOAD_BALANCE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 struct ProviderQueryKeyFetchResult {
@@ -297,48 +272,6 @@ fn provider_query_attach_model_test_capabilities(
         .collect()
 }
 
-fn provider_query_codex_preset_fallback(
-    provider: &StoredProviderCatalogProvider,
-    fetch_error: &str,
-) -> Option<ProviderQueryKeyFetchResult> {
-    if !provider.provider_type.trim().eq_ignore_ascii_case("codex") {
-        return None;
-    }
-    let models = preset_models_for_provider(&provider.provider_type)?;
-    Some(ProviderQueryKeyFetchResult {
-        models: aggregate_models_for_cache(&models),
-        error: None,
-        warning: Some(format!(
-            "Codex 动态模型目录不可用，已使用内置模型卡：{fetch_error}"
-        )),
-        from_cache: false,
-        has_success: true,
-    })
-}
-
-async fn provider_query_persist_preset_models(
-    state: &AdminAppState<'_>,
-    provider: &StoredProviderCatalogProvider,
-    key: &StoredProviderCatalogKey,
-    models: &[Value],
-) -> Result<(), GatewayError> {
-    if models.is_empty() {
-        return Ok(());
-    }
-    <AppState as ModelFetchRuntimeState>::write_upstream_models_cache(
-        state.app(),
-        &provider.id,
-        &key.id,
-        models,
-    )
-    .await;
-    if let Some(catalog_metadata) = model_catalog_upstream_metadata(&provider.provider_type, models)
-    {
-        provider_query_persist_upstream_metadata(state, key, &catalog_metadata).await?;
-    }
-    Ok(())
-}
-
 async fn provider_query_persist_upstream_metadata(
     state: &AdminAppState<'_>,
     key: &StoredProviderCatalogKey,
@@ -400,92 +333,6 @@ async fn provider_query_read_cached_models(
     (!models.is_empty()).then_some(models)
 }
 
-async fn provider_query_read_provider_cached_models(
-    state: &AdminAppState<'_>,
-    provider_id: &str,
-) -> Option<Vec<Value>> {
-    let cache_key = format!("{ANTIGRAVITY_PROVIDER_CACHE_KEY_PREFIX}{provider_id}");
-    let raw = state.runtime_state().kv_get(&cache_key).await.ok()??;
-    let parsed = serde_json::from_str::<Vec<Value>>(&raw).ok()?;
-    let models = aggregate_models_for_cache(&parsed);
-    (!models.is_empty()).then_some(models)
-}
-
-async fn provider_query_write_provider_cached_models(
-    state: &AdminAppState<'_>,
-    provider_id: &str,
-    models: &[Value],
-) {
-    let models = aggregate_models_for_cache(models);
-    if models.is_empty() {
-        return;
-    }
-    let Ok(serialized) = serde_json::to_string(&models) else {
-        return;
-    };
-    let cache_key = format!("{ANTIGRAVITY_PROVIDER_CACHE_KEY_PREFIX}{provider_id}");
-    let _ = state
-        .runtime_state()
-        .kv_set(
-            &cache_key,
-            serialized,
-            Some(std::time::Duration::from_secs(
-                aether_model_fetch::model_fetch_interval_minutes().saturating_mul(60),
-            )),
-        )
-        .await;
-}
-
-fn provider_query_antigravity_tier_weight(raw_auth_config: Option<&str>) -> i32 {
-    raw_auth_config
-        .and_then(|value| serde_json::from_str::<Value>(value).ok())
-        .and_then(|value| value.get("tier").cloned())
-        .and_then(|value| value.as_str().map(ToOwned::to_owned))
-        .map(|tier| match tier.trim().to_ascii_lowercase().as_str() {
-            "ultra" => 3,
-            "pro" => 2,
-            "free" => 1,
-            _ => 0,
-        })
-        .unwrap_or(0)
-}
-
-async fn provider_query_sort_antigravity_keys(
-    state: &AdminAppState<'_>,
-    provider: &StoredProviderCatalogProvider,
-    endpoints: &[StoredProviderCatalogEndpoint],
-    keys: Vec<StoredProviderCatalogKey>,
-) -> Result<Vec<StoredProviderCatalogKey>, GatewayError> {
-    let mut ranked = Vec::new();
-    for key in keys {
-        let availability = if key.oauth_invalid_at_unix_secs.is_some() {
-            0
-        } else {
-            1
-        };
-        let tier_weight = if let Some(endpoint) = selected_models_fetch_endpoints(endpoints, &key)
-            .into_iter()
-            .next()
-        {
-            state
-                .app()
-                .read_provider_transport_snapshot(&provider.id, &endpoint.id, &key.id)
-                .await?
-                .map(|transport| {
-                    provider_query_antigravity_tier_weight(
-                        transport.key.decrypted_auth_config.as_deref(),
-                    )
-                })
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        ranked.push(((availability, tier_weight), key));
-    }
-    ranked.sort_by_key(|entry| std::cmp::Reverse(entry.0));
-    Ok(ranked.into_iter().map(|(_, key)| key).collect())
-}
-
 async fn provider_query_fetch_models_for_key(
     state: &AdminAppState<'_>,
     provider: &StoredProviderCatalogProvider,
@@ -510,18 +357,6 @@ async fn provider_query_fetch_models_for_key(
 
     let selected_endpoints = selected_models_fetch_endpoints(endpoints, key);
     if selected_endpoints.is_empty() {
-        if let Some(models) = preset_models_for_provider(&provider.provider_type) {
-            let models = aggregate_models_for_cache(&models);
-            provider_query_persist_preset_models(state, provider, key, &models).await?;
-            let models = provider_query_filter_models_for_key(provider, key, models);
-            return Ok(ProviderQueryKeyFetchResult {
-                models,
-                error: None,
-                warning: None,
-                from_cache: false,
-                has_success: true,
-            });
-        }
         return Ok(ProviderQueryKeyFetchResult {
             models: Vec::new(),
             error: Some(ADMIN_PROVIDER_QUERY_NO_ACTIVE_ENDPOINT_DETAIL.to_string()),
@@ -562,13 +397,6 @@ async fn provider_query_fetch_models_for_key(
         Ok(outcome) => outcome,
         Err(err) => {
             all_errors.push(err);
-            if let Some(fallback) =
-                provider_query_codex_preset_fallback(provider, &all_errors.join("; "))
-            {
-                provider_query_persist_preset_models(state, provider, key, &fallback.models)
-                    .await?;
-                return Ok(fallback);
-            }
             return Ok(ProviderQueryKeyFetchResult {
                 models: Vec::new(),
                 error: Some(all_errors.join("; ")),
@@ -592,15 +420,6 @@ async fn provider_query_fetch_models_for_key(
     }
     if let Some(upstream_metadata) = outcome.upstream_metadata.as_ref() {
         provider_query_persist_upstream_metadata(state, key, upstream_metadata).await?;
-    }
-
-    if unique_models.is_empty() && !all_errors.is_empty() {
-        if let Some(fallback) =
-            provider_query_codex_preset_fallback(provider, &all_errors.join("; "))
-        {
-            provider_query_persist_preset_models(state, provider, key, &fallback.models).await?;
-            return Ok(fallback);
-        }
     }
 
     let has_models = !unique_models.is_empty();
@@ -706,49 +525,12 @@ pub(crate) async fn build_admin_provider_query_models_response(
     }
     let query_key_count = query_keys.len();
 
-    if selected_key_ids.is_none()
-        && provider
-            .provider_type
-            .trim()
-            .eq_ignore_ascii_case("antigravity")
-        && !force_refresh
-    {
-        if let Some(models) = provider_query_read_provider_cached_models(state, &provider.id).await
-        {
-            let models = provider_query_attach_model_test_capabilities(&provider, models);
-            return Ok(Json(json!({
-                "success": !models.is_empty(),
-                "data": {
-                    "models": models,
-                    "error": serde_json::Value::Null,
-                    "warning": serde_json::Value::Null,
-                    "from_cache": true,
-                    "keys_total": query_key_count,
-                    "keys_cached": query_key_count,
-                    "keys_fetched": 0,
-                },
-                "provider": provider_query_provider_payload(&provider),
-            }))
-            .into_response());
-        }
-    }
-
-    let ordered_keys = if provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("antigravity")
-    {
-        provider_query_sort_antigravity_keys(state, &provider, &endpoints, query_keys).await?
-    } else {
-        query_keys
-    };
-
     let mut all_models = Vec::new();
     let mut all_errors = Vec::new();
     let mut all_warnings = Vec::new();
     let mut cache_hit_count = 0usize;
     let mut fetch_count = 0usize;
-    for key in &ordered_keys {
+    for key in &query_keys {
         let result =
             provider_query_fetch_models_for_key(state, &provider, &endpoints, key, force_refresh)
                 .await?;
@@ -772,26 +554,9 @@ pub(crate) async fn build_admin_provider_query_models_response(
         } else {
             fetch_count += 1;
         }
-        if provider
-            .provider_type
-            .trim()
-            .eq_ignore_ascii_case("antigravity")
-            && result.has_success
-        {
-            break;
-        }
     }
 
     let models = aggregate_models_for_cache(&all_models);
-    if selected_key_ids.is_none()
-        && provider
-            .provider_type
-            .trim()
-            .eq_ignore_ascii_case("antigravity")
-        && !models.is_empty()
-    {
-        provider_query_write_provider_cached_models(state, &provider.id, &models).await;
-    }
     let success = !models.is_empty();
     let mut all_issues = all_errors;
     all_issues.extend(all_warnings);

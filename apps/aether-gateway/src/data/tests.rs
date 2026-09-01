@@ -158,8 +158,6 @@ fn maintenance_pool_pressure_deferral_has_timeout() {
     assert!(stale_defer.is_none());
 }
 
-
-
 #[tokio::test]
 async fn data_state_find_uses_configured_read_repository() {
     let repository = Arc::new(InMemoryVideoTaskRepository::default());
@@ -215,8 +213,6 @@ async fn data_state_find_uses_configured_read_repository() {
 
     assert_eq!(task.expect("task should exist").id, "task-1");
 }
-
-
 
 #[tokio::test]
 async fn app_state_prepares_sqlite_database_startup() -> Result<(), Box<dyn std::error::Error>> {
@@ -367,7 +363,7 @@ async fn data_state_finds_active_provider_name_through_catalog_reader() {
         "openai".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(false, false, false, None, None, None, None, None, None);
+    .with_transport_fields(false, false, None, None, None, None, None, None);
     let state = GatewayDataState::with_provider_catalog_reader_for_tests(Arc::new(
         InMemoryProviderCatalogReadRepository::seed(vec![active, inactive], Vec::new(), Vec::new()),
     ));
@@ -518,16 +514,15 @@ fn sample_request_usage(request_id: &str) -> StoredRequestUsageAudit {
 fn sample_minimal_candidate_selection_row(
     provider_id: &str,
     provider_name: &str,
-    provider_priority: i32,
+    _provider_priority: i32,
     key_id: &str,
     key_name: &str,
-    key_internal_priority: i32,
+    _key_internal_priority: i32,
 ) -> StoredMinimalCandidateSelectionRow {
     StoredMinimalCandidateSelectionRow {
         provider_id: provider_id.to_string(),
         provider_name: provider_name.to_string(),
         provider_type: "custom".to_string(),
-        provider_priority,
         provider_is_active: true,
         endpoint_id: format!("endpoint-{provider_id}"),
         endpoint_api_format: "openai:chat".to_string(),
@@ -541,8 +536,6 @@ fn sample_minimal_candidate_selection_row(
         key_api_formats: Some(vec!["openai:chat".to_string()]),
         key_allowed_models: None,
         key_capabilities: Some(serde_json::json!({"cache_1h": true})),
-        key_internal_priority,
-        key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 3})),
         model_id: format!("model-{provider_id}"),
         global_model_id: "global-model-1".to_string(),
         global_model_name: "gpt-4.1".to_string(),
@@ -740,7 +733,6 @@ async fn data_state_reads_decrypted_provider_transport_snapshot() {
     let provider = sample_provider_catalog_provider().with_transport_fields(
         true,
         false,
-        true,
         Some(32),
         Some(3),
         Some(serde_json::json!({"url":"http://provider-proxy"})),
@@ -766,7 +758,6 @@ async fn data_state_reads_decrypted_provider_transport_snapshot() {
             encrypted_api_key,
             Some(encrypted_auth_config),
             Some(serde_json::json!({"openai:chat": 0.8})),
-            Some(serde_json::json!({"openai:chat": 1})),
             Some(serde_json::json!(["gpt-4.1", "gpt-4.1-mini"])),
             Some(1_800_000_000),
             Some(serde_json::json!({"node_id":"proxy-node-1"})),
@@ -826,7 +817,6 @@ async fn data_state_reads_minimal_candidate_selection_with_auth_filters() {
                 10,
             ),
             StoredMinimalCandidateSelectionRow {
-                key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 4})),
                 key_allowed_models: Some(vec!["gpt-4.1-edge".to_string()]),
                 ..sample_minimal_candidate_selection_row(
                     "provider-1",
