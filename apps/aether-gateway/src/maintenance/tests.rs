@@ -132,10 +132,8 @@ async fn gateway_provider_checkin_runs_local_query_balance_for_configured_provid
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_routing_fields(10)
         .with_transport_fields(
             true,
-            false,
             true,
             None,
             None,
@@ -262,10 +260,8 @@ async fn gateway_provider_checkin_counts_anyrouter_auto_signin_as_success() {
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_routing_fields(10)
         .with_transport_fields(
             true,
-            false,
             true,
             None,
             None,

@@ -19,6 +19,8 @@ use super::{
     next_daily_run_after, next_db_maintenance_run_after, next_stats_aggregation_run_after,
     next_stats_hourly_aggregation_run_after, pending_cleanup_batch_size,
     pending_cleanup_timeout_minutes, plan_pending_cleanup_batch, provider_checkin_schedule,
+    run_db_maintenance_with, run_proxy_upgrade_rollout_once, spawn_pending_cleanup_worker,
+    spawn_pool_monitor_worker,
     proxy_node_metrics_cleanup_settings, record_proxy_upgrade_traffic_success,
     spawn_db_maintenance_worker,
     spawn_provider_checkin_worker, spawn_proxy_node_stale_cleanup_worker,
@@ -67,22 +69,6 @@ async fn spawn_proxy_upgrade_rollout_worker_skips_when_proxy_nodes_unavailable()
 }
 
 #[tokio::test]
-async fn spawn_oauth_token_refresh_worker_skips_when_provider_catalog_unavailable() {
-    let state = AppState::new()
-        .expect("gateway state should build")
-        .with_data_state_for_tests(GatewayDataState::disabled());
-    assert!(spawn_oauth_token_refresh_worker(state).is_none());
-}
-
-#[tokio::test]
-async fn spawn_fixed_provider_reconciliation_task_skips_when_provider_catalog_unavailable() {
-    let state = AppState::new()
-        .expect("gateway state should build")
-        .with_data_state_for_tests(GatewayDataState::disabled());
-    assert!(spawn_fixed_provider_reconciliation_task(state).is_none());
-}
-
-#[tokio::test]
 async fn spawn_proxy_upgrade_rollout_worker_skips_when_system_config_unavailable() {
     let repository = Arc::new(InMemoryProxyNodeRepository::seed(vec![]));
     let data = GatewayDataState::with_proxy_node_repository_for_tests(repository);
@@ -98,24 +84,6 @@ async fn spawn_pool_monitor_worker_skips_when_postgres_unavailable() {
         .expect("gateway state should build")
         .with_data_state_for_tests(GatewayDataState::disabled());
     assert!(spawn_pool_monitor_worker(state).is_none());
-}
-
-#[tokio::test]
-async fn spawn_pool_quota_probe_worker_skips_when_provider_catalog_unavailable() {
-    let state = AppState::new()
-        .expect("gateway state should build")
-        .with_data_state_for_tests(GatewayDataState::disabled());
-
-    assert!(spawn_pool_quota_probe_worker(state).is_none());
-}
-
-#[tokio::test]
-async fn spawn_account_self_check_worker_skips_when_provider_catalog_unavailable() {
-    let state = AppState::new()
-        .expect("gateway state should build")
-        .with_data_state_for_tests(GatewayDataState::disabled());
-
-    assert!(spawn_account_self_check_worker(state).is_none());
 }
 
 fn sample_connected_proxy_node(

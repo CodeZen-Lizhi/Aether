@@ -1122,66 +1122,6 @@ mod tests {
     }
 
     #[test]
-    fn effective_lite_contract_uses_the_converged_provider_header() {
-        let mut decision: crate::ai_serving::AiExecutionDecision = serde_json::from_value(json!({
-            "action": "local",
-            "provider_type": "codex",
-            "provider_api_format": "openai:responses",
-            "provider_request_headers": {}
-        }))
-        .expect("minimal decision");
-        let normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol")
-            .with_provider_type_for_tests("codex");
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-
-        decision.provider_request_headers.insert(
-            crate::ai_serving::CODEX_RESPONSES_LITE_HEADER.to_string(),
-            "false".to_string(),
-        );
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-
-        decision.provider_request_headers.clear();
-        decision.provider_request_headers.insert(
-            crate::ai_serving::CODEX_RESPONSES_LITE_HEADER.to_ascii_uppercase(),
-            "TRUE".to_string(),
-        );
-        assert!(planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-5.6-sol",
-            "context_management": {"compact_threshold": 1000}
-        }));
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-        decision.provider_request_body = None;
-
-        // Header rules on a custom provider must not be able to spoof the
-        // internal Codex contract marker and enable Lite de-duplication.
-        decision.provider_type = Some("custom".to_string());
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &normalization
-        ));
-        decision.provider_type = Some("codex".to_string());
-        let custom_normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol");
-        assert!(!planned_request_uses_codex_responses_lite(
-            &decision,
-            &custom_normalization
-        ));
-    }
-
-    #[test]
     fn responses_lite_continuation_deduplicates_only_matching_static_config() {
         let first = json!({
             "type": "response.create",

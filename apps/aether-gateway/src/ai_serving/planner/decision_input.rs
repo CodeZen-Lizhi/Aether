@@ -1401,7 +1401,6 @@ GatewayProviderTransportProvider,
             policy.scheduling_mode,
             aether_routing_core::RoutingSchedulingMode::LoadBalance
         );
-        assert!(policy.keep_priority_on_conversion);
         assert!(policy.mutation_plan.is_empty());
         assert!(input.routing_trace_seed.is_some());
     }

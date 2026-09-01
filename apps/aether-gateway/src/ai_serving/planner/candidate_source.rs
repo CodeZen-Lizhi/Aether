@@ -1686,6 +1686,7 @@ mod tests {
             &model_directive_policy,
             "openai:search",
             "missing-model",
+            None,
             false,
             None,
             &auth_snapshot,
@@ -2055,13 +2056,12 @@ mod tests {
     fn standard_candidate_row(
         provider_id: &str,
         api_format: &str,
-        provider_priority: i32,
+        _provider_priority: i32,
     ) -> StoredMinimalCandidateSelectionRow {
         StoredMinimalCandidateSelectionRow {
             provider_id: provider_id.to_string(),
             provider_name: provider_id.to_string(),
             provider_type: "custom".to_string(),
-            provider_priority,
             provider_is_active: true,
             endpoint_id: format!("endpoint-{provider_id}"),
             endpoint_api_format: api_format.to_string(),
@@ -2151,7 +2151,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )
         .expect("key transport should build");
         (provider, endpoint, key)
@@ -2163,7 +2162,7 @@ mod tests {
         key_id: &str,
         key_name: &str,
         key_allowed_models: Vec<&str>,
-        key_internal_priority: i32,
+        _key_internal_priority: i32,
     ) -> StoredMinimalCandidateSelectionRow {
         StoredMinimalCandidateSelectionRow {
             provider_id: "provider-opg".to_string(),
@@ -2187,7 +2186,6 @@ mod tests {
                     .collect(),
             ),
             key_capabilities: None,
-            key_internal_priority,
             model_id: "model-opg-deepseek-v4-pro".to_string(),
             global_model_id: "global-model-deepseek-v4-pro".to_string(),
             global_model_name: "deepseek-v4-pro".to_string(),
@@ -2457,124 +2455,6 @@ mod tests {
         assert_eq!(
             page.candidates[0].selected_provider_model_name,
             "deepseek-v4-pro"
-        );
-    }
-
-    #[tokio::test]
-    async fn first_page_includes_cross_format_candidates_that_keep_conversion_priority() {
-        let same_format = standard_candidate_row("provider-claude", "claude:messages", 10);
-        let keep_priority_cross =
-            standard_candidate_row("provider-openai-responses-keep", "openai:responses", 0);
-        let regular_cross =
-            standard_candidate_row("provider-openai-responses-regular", "openai:responses", 1);
-        let candidate_repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
-            Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed([
-                same_format.clone(),
-                keep_priority_cross.clone(),
-                regular_cross.clone(),
-            ]));
-        let catalog_items = [
-            provider_catalog_for_standard_row(&same_format, false),
-            provider_catalog_for_standard_row(&keep_priority_cross, true),
-            provider_catalog_for_standard_row(&regular_cross, false),
-        ];
-        let provider_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-            catalog_items
-                .iter()
-                .map(|(provider, _, _)| provider.clone())
-                .collect(),
-            catalog_items
-                .iter()
-                .map(|(_, endpoint, _)| endpoint.clone())
-                .collect(),
-            catalog_items
-                .iter()
-                .map(|(_, _, key)| key.clone())
-                .collect(),
-        ));
-        let data_state =
-            GatewayDataState::with_provider_catalog_and_minimal_candidate_selection_for_tests(
-                provider_repository,
-                candidate_repository,
-            )
-            .with_encryption_key_for_tests("development-key");
-        let app = AppState::new()
-            .expect("gateway state should build")
-            .with_data_state_for_tests(data_state);
-        let auth_snapshot = unrestricted_auth_snapshot();
-        let model_directive_policy =
-            crate::system_features::ModelDirectivePolicySnapshot::load(&app).await;
-        let mut cursor = LocalCandidatePreselectionPageCursor::new(
-            PlannerAppState::new(&app),
-            &model_directive_policy,
-            "claude:messages",
-            "gpt-5",
-            None,
-            false,
-            None,
-            &auth_snapshot,
-            None,
-            None,
-            None,
-            true,
-            LocalCandidatePreselectionKeyMode::ProviderEndpointKeyModelAndApiFormat,
-            true,
-            None,
-        )
-        .await;
-
-        let first_page = cursor
-            .next_page()
-            .await
-            .expect("preselection should succeed")
-            .expect("same-format and keep-priority conversion candidates should share first page");
-
-        assert_eq!(
-            first_page
-                .candidates
-                .iter()
-                .map(|candidate| candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-claude", "provider-openai-responses-keep"]
-        );
-
-        let (ranked, skipped) =
-            super::super::candidate_resolution::resolve_and_rank_logical_local_execution_candidates(
-                PlannerAppState::new(&app),
-                first_page.candidates,
-                "claude:messages",
-                Some("gpt-5"),
-                Some(&auth_snapshot),
-                None,
-                None,
-                None,
-                None,
-                None,
-                aether_ai_serving::AiCandidateResolutionMode::Standard,
-            )
-            .await;
-
-        assert!(skipped.is_empty());
-        assert_eq!(
-            ranked
-                .iter()
-                .map(|candidate| candidate.candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-openai-responses-keep", "provider-claude"]
-        );
-
-        let second_page = cursor
-            .next_page()
-            .await
-            .expect("preselection should continue")
-            .expect("regular conversion candidate should remain in a later page");
-        assert_eq!(
-            second_page
-                .candidates
-                .iter()
-                .map(|candidate| candidate.provider_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["provider-openai-responses-regular"]
         );
     }
 

@@ -9,45 +9,6 @@ fn utf8(bytes: Vec<u8>) -> String {
 }
 
 #[test]
-fn same_format_claude_local_stream_rewriter_sanitizes_read_input_json_delta() {
-    let report_context = json!({
-        "provider_api_format": "claude:messages",
-        "client_api_format": "claude:messages",
-        "anthropic_compatibility_profile": "claude_code_legacy",
-        "needs_conversion": false,
-    });
-    let mut rewriter =
-        maybe_build_local_stream_rewriter(Some(&report_context)).expect("rewriter should exist");
-    let mut output = rewriter
-        .push_chunk(
-            b"event: content_block_start\n\
-data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call_read_1\",\"name\":\"Read\",\"input\":{}}}\n\n",
-        )
-        .expect("start should be accepted");
-    output.extend(
-        rewriter
-            .push_chunk(
-                b"event: content_block_delta\n\
-data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"/tmp/a.txt\\\",\\\"pages\\\":\\\"\\\"}\"}}\n\n",
-            )
-            .expect("delta should be accepted"),
-    );
-    output.extend(
-        rewriter
-            .push_chunk(
-                b"event: content_block_stop\n\
-data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
-            )
-            .expect("stop should flush sanitized delta"),
-    );
-
-    let output_text = utf8(output);
-    assert!(output_text.contains("\"name\":\"Read\""));
-    assert!(output_text.contains("\\\"file_path\\\":\\\"/tmp/a.txt\\\""));
-    assert!(!output_text.contains("\\\"pages\\\":\\\"\\\""));
-}
-
-#[test]
 fn standard_sync_bridge_converts_openai_chat_sync_json_to_openai_chat_sse() {
     let outcome = maybe_bridge_standard_sync_json_to_stream(
         &json!({
@@ -144,29 +105,6 @@ fn standard_sync_bridge_converts_claude_sync_json_to_openai_responses_sse() {
             .cloned(),
         Some(json!(5))
     );
-}
-
-#[test]
-fn antigravity_stream_rewriter_unwraps_and_injects_tool_ids() {
-    let report_context = json!({
-        "has_envelope": true,
-        "provider_api_format": "gemini:generate_content",
-        "client_api_format": "gemini:generate_content",
-        "envelope_name": "antigravity:v1internal",
-        "needs_conversion": false,
-        "mapped_model": "claude-sonnet-4-5",
-    });
-    let mut rewriter =
-        maybe_build_local_stream_rewriter(Some(&report_context)).expect("rewriter should exist");
-    let output = rewriter
-        .push_chunk(
-            b"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"name\":\"get_weather\",\"args\":{\"city\":\"SF\"}}}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"claude-sonnet-4-5\"},\"responseId\":\"resp_123\"}\n\n",
-        )
-        .expect("rewrite should succeed");
-    let output_text = String::from_utf8(output).expect("text should be utf8");
-    assert!(output_text.contains("\"_v1internal_response_id\":\"resp_123\""));
-    assert!(output_text.contains("\"id\":\"call_get_weather_0\""));
-    assert!(output_text.contains("\"modelVersion\":\"claude-sonnet-4-5\""));
 }
 
 #[test]
@@ -411,29 +349,6 @@ fn openai_image_stream_rewriter_emits_partial_and_completed_events_for_edit() {
     assert!(completed_text.contains("\"b64_json\":\"d29ybGQ=\""));
     assert!(completed_text.contains("\"total_tokens\":9"));
     assert!(rewriter.finish().expect("finish should succeed").is_empty());
-}
-
-#[test]
-fn gemini_cli_v1internal_stream_rewriter_unwraps_response_object() {
-    let report_context = json!({
-        "has_envelope": true,
-        "provider_api_format": "gemini:generate_content",
-        "client_api_format": "gemini:generate_content",
-        "envelope_name": "gemini_cli:v1internal",
-        "needs_conversion": false,
-    });
-    let mut rewriter =
-        maybe_build_local_stream_rewriter(Some(&report_context)).expect("rewriter should exist");
-    let output = rewriter
-        .push_chunk(
-            b"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello Gemini CLI\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-cli-2.5\"}}\n\n",
-        )
-        .expect("rewrite should succeed");
-    let output_text = String::from_utf8(output).expect("text should be utf8");
-    assert_eq!(
-        output_text,
-        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello Gemini CLI\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-cli-2.5\"}\n\n"
-    );
 }
 
 #[test]

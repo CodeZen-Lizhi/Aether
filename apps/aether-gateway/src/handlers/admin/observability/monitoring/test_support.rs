@@ -133,7 +133,7 @@ pub(super) fn sample_inactive_provider() -> StoredProviderCatalogProvider {
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(false, false, false, None, None, None, None, None, None)
+    .with_transport_fields(false, false, None, None, None, None, None, None)
 }
 
 pub(super) fn sample_endpoint() -> StoredProviderCatalogEndpoint {
@@ -233,7 +233,7 @@ pub(super) fn sample_monitoring_catalog_endpoint() -> StoredProviderCatalogEndpo
     sample_endpoint()
         .with_transport_fields(
             "https://api.openai.example/v1".to_string(),
-            false,
+            None,
             None,
             None,
             None,
@@ -255,7 +255,6 @@ pub(super) fn sample_monitoring_catalog_key() -> StoredProviderCatalogKey {
             .expect("provider key should encrypt"),
             None,
             Some(json!({"cache": 1.0})),
-            None,
             None,
             None,
             None,

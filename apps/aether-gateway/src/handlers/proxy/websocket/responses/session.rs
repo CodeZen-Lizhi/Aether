@@ -1784,10 +1784,6 @@ mod tests {
             "provider_request_headers": {}
         }))
         .expect("minimal Codex decision");
-        decision.provider_request_headers.insert(
-            crate::ai_serving::CODEX_RESPONSES_LITE_HEADER.to_string(),
-            "true".to_string(),
-        );
         let normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol")
             .with_provider_type_for_tests("codex");
 

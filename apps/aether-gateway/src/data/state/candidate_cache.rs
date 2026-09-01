@@ -1099,7 +1099,7 @@ mod tests {
         let _ = leader.await;
     }
 
-    fn sample_row(key_id: &str, key_internal_priority: i32) -> StoredMinimalCandidateSelectionRow {
+    fn sample_row(key_id: &str, _key_internal_priority: i32) -> StoredMinimalCandidateSelectionRow {
         StoredMinimalCandidateSelectionRow {
             provider_id: "provider-1".to_string(),
             provider_name: "provider".to_string(),
@@ -1117,7 +1117,6 @@ mod tests {
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority,
             model_id: "model-1".to_string(),
             global_model_id: "global-model-1".to_string(),
             global_model_name: "mock-model".to_string(),

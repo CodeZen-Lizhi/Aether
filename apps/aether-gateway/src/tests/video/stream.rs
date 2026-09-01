@@ -45,7 +45,7 @@ async fn gateway_executes_openai_video_content_from_reconstructed_data_task_with
         .with_transport_fields(
             true,
             false,
-            false,
+            None,
             Some(2),
             None,
             Some(20.0),
@@ -93,7 +93,6 @@ async fn gateway_executes_openai_video_content_from_reconstructed_data_task_with
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(json!({"openai:video": 1})),
             None,
             None,
             None,

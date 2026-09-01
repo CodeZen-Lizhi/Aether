@@ -778,8 +778,6 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
                 "openai:chat",
                 "sk-openai-routing-1234",
             );
-            primary_key.internal_priority = 30;
-            primary_key.global_priority_by_format = Some(json!({"openai:chat": 3}));
             primary_key.allowed_models = Some(json!(["gpt-5"]));
             primary_key.rpm_limit = None;
             primary_key.learned_rpm_limit = Some(77);
@@ -797,8 +795,6 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
                 "openai:chat",
                 "sk-alt-routing-5678",
             );
-            mapped_key.internal_priority = 10;
-            mapped_key.global_priority_by_format = Some(json!({"openai:chat": 1}));
             mapped_key.allowed_models = Some(json!(["gpt-5-upstream"]));
             mapped_key.rpm_limit = Some(120);
 
@@ -808,7 +804,6 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
                 "openai:chat",
                 "sk-unlinked-routing-9999",
             );
-            unlinked_key.internal_priority = 40;
             unlinked_key.allowed_models = Some(json!(["gpt-5-upstream-shadow"]));
 
             vec![primary_key, mapped_key, unlinked_key]

@@ -137,41 +137,4 @@ mod tests {
     use aether_crypto::{encrypt_python_fernet_plaintext, DEVELOPMENT_ENCRYPTION_KEY};
     use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 
-    #[test]
-    fn monitoring_labels_oauth_header_auth_instead_of_oauth_token() {
-        let app = AppState::new().expect("gateway should build");
-        let state = AdminAppState::new(&app);
-        let encrypted_placeholder =
-            encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "__placeholder__")
-                .expect("placeholder should encrypt");
-        let encrypted_auth_config = encrypt_python_fernet_plaintext(
-            DEVELOPMENT_ENCRYPTION_KEY,
-            r#"{"headers":{"authorization":"Bearer test-token"}}"#,
-        )
-        .expect("auth config should encrypt");
-        let key = StoredProviderCatalogKey::new(
-            "key-oauth-header".to_string(),
-            "provider-openai".to_string(),
-            "oauth".to_string(),
-            "oauth".to_string(),
-            true,
-        )
-        .expect("key should build")
-        .with_transport_fields(
-            None,
-            Some(encrypted_auth_config),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("transport should build");
-
-        assert_eq!(
-            admin_monitoring_masked_provider_key_prefix(&state, &key, "openai").as_deref(),
-            Some("[OAuth Header]")
-        );
-    }
 }

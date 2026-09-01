@@ -182,7 +182,7 @@ async fn gateway_handles_admin_system_stats_locally_with_trusted_admin_principal
         vec![
             sample_provider("provider-openai", "openai", 10),
             sample_provider("provider-anthropic", "anthropic", 20)
-                .with_transport_fields(false, false, false, None, None, None, None, None, None),
+                .with_transport_fields(false, false, None, None, None, None, None, None),
         ],
         vec![],
         vec![],

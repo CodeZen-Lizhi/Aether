@@ -1706,8 +1706,7 @@ fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_skipped
 
 async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_skipped_impl() {
     fn sample_auth_snapshot(api_key_id: &str, user_id: &str) -> StoredAuthApiKeySnapshot {
-        StoredAuthApiKeySnapshot::new(
-            user_id.to_string(),
+        StoredAuthApiKeySnapshot::new(user_id.to_string(),
             "alice".to_string(),
             Some("alice@example.com".to_string()),
             "user".to_string(),
@@ -1716,6 +1715,7 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             false,
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["gpt-5.4"])),
+            None,
             api_key_id.to_string(),
             Some("default".to_string()),
             true,
@@ -1726,6 +1726,7 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             Some(4_102_444_800),
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["gpt-5.4"])),
+            None,
         )
         .expect("auth snapshot should build")
     }
@@ -1829,7 +1830,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             None,
@@ -2150,7 +2150,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:responses": 1})),
             None,
             None,
             None,

@@ -1242,7 +1242,6 @@ mod tests {
             telemetry: None,
         }
     }
-    #[test]
     fn session_affinity() -> ClientSessionAffinity {
         ClientSessionAffinity::new(
             Some("generic".to_string()),
@@ -1297,7 +1296,7 @@ mod tests {
         .expect("endpoint should build")
         .with_transport_fields(
             "https://example.com/v1/chat/completions".to_string(),
-            false,
+            None,
             None,
             Some(2),
             None,
@@ -1323,7 +1322,6 @@ mod tests {
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(serde_json::json!({"openai:chat": 1})),
             None,
             None,
             None,

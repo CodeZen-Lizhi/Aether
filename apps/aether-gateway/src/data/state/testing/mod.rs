@@ -13,7 +13,7 @@ use super::{
     GeminiFileMappingWriteRepository, GlobalModelReadRepository, GlobalModelWriteRepository,
     ManagementTokenReadRepository, ManagementTokenWriteRepository,
     MinimalCandidateSelectionReadRepository, OAuthProviderReadRepository,
-    ProviderCatalogReadRepository, ProviderCatalogWriteRepository, ProviderQuotaReadRepository,
+    OAuthProviderWriteRepository, ProviderCatalogReadRepository, ProviderCatalogWriteRepository, ProviderQuotaReadRepository,
     ProviderQuotaWriteRepository, ProxyNodeReadRepository, ProxyNodeWriteRepository,
     RequestCandidateReadRepository, RequestCandidateWriteRepository, RoutingGroupReadRepository,
     RoutingGroupWriteRepository, SettlementWriteRepository, StoredSystemConfigEntry,

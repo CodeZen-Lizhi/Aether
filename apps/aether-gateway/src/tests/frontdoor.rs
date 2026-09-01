@@ -118,27 +118,27 @@ fn system_default_user_limit_snapshot(api_key_id: &str, user_id: &str) -> Stored
 }
 
 fn unrestricted_models_snapshot(api_key_id: &str, user_id: &str) -> StoredAuthApiKeySnapshot {
-    StoredAuthApiKeySnapshot::new(
-        user_id.to_string(),
-        "alice".to_string(),
-        Some("alice@example.com".to_string()),
-        "user".to_string(),
-        "local".to_string(),
-        true,
-        false,
-        None,
-        None,
-        api_key_id.to_string(),
-        Some("default".to_string()),
-        true,
-        false,
-        false,
-        Some(10),
-        Some(5),
-        Some(4_102_444_800),
-        None,
-        None,
-        None,
+    StoredAuthApiKeySnapshot::new(user_id.to_string(),
+"alice".to_string(),
+Some("alice@example.com".to_string()),
+"user".to_string(),
+"local".to_string(),
+true,
+false,
+None,
+None,
+None,
+api_key_id.to_string(),
+Some("default".to_string()),
+true,
+false,
+false,
+Some(10),
+Some(5),
+Some(4_102_444_800),
+None,
+None,
+None,
     )
     .expect("snapshot should build")
 }
@@ -151,7 +151,6 @@ fn sample_provider(id: &str, name: &str, priority: i32) -> StoredProviderCatalog
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_routing_fields(priority)
 }
 
 fn sample_endpoint(
@@ -256,13 +255,12 @@ fn sample_models_candidate_row(
     provider_name: &str,
     api_format: &str,
     global_model_name: &str,
-    provider_priority: i32,
+    _provider_priority: i32,
 ) -> StoredMinimalCandidateSelectionRow {
     StoredMinimalCandidateSelectionRow {
         provider_id: provider_id.to_string(),
         provider_name: provider_name.to_string(),
         provider_type: "custom".to_string(),
-        provider_priority,
         provider_is_active: true,
         endpoint_id: format!("endpoint-{provider_id}"),
         endpoint_api_format: api_format.to_string(),

@@ -2435,13 +2435,14 @@ mod tests {
             "provider-test".to_string(),
             "default".to_string(),
             "api_key".to_string(),
+            None,
             true,
         )
         .expect("key should build")
         .with_transport_fields(
             Some(json!(["openai:chat"])),
-            false,
             encrypted_api_key,
+            None,
             None,
             None,
             None,

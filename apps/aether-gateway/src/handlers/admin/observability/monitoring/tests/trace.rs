@@ -27,6 +27,7 @@ async fn admin_monitoring_trace_request_returns_local_payload() {
             RequestCandidateStatus::Pending,
             None,
             None,
+            None,
         ),
         sample_candidate(
             "cand-used",
@@ -326,7 +327,6 @@ async fn admin_monitoring_trace_request_returns_oauth_account_label_from_auth_co
                 encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, &auth_config)
                     .expect("auth config should encrypt"),
             ),
-            None,
             None,
             None,
             None,

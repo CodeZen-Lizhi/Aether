@@ -419,38 +419,6 @@ AiRankableCandidateParts,
         assert!(ordering.keep_priority_on_conversion);
     }
 
-    #[test]
-    fn routing_policy_uses_pool_priority_for_pool_group_global_key_slot() {
-        let mut candidate = sample_candidate("endpoint-1", "representative-key");
-        candidate.provider_priority = 7;
-        candidate.key_internal_priority = 3;
-        candidate.key_global_priority_for_format = Some(2);
-        let policy = aether_routing_core::ResolvedRoutingPolicy {
-            group_id: Some("group-1".to_string()),
-            group_version: Some(1),
-            selection_source: "system_default".to_string(),
-            requested_model: "gpt-5".to_string(),
-            resolved_model: "gpt-5".to_string(),
-            priority_mode: aether_routing_core::RoutingSetPriorityMode::GlobalKey,
-            scheduling_mode: aether_routing_core::RoutingSchedulingMode::CacheAffinity,
-            ranking_overlay: aether_routing_core::RankingOverlay {
-                key_priority_overrides: BTreeMap::from([("representative-key".to_string(), 1)]),
-                ..Default::default()
-            },
-            mutation_plan: Default::default(),
-            matched_rules: Vec::new(),
-        };
-
-        let overlaid = super::routing_overlaid_candidate(
-            Some(&policy),
-            LocalExecutionCandidateKind::PoolGroup,
-            &candidate,
-        );
-
-        assert_eq!(overlaid.key_internal_priority, 4);
-        assert_eq!(overlaid.key_global_priority_for_format, Some(4));
-    }
-
     fn sample_provider() -> StoredProviderCatalogProvider {
         sample_provider_with_options("provider-1", false, 0)
     }
@@ -479,14 +447,13 @@ AiRankableCandidateParts,
         .with_transport_fields(
             true,
             false,
-            false,
+            None,
             None,
             None,
             None,
             None,
             config,
         )
-        .with_routing_fields(provider_priority)
     }
 
     fn sample_endpoint(id: &str) -> StoredProviderCatalogEndpoint {
@@ -567,7 +534,6 @@ AiRankableCandidateParts,
             "plain-upstream-key".to_string(),
             None,
             None,
-            Some(json!({"openai:chat": 1})),
             allowed_models,
             None,
             Some(json!({

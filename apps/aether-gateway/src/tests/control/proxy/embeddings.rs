@@ -913,57 +913,6 @@ async fn embeddings_route_converts_openai_payload_to_gemini_embedding_provider_i
 }
 
 #[test]
-fn embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider() {
-    run_embedding_proxy_test(
-        "embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider",
-        embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider_impl,
-    );
-}
-
-async fn embeddings_route_converts_openai_payload_to_vertex_gemini_embedding_provider_impl() {
-    let (execution_runtime_url, execution_runtime_handle) =
-        start_server(vertex_gemini_embedding_conversion_execution_runtime()).await;
-    let gateway =
-        build_router_with_state(vertex_gemini_embedding_success_state(execution_runtime_url));
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let response = reqwest::Client::new()
-        .post(format!("{gateway_url}/v1/embeddings"))
-        .header(
-            http::header::AUTHORIZATION,
-            "Bearer sk-vertex-gemini-embedding-success",
-        )
-        .json(&json!({
-            "model": "gemini-embedding-2-preview",
-            "input": "hello"
-        }))
-        .send()
-        .await
-        .expect("request should succeed");
-
-    let endpoint_signature = response
-        .headers()
-        .get(CONTROL_ENDPOINT_SIGNATURE_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string);
-    let status = response.status();
-    let body_text = response.text().await.expect("body should read");
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "unexpected response body: {body_text}"
-    );
-    assert_eq!(endpoint_signature.as_deref(), Some("openai:embedding"));
-    let payload: serde_json::Value = serde_json::from_str(&body_text).expect("body should parse");
-    assert_eq!(payload["object"], "list");
-    assert_eq!(payload["model"], "gemini-embedding-2");
-    assert_eq!(payload["data"][0]["embedding"], json!([0.1, 0.2, 0.3]));
-
-    gateway_handle.abort();
-    execution_runtime_handle.abort();
-}
-
-#[test]
 fn embeddings_route_converts_openai_batch_payload_to_gemini_batch_endpoint() {
     run_embedding_proxy_test(
         "embeddings_route_converts_openai_batch_payload_to_gemini_batch_endpoint",

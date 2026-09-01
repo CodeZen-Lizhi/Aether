@@ -4314,6 +4314,89 @@ mod tests {
 
     const LOCAL_HTTP_SUCCESS_TIMEOUT_MS: u64 = 15_000;
 
+    struct TestEnvVarGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl Drop for TestEnvVarGuard {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn set_test_env_var(key: &'static str, value: &str) -> TestEnvVarGuard {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        TestEnvVarGuard { key, previous }
+    }
+
+    fn direct_reqwest_env_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("direct reqwest env lock")
+    }
+
+    fn tunnel_proxy_snapshot(base_url: String) -> ProxySnapshot {
+        ProxySnapshot {
+            enabled: Some(true),
+            mode: Some("tunnel".into()),
+            node_id: Some("node-1".into()),
+            label: Some("relay-node".into()),
+            url: None,
+            extra: Some(json!({"tunnel_base_url": base_url})),
+        }
+    }
+
+    fn manual_proxy_snapshot(node_id: &str) -> ProxySnapshot {
+        ProxySnapshot {
+            enabled: Some(true),
+            mode: Some("http".into()),
+            node_id: Some(node_id.to_string()),
+            label: Some("manual-proxy".into()),
+            url: Some("http://127.0.0.1:1".into()),
+            extra: None,
+        }
+    }
+
+    fn sample_manual_proxy_node(node_id: &str) -> StoredProxyNode {
+        StoredProxyNode::new(
+            node_id.to_string(),
+            "manual-proxy".to_string(),
+            "127.0.0.1".to_string(),
+            1,
+            true,
+            "online".to_string(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            false,
+            false,
+            0,
+        )
+        .expect("manual proxy node should build")
+        .with_manual_proxy_fields(Some("http://127.0.0.1:1".into()), None, None)
+    }
+
+    fn decode_relay_envelope(body: &[u8]) -> (serde_json::Value, Vec<u8>) {
+        assert!(
+            body.len() >= 4,
+            "relay body must contain meta length prefix"
+        );
+        let meta_len = u32::from_be_bytes([body[0], body[1], body[2], body[3]]) as usize;
+        let meta_end = 4 + meta_len;
+        let meta = serde_json::from_slice::<serde_json::Value>(&body[4..meta_end])
+            .expect("relay meta should decode");
+        (meta, body[meta_end..].to_vec())
+    }
+
     #[tokio::test]
     async fn execute_sync_plan_records_manual_proxy_success() {
         let repository = Arc::new(InMemoryProxyNodeRepository::seed(vec![

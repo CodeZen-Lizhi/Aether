@@ -52,7 +52,7 @@ fn sample_provider(provider_id: &str) -> StoredProviderCatalogProvider {
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(true, false, true, None, None, None, None, None, None)
+    .with_transport_fields(true, true, None, None, None, None, None, None)
 }
 
 fn sample_endpoint(
@@ -71,7 +71,7 @@ fn sample_endpoint(
     .expect("endpoint should build")
     .with_transport_fields(
         base_url.to_string(),
-            false,
+        None,
         None,
         None,
         None,
@@ -96,7 +96,6 @@ fn sample_key(provider_id: &str, key_id: &str) -> StoredProviderCatalogKey {
         Some(json!(["openai:chat"])),
         encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "live-secret-api-key")
             .expect("api key should encrypt"),
-        None,
         None,
         None,
         Some(json!(["gpt-4.1"])),

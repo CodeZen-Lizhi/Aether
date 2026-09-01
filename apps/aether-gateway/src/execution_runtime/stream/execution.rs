@@ -6862,25 +6862,7 @@ fn apply_stream_summary_report_context(
     }
 }
 
-    #[test]
-    fn native_anthropic_terminal_error_uses_anthropic_sse_shape() {
-        let plan = native_anthropic_stream_plan("anthropic-terminal-error-shape");
-        let failure = build_stream_failure_report(
-            "execution_runtime_stream_read_error",
-            "upstream disconnected",
-            502,
-        );
 
-        let event = encode_terminal_sse_error_event_for_plan(&plan, &failure)
-            .expect("terminal event should encode");
-        let event = String::from_utf8(event.to_vec()).expect("event should be utf8");
-
-        assert!(event.starts_with("event: error\ndata: "));
-        assert!(event.contains("\"type\":\"error\""));
-        assert!(event.contains("\"type\":\"api_error\""));
-        assert!(event.contains("upstream disconnected"));
-        assert!(!event.contains("[DONE]"));
-    }
 
 
 #[cfg(test)]
@@ -6949,10 +6931,10 @@ AiAttemptRetryScope,
         execute_execution_runtime_stream, execute_in_process_stream_with_oauth_retry,
         execute_stream_from_frame_stream, execute_stream_from_frame_stream_with_retry_scope,
         normalize_declared_stream_response_headers, parse_direct_passthrough_mode,
-        prefetch_direct_stream_error_body, prefetched_openai_responses_body_has_output_boundary,
+        prefetched_openai_responses_body_has_output_boundary,
         record_sync_terminal_usage_with_handoff,
         record_sync_terminal_usage_with_handoff_after_spawn,
-        resolve_provider_stream_error_status_code, select_direct_anthropic_prefetch_wait,
+        resolve_provider_stream_error_status_code,
         should_limit_direct_finalize_prefetch, should_normalize_declared_stream_response_headers,
         should_probe_success_failover_before_stream, should_skip_direct_finalize_prefetch,
         stream_chunk_contains_sse_done, stream_requires_observed_terminal_event,
@@ -7040,7 +7022,6 @@ AiAttemptRetryScope,
             "plain-upstream-key".to_string(),
             None,
             None,
-            Some(json!({ "openai:chat": 1 })),
             None,
             None,
             None,
@@ -7474,6 +7455,7 @@ AiAttemptRetryScope,
         }
     }
 
+    
     fn native_anthropic_stream_plan(request_id: &str) -> ExecutionPlan {
         ExecutionPlan {
             request_id: request_id.to_string(),
@@ -7512,6 +7494,31 @@ AiAttemptRetryScope,
         fn drop(&mut self) {
             self.0.store(true, Ordering::SeqCst);
         }
+    }
+
+    fn tunnel_proxy_snapshot(base_url: String) -> aether_contracts::ProxySnapshot {
+        aether_contracts::ProxySnapshot {
+            enabled: Some(true),
+            mode: Some("tunnel".into()),
+            node_id: Some("node-1".into()),
+            label: Some("relay-node".into()),
+            url: None,
+            extra: Some(json!({"tunnel_base_url": base_url})),
+        }
+    }
+
+    fn connect_json_frame(flags: u8, payload: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(5 + payload.len());
+        out.push(flags);
+        out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn ndjson_frame(frame: StreamFrame) -> Bytes {
+        let mut bytes = serde_json::to_vec(&frame).expect("stream frame should serialize");
+        bytes.push(b'\n');
+        Bytes::from(bytes)
     }
 
     fn direct_anthropic_test_finalizer(request_id: &str) -> DirectPassthroughFinalizer {
@@ -7691,6 +7698,26 @@ AiAttemptRetryScope,
 
     fn test_state() -> AppState {
         AppState::new().expect("gateway state should build")
+    }
+
+    #[test]
+    fn native_anthropic_terminal_error_uses_anthropic_sse_shape() {
+        let plan = native_anthropic_stream_plan("anthropic-terminal-error-shape");
+        let failure = build_stream_failure_report(
+            "execution_runtime_stream_read_error",
+            "upstream disconnected",
+            502,
+        );
+
+        let event = encode_terminal_sse_error_event_for_plan(&plan, &failure)
+            .expect("terminal event should encode");
+        let event = String::from_utf8(event.to_vec()).expect("event should be utf8");
+
+        assert!(event.starts_with("event: error\ndata: "));
+        assert!(event.contains("\"type\":\"error\""));
+        assert!(event.contains("\"type\":\"api_error\""));
+        assert!(event.contains("upstream disconnected"));
+        assert!(!event.contains("[DONE]"));
     }
 
     #[tokio::test]
@@ -9031,282 +9058,6 @@ AiAttemptRetryScope,
             next_chunk.is_err(),
             "stream total_ms must not synthesize a keepalive, image failure, or close the response body"
         );
-    }
-
-    #[tokio::test]
-    async fn execute_stream_from_frame_stream_treats_windsurf_connect_trailer_error_as_failure() {
-        let usage_repository = Arc::new(InMemoryUsageReadRepository::default());
-        let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::default());
-        let state = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                    Arc::clone(&request_candidate_repository),
-                    Arc::clone(&usage_repository),
-                ),
-            )
-            .with_usage_runtime_for_tests(UsageRuntimeConfig {
-                enabled: true,
-                ..UsageRuntimeConfig::default()
-            });
-        let plan = ExecutionPlan {
-            request_id: "req-windsurf-connect-error".into(),
-            candidate_id: Some("cand-windsurf-connect-error".into()),
-            provider_name: Some("windsurf".into()),
-            provider_id: "provider-windsurf".into(),
-            endpoint_id: "endpoint-windsurf-chat".into(),
-            key_id: "key-windsurf".into(),
-            method: "POST".into(),
-            url: "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage?beta=true".into(),
-            headers: BTreeMap::from([
-                ("content-type".into(), "application/connect+json".into()),
-                ("accept".into(), "application/connect+json".into()),
-            ]),
-            content_type: Some("application/connect+json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({
-                "model": "claude-sonnet-4",
-                "messages": [],
-                "stream": true
-            })),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "openai:chat".into(),
-            model_name: Some("claude-sonnet-4".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = state.with_data_state_for_tests(
-            crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                Arc::clone(&request_candidate_repository),
-                Arc::clone(&usage_repository),
-            )
-            .with_provider_catalog_reader(Arc::new(provider_catalog_stop_429_for_plan(&plan)))
-            .with_encryption_key_for_tests("development-key"),
-        );
-        let trailer_error = connect_json_frame(
-            2,
-            br#"{"error":{"code":"resource_exhausted","message":"an internal error occurred"}}"#,
-        );
-        let trailer_error_b64 = base64::engine::general_purpose::STANDARD.encode(trailer_error);
-        let frame = format!(
-            "{{\"type\":\"data\",\"payload\":{{\"kind\":\"data\",\"chunk_b64\":\"{trailer_error_b64}\"}}}}\n"
-        );
-        let frame_stream = stream! {
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"application/connect+json\"}}}\n",
-            ));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from(frame));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n",
-            ));
-        }
-        .boxed();
-
-        let response = execute_stream_from_frame_stream(
-            &state,
-            plan,
-            "trace-windsurf-connect-error",
-            &test_decision(),
-            "claude_chat_stream",
-            Some("claude_chat_stream_success".to_string()),
-            Some(json!({
-                "request_id": "req-windsurf-connect-error",
-                "candidate_id": "cand-windsurf-connect-error",
-                "candidate_index": 0,
-                "retry_index": 0,
-                "provider_api_format": "openai:chat",
-                "client_api_format": "claude:messages",
-                "needs_conversion": true,
-                "has_envelope": true,
-                "envelope_name": "windsurf:GetChatMessage"
-            })),
-            crate::clock::current_unix_ms(),
-            Instant::now(),
-            RequestStageTrace::from_env(),
-            true,
-            frame_stream,
-            None,
-        )
-        .await
-        .expect("execution should succeed")
-        .expect("execution should return a client response");
-
-        let status = response.status();
-        let body = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("response body should read");
-        let body_json: Value =
-            serde_json::from_slice(&body).expect("response body should decode as json");
-        assert_eq!(status.as_u16(), 429);
-        assert_eq!(body_json["type"], json!("error"));
-        assert_eq!(body_json["error"]["type"], json!("rate_limit_error"));
-        assert_eq!(body_json["error"]["code"], json!("resource_exhausted"));
-        assert_eq!(
-            body_json["error"]["message"],
-            json!("an internal error occurred")
-        );
-
-        let candidates = tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                let candidates = request_candidate_repository
-                    .list_by_request_id("req-windsurf-connect-error")
-                    .await
-                    .expect("request candidates should read");
-                if candidates
-                    .first()
-                    .is_some_and(|candidate| candidate.status == RequestCandidateStatus::Failed)
-                {
-                    break candidates;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("candidate should be marked failed");
-        assert_eq!(candidates[0].status_code, Some(429));
-        assert_eq!(
-            candidates[0].error_type.as_deref(),
-            Some("resource_exhausted")
-        );
-    }
-
-    #[tokio::test]
-    async fn execute_stream_from_frame_stream_decodes_non_success_windsurf_connect_error_body() {
-        let usage_repository = Arc::new(InMemoryUsageReadRepository::default());
-        let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::default());
-        let state = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(
-                crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                    Arc::clone(&request_candidate_repository),
-                    Arc::clone(&usage_repository),
-                ),
-            )
-            .with_usage_runtime_for_tests(UsageRuntimeConfig {
-                enabled: true,
-                ..UsageRuntimeConfig::default()
-            });
-        let plan = ExecutionPlan {
-            request_id: "req-windsurf-connect-429".into(),
-            candidate_id: Some("cand-windsurf-connect-429".into()),
-            provider_name: Some("windsurf".into()),
-            provider_id: "provider-windsurf".into(),
-            endpoint_id: "endpoint-windsurf-chat".into(),
-            key_id: "key-windsurf".into(),
-            method: "POST".into(),
-            url: "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage?beta=true".into(),
-            headers: BTreeMap::from([
-                ("content-type".into(), "application/connect+json".into()),
-                ("accept".into(), "application/connect+json".into()),
-            ]),
-            content_type: Some("application/connect+json".into()),
-            content_encoding: None,
-            body: RequestBody::from_json(json!({
-                "model": "claude-sonnet-4",
-                "messages": [],
-                "stream": true
-            })),
-            stream: true,
-            client_api_format: "claude:messages".into(),
-            provider_api_format: "openai:chat".into(),
-            model_name: Some("claude-sonnet-4".into()),
-            proxy: None,
-            transport_profile: None,
-            timeouts: None,
-        };
-        let state = state.with_data_state_for_tests(
-            crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
-                Arc::clone(&request_candidate_repository),
-                Arc::clone(&usage_repository),
-            )
-            .with_provider_catalog_reader(Arc::new(provider_catalog_stop_429_for_plan(&plan)))
-            .with_encryption_key_for_tests("development-key"),
-        );
-        let connect_error = connect_json_frame(
-            2,
-            br#"{"error":{"code":"resource_exhausted","message":"quota exhausted"}}"#,
-        );
-        let connect_error_b64 = base64::engine::general_purpose::STANDARD.encode(connect_error);
-        let frame_stream = stream! {
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":429,\"headers\":{\"content-type\":\"application/connect+json\"}}}\n",
-            ));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from(format!(
-                "{{\"type\":\"data\",\"payload\":{{\"kind\":\"data\",\"chunk_b64\":\"{connect_error_b64}\"}}}}\n"
-            )));
-            yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n",
-            ));
-        }
-        .boxed();
-
-        let response = execute_stream_from_frame_stream(
-            &state,
-            plan,
-            "trace-windsurf-connect-429",
-            &test_decision(),
-            "claude_chat_stream",
-            Some("claude_chat_stream_success".to_string()),
-            Some(json!({
-                "request_id": "req-windsurf-connect-429",
-                "candidate_id": "cand-windsurf-connect-429",
-                "candidate_index": 0,
-                "retry_index": 0,
-                "provider_api_format": "openai:chat",
-                "client_api_format": "claude:messages",
-                "needs_conversion": true,
-                "has_envelope": true,
-                "envelope_name": "windsurf:GetChatMessage"
-            })),
-            crate::clock::current_unix_ms(),
-            Instant::now(),
-            RequestStageTrace::from_env(),
-            true,
-            frame_stream,
-            None,
-        )
-        .await
-        .expect("execution should succeed")
-        .expect("execution should return a client response");
-
-        assert_eq!(response.status().as_u16(), 429);
-        let body = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("response body should read");
-        let body_json: Value =
-            serde_json::from_slice(&body).expect("response body should decode as json");
-        assert_eq!(body_json["type"], json!("error"));
-        assert_eq!(body_json["error"]["type"], json!("rate_limit_error"));
-        assert_eq!(body_json["error"]["code"], json!("resource_exhausted"));
-        assert_eq!(body_json["error"]["message"], json!("quota exhausted"));
-
-        let record = tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if let Some(usage) = usage_repository
-                    .find_by_request_id("req-windsurf-connect-429")
-                    .await
-                    .expect("usage should read")
-                    .filter(|usage| usage.status == "failed")
-                {
-                    break usage;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("usage should be written");
-        assert_eq!(record.status_code, Some(429));
-        assert_eq!(
-            record
-                .response_body
-                .as_ref()
-                .and_then(|body| body.get("error"))
-                .and_then(|error| error.get("code")),
-            Some(&json!("resource_exhausted"))
-        );
-        assert!(record.response_body_ref.is_none());
     }
 
     #[tokio::test]

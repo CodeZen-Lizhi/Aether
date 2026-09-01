@@ -1973,7 +1973,7 @@ async fn execute_execution_runtime_sync_impl(
                     key_id,
                     model_name,
                     candidate_index = candidate_index.as_str(),
-                    error = %err,
+                    error = ?err,
                     "gateway in-process sync execution unavailable"
                 );
                 let terminal_unix_secs = current_request_candidate_unix_ms();

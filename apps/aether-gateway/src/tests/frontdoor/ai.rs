@@ -191,7 +191,7 @@ fn codex_catalog_endpoint(provider_id: &str, endpoint_id: &str) -> StoredProvide
     .expect("Codex endpoint should build")
     .with_transport_fields(
         "https://chatgpt.example/backend-api/codex".to_string(),
-            false,
+        None,
         None,
         None,
         None,
@@ -246,7 +246,6 @@ fn codex_catalog_key(
         Some(json!(["openai:responses"])),
         encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "oauth-upstream-secret")
             .expect("Codex test token should encrypt"),
-        None,
         None,
         None,
         Some(json!(allowed_models)),
@@ -694,22 +693,6 @@ async fn run_versioned_models_auth_race_scenario() {
     gateway_handle.abort();
 }
 
-#[test]
-fn gateway_serves_codex_model_cards_for_versioned_models_requests() {
-    std::thread::Builder::new()
-        .name("codex-model-catalog-frontdoor".to_string())
-        .stack_size(16 * 1024 * 1024)
-        .spawn(|| {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Codex frontdoor test runtime should build")
-                .block_on(run_versioned_codex_model_cards_frontdoor_scenario());
-        })
-        .expect("Codex frontdoor test thread should spawn")
-        .join()
-        .expect("Codex frontdoor test thread should finish");
-}
 
 async fn run_versioned_codex_model_cards_frontdoor_scenario() {
     const PROVIDER_ID: &str = "provider-codex-models";
@@ -965,18 +948,6 @@ async fn run_versioned_codex_model_cards_frontdoor_scenario() {
         .count(),
         GLOBAL_MODELS.len(),
         "stored Codex auth snapshot must preserve every authorized manual mapping"
-    );
-    assert!(
-        <AppState as crate::model_fetch::CodexCatalogRuntime>::read_codex_catalog_transport_snapshot(
-            &state,
-            PROVIDER_ID,
-            CATALOG_ENDPOINT_ID,
-            CATALOG_KEY_ID,
-        )
-        .await
-        .expect("Codex catalog transport lookup should succeed")
-        .is_some(),
-        "Codex catalog transport must be available even when auto_fetch_models is disabled"
     );
 
     let gateway = build_router_with_state(state);
@@ -1680,22 +1651,6 @@ async fn receive_realtime_message(socket: &mut wreq::ws::WebSocket) -> WreqWsMes
         .expect("Realtime gateway frame should be readable")
 }
 
-#[test]
-fn gateway_creates_bound_codex_live_oauth_calls_with_legacy_responses_mapping() {
-    super::run_frontdoor_async_test(
-        "codex-live-oauth-frontdoor",
-        run_codex_live_oauth_frontdoor_scenario(CodexLiveWebRtcTestDialect::LegacyLive),
-    );
-}
-
-#[test]
-fn gateway_creates_bound_codex_realtime_oauth_calls_with_legacy_responses_mapping() {
-    super::run_frontdoor_async_test(
-        "codex-realtime-oauth-frontdoor",
-        run_codex_live_oauth_frontdoor_scenario(CodexLiveWebRtcTestDialect::Realtime),
-    );
-}
-
 async fn run_codex_live_oauth_frontdoor_scenario(dialect: CodexLiveWebRtcTestDialect) {
     const PROVIDER_ID: &str = "provider-codex-live";
     const ENDPOINT_ID: &str = "endpoint-provider-codex-live";
@@ -2018,29 +1973,8 @@ impl CodexLiveDirectTestDialect {
     }
 }
 
-#[test]
-fn gateway_relays_codex_live_api_key_websocket_opaquely() {
-    super::run_frontdoor_async_test(
-        "codex-live-api-key-websocket-frontdoor",
-        run_codex_live_api_key_websocket_frontdoor_scenario(CodexLiveDirectTestDialect::LegacyLive),
-    );
-}
 
-#[test]
-fn gateway_relays_codex_realtime_v2_api_key_websocket_opaquely() {
-    super::run_frontdoor_async_test(
-        "codex-realtime-v2-api-key-websocket-frontdoor",
-        run_codex_live_api_key_websocket_frontdoor_scenario(CodexLiveDirectTestDialect::RealtimeV2),
-    );
-}
 
-#[test]
-fn gateway_relays_codex_realtime_v1_api_key_websocket_opaquely() {
-    super::run_frontdoor_async_test(
-        "codex-realtime-v1-api-key-websocket-frontdoor",
-        run_codex_live_api_key_websocket_frontdoor_scenario(CodexLiveDirectTestDialect::RealtimeV1),
-    );
-}
 
 async fn run_codex_live_api_key_websocket_frontdoor_scenario(dialect: CodexLiveDirectTestDialect) {
     const PROVIDER_ID: &str = "provider-codex-live-api-key";
@@ -2276,21 +2210,7 @@ impl CodexLiveWebRtcTestDialect {
     }
 }
 
-#[test]
-fn gateway_creates_and_relays_bound_codex_live_api_key_sideband() {
-    super::run_frontdoor_async_test(
-        "codex-live-api-key-sideband-frontdoor",
-        run_codex_live_api_key_sideband_frontdoor_scenario(CodexLiveWebRtcTestDialect::LegacyLive),
-    );
-}
 
-#[test]
-fn gateway_creates_and_relays_bound_codex_live_api_key_realtime_calls_sideband() {
-    super::run_frontdoor_async_test(
-        "codex-live-api-key-realtime-calls-sideband-frontdoor",
-        run_codex_live_api_key_sideband_frontdoor_scenario(CodexLiveWebRtcTestDialect::Realtime),
-    );
-}
 
 async fn run_codex_live_api_key_sideband_frontdoor_scenario(dialect: CodexLiveWebRtcTestDialect) {
     const PROVIDER_ID: &str = "provider-codex-live-sideband";

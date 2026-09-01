@@ -348,6 +348,7 @@ mod tests {
             Some("endpoint-reporting-tests-123".to_string()),
             Some("key-reporting-tests-123".to_string()),
             RequestCandidateStatus::Pending,
+            None,
             false,
             None,
             None,
@@ -476,7 +477,6 @@ mod tests {
         .with_transport_fields(
             Some(json!(["openai:responses"])),
             "sk-codex-test".to_string(),
-            None,
             None,
             None,
             None,

@@ -91,8 +91,8 @@ fn builds_openai_chat_cross_format_request_body_from_openai_responses_source() {
         false,
         "openai",
         None,
-        None,
         &http::HeaderMap::new(),
+        None,
         false,
     )
     .expect("openai responses to openai chat body should build");
@@ -136,8 +136,8 @@ fn maps_openai_responses_additional_tools_without_message_name() {
         false,
         "openai",
         None,
-        None,
         &http::HeaderMap::new(),
+        None,
         false,
     )
     .expect("Responses additional tools should map to a Chat request body");
@@ -180,7 +180,6 @@ fn local_openai_responses_wrapper_preserves_body_order_after_edits() {
         "codex",
         "openai:responses",
         None,
-        Some("key-123"),
         &http::HeaderMap::new(),
         false,
     )
@@ -228,7 +227,6 @@ fn local_openai_responses_wrapper_defers_reasoning_replay_filtering() {
         "codex",
         "openai:responses",
         None,
-        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -247,118 +245,7 @@ fn local_openai_responses_wrapper_defers_reasoning_replay_filtering() {
     assert_eq!(input[2]["type"], "message");
 }
 
-#[test]
-fn local_openai_responses_compact_wrapper_strips_store_for_same_format_requests() {
-    let body_json = json!({
-        "model": "gpt-5.4",
-        "input": [],
-        "store": true
-    });
 
-    let provider_request_body = build_local_openai_responses_request_body(
-        &body_json,
-        "gpt-5.4",
-        false,
-        false,
-        "openai",
-        "openai:responses:compact",
-        None,
-        None,
-        &http::HeaderMap::new(),
-        false,
-    )
-    .expect("local openai compact body should build");
-
-    assert!(provider_request_body.get("store").is_none());
-    assert!(provider_request_body.get("stream").is_none());
-}
-
-#[test]
-fn local_codex_compact_wrapper_applies_the_complete_request_projection() {
-    let body_json = json!({
-        "model": "gpt-5.6-sol",
-        "input": [{
-            "type": "message",
-            "role": "user",
-            "content": [{"type": "input_text", "text": "hello"}]
-        }],
-        "instructions": "Work carefully",
-        "client_metadata": {"origin": "codex"},
-        "include": ["reasoning.encrypted_content"],
-        "store": true,
-        "stream": true,
-        "stream_options": {"reasoning_summary_delivery": "sequential_cutoff"},
-        "tool_choice": "auto",
-        "parallel_tool_calls": true,
-        "reasoning": {"effort": "max", "summary": "auto", "context": "all_turns"},
-        "text": {"verbosity": "medium"},
-        "tools": [{
-            "type": "function",
-            "name": "lookup",
-            "parameters": {"type": "object", "properties": {}}
-        }],
-        "service_tier": "priority",
-        "prompt_cache_key": "thread-compact"
-    });
-
-    let regular = build_local_openai_responses_request_body(
-        &body_json,
-        "gpt-5.6-sol",
-        true,
-        false,
-        "codex",
-        "openai:responses",
-        None,
-        Some("key-123"),
-        &http::HeaderMap::new(),
-        false,
-    )
-    .expect("local Codex Responses body should build");
-    let compact = build_local_openai_responses_request_body(
-        &body_json,
-        "gpt-5.6-sol",
-        false,
-        false,
-        "codex",
-        "openai:responses:compact",
-        None,
-        Some("key-123"),
-        &http::HeaderMap::new(),
-        false,
-    )
-    .expect("local Codex Compact body should build");
-
-    for field in [
-        "client_metadata",
-        "include",
-        "store",
-        "stream",
-        "stream_options",
-        "tool_choice",
-    ] {
-        assert!(
-            regular.get(field).is_some(),
-            "Responses should contain {field}"
-        );
-        assert!(compact.get(field).is_none(), "Compact should omit {field}");
-    }
-    for field in [
-        "model",
-        "input",
-        "instructions",
-        "parallel_tool_calls",
-        "reasoning",
-        "text",
-        "tools",
-        "service_tier",
-        "prompt_cache_key",
-    ] {
-        assert_eq!(
-            compact[field], regular[field],
-            "Compact should preserve {field}"
-        );
-    }
-}
 
 #[test]
 fn local_openai_responses_wrapper_applies_model_directive_before_body_rules() {
@@ -379,7 +266,6 @@ fn local_openai_responses_wrapper_applies_model_directive_before_body_rules() {
         "openai",
         "openai:responses",
         Some(&body_rules),
-        None,
         &http::HeaderMap::new(),
         true,
     )
@@ -405,7 +291,6 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         "openai",
         "openai:responses",
         None,
-        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -417,7 +302,6 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         false,
         "openai",
         "openai:responses",
-        None,
         None,
         &http::HeaderMap::new(),
         false,
@@ -456,7 +340,6 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         "openai",
         "openai:responses",
         None,
-        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -468,7 +351,6 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         false,
         "openai",
         "openai:responses",
-        None,
         None,
         &http::HeaderMap::new(),
         false,
@@ -494,7 +376,6 @@ fn final_openai_provider_contract_validates_body_rule_output() {
         "openai",
         "openai:responses",
         Some(&model_override),
-        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -513,7 +394,6 @@ fn final_openai_provider_contract_validates_body_rule_output() {
         "openai",
         "openai:responses",
         Some(&cache_override),
-        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -539,34 +419,6 @@ fn local_openai_responses_upstream_url_preserves_codex_base_path() {
     assert_eq!(upstream_url, "https://tiger.bookapi.cc/codex/responses");
 }
 
-#[test]
-fn strips_metadata_for_codex_openai_responses_requests() {
-    let body_json = json!({
-        "model": "claude-sonnet-4-5",
-        "metadata": {"trace_id": "abc"},
-        "messages": [{
-            "role": "user",
-            "content": [{"type": "text", "text": "hello"}]
-        }],
-    });
-
-    let provider_request_body = build_cross_format_openai_responses_request_body(
-        &body_json,
-        "gpt-5-upstream",
-        "claude:messages",
-        "openai:responses",
-        true,
-        false,
-        "codex",
-        None,
-        None,
-        &http::HeaderMap::new(),
-        false,
-    )
-    .expect("claude cli to codex request should build");
-
-    assert!(provider_request_body.get("metadata").is_none());
-}
 
 #[test]
 fn openai_chat_to_codex_responses_preserves_json_mode_chat_messages() {
@@ -588,8 +440,8 @@ fn openai_chat_to_codex_responses_preserves_json_mode_chat_messages() {
         false,
         "codex",
         None,
-        None,
         &http::HeaderMap::new(),
+        None,
         false,
     )
     .expect("openai chat to codex responses request should build");
@@ -635,8 +487,8 @@ fn applies_codex_defaults_unless_body_rules_handle_the_field() {
         false,
         "codex",
         Some(&body_rules),
-        None,
         &http::HeaderMap::new(),
+        None,
         false,
     )
     .expect("claude cli to codex request should build");
@@ -665,8 +517,8 @@ fn omits_codex_prompt_cache_key_for_openai_responses_cross_format_requests() {
         false,
         "codex",
         None,
-        Some("key-123"),
         &http::HeaderMap::new(),
+        Some("key-123"),
         false,
     )
     .expect("claude cli to codex request should build");

@@ -408,7 +408,7 @@ mod tests {
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, false, None, Some(3), None, None, None, config)
+        .with_transport_fields(true, false, None, Some(3), None, None, None, config)
     }
 
     fn sample_endpoint() -> StoredProviderCatalogEndpoint {
@@ -423,7 +423,7 @@ mod tests {
         .expect("endpoint should build")
         .with_transport_fields(
             "https://api.provider.example".to_string(),
-            false,
+            None,
             None,
             Some(2),
             None,
@@ -449,7 +449,6 @@ mod tests {
             "plain-upstream-key".to_string(),
             None,
             None,
-            Some(serde_json::json!({"openai:chat": 1})),
             None,
             None,
             None,

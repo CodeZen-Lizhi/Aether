@@ -266,6 +266,7 @@ async fn data_state_checks_user_uniqueness_through_user_reader() {
         None,
         None,
         true,
+        false,
         None,
         None,
     )
@@ -517,16 +518,15 @@ fn sample_request_usage(request_id: &str) -> StoredRequestUsageAudit {
 fn sample_minimal_candidate_selection_row(
     provider_id: &str,
     provider_name: &str,
-    provider_priority: i32,
+    _provider_priority: i32,
     key_id: &str,
     key_name: &str,
-    key_internal_priority: i32,
+    _key_internal_priority: i32,
 ) -> StoredMinimalCandidateSelectionRow {
     StoredMinimalCandidateSelectionRow {
         provider_id: provider_id.to_string(),
         provider_name: provider_name.to_string(),
         provider_type: "custom".to_string(),
-        provider_priority,
         provider_is_active: true,
         endpoint_id: format!("endpoint-{provider_id}"),
         endpoint_api_format: "openai:chat".to_string(),
@@ -540,7 +540,6 @@ fn sample_minimal_candidate_selection_row(
         key_api_formats: Some(vec!["openai:chat".to_string()]),
         key_allowed_models: None,
         key_capabilities: Some(serde_json::json!({"cache_1h": true})),
-        key_internal_priority,
         model_id: format!("model-{provider_id}"),
         global_model_id: "global-model-1".to_string(),
         global_model_name: "gpt-4.1".to_string(),
@@ -760,9 +759,9 @@ async fn data_state_reads_decrypted_provider_transport_snapshot() {
     let key = sample_provider_catalog_key()
         .with_transport_fields(
             Some(serde_json::json!(["openai:chat", "openai:responses"])),
+            encrypted_api_key,
             Some(encrypted_auth_config),
             Some(serde_json::json!({"openai:chat": 0.8})),
-            Some(serde_json::json!({"openai:chat": 1})),
             Some(serde_json::json!(["gpt-4.1", "gpt-4.1-mini"])),
             Some(1_800_000_000),
             Some(serde_json::json!({"node_id":"proxy-node-1"})),

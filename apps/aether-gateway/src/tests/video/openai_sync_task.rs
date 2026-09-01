@@ -48,7 +48,7 @@ async fn gateway_executes_openai_video_delete_via_reconstructed_data_backed_loca
         .with_transport_fields(
             true,
             false,
-            false,
+            None,
             Some(2),
             None,
             Some(20.0),
@@ -96,7 +96,6 @@ async fn gateway_executes_openai_video_delete_via_reconstructed_data_backed_loca
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(json!({"openai:video": 1})),
             None,
             None,
             None,

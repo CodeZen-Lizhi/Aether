@@ -97,9 +97,6 @@ async fn same_priority_candidates_are_distributed_by_affinity_key() {
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.provider_priority = 10;
-    first.key_internal_priority = 10;
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
     first.model_provider_model_name = "gpt-4.1-a".to_string();
     first.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-a".to_string(),
@@ -114,9 +111,6 @@ async fn same_priority_candidates_are_distributed_by_affinity_key() {
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.provider_priority = 10;
-    second.key_internal_priority = 10;
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
     second.model_provider_model_name = "gpt-4.1-b".to_string();
     second.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-b".to_string(),
@@ -187,15 +181,11 @@ async fn reuses_cached_scheduler_affinity_candidate_before_sorted_fallback() {
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
-
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
-
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
     ]));
@@ -251,15 +241,11 @@ async fn cached_affinity_candidate_cannot_use_reserved_provider_key_rpm_capacity
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
-
     let mut second = sample_row();
     second.provider_id = "provider-b".to_string();
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
-
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
         first, second,
     ]));

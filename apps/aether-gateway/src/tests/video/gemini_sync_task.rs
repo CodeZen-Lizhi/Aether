@@ -329,7 +329,7 @@ async fn gateway_executes_gemini_video_cancel_via_reconstructed_data_backed_loca
         .with_transport_fields(
             true,
             false,
-            false,
+            None,
             Some(2),
             None,
             Some(20.0),
@@ -377,7 +377,6 @@ async fn gateway_executes_gemini_video_cancel_via_reconstructed_data_backed_loca
                 .expect("api key should encrypt"),
             None,
             None,
-            Some(json!({"gemini:video": 1})),
             None,
             None,
             None,

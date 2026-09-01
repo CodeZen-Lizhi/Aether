@@ -138,6 +138,7 @@ pub(super) async fn issue_test_admin_access_token(
         session_id.clone(),
         user.id.clone(),
         client_device_id.to_string(),
+        None,
         crate::data::state::StoredUserSessionRecord::hash_refresh_token(&refresh_token),
         None,
         None,
@@ -183,7 +184,6 @@ pub(super) fn sample_provider(
         "custom".to_string(),
     )
     .expect("provider should build")
-    .with_routing_fields(priority)
 }
 
 pub(super) fn sample_proxy_node(node_id: &str) -> StoredProxyNode {
