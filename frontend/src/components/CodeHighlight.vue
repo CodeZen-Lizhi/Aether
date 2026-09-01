@@ -185,7 +185,7 @@ function highlightPlaceholders(html: string): string {
 
 .code-highlight :deep(.hljs-attr),
 .code-highlight :deep(.hljs-attribute) {
-  color: #c96442;
+  color: #2563eb;
   font-weight: 500;
 }
 

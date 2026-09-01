@@ -34,7 +34,7 @@ const buttonClass = computed(() => {
     'inline-flex items-center justify-center rounded-xl text-sm font-semibold transition-all duration-200 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]'
 
   const variantClasses = {
-    default: 'bg-primary text-white hover:bg-primary/90',
+    default: 'bg-primary text-white shadow-[0_8px_18px_rgba(37,99,235,0.16)] hover:bg-[#1d4ed8] hover:shadow-[0_6px_14px_rgba(29,78,216,0.2)]',
     destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/85',
     outline:
       'border border-border/60 bg-card/60 text-foreground hover:border-primary/60 hover:text-primary hover:bg-primary/10 backdrop-blur transition-all',

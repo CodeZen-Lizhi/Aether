@@ -8,25 +8,27 @@ const props = withDefaults(defineProps<Props>(), {
   class: undefined,
 })
 
+// 软底描边药丸：由原状态徽章油猴脚本（Aether Providers Light V3）融入。
+// primary/success=蓝（活跃/正常/启用）、secondary/outline=灰（停用/未配置）、
+// warning=琥珀（待处理/限速）、destructive=红（异常/失败/过期）。
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-none h-6 transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow-none',
   {
     variants: {
       variant: {
         default:
-          'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
+          'border-[#bfdbfe] bg-[#f5f9ff] text-[#1d4ed8] dark:border-[#1e40af]/40 dark:bg-[#1e3a8a]/25 dark:text-[#93c5fd]',
         secondary:
-          'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
+          'border-[#e2e8f0] bg-[#f8fafc] text-[#475569] dark:border-[#334155]/60 dark:bg-[#1e293b]/70 dark:text-[#cbd5e1]',
         destructive:
-          'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
+          'border-[#fecaca] bg-[#fef2f2] text-[#dc2626] dark:border-[#7f1d1d]/50 dark:bg-[#7f1d1d]/25 dark:text-[#fca5a5]',
         outline: 'text-foreground border-border bg-card/50',
         'outline-transparent': 'text-foreground border-border bg-transparent',
         success:
-          'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
+          'border-[#bfdbfe] bg-[#f5f9ff] text-[#1d4ed8] dark:border-[#1e40af]/40 dark:bg-[#1e3a8a]/25 dark:text-[#93c5fd]',
         warning:
-          'border-transparent bg-yellow-500 text-white hover:bg-yellow-600',
-        dark:
-          'border-transparent bg-foreground text-background hover:bg-foreground/80',
+          'border-[#fde68a] bg-[#fffbeb] text-[#b45309] dark:border-[#78350f]/50 dark:bg-[#78350f]/25 dark:text-[#fcd34d]',
+        dark: 'border-transparent bg-foreground text-background hover:bg-foreground/80',
       },
     },
     defaultVariants: {
