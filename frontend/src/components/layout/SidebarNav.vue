@@ -10,7 +10,7 @@
         :key="index"
         :class="[
           collapsed ? 'mb-1 space-y-0' : 'mb-5 space-y-1',
-          collapsed && index > 0 ? 'border-t border-[#3d3929]/10 pt-1 dark:border-white/10' : ''
+          collapsed && index > 0 ? 'border-t border-[#0f172a]/10 pt-1 dark:border-white/10' : ''
         ]"
         :data-sidebar-group-divider="collapsed && index > 0 ? '' : undefined"
       >

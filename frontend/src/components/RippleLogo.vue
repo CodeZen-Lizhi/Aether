@@ -27,7 +27,7 @@
             />
             <stop
               offset="50%"
-              stop-color="#d4a27f"
+              stop-color="#93c5fd"
             />
             <stop
               offset="100%"
@@ -167,7 +167,7 @@
           />
           <stop
             offset="50%"
-            stop-color="#d4a27f"
+            stop-color="#93c5fd"
           />
           <stop
             offset="100%"

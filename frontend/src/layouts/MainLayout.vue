@@ -67,7 +67,7 @@
           <button
             type="button"
             class="absolute top-1/2 z-10 flex h-8 w-8 shrink-0 -translate-y-1/2 transform-gpu items-center justify-center rounded-md text-muted-foreground transition-[right,color,background-color,opacity,transform] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none"
-            :class="sidebarCollapsed ? 'right-[15px] scale-90 opacity-0 will-change-[right,opacity,transform] group-hover/sidebar-brand:scale-100 group-hover/sidebar-brand:opacity-100 focus-visible:scale-100 focus-visible:bg-[#faf9f5] focus-visible:opacity-100 dark:focus-visible:bg-[#1e1c19]' : 'right-3 opacity-100'"
+            :class="sidebarCollapsed ? 'right-[15px] scale-90 opacity-0 will-change-[right,opacity,transform] group-hover/sidebar-brand:scale-100 group-hover/sidebar-brand:opacity-100 focus-visible:scale-100 focus-visible:bg-[#ffffff] focus-visible:opacity-100 dark:focus-visible:bg-[#0b1220]' : 'right-3 opacity-100'"
             :aria-label="sidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')"
             :aria-expanded="!sidebarCollapsed"
             :title="sidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')"
@@ -122,7 +122,7 @@
         >
           <div
             :key="sidebarCollapsed ? 'collapsed-footer' : 'expanded-footer'"
-            class="border-t border-[#3d3929]/5 dark:border-white/5"
+            class="border-t border-[#0f172a]/5 dark:border-white/5"
             :class="sidebarCollapsed ? 'max-w-16 p-2' : 'p-4'"
           >
             <div
@@ -134,7 +134,7 @@
                 :class="sidebarCollapsed ? 'justify-center' : 'gap-3'"
               >
                 <div
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black/5 bg-[#f0f0eb] text-xs font-bold text-[#3d3929] dark:bg-white/10 dark:text-[#d4a27f]"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black/5 bg-[#f0f0eb] text-xs font-bold text-[#0f172a] dark:bg-white/10 dark:text-[#93c5fd]"
                   :title="sidebarCollapsed ? authStore.user?.username : undefined"
                 >
                   {{ authStore.user?.username?.substring(0, 2).toUpperCase() }}
@@ -260,7 +260,7 @@
                       :to="item.href"
                       class="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
                       :class="isNavActive(item.href)
-                        ? 'bg-[#cc785c]/10 dark:bg-[#cc785c]/20 text-[#cc785c] dark:text-[#d4a27f]'
+                        ? 'bg-[#cc785c]/10 dark:bg-[#cc785c]/20 text-[#cc785c] dark:text-[#93c5fd]'
                         : 'text-[#666663] dark:text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-[#191919] dark:hover:text-white'"
                       @pointerenter="prefetchNavigationItem(item.href)"
                       @pointerdown="prefetchNavigationItem(item.href)"
@@ -281,7 +281,7 @@
               <div class="mt-4 pt-4 border-t border-[#cc785c]/10 dark:border-[rgba(227,224,211,0.12)]">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-8 h-8 rounded-full bg-[#f0f0eb] dark:bg-white/10 border border-black/5 flex items-center justify-center text-xs font-bold text-[#3d3929] dark:text-[#d4a27f] shrink-0">
+                    <div class="w-8 h-8 rounded-full bg-[#f0f0eb] dark:bg-white/10 border border-black/5 flex items-center justify-center text-xs font-bold text-[#0f172a] dark:text-[#93c5fd] shrink-0">
                       {{ authStore.user?.username?.substring(0, 2).toUpperCase() }}
                     </div>
                     <div class="flex flex-col min-w-0">
@@ -314,7 +314,7 @@
       </header>
 
       <!-- Desktop Page Header -->
-      <header class="hidden lg:flex h-16 px-8 items-center justify-between shrink-0 border-b border-[#3d3929]/5 dark:border-white/5 sticky top-0 z-40 backdrop-blur-md bg-[#faf9f5]/90 dark:bg-[#191714]/90">
+      <header class="hidden lg:flex h-16 px-8 items-center justify-between shrink-0 border-b border-[#0f172a]/5 dark:border-white/5 sticky top-0 z-40 backdrop-blur-md bg-[#ffffff]/90 dark:bg-[#0b1220]/90">
         <div class="flex flex-col gap-0.5">
           <div class="flex items-center gap-2 text-sm text-muted-foreground">
             <template
@@ -487,11 +487,11 @@ const breadcrumbs = computed(() => buildBreadcrumbs({
 // Styling Classes (Editorial)
 const sidebarClasses = computed(() => {
     const widthClass = sidebarCollapsed.value ? 'w-16' : 'w-[260px]'
-    return `${widthClass} flex-col hidden lg:flex border-r border-[#3d3929]/5 dark:border-white/5 bg-[#faf9f5] dark:bg-[#1e1c19] h-screen sticky top-0 transition-[width] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none`
+    return `${widthClass} flex-col hidden lg:flex border-r border-[#0f172a]/5 dark:border-white/5 bg-[#ffffff] dark:bg-[#0b1220] h-screen sticky top-0 transition-[width] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none`
 })
 
 const contentClasses = computed(() => {
-    return `flex-1 min-w-0 bg-[#faf9f5] dark:bg-[#191714] text-[#3d3929] dark:text-[#d4a27f]`
+    return `flex-1 min-w-0 bg-[#ffffff] dark:bg-[#0b1220] text-[#0f172a] dark:text-[#93c5fd]`
 })
 
 const mainClasses = computed(() => {

@@ -296,7 +296,7 @@ body[theme-mode='dark'] .code-highlight :deep(.hljs-string) {
 .dark .code-highlight :deep(.hljs-attribute),
 body[theme-mode='dark'] .code-highlight :deep(.hljs-attr),
 body[theme-mode='dark'] .code-highlight :deep(.hljs-attribute) {
-  color: #d4a27f;
+  color: #93c5fd;
   font-weight: 500;
 }
 
@@ -321,13 +321,13 @@ body[theme-mode='dark'] .code-highlight :deep(.hljs-comment) {
 .dark .code-highlight :deep(.hljs-title),
 body[theme-mode='dark'] .code-highlight :deep(.hljs-function),
 body[theme-mode='dark'] .code-highlight :deep(.hljs-title) {
-  color: #d4a27f;
+  color: #93c5fd;
   font-weight: 500;
 }
 
 .dark .code-highlight :deep(.hljs-section),
 body[theme-mode='dark'] .code-highlight :deep(.hljs-section) {
-  color: #d4a27f;
+  color: #93c5fd;
   font-weight: 500;
 }
 
