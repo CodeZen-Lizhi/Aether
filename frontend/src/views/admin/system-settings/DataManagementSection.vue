@@ -61,13 +61,6 @@
           @change="$emit('fileSelect', 'config', $event)"
         >
         <input
-          ref="usersFileInput"
-          type="file"
-          accept=".json"
-          class="hidden"
-          @change="$emit('fileSelect', 'users', $event)"
-        >
-        <input
           ref="aggregateFileInput"
           type="file"
           accept=".json"
@@ -125,7 +118,6 @@ import {
   Download,
   Upload,
   Settings,
-  Users,
   Database,
   Layers3,
   Trash2,
@@ -168,8 +160,6 @@ interface PurgeItem {
 const props = defineProps<{
   configExportLoading: boolean
   configImportLoading: boolean
-  usersExportLoading: boolean
-  usersImportLoading: boolean
   aggregateExportLoading: boolean
   aggregateImportLoading: boolean
 }>()
@@ -183,7 +173,6 @@ const { success, error } = useToast()
 const { confirmDanger } = useConfirm()
 const loadingKey = ref<string | null>(null)
 const configFileInput = ref<HTMLInputElement | null>(null)
-const usersFileInput = ref<HTMLInputElement | null>(null)
 const aggregateFileInput = ref<HTMLInputElement | null>(null)
 
 const dataItems = computed<DataItem[]>(() => [
@@ -196,16 +185,6 @@ const dataItems = computed<DataItem[]>(() => [
     icon: markRaw(Settings),
     exportLoading: props.configExportLoading,
     importLoading: props.configImportLoading,
-  },
-  {
-    key: 'users',
-    title: '用户数据',
-    description: '普通用户、用户组、API Keys 与钱包快照（不含管理员）',
-    exportLabel: '导出用户',
-    importLabel: '导入用户',
-    icon: markRaw(Users),
-    exportLoading: props.usersExportLoading,
-    importLoading: props.usersImportLoading,
   },
   {
     key: 'aggregate',
@@ -228,15 +207,6 @@ const purgeItems: PurgeItem[] = [
     icon: markRaw(Settings),
     confirmMessage: '确定要后台清空所有提供商配置吗？这将删除所有提供商、端点、API Key 和模型配置，操作不可逆。',
     action: () => adminApi.purgeConfig(),
-  },
-  {
-    key: 'users',
-    title: '清空用户',
-    description: '后台删除所有非管理员用户及其 API Keys',
-    buttonText: '清空用户',
-    icon: markRaw(Users),
-    confirmMessage: '确定要后台清空所有非管理员用户吗？管理员账户将被保留，操作不可逆。',
-    action: () => adminApi.purgeUsers(),
   },
   {
     key: 'usage',
@@ -279,8 +249,6 @@ const purgeItems: PurgeItem[] = [
 function triggerDataFileSelect(key: DataItemKey) {
   if (key === 'config') {
     configFileInput.value?.click()
-  } else if (key === 'users') {
-    usersFileInput.value?.click()
   } else {
     aggregateFileInput.value?.click()
   }

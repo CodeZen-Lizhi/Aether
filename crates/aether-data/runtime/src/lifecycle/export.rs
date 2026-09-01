@@ -120,10 +120,6 @@ const AUXILIARY_TABLES: &[AuxiliaryTable] = &[
         primary_key: &["id"],
     },
     AuxiliaryTable {
-        name: "pool_member_scores",
-        primary_key: &["id"],
-    },
-    AuxiliaryTable {
         name: "api_key_provider_mappings",
         primary_key: &["id"],
     },
@@ -158,22 +154,6 @@ const AUXILIARY_TABLES: &[AuxiliaryTable] = &[
     AuxiliaryTable {
         name: "proxy_node_metrics_1h",
         primary_key: &["node_id", "bucket_start_unix_secs"],
-    },
-    AuxiliaryTable {
-        name: "user_invite_codes",
-        primary_key: &["user_id"],
-    },
-    AuxiliaryTable {
-        name: "user_referrals",
-        primary_key: &["id"],
-    },
-    AuxiliaryTable {
-        name: "referral_rewards",
-        primary_key: &["id"],
-    },
-    AuxiliaryTable {
-        name: "payment_gateway_configs",
-        primary_key: &["provider"],
     },
     AuxiliaryTable {
         name: "billing_plans",

@@ -39,14 +39,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin:system",
             false,
         ))
-    } else if method == http::Method::GET && normalized_path == "/api/admin/system/users/export" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "users_export",
-            "admin:system",
-            false,
-        ))
     } else if method == http::Method::GET && normalized_path == "/api/admin/system/data/export" {
         Some(classified(
             "admin_proxy",
@@ -60,14 +52,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin_proxy",
             "system_manage",
             "config_import",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/users/import" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "users_import",
             "admin:system",
             false,
         ))
@@ -138,14 +122,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin_proxy",
             "system_manage",
             "purge_config",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/purge/users" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "purge_users",
             "admin:system",
             false,
         ))

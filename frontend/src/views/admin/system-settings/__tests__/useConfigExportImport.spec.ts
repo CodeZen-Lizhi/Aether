@@ -85,19 +85,7 @@ describe('useConfigExportImport file selection', () => {
     })
   })
 
-  it('accepts user and aggregate imports larger than the previous 500MB limit', async () => {
-    const usersState = useConfigExportImport(ref({ site_name: 'Aether' }))
-    const usersFile = makeSizedFile(
-      JSON.stringify({
-        version: '1.0',
-        users: [],
-      }),
-      501 * 1024 * 1024
-    )
-
-    usersState.handleUsersFileSelect(buildFileInputEvent(usersFile))
-    await vi.waitFor(() => expect(usersState.importUsersDialogOpen.value).toBe(true))
-
+  it('accepts aggregate imports larger than the previous 500MB limit', async () => {
     const aggregateState = useConfigExportImport(ref({ site_name: 'Aether' }))
     const aggregateFile = makeSizedFile(
       JSON.stringify({

@@ -92,9 +92,8 @@ use aether_data_contracts::repository::background_tasks::{
 use aether_data_contracts::repository::billing::{
     AdminBillingCollectorRecord, AdminBillingCollectorWriteInput, AdminBillingMutationOutcome,
     AdminBillingPresetApplyResult, AdminBillingRuleRecord, AdminBillingRuleWriteInput,
-    BillingPlanRecord, BillingPlanWriteInput, BillingReadRepository, PaymentGatewayConfigRecord,
-    PaymentGatewayConfigWriteInput, StoredBillingModelContext, UserDailyQuotaAvailabilityRecord,
-    UserPlanEntitlementRecord,
+    BillingPlanRecord, BillingPlanWriteInput, BillingReadRepository, StoredBillingModelContext,
+    UserDailyQuotaAvailabilityRecord, UserPlanEntitlementRecord,
 };
 use aether_data_contracts::repository::candidate_selection::{
     MinimalCandidateSelectionReadRepository, StoredApiFormatCandidateRowsQuery,
@@ -148,12 +147,6 @@ use aether_data_contracts::repository::video_tasks::{
     VideoTaskQueryFilter, VideoTaskReadRepository, VideoTaskStatusCount, VideoTaskWriteRepository,
 };
 use aether_runtime_state::RuntimeQueueStore;
-
-pub(crate) use self::referrals::{
-    ReferralAdminStats, ReferralMutationStatus, ReferralRelationshipListQuery,
-    ReferralRelationshipRecord, ReferralRewardConfig, ReferralRewardListQuery,
-    ReferralRewardRecord, ReferralUserDashboard,
-};
 
 #[derive(Clone, Default)]
 pub(crate) struct GatewayDataState {
@@ -384,7 +377,6 @@ mod integrations;
 mod models;
 mod pool_scores;
 mod provider_catalog_cache;
-mod referrals;
 mod request_candidate_cache;
 mod routing_group_cache;
 mod routing_profiles;

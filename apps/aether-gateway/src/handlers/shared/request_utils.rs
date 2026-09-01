@@ -256,7 +256,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("provider_oauth_manage"), http::Method::POST, Some("device_authorize"))
                 | (Some("provider_oauth_manage"), http::Method::POST, Some("device_poll"))
                 | (Some("system_manage"), http::Method::POST, Some("config_import"))
-                | (Some("system_manage"), http::Method::POST, Some("users_import"))
                 | (Some("system_manage"), http::Method::POST, Some("data_import"))
                 | (Some("system_manage"), http::Method::PUT, Some("config_set"))
                 | (Some("system_manage"), http::Method::PUT, Some("email_template_set"))
@@ -373,11 +372,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("pool_manage"), http::Method::PATCH, Some("batch_update_keys"))
                 | (Some("pool_manage"), http::Method::POST, Some("resolve_selection"))
                 | (Some("usage_manage"), http::Method::POST, Some("replay"))
-                | (Some("wallets_manage"), http::Method::POST, Some("adjust_balance"))
-                | (Some("wallets_manage"), http::Method::POST, Some("recharge_balance"))
-                | (Some("wallets_manage"), http::Method::POST, Some("process_refund"))
-                | (Some("wallets_manage"), http::Method::POST, Some("complete_refund"))
-                | (Some("wallets_manage"), http::Method::POST, Some("fail_refund"))
                 | (Some("gemini_files_manage"), http::Method::POST, Some("upload"))
                 | (Some("ldap_manage"), http::Method::PUT, Some("set_config"))
                 | (Some("ldap_manage"), http::Method::POST, Some("test_connection"))
@@ -483,23 +477,7 @@ pub(crate) fn public_support_local_requires_buffered_body(
                             | "api_key_install_session_create"
                             | "management_tokens_create",
                     ),
-                ) | (
-                    Some("wallet"),
-                    http::Method::POST,
-                    Some("create_refund" | "create_recharge_order" | "redeem"),
-                ) | (Some("billing"), http::Method::POST, Some("plan_checkout"),)
-                    | (
-                        Some("payment_callback"),
-                        http::Method::POST,
-                        Some(
-                            "callback"
-                                | "epay_notify"
-                                | "epay_return"
-                                | "alipay_notify"
-                                | "wxpay_notify"
-                                | "stripe_webhook",
-                        ),
-                    )
+                ),
             )
         })
 }

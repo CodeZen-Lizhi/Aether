@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AggregateImportRequest, ConfigImportRequest, UsersImportRequest } from '@/api/admin'
+import type { AggregateImportRequest, ConfigImportRequest } from '@/api/admin'
 
 const { postMock } = vi.hoisted(() => ({
   postMock: vi.fn(),
@@ -34,23 +34,6 @@ describe('adminApi system data import timeouts', () => {
 
     expect(postMock).toHaveBeenCalledWith(
       '/api/admin/system/config/import',
-      payload,
-      { timeout: SYSTEM_DATA_IMPORT_TIMEOUT_MS }
-    )
-  })
-
-  it('uses a long timeout for user imports', async () => {
-    const payload = {
-      version: '1',
-      exported_at: '2026-01-01T00:00:00.000Z',
-      users: [],
-      merge_mode: 'skip',
-    } satisfies UsersImportRequest
-
-    await adminApi.importUsers(payload)
-
-    expect(postMock).toHaveBeenCalledWith(
-      '/api/admin/system/users/import',
       payload,
       { timeout: SYSTEM_DATA_IMPORT_TIMEOUT_MS }
     )

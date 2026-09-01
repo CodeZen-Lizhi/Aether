@@ -38,8 +38,6 @@
             id="section-data-mgmt"
             :config-export-loading="exportLoading"
             :config-import-loading="importLoading"
-            :users-export-loading="exportUsersLoading"
-            :users-import-loading="importUsersLoading"
             :aggregate-export-loading="exportAggregateLoading"
             :aggregate-import-loading="importAggregateLoading"
             @export="handleDataExport"
@@ -182,23 +180,6 @@
       @update:merge-mode-select-open="mergeModeSelectOpen = $event"
     />
 
-    <!-- 用户数据导入对话框 -->
-    <UsersImportDialog
-      :import-users-dialog-open="importUsersDialogOpen"
-      :import-users-result-dialog-open="importUsersResultDialogOpen"
-      :import-users-preview="importUsersPreview"
-      :import-users-result="importUsersResult"
-      :users-merge-mode="usersMergeMode"
-      :users-merge-mode-select-open="usersMergeModeSelectOpen"
-      :import-users-loading="importUsersLoading"
-      :import-users-progress="importUsersProgress"
-      @confirm="confirmImportUsers"
-      @update:import-users-dialog-open="importUsersDialogOpen = $event"
-      @update:import-users-result-dialog-open="importUsersResultDialogOpen = $event"
-      @update:users-merge-mode="usersMergeMode = $event"
-      @update:users-merge-mode-select-open="usersMergeModeSelectOpen = $event"
-    />
-
     <!-- 完整备份导入对话框 -->
     <AggregateImportDialog
       :aggregate-import-dialog-open="aggregateImportDialogOpen"
@@ -239,7 +220,6 @@ import SystemInfoSection from './system-settings/SystemInfoSection.vue'
 
 // Dialog components
 import ConfigImportDialog from './system-settings/ConfigImportDialog.vue'
-import UsersImportDialog from './system-settings/UsersImportDialog.vue'
 import AggregateImportDialog from './system-settings/AggregateImportDialog.vue'
 
 // TOC 目录导航
@@ -341,18 +321,6 @@ const {
   handleExportConfig,
   handleConfigFileSelect,
   confirmImport,
-  exportUsersLoading,
-  importUsersLoading,
-  importUsersDialogOpen,
-  importUsersResultDialogOpen,
-  importUsersPreview,
-  importUsersResult,
-  usersMergeMode,
-  usersMergeModeSelectOpen,
-  importUsersProgress,
-  handleExportUsers,
-  handleUsersFileSelect,
-  confirmImportUsers,
   exportAggregateLoading,
   importAggregateLoading,
   aggregateImportDialogOpen,
@@ -367,13 +335,11 @@ const {
   confirmImportAggregate,
 } = useConfigExportImport(systemConfig)
 
-type DataManagementKind = 'config' | 'users' | 'aggregate'
+type DataManagementKind = 'config' | 'aggregate'
 
 function handleDataExport(kind: DataManagementKind) {
   if (kind === 'config') {
     handleExportConfig()
-  } else if (kind === 'users') {
-    handleExportUsers()
   } else {
     handleExportAggregate()
   }
@@ -382,8 +348,6 @@ function handleDataExport(kind: DataManagementKind) {
 function handleDataFileSelect(kind: DataManagementKind, event: Event) {
   if (kind === 'config') {
     handleConfigFileSelect(event)
-  } else if (kind === 'users') {
-    handleUsersFileSelect(event)
   } else {
     handleAggregateFileSelect(event)
   }

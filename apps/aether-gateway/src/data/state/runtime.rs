@@ -15,7 +15,7 @@ use super::{
     DatabaseMaintenanceSummary, DecisionTrace, DeleteAdminRedeemCodeBatchInput,
     DisableAdminRedeemCodeBatchInput, DisableAdminRedeemCodeInput, FailAdminWalletRefundInput,
     GatewayDataState, GatewayProviderTransportSnapshot, LocalVideoTaskReadResponse,
-    PaymentGatewayConfigRecord, PaymentGatewayConfigWriteInput, ProcessAdminWalletRefundInput,
+    ProcessAdminWalletRefundInput,
     ProcessPaymentCallbackInput, ProcessPaymentCallbackOutcome, RedeemWalletCodeInput,
     RedeemWalletCodeOutcome, RequestAuditBundle, RequestCandidateTrace, StoredAdminAuditLogPage,
     StoredAdminPaymentCallbackPage, StoredAdminPaymentOrder, StoredAdminPaymentOrderPage,
@@ -2484,26 +2484,6 @@ impl GatewayDataState {
             self.clear_billing_model_context_cache();
         }
         result
-    }
-
-    pub(crate) async fn find_payment_gateway_config(
-        &self,
-        provider: &str,
-    ) -> Result<Option<PaymentGatewayConfigRecord>, DataLayerError> {
-        match &self.billing_reader {
-            Some(repository) => repository.find_payment_gateway_config(provider).await,
-            None => Ok(None),
-        }
-    }
-
-    pub(crate) async fn upsert_payment_gateway_config(
-        &self,
-        input: &PaymentGatewayConfigWriteInput,
-    ) -> Result<AdminBillingMutationOutcome<PaymentGatewayConfigRecord>, DataLayerError> {
-        match &self.billing_reader {
-            Some(repository) => repository.upsert_payment_gateway_config(input).await,
-            None => Ok(AdminBillingMutationOutcome::Unavailable),
-        }
     }
 
     pub(crate) async fn list_billing_plans(

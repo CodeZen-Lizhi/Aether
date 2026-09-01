@@ -7,8 +7,6 @@ import {
   type AggregateImportResponse,
   type ConfigExportData,
   type ConfigImportResponse,
-  type UsersExportData,
-  type UsersImportResponse,
 } from '@/api/admin'
 import { parseApiError } from '@/utils/errorParser'
 import { log } from '@/utils/logger'
@@ -122,16 +120,6 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
   const importProgress = ref<ImportProgressState | null>(null)
 
   // 用户数据导出/导入相关
-  const exportUsersLoading = ref(false)
-  const importUsersLoading = ref(false)
-  const importUsersDialogOpen = ref(false)
-  const importUsersResultDialogOpen = ref(false)
-  const usersFileInput = ref<HTMLInputElement | null>(null)
-  const importUsersPreview = ref<UsersExportData | null>(null)
-  const importUsersResult = ref<UsersImportResponse | null>(null)
-  const usersMergeMode = ref<'skip' | 'overwrite' | 'error'>('skip')
-  const usersMergeModeSelectOpen = ref(false)
-  const importUsersProgress = ref<ImportProgressState | null>(null)
 
   // 完整备份导出/导入相关
   const exportAggregateLoading = ref(false)
@@ -238,113 +226,6 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     } finally {
       importLoading.value = false
       importProgress.value = null
-    }
-  }
-
-  // 导出用户数据
-  async function handleExportUsers() {
-    exportUsersLoading.value = true
-    try {
-      const data = await adminApi.exportUsers()
-      downloadJson(
-        data,
-        `${systemConfig.value.site_name.toLowerCase()}-users-${new Date().toISOString().slice(0, 10)}.json`,
-      )
-      success('用户数据已导出')
-    } catch (err) {
-      error('导出用户数据失败')
-      log.error('导出用户数据失败:', err)
-    } finally {
-      exportUsersLoading.value = false
-    }
-  }
-
-  // 触发用户数据文件选择
-  function triggerUsersFileSelect() {
-    usersFileInput.value?.click()
-  }
-
-  // 处理用户数据文件选择
-  function handleUsersFileSelect(event: Event) {
-    const input = event.target as HTMLInputElement
-    const file = input.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string
-        const root = asJsonObject(JSON.parse(content))
-        if (!root) {
-          error('无效的用户数据文件：JSON 顶层必须是对象')
-          return
-        }
-
-        if (looksLikeConfigExport(root) && !looksLikeUsersExport(root)) {
-          error('这是配置导出文件，请使用“导入配置”')
-          return
-        }
-
-        if (!root.version) {
-          error('无效的用户数据文件：缺少版本信息')
-          return
-        }
-
-        if (!Array.isArray(root.users)) {
-          error('无效的用户数据文件：缺少 users 数组')
-          return
-        }
-
-        if (root.user_groups != null && !Array.isArray(root.user_groups)) {
-          error('无效的用户数据文件：user_groups 必须是数组')
-          return
-        }
-
-        if (root.standalone_keys != null && !Array.isArray(root.standalone_keys)) {
-          error('无效的用户数据文件：standalone_keys 必须是数组')
-          return
-        }
-
-        const data = root as unknown as UsersExportData
-        importUsersPreview.value = data
-        usersMergeMode.value = 'skip'
-        importUsersDialogOpen.value = true
-      } catch (err) {
-        error('解析用户数据文件失败，请确保是有效的 JSON 文件')
-        log.error('解析用户数据文件失败:', err)
-      }
-    }
-    reader.readAsText(file)
-
-    input.value = ''
-  }
-
-  // 确认导入用户数据
-  async function confirmImportUsers() {
-    if (!importUsersPreview.value) return
-
-    importUsersLoading.value = true
-    setImportProgress(importUsersProgress, 5, '准备提交用户数据')
-    await nextTick()
-    try {
-      const result = await adminApi.importUsers({
-        ...importUsersPreview.value,
-        merge_mode: usersMergeMode.value,
-      }, {
-        onUploadProgress: buildUploadProgressHandler(importUsersProgress, '用户数据'),
-      })
-      setImportProgress(importUsersProgress, 100, '用户数据导入完成')
-      importUsersResult.value = result
-      importUsersDialogOpen.value = false
-      usersMergeModeSelectOpen.value = false
-      importUsersResultDialogOpen.value = true
-      success('用户数据导入成功')
-    } catch (err: unknown) {
-      error(parseApiError(err, '导入用户数据失败'))
-      log.error('导入用户数据失败:', err)
-    } finally {
-      importUsersLoading.value = false
-      importUsersProgress.value = null
     }
   }
 
@@ -468,21 +349,6 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     triggerConfigFileSelect,
     handleConfigFileSelect,
     confirmImport,
-    // 用户数据导出/导入
-    exportUsersLoading,
-    importUsersLoading,
-    importUsersDialogOpen,
-    importUsersResultDialogOpen,
-    usersFileInput,
-    importUsersPreview,
-    importUsersResult,
-    usersMergeMode,
-    usersMergeModeSelectOpen,
-    importUsersProgress,
-    handleExportUsers,
-    triggerUsersFileSelect,
-    handleUsersFileSelect,
-    confirmImportUsers,
     // 完整备份导出/导入
     exportAggregateLoading,
     importAggregateLoading,

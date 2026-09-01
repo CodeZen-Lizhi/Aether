@@ -9,7 +9,6 @@
 mod leases;
 mod maintenance;
 mod read;
-mod referrals;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 mod stats;
@@ -23,11 +22,6 @@ mod write;
 use crate::maintenance::DatabasePoolSummary;
 pub use leases::DataLeaseBackends;
 pub use read::DataReadRepositories;
-pub use referrals::{
-    ReferralAdminStats, ReferralDataState, ReferralMutationStatus, ReferralRelationshipListQuery,
-    ReferralRelationshipRecord, ReferralRewardConfig, ReferralRewardListQuery,
-    ReferralRewardRecord, ReferralUserDashboard,
-};
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteBackend;
 pub use transactions::DataTransactionBackends;

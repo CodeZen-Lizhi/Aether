@@ -5,8 +5,7 @@ use async_trait::async_trait;
 
 use super::{
     AdminBillingMutationOutcome, BillingPlanRecord, BillingPlanWriteInput, BillingReadRepository,
-    PaymentGatewayConfigRecord, PaymentGatewayConfigWriteInput, StoredBillingModelContext,
-    UserDailyQuotaAvailabilityRecord, UserPlanEntitlementRecord,
+    StoredBillingModelContext, UserDailyQuotaAvailabilityRecord, UserPlanEntitlementRecord,
 };
 use crate::DataLayerError;
 
@@ -16,7 +15,6 @@ type BillingContextMap = BTreeMap<BillingContextKey, StoredBillingModelContext>;
 #[derive(Debug, Default)]
 pub struct InMemoryBillingReadRepository {
     by_key: RwLock<BillingContextMap>,
-    gateway_configs_by_provider: RwLock<BTreeMap<String, PaymentGatewayConfigRecord>>,
     billing_plans_by_id: RwLock<BTreeMap<String, BillingPlanRecord>>,
     entitlements_by_id: RwLock<BTreeMap<String, UserPlanEntitlementRecord>>,
 }
@@ -39,7 +37,6 @@ impl InMemoryBillingReadRepository {
         }
         Self {
             by_key: RwLock::new(by_key),
-            gateway_configs_by_provider: RwLock::new(BTreeMap::new()),
             billing_plans_by_id: RwLock::new(BTreeMap::new()),
             entitlements_by_id: RwLock::new(BTreeMap::new()),
         }
@@ -185,57 +182,6 @@ impl BillingReadRepository for InMemoryBillingReadRepository {
                 stored_provider_id == provider_id && value.model_id.as_deref() == Some(model_id)
             })
             .map(|(_, value)| value.clone()))
-    }
-
-    async fn find_payment_gateway_config(
-        &self,
-        provider: &str,
-    ) -> Result<Option<PaymentGatewayConfigRecord>, DataLayerError> {
-        Ok(self
-            .gateway_configs_by_provider
-            .read()
-            .expect("billing repository lock")
-            .get(&provider.trim().to_ascii_lowercase())
-            .cloned())
-    }
-
-    async fn upsert_payment_gateway_config(
-        &self,
-        input: &PaymentGatewayConfigWriteInput,
-    ) -> Result<AdminBillingMutationOutcome<PaymentGatewayConfigRecord>, DataLayerError> {
-        let provider = input.provider.trim().to_ascii_lowercase();
-        let now = current_unix_secs();
-        let mut configs = self
-            .gateway_configs_by_provider
-            .write()
-            .expect("billing repository lock");
-        let created_at = configs
-            .get(&provider)
-            .map(|value| value.created_at_unix_secs)
-            .unwrap_or(now);
-        let merchant_key_encrypted = if input.preserve_existing_secret {
-            configs
-                .get(&provider)
-                .and_then(|value| value.merchant_key_encrypted.clone())
-        } else {
-            input.merchant_key_encrypted.clone()
-        };
-        let record = PaymentGatewayConfigRecord {
-            provider: provider.clone(),
-            enabled: input.enabled,
-            endpoint_url: input.endpoint_url.clone(),
-            callback_base_url: input.callback_base_url.clone(),
-            merchant_id: input.merchant_id.clone(),
-            merchant_key_encrypted,
-            pay_currency: input.pay_currency.clone(),
-            usd_exchange_rate: input.usd_exchange_rate,
-            min_recharge_usd: input.min_recharge_usd,
-            channels_json: input.channels_json.clone(),
-            created_at_unix_secs: created_at,
-            updated_at_unix_secs: now,
-        };
-        configs.insert(provider, record.clone());
-        Ok(AdminBillingMutationOutcome::Applied(record))
     }
 
     async fn list_billing_plans(

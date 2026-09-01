@@ -275,8 +275,6 @@ export interface ProviderExport {
   billing_type?: string | null
   monthly_quota_usd?: number | null
   quota_reset_day?: number
-  provider_priority?: number
-  keep_priority_on_conversion?: boolean
   enable_format_conversion?: boolean
   is_active: boolean
   concurrent_limit?: number | null
@@ -312,8 +310,6 @@ export interface ProviderKeyExport {
   api_formats: string[]
   supported_endpoints?: string[]
   rate_multipliers?: Record<string, number> | null
-  internal_priority?: number
-  global_priority_by_format?: Record<string, number> | null
   auth_type_by_format?: Record<string, 'api_key' | 'bearer'> | null
   allow_auth_channel_mismatch_formats?: string[] | null
   rpm_limit?: number | null
@@ -599,10 +595,6 @@ export interface ProviderModelsQueryResponse {
 }
 
 export interface ConfigImportRequest extends ConfigExportData {
-  merge_mode: 'skip' | 'overwrite' | 'error'
-}
-
-export interface UsersImportRequest extends UsersExportData {
   merge_mode: 'skip' | 'overwrite' | 'error'
 }
 
@@ -1049,22 +1041,6 @@ export const adminApi = {
     return response.data
   },
 
-  // 导出用户数据
-  async exportUsers(): Promise<UsersExportData> {
-    const response = await apiClient.get<UsersExportData>('/api/admin/system/users/export')
-    return response.data
-  },
-
-  // 导入用户数据
-  async importUsers(data: UsersImportRequest, options: SystemDataImportOptions = {}): Promise<UsersImportResponse> {
-    const response = await apiClient.post<UsersImportResponse>(
-      '/api/admin/system/users/import',
-      data,
-      { timeout: SYSTEM_DATA_IMPORT_TIMEOUT_MS, ...options }
-    )
-    return response.data
-  },
-
   // 导出完整备份（配置数据 + 用户数据）
   async exportAggregateData(): Promise<AggregateExportData> {
     const response = await apiClient.get<AggregateExportData>('/api/admin/system/data/export')
@@ -1508,7 +1484,6 @@ export const adminApi = {
 
   // 数据清空
   purgeConfig: () => purge<CleanupTaskResponse>('config'),
-  purgeUsers: () => purge<CleanupTaskResponse>('users'),
   async purgeUsage(): Promise<CleanupTaskResponse> {
     const response = await apiClient.post<CleanupTaskResponse>('/api/admin/system/purge/usage')
     return response.data

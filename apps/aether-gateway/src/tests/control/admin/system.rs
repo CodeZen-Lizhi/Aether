@@ -434,13 +434,11 @@ async fn gateway_handles_admin_system_unavailable_write_routes_locally_with_trus
     let client = reqwest::Client::new();
     let unavailable_paths = [
         "/api/admin/system/config/import",
-        "/api/admin/system/users/import",
         "/api/admin/system/data/import",
     ];
     let local_paths = [
         "/api/admin/system/cleanup",
         "/api/admin/system/purge/config",
-        "/api/admin/system/purge/users",
         "/api/admin/system/purge/usage",
         "/api/admin/system/purge/audit-logs",
         "/api/admin/system/purge/request-bodies",
