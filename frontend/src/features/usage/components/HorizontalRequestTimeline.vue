@@ -227,14 +227,14 @@
                     v-if="currentAttemptKeyDisplay"
                     class="info-item"
                   >
-                    <span class="info-label">{{ isOAuthType(currentAttempt.key_auth_type) ? '账号' : '密钥' }}</span>
+                    <span class="info-label">密钥</span>
                     <span class="info-value info-value-stacked">
                       <span class="key-name">
                         {{ currentAttemptKeyDisplay }}
                         <span
                           v-if="currentAttempt.key_auth_type && currentAttempt.key_auth_type !== 'api_key'"
                           class="auth-type-tag"
-                        >{{ formatAuthTypeWithPlan(currentAttempt.key_auth_type, currentAttempt.key_oauth_plan_type) }}</span>
+                        >{{ formatAuthTypeWithPlan(currentAttempt.key_auth_type) }}</span>
                       </span>
                       <code
                         v-if="currentAttempt.key_preview"
@@ -283,62 +283,6 @@
                         v-if="typeof currentAttempt.extra_data.proxy.node_id === 'string' && currentAttempt.extra_data.proxy.node_id"
                         class="text-xs font-mono text-muted-foreground"
                       >节点 Key {{ currentAttempt.extra_data.proxy.node_id }}</code>
-                    </span>
-                  </div>
-                  <div
-                    v-if="currentAttempt.extra_data?.pool_selection"
-                    class="info-item"
-                  >
-                    <span class="info-label">号池调度</span>
-                    <span class="info-value info-value-stacked">
-                      <span class="pool-reason">
-                        <span
-                          class="pool-reason-tag"
-                          :class="'pool-' + currentAttempt.extra_data.pool_selection.reason"
-                        >
-                          {{ poolSelectionLabel(currentAttempt.extra_data.pool_selection.reason) }}
-                        </span>
-                        <span
-                          v-if="currentAttempt.extra_data.pool_selection.cost_soft_threshold"
-                          class="pool-cost-warn"
-                        >接近限额</span>
-                      </span>
-                      <span
-                        v-if="currentAttempt.extra_data.pool_selection.cost_window_usage"
-                        class="text-xs text-muted-foreground"
-                      >
-                        {{ formatNumber(currentAttempt.extra_data.pool_selection.cost_window_usage) }}
-                        <template v-if="currentAttempt.extra_data.pool_selection.cost_limit">
-                          / {{ formatNumber(currentAttempt.extra_data.pool_selection.cost_limit) }}
-                        </template>
-                        tokens
-                      </span>
-                    </span>
-                  </div>
-                  <div
-                    v-if="currentAttempt.extra_data?.pool_skip"
-                    class="info-item"
-                  >
-                    <span class="info-label">号池跳过</span>
-                    <span class="info-value info-value-stacked">
-                      <span class="pool-skip-type">
-                        {{ poolSkipLabel(currentAttempt.extra_data.pool_skip.type) }}
-                      </span>
-                      <span
-                        v-if="currentAttempt.extra_data.pool_skip.cooldown_reason"
-                        class="text-xs text-muted-foreground"
-                      >
-                        {{ currentAttempt.extra_data.pool_skip.cooldown_reason }}
-                        <template v-if="currentAttempt.extra_data.pool_skip.cooldown_ttl != null">
-                          ({{ currentAttempt.extra_data.pool_skip.cooldown_ttl }}s)
-                        </template>
-                      </span>
-                      <span
-                        v-if="currentAttempt.extra_data.pool_skip.cost_window_usage"
-                        class="text-xs text-muted-foreground"
-                      >
-                        {{ formatNumber(currentAttempt.extra_data.pool_skip.cost_window_usage) }} tokens
-                      </span>
                     </span>
                   </div>
                 </div>
@@ -558,13 +502,7 @@ import { formatTokens } from '@/utils/format'
 import { formatApiFormat } from '@/api/endpoints/types/api-format'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { resolveTimelineFinalStatus } from '../utils/status'
-import {
-  buildPoolGroupVisibleAttempts,
-  buildPoolParticipatedCandidates,
-  extractPoolGroupId,
-  makeAttemptKey,
-  TIMELINE_STATUS,
-} from '../utils/poolTrace'
+import { TIMELINE_STATUS } from '../utils/timelineCandidates'
 
 // 节点组类型
 interface NodeGroup {
@@ -579,7 +517,6 @@ interface NodeGroup {
   endIndex: number
   hasConversion: boolean  // 组内是否有格式转换候选
   providerApiFormat: string | null  // 提供商 API 格式（如 openai:responses）
-  isPoolGroup?: boolean
 }
 
 interface AttemptTimeRange {
@@ -624,7 +561,7 @@ const props = defineProps<{
   requestApiFormat?: string | null
   /** 用量和费用数据 */
   usageData?: UsageData | null
-  /** 请求元数据（用于号池调度组装） */
+  /** 请求元数据（用于请求路径解析） */
   requestMetadata?: Record<string, unknown> | null
   /** 已获取的追踪数据；传入时不再内部拉取 */
   traceData?: RequestTrace | null
@@ -821,75 +758,15 @@ const rawTimeline = computed<CandidateRecord[]>(() => {
 })
 
 
-const schedulingAudit = computed<Record<string, unknown> | null>(() => {
-  const metadata = props.requestMetadata
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
-  const raw = metadata.scheduling_audit
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-  return raw as Record<string, unknown>
-})
-
-const poolAttemptCandidates = computed<CandidateRecord[]>(() => {
-  const auditAttempts = schedulingAudit.value?.attempts
-  return buildPoolParticipatedCandidates(
-    rawTimeline.value,
-    auditAttempts,
-    props.requestId,
-  )
-})
-
-const poolAttemptsByGroup = computed<Map<string, CandidateRecord[]>>(() => {
-  const grouped = new Map<string, CandidateRecord[]>()
-  for (const attempt of poolAttemptCandidates.value) {
-    const groupId =
-      extractPoolGroupId(attempt)
-      || String(attempt.provider_id || '').trim()
-      || '__pool_group__'
-    const existing = grouped.get(groupId)
-    if (existing) {
-      existing.push(attempt)
-    } else {
-      grouped.set(groupId, [attempt])
-    }
-  }
-  return grouped
-})
-
-const poolAttemptKeySet = computed<Set<string>>(() => {
-  return new Set(
-    poolAttemptCandidates.value.map((item) => makeAttemptKey(item.candidate_index, item.retry_index)),
-  )
-})
-
-const timeline = computed<CandidateRecord[]>(() => {
-  if (poolAttemptCandidates.value.length === 0) return rawTimeline.value
-  return rawTimeline.value.filter(
-    (candidate) => !poolAttemptKeySet.value.has(makeAttemptKey(candidate.candidate_index, candidate.retry_index)),
-  )
-})
-
-const AUTH_TYPE_PROVIDER_LABEL_MAP: Record<string, string> = {
-  codex: 'Codex',
-  kiro: 'Kiro',
-  antigravity: 'Antigravity',
-  claude_code: 'Claude Code',
-  gemini_cli: 'Gemini CLI',
-}
+const timeline = computed<CandidateRecord[]>(() => rawTimeline.value)
 
 const getProviderDisplayName = (
   attempt: CandidateRecord | null | undefined,
-  options: { allowAuthTypeFallback?: boolean } = {},
+  _options: { allowAuthTypeFallback?: boolean } = {},
 ): string => {
-  const allowAuthTypeFallback = options.allowAuthTypeFallback ?? true
   if (!attempt) return '未知'
   const providerName = String(attempt.provider_name || '').trim()
   if (providerName) return providerName
-  if (allowAuthTypeFallback) {
-    const authType = String(attempt.key_auth_type || '').trim().toLowerCase()
-    if (authType && AUTH_TYPE_PROVIDER_LABEL_MAP[authType]) {
-      return AUTH_TYPE_PROVIDER_LABEL_MAP[authType]
-    }
-  }
   return '未知'
 }
 
@@ -933,7 +810,6 @@ const buildProviderGroups = (items: CandidateRecord[]): NodeGroup[] => {
       endIndex: candidate.candidate_index,
       hasConversion: candidate.extra_data?.needs_conversion === true,
       providerApiFormat: candidate.extra_data?.provider_api_format || null,
-      isPoolGroup: false,
     }
     groups.push(currentGroup)
   })
@@ -944,73 +820,8 @@ const buildProviderGroups = (items: CandidateRecord[]): NodeGroup[] => {
 // 将相同 Provider 的所有请求合并为组（同提供商的 Key 放在子节点）
 const groupedTimeline = computed<NodeGroup[]>(() => {
   const providerGroups = buildProviderGroups(timeline.value.filter(isParticipatedCandidate))
-  if (poolAttemptsByGroup.value.size === 0) {
-    return providerGroups
-  }
-
-  const poolProviderIds = new Set<string>()
-  const poolProviderNames = new Set<string>()
-  const poolGroups: NodeGroup[] = []
-
-  for (const [groupId, attemptsRaw] of poolAttemptsByGroup.value.entries()) {
-    const attempts = [...attemptsRaw].sort(compareBySchedulingOrder)
-    if (attempts.length === 0) continue
-
-    const visibleAttempts = buildPoolGroupVisibleAttempts(attempts)
-    if (visibleAttempts.length === 0) continue
-
-    const poolPrimaryStatus = visibleAttempts.reduce((best, current) => {
-      const bestPriority = STATUS_PRIORITY[best] ?? 0
-      const currentStatus = getDisplayStatus(current)
-      const currentPriority = STATUS_PRIORITY[currentStatus] ?? 0
-      return currentPriority > bestPriority ? currentStatus : best
-    }, getDisplayStatus(visibleAttempts[0]))
-
-    const successAttempt = visibleAttempts.find((item) => item.status === 'success')
-    const poolPrimary =
-      successAttempt || visibleAttempts[visibleAttempts.length - 1] || visibleAttempts[0]
-    const startIndex = Math.min(...attempts.map(item => item.candidate_index))
-    const endIndex = Math.max(...attempts.map(item => item.candidate_index))
-
-    poolGroups.push({
-      id: `pool:${groupId}`,
-      providerName: getProviderDisplayName(poolPrimary, { allowAuthTypeFallback: false }),
-      primary: poolPrimary,
-      primaryStatus: poolPrimaryStatus,
-      allAttempts: visibleAttempts,
-      retryCount: Math.max(0, visibleAttempts.length - 1),
-      totalLatency: visibleAttempts.reduce((sum, item) => sum + (item.latency_ms || 0), 0),
-      startIndex,
-      endIndex,
-      hasConversion: visibleAttempts.some((item) => item.extra_data?.needs_conversion === true),
-      providerApiFormat: null,
-      isPoolGroup: true,
-    })
-
-    for (const attempt of attempts) {
-      const providerId = String(attempt.provider_id || '').trim()
-      if (providerId) poolProviderIds.add(providerId)
-      const providerName = normalizeProviderIdentity(attempt.provider_name)
-      if (providerName) poolProviderNames.add(providerName)
-    }
-  }
-
-  const dedupedProviderGroups = providerGroups.filter((group) => {
-    const sameProviderById = group.allAttempts.some((attempt) => {
-      const providerId = String(attempt.provider_id || '').trim()
-      return providerId !== '' && poolProviderIds.has(providerId)
-    })
-    if (sameProviderById) return false
-
-    const groupName = normalizeProviderIdentity(group.primary.provider_name || group.providerName)
-    if (groupName && poolProviderNames.has(groupName)) return false
-
-    return true
-  })
-
-  const allGroups = [...poolGroups, ...dedupedProviderGroups]
-  allGroups.sort((a, b) => a.startIndex - b.startIndex)
-  return allGroups
+  providerGroups.sort((a, b) => a.startIndex - b.startIndex)
+  return providerGroups
 })
 
 // 格式转换分界点索引（首个 hasConversion=true 的 group index）
@@ -1091,9 +902,6 @@ watch(currentAttempt, (attempt) => {
 
 const currentGroupTitle = computed(() => {
   if (!selectedGroup.value || !currentAttempt.value) return ''
-  if (selectedGroup.value.isPoolGroup) {
-    return getProviderDisplayName(currentAttempt.value)
-  }
   return selectedGroup.value.providerName
 })
 
@@ -1389,7 +1197,6 @@ const currentAttemptKeyFormatsDisplay = computed(() => {
 const SKIP_REASON_LABELS: Record<string, string> = {
   auth_api_key_concurrency_limit_reached: '调用方 API Key 并发已达上限',
   api_key_concurrency_limit_reached: '调用方 API Key 并发已达上限',
-  pool_key_lease_busy: '池内账号正被其他请求占用',
   provider_concurrency_limit_reached: '上游提供商并发已达上限',
   provider_key_concurrency_limit_reached: '上游账号并发已达上限',
   provider_request_body_build_failed: '上游请求体转换失败',
@@ -1866,47 +1673,12 @@ const hasActiveImageProgress = computed(() => {
   })
 })
 
-// 判断是否为 OAuth 类型（provider_type 为具体值时也算 OAuth）
-const isOAuthType = (authType?: string): boolean => {
-  if (!authType) return false
-  return !['api_key', 'service_account'].includes(authType)
-}
-
-// 格式化认证类型（合并 plan 信息，避免冗余）
-const formatAuthTypeWithPlan = (authType: string, planType?: string): string => {
+// 格式化认证类型
+const formatAuthTypeWithPlan = (authType: string): string => {
   const labels: Record<string, string> = {
-    'oauth': 'OAuth',
-    'service_account': 'Service Account',
-    'kiro': 'Kiro',
-    'codex': 'Codex',
-    'antigravity': 'Antigravity',
-    'claude_code': 'Claude Code',
-    'gemini_cli': 'Gemini CLI',
+    'bearer': 'Bearer Token',
   }
-  const typeName = labels[authType] || authType
-  if (planType) {
-    return `${typeName} ${planType}`
-  }
-  return typeName
-}
-
-const poolSelectionLabel = (reason: string): string => {
-  const labels: Record<string, string> = {
-    sticky: '粘性会话',
-    lru: 'LRU',
-    random: '随机',
-    tiebreak: '随机 (平分)',
-  }
-  return labels[reason] || reason
-}
-
-const poolSkipLabel = (type: string): string => {
-  const labels: Record<string, string> = {
-    cooldown: '冷却中',
-    cost_exhausted: '额度耗尽',
-    upstream: '上游跳过',
-  }
-  return labels[type] || type
+  return labels[authType] || authType
 }
 
 // 检查组是否被悬浮
@@ -2382,586 +2154,12 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   width: 100%;
 }
 
-/* 极简轨道 - 包装器实现溢出时居左、不溢出时居中 */
-.minimal-track {
-  display: flex;
-  align-items: center;
-  justify-content: safe center;
-  gap: 64px;
-  padding: 2rem 2rem 2.75rem;
-  overflow-x: auto;
-  overflow-y: hidden;
 
-  /* 优化滚动体验 */
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: hsl(var(--border)) transparent;
-}
 
-/* Webkit 滚动条样式 */
-.minimal-track::-webkit-scrollbar {
-  height: 6px;
-}
 
-.minimal-track::-webkit-scrollbar-track {
-  background: transparent;
-}
 
-.minimal-track::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 3px;
-}
 
-.minimal-track::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
-}
 
-.minimal-node-group {
-  display: flex;
-  align-items: center;
-  position: relative;
-  cursor: pointer;
-}
-
-/* 节点容器 */
-.node-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-}
-
-/* 节点名称 - 绝对定位在节点上方 */
-.node-label {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.65rem;
-  color: hsl(var(--muted-foreground));
-  white-space: nowrap;
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 主节点 - 同心圆（外圈轮廓 + 间隙 + 内部实心圆） */
-.node-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  transition: all 0.2s ease;
-  z-index: 2;
-  position: relative;
-  overflow: visible;
-  cursor: pointer;
-  /* 外圈轮廓 */
-  border: 2px solid currentColor;
-  background: transparent;
-}
-
-/* 内部实心圆 - 使用 ::before 伪元素 */
-.node-dot::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-  transform: translate(-50%, -50%);
-}
-
-/* 选中首次时的样式 */
-.node-dot.is-first-selected {
-  transform: scale(1.1);
-}
-
-/* 子节点容器 - 绝对定位在主节点下方 */
-.sub-dots {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 6px;
-  padding: 0;
-  background: transparent;
-  z-index: 3;
-}
-
-/* 子节点 - 增大点击区域 */
-.sub-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  opacity: 0.5;
-  position: relative;
-}
-
-/* 扩大点击热区 */
-.sub-dot::before {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: -4px;
-  right: -4px;
-  bottom: -4px;
-}
-
-.sub-dot:hover {
-  transform: scale(1.2);
-  opacity: 0.9;
-}
-
-.sub-dot.active {
-  opacity: 1;
-  transform: scale(1.15);
-  box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 3px currentColor;
-}
-
-/* 子节点状态颜色 */
-.sub-dot.status-success { background: #22c55e; color: #22c55e; }
-.sub-dot.status-failed { background: #ef4444; color: #ef4444; }
-.sub-dot.status-cancelled { background: #f59e0b; color: #f59e0b; }
-.sub-dot.status-pending { background: #3b82f6; color: #3b82f6; }
-.sub-dot.status-skipped { background: hsl(var(--foreground)); color: hsl(var(--foreground)); }
-.sub-dot.status-available { background: #d1d5db; color: #d1d5db; }
-
-/* 选中状态：呼吸动画 + 涟漪效果 */
-.minimal-node-group.selected .node-dot {
-  animation: breathe 2s ease-in-out infinite;
-}
-
-.minimal-node-group.selected .node-dot::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  background: transparent;
-  transform: translate(-50%, -50%);
-  animation: ripple 1.5s ease-out infinite;
-  z-index: -1;
-}
-
-/* 悬停状态：只有放大效果 */
-.minimal-node-group.hovered .node-dot {
-  transform: scale(1.3);
-}
-
-@keyframes breathe {
-  0%, 100% { transform: scale(1.3); }
-  50% { transform: scale(1.5); }
-}
-
-@keyframes ripple {
-  0% {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 0.4;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(2.5);
-    opacity: 0;
-  }
-}
-
-/* 重试徽章 */
-.retry-badge {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: #fff;
-  font-size: 0.6rem;
-  font-weight: 700;
-  z-index: 101;
-  line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-/* 状态颜色 - 同心圆使用 color */
-.node-dot.status-success { color: #22c55e; }
-.node-dot.status-failed { color: #ef4444; }
-.node-dot.status-cancelled { color: #f59e0b; }
-.node-dot.status-pending { color: #3b82f6; }
-.node-dot.status-skipped { color: hsl(var(--foreground)); }
-.node-dot.status-available { color: #d1d5db; }
-
-/* 连接线容器 */
-.node-line-wrapper {
-  position: absolute;
-  right: -64px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 64px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.node-line {
-  width: 100%;
-  height: 2px;
-  background: hsl(var(--border));
-}
-
-/* 格式转换分界线 */
-.node-line.conversion-boundary {
-  background: none;
-  height: 0;
-  border-top: 2px dashed hsl(var(--muted-foreground) / 0.4);
-}
-
-/* 详情面板 */
-.detail-panel {
-  margin-top: 1rem;
-  background: hsl(var(--muted) / 0.3);
-  border: 1px solid hsl(var(--border));
-  border-radius: 14px;
-  overflow: hidden;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0rem;
-  border-bottom: 1px solid hsl(var(--border));
-  background: hsl(var(--muted) / 0.4);
-}
-
-.panel-title {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-}
-
-.title-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.title-dot.status-success { background: #22c55e; }
-.title-dot.status-failed { background: #ef4444; }
-.title-dot.status-cancelled { background: #f59e0b; }
-.title-dot.status-pending { background: #3b82f6; }
-.title-dot.status-skipped { background: hsl(var(--foreground)); }
-.title-dot.status-available { background: #d1d5db; }
-
-.title-text {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.panel-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.nav-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
-  border-radius: 6px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.nav-btn:hover:not(:disabled) {
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--muted-foreground) / 0.3);
-}
-
-.nav-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.nav-info {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-  padding: 0 0.5rem;
-  min-width: 50px;
-  text-align: center;
-}
-
-.panel-body {
-  padding: 0.75rem 0rem;
-}
-
-/* 头部分隔符 */
-.header-divider {
-  color: hsl(var(--border));
-  margin: 0 0.5rem;
-  font-size: 1rem;
-}
-
-/* 状态标签 */
-.status-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 52px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 6px;
-  margin-left: 0.5rem;
-}
-
-.status-tag.status-success {
-  background: #22c55e20;
-  color: #22c55e;
-}
-
-.status-tag.status-failed {
-  background: #ef444420;
-  color: #ef4444;
-}
-
-.status-tag.status-cancelled {
-  background: #f59e0b20;
-  color: #f59e0b;
-}
-
-.status-tag.status-pending {
-  background: #3b82f620;
-  color: #3b82f6;
-}
-
-.status-tag.status-skipped {
-  background: hsl(var(--foreground) / 0.08);
-  color: hsl(var(--foreground));
-}
-
-.status-tag.status-available {
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-}
-
-/* 缓存亲和标签 */
-.cache-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: hsl(var(--primary));
-  background: hsl(var(--primary) / 0.1);
-  border: 1px solid hsl(var(--primary) / 0.2);
-  border-radius: 9999px;
-  margin-left: 0.75rem;
-}
-
-/* 缓存亲和提示 */
-.cache-hint {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.5);
-  border-radius: 4px;
-}
-
-.attempt-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-left: 0.5rem;
-}
-
-.attempt-nav-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
-  border-radius: 9999px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.attempt-nav-btn:hover:not(:disabled) {
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
-}
-
-.attempt-nav-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.625rem 1.25rem;
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.info-item.full-width {
-  grid-column: 1 / -1;
-}
-
-.info-label {
-  font-size: 0.7rem;
-  color: hsl(var(--muted-foreground));
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 500;
-}
-
-.info-value {
-  font-size: 0.9rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.info-value.highlight {
-  font-size: 1.1rem;
-  font-weight: 600;
-  font-family: ui-monospace, monospace;
-  color: hsl(var(--primary));
-}
-
-.info-value code {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.375rem;
-  background: hsl(var(--muted));
-  border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  font-family: ui-monospace, monospace;
-}
-
-/* 两行堆叠布局 */
-.info-value-stacked {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2rem;
-}
-
-/* 格式代码 */
-.format-code {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.3rem;
-  background: hsl(var(--muted));
-  border-radius: 3px;
-  color: hsl(var(--muted-foreground));
-  font-family: ui-monospace, monospace;
-}
-
-/* Key 信息 */
-.key-name {
-  font-weight: 500;
-}
-
-.key-preview {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.3rem;
-  background: hsl(var(--muted));
-  border-radius: 3px;
-  color: hsl(var(--muted-foreground));
-  font-family: ui-monospace, monospace;
-}
-
-/* 认证类型标签 */
-.auth-type-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.1rem 0.35rem;
-  margin-left: 0.375rem;
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: hsl(var(--primary) / 0.8);
-  background: hsl(var(--primary) / 0.08);
-  border: 1px solid hsl(var(--primary) / 0.2);
-  border-radius: 3px;
-}
-
-/* 代理信息 */
-.proxy-name {
-  font-weight: 500;
-}
-
-.proxy-detail {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-/* 号池调度 */
-.pool-reason {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.pool-reason-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-  border-radius: 4px;
-  white-space: nowrap;
-  border: 1px solid hsl(var(--border));
-}
-
-.pool-reason-tag.pool-sticky {
-  color: hsl(var(--chart-4));
-  border-color: hsl(var(--chart-4) / 0.3);
-  background: hsl(var(--chart-4) / 0.08);
-}
-
-.pool-reason-tag.pool-lru {
-  color: hsl(var(--chart-2));
-  border-color: hsl(var(--chart-2) / 0.3);
-  background: hsl(var(--chart-2) / 0.08);
-}
-
-.pool-reason-tag.pool-random,
-.pool-reason-tag.pool-tiebreak {
-  color: hsl(var(--muted-foreground));
-}
-
-.pool-cost-warn {
-  font-size: 0.65rem;
-  color: hsl(var(--chart-5));
-  font-weight: 500;
-}
-
-.pool-skip-type {
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-}
 
 .image-progress-block {
   margin-top: 0.875rem;

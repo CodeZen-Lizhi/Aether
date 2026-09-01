@@ -848,9 +848,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use aether_provider_transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
-    };
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+GatewayProviderTransportSnapshot,
+};
 
     use super::*;
 

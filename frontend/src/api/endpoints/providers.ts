@@ -1,18 +1,13 @@
 import client from '../client'
 import { buildCacheKey, cachedRequest, dedupedRequest } from '@/utils/cache'
 import type {
-  ClaudeCodeAdvancedConfig,
   FailoverRulesConfig,
-  PoolAdvancedConfig,
   ProviderConfig,
   ProviderType,
   ProviderWithEndpointsSummary,
   ProxyConfig,
 } from './types'
-import {
-  normalizeChatPiiRedactionProviderConfig as normalizeChatPiiRedactionProvider,
-  normalizePoolAdvancedConfig as normalizePoolAdvanced,
-} from './types'
+import { normalizeChatPiiRedactionProviderConfig as normalizeChatPiiRedactionProvider } from './types'
 
 interface ProviderRequestOptions {
   timeout?: number
@@ -50,9 +45,6 @@ function normalizeProviderSummary(
   return {
     ...provider,
     chat_pii_redaction: normalizeChatPiiRedactionProvider(provider.chat_pii_redaction),
-    pool_advanced: normalizePoolAdvanced(provider.pool_advanced),
-    codex_fingerprint_convergence_enabled: provider.codex_fingerprint_convergence_enabled ?? false,
-    kiro_simulated_cache_enabled: provider.kiro_simulated_cache_enabled ?? false,
     max_transfer_count: provider.max_transfer_count ?? 0,
     max_transfer_timeout_seconds: provider.max_transfer_timeout_seconds ?? 0,
     responses_websocket_enabled: provider.responses_websocket_enabled ?? false,
@@ -114,8 +106,6 @@ export async function updateProvider(
     provider_type: ProviderType
     description: string | null
     website: string
-    provider_priority: number
-    keep_priority_on_conversion: boolean
     responses_websocket_enabled: boolean
     billing_type: 'monthly_quota' | 'pay_as_you_go' | 'free_tier'
     monthly_quota_usd: number
@@ -132,9 +122,6 @@ export async function updateProvider(
     max_probe_interval_minutes: number
     enable_format_conversion: boolean  // 是否允许格式转换（提供商级别开关）
     is_active: boolean
-    claude_code_advanced: ClaudeCodeAdvancedConfig | null
-    codex_fingerprint_convergence_enabled: boolean
-    pool_advanced: PoolAdvancedConfig | null
     failover_rules: FailoverRulesConfig | null
     config: ProviderConfig | null
   }>,
@@ -158,8 +145,6 @@ export async function createProvider(
     quota_reset_day?: number
     quota_last_reset_at?: string
     quota_expires_at?: string
-    provider_priority?: number
-    keep_priority_on_conversion?: boolean
     responses_websocket_enabled?: boolean
     is_active?: boolean
     max_retries?: number
@@ -168,9 +153,6 @@ export async function createProvider(
     stream_first_byte_timeout?: number | null
     request_timeout?: number | null
     proxy?: ProxyConfig | null
-    claude_code_advanced?: ClaudeCodeAdvancedConfig | null
-    codex_fingerprint_convergence_enabled?: boolean
-    pool_advanced?: PoolAdvancedConfig | null
     failover_rules?: FailoverRulesConfig | null
     config?: ProviderConfig | null
   }
@@ -226,7 +208,7 @@ export interface TestModelRequest {
   endpoint_id?: string
   message?: string
   api_format?: string
-  mode?: 'global' | 'direct' | 'pool'
+  mode?: 'global' | 'direct'
   apply_model_mapping?: boolean
   mapped_model_name?: string
   request_headers?: Record<string, unknown>
@@ -273,7 +255,7 @@ export async function testModel(
  */
 export interface TestModelFailoverRequest {
   provider_id: string
-  mode: 'global' | 'direct' | 'pool'
+  mode: 'global' | 'direct'
   model_name: string
   failover_models?: string[]
   api_key_ids?: string[]

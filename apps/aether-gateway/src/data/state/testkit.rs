@@ -67,8 +67,6 @@ impl GatewayDataState {
             request_candidate_writer: Some(request_candidate_writer),
             provider_catalog_reader: Some(provider_catalog_reader),
             provider_catalog_writer: Some(provider_catalog_writer),
-            pool_score_reader: None,
-            pool_score_writer: None,
             provider_quota_reader: None,
             provider_quota_writer: None,
             routing_group_reader: None,

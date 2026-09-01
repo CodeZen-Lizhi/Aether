@@ -33,7 +33,10 @@ use super::trace::{
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::attach_admin_audit_response;
 use crate::GatewayError;
-use aether_admin::observability::monitoring::{match_admin_monitoring_route, AdminMonitoringRoute};
+use aether_admin::observability::monitoring::{
+match_admin_monitoring_route,
+AdminMonitoringRoute,
+};
 use axum::{body::Body, http, response::Response};
 
 pub(crate) async fn maybe_build_local_admin_monitoring_response(

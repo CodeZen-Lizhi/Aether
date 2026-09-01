@@ -9,24 +9,12 @@ export interface RoutingDefaultPolicy {
   keep_priority_on_conversion: boolean
 }
 
-export interface RoutingPoolSchedulingPreset {
-  preset: string
-  enabled: boolean
-  mode?: string | null
-}
-
-export interface RoutingPoolPolicyOverride {
-  scheduling_presets: RoutingPoolSchedulingPreset[]
-}
-
 export interface RoutingModelPolicy {
   model: string
   allowed_providers: string[]
   allowed_keys: string[]
   provider_priority_overrides: Record<string, number>
   key_priority_overrides: Record<string, number>
-  pool_priority_overrides: Record<string, number>
-  pool_policy_overrides: Record<string, RoutingPoolPolicyOverride>
 }
 
 export interface RoutingRule {
@@ -81,8 +69,6 @@ export function createEmptyModelPolicy(model = ''): RoutingModelPolicy {
     allowed_keys: [],
     provider_priority_overrides: {},
     key_priority_overrides: {},
-    pool_priority_overrides: {},
-    pool_policy_overrides: {},
   }
 }
 
@@ -103,8 +89,6 @@ export function normalizeRoutingGroupConfig(value: Partial<RoutingGroupConfig> |
           allowed_keys: Array.isArray(policy.allowed_keys) ? [...policy.allowed_keys] : [],
           provider_priority_overrides: { ...(policy.provider_priority_overrides ?? {}) },
           key_priority_overrides: { ...(policy.key_priority_overrides ?? {}) },
-          pool_priority_overrides: { ...(policy.pool_priority_overrides ?? {}) },
-          pool_policy_overrides: { ...(policy.pool_policy_overrides ?? {}) },
         }))
       : base.model_policies,
     rules: Array.isArray(value?.rules) ? value.rules.map(rule => ({ ...rule })) : base.rules,
@@ -255,15 +239,6 @@ export function setDefaultKeyPriorityOverrides(
   })
 }
 
-export function setDefaultPoolPriorityOverrides(
-  config: RoutingGroupConfig,
-  overrides: Record<string, number>,
-): RoutingGroupConfig {
-  return upsertDefaultModelPolicy(config, {
-    pool_priority_overrides: normalizePriorityOverrides(overrides),
-  })
-}
-
 export function setModelProviderPriorityOverrides(
   config: RoutingGroupConfig,
   model: string,
@@ -293,22 +268,6 @@ export function setModelKeyPriorityOverrides(
     ...getModelPolicy(config, normalizedModel),
     model: normalizedModel,
     key_priority_overrides: normalizePriorityOverrides(overrides),
-  })
-}
-
-export function setModelPoolPriorityOverrides(
-  config: RoutingGroupConfig,
-  model: string,
-  overrides: Record<string, number>,
-): RoutingGroupConfig {
-  const normalizedModel = model.trim() || DEFAULT_ROUTING_POLICY_MODEL
-  if (normalizedModel === DEFAULT_ROUTING_POLICY_MODEL) {
-    return setDefaultPoolPriorityOverrides(config, overrides)
-  }
-  return upsertModelPolicy(config, {
-    ...getModelPolicy(config, normalizedModel),
-    model: normalizedModel,
-    pool_priority_overrides: normalizePriorityOverrides(overrides),
   })
 }
 

@@ -6,14 +6,6 @@ use regex::Regex;
 use serde_json::Value;
 use url::{form_urlencoded, Url};
 
-use crate::antigravity::{
-    build_antigravity_v1internal_url, is_antigravity_provider_transport,
-    AntigravityRequestUrlAction,
-};
-use crate::claude_code::build_claude_code_messages_url;
-use crate::gemini_cli::{
-    build_gemini_cli_v1internal_url, is_gemini_cli_provider_transport, GeminiCliRequestUrlAction,
-};
 use crate::snapshot::GatewayProviderTransportSnapshot;
 use crate::url::{
     build_claude_count_tokens_url as build_default_claude_count_tokens_url,
@@ -22,19 +14,12 @@ use crate::url::{
     normalize_gemini_content_action_path, strip_gateway_credential_query_parameters,
     GATEWAY_CREDENTIAL_QUERY_KEYS,
 };
-use crate::vertex::{
-    build_vertex_api_key_gemini_content_url, build_vertex_api_key_gemini_embedding_url,
-    build_vertex_service_account_gemini_content_url,
-    build_vertex_service_account_gemini_embedding_url, resolve_local_vertex_api_key_query_auth,
-    resolve_local_vertex_service_account_auth_config,
-};
 #[derive(Debug, Clone, Copy)]
 pub struct TransportRequestUrlParams<'a> {
     pub provider_api_format: &'a str,
     pub mapped_model: Option<&'a str>,
     pub upstream_is_stream: bool,
     pub request_query: Option<&'a str>,
-    pub kiro_api_region: Option<&'a str>,
     pub api_operation: Option<aether_ai_formats::ApiOperation>,
 }
 
@@ -99,9 +84,6 @@ fn build_transport_request_url_inner(
         {
             return Some(url);
         }
-    }
-    if let Some(url) = build_transport_hook_url(transport, params) {
-        return Some(url);
     }
 
     let custom_path_template = transport
@@ -278,7 +260,6 @@ pub fn build_local_openai_chat_upstream_url(
             mapped_model: None,
             upstream_is_stream: false,
             request_query,
-            kiro_api_region: None,
             api_operation: None,
         },
     )
@@ -299,7 +280,6 @@ pub fn build_cross_format_openai_chat_upstream_url(
             mapped_model: Some(mapped_model),
             upstream_is_stream,
             request_query,
-            kiro_api_region: None,
             api_operation: None,
         },
     )
@@ -322,7 +302,6 @@ pub fn build_local_openai_responses_upstream_url(
             mapped_model: None,
             upstream_is_stream: false,
             request_query,
-            kiro_api_region: None,
             api_operation: None,
         },
     )
@@ -344,157 +323,9 @@ pub fn build_cross_format_openai_responses_upstream_url(
             mapped_model: Some(mapped_model),
             upstream_is_stream,
             request_query,
-            kiro_api_region: None,
             api_operation: None,
         },
     )
-}
-
-pub fn build_kiro_cross_format_upstream_url(
-    transport: &GatewayProviderTransportSnapshot,
-    mapped_model: &str,
-    provider_api_format: &str,
-    upstream_is_stream: bool,
-    request_query: Option<&str>,
-    api_region: &str,
-) -> Option<String> {
-    build_transport_request_url(
-        transport,
-        TransportRequestUrlParams {
-            provider_api_format,
-            mapped_model: Some(mapped_model),
-            upstream_is_stream,
-            request_query,
-            kiro_api_region: Some(api_region),
-            api_operation: None,
-        },
-    )
-}
-
-fn build_transport_hook_url(
-    transport: &GatewayProviderTransportSnapshot,
-    params: TransportRequestUrlParams<'_>,
-) -> Option<String> {
-    if let Some(api_region) = params.kiro_api_region {
-        return crate::kiro::build_kiro_generate_assistant_response_url(
-            &transport.endpoint.base_url,
-            params.request_query,
-            Some(api_region),
-        );
-    }
-
-    if transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("claude_code")
-    {
-        let messages_url =
-            build_claude_code_messages_url(&transport.endpoint.base_url, params.request_query);
-        return Some(
-            if params.api_operation == Some(aether_ai_formats::ApiOperation::ClaudeCountTokens) {
-                build_default_claude_count_tokens_url(&messages_url, None)
-            } else {
-                messages_url
-            },
-        );
-    }
-
-    let normalized_provider_api_format =
-        aether_ai_formats::normalize_api_format_alias(params.provider_api_format);
-    match normalized_provider_api_format.as_str() {
-        "gemini:generate_content" => {
-            if is_gemini_cli_provider_transport(transport) {
-                let query = params.request_query.map(|raw| {
-                    form_urlencoded::parse(raw.as_bytes())
-                        .into_owned()
-                        .collect::<BTreeMap<String, String>>()
-                });
-                return build_gemini_cli_v1internal_url(
-                    &transport.endpoint.base_url,
-                    if params.upstream_is_stream {
-                        GeminiCliRequestUrlAction::StreamGenerateContent
-                    } else {
-                        GeminiCliRequestUrlAction::GenerateContent
-                    },
-                    query.as_ref(),
-                );
-            }
-            if let Some(auth) = resolve_local_vertex_api_key_query_auth(transport) {
-                return build_vertex_api_key_gemini_content_url(
-                    params.mapped_model?,
-                    params.upstream_is_stream,
-                    &auth.value,
-                    params.request_query,
-                );
-            }
-            if let Some(auth_config) = resolve_local_vertex_service_account_auth_config(transport) {
-                return build_vertex_service_account_gemini_content_url(
-                    params.mapped_model?,
-                    params.upstream_is_stream,
-                    &auth_config,
-                    params.request_query,
-                );
-            }
-        }
-        "gemini:embedding" => {
-            if let Some(auth) = resolve_local_vertex_api_key_query_auth(transport) {
-                return build_vertex_api_key_gemini_embedding_url(
-                    params.mapped_model?,
-                    &auth.value,
-                    params.request_query,
-                );
-            }
-            if let Some(auth_config) = resolve_local_vertex_service_account_auth_config(transport) {
-                return build_vertex_service_account_gemini_embedding_url(
-                    params.mapped_model?,
-                    &auth_config,
-                    params.request_query,
-                );
-            }
-        }
-        _ => {}
-    }
-
-    if is_antigravity_provider_transport(transport)
-        && normalized_provider_api_format == "gemini:generate_content"
-    {
-        let query = params.request_query.map(|raw| {
-            form_urlencoded::parse(raw.as_bytes())
-                .into_owned()
-                .collect::<BTreeMap<String, String>>()
-        });
-        return build_antigravity_v1internal_url(
-            &transport.endpoint.base_url,
-            if params.upstream_is_stream {
-                AntigravityRequestUrlAction::StreamGenerateContent
-            } else {
-                AntigravityRequestUrlAction::GenerateContent
-            },
-            query.as_ref(),
-        );
-    }
-
-    if is_gemini_cli_provider_transport(transport)
-        && normalized_provider_api_format == "gemini:generate_content"
-    {
-        let query = params.request_query.map(|raw| {
-            form_urlencoded::parse(raw.as_bytes())
-                .into_owned()
-                .collect::<BTreeMap<String, String>>()
-        });
-        return build_gemini_cli_v1internal_url(
-            &transport.endpoint.base_url,
-            if params.upstream_is_stream {
-                GeminiCliRequestUrlAction::StreamGenerateContent
-            } else {
-                GeminiCliRequestUrlAction::GenerateContent
-            },
-            query.as_ref(),
-        );
-    }
-
-    None
 }
 
 fn build_path_params(
@@ -550,14 +381,6 @@ pub fn transport_supports_api_operation(
 }
 
 fn anthropic_count_tokens_supported(transport: &GatewayProviderTransportSnapshot) -> bool {
-    // Private message adapters do not implement Anthropic's token-counting
-    // operation. A config flag cannot make their request envelopes compatible.
-    if crate::kiro::is_kiro_provider_transport(transport)
-        || crate::grok::is_grok_provider_transport(transport)
-    {
-        return false;
-    }
-
     let Some(operations) = anthropic_transport_config_field(transport, "supported_operations")
     else {
         return true;
@@ -754,7 +577,7 @@ mod tests {
     use aether_ai_formats::ApiOperation;
 
     use super::{
-        build_kiro_cross_format_upstream_url, build_transport_request_url,
+        build_transport_request_url,
         build_transport_request_url_for_request_body, TransportRequestUrlParams,
     };
     use crate::snapshot::{
@@ -776,7 +599,6 @@ mod tests {
                 provider_type: provider_type.to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -814,12 +636,11 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
                 upstream_metadata: None,
-                decrypted_api_key: "vertex-secret".to_string(),
+                decrypted_api_key: "provider-secret".to_string(),
                 decrypted_auth_config: None,
             },
         }
@@ -841,7 +662,6 @@ mod tests {
                 mapped_model: Some("gpt-realtime-provider"),
                 upstream_is_stream: true,
                 request_query: Some("model=client-alias&trace=1&key=downstream-secret"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -871,7 +691,6 @@ mod tests {
                 mapped_model: Some("provider-model"),
                 upstream_is_stream: true,
                 request_query: Some("model=client-model&tenant=alpha"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -899,7 +718,6 @@ mod tests {
                 mapped_model: Some("provider-model"),
                 upstream_is_stream: true,
                 request_query: Some("trace=1&key=downstream-secret"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -925,7 +743,6 @@ mod tests {
                 mapped_model: Some("provider-model"),
                 upstream_is_stream: true,
                 request_query: Some("tenant=alpha&key=downstream-secret"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -937,217 +754,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn uses_vertex_hook_before_custom_path_for_custom_aiplatform_transport() {
-        let transport = sample_transport(
-            "custom",
-            "gemini:generate_content",
-            "https://aiplatform.googleapis.com",
-            Some("/custom/{model}:{action}"),
-        );
 
-        let url = build_transport_request_url(
-            &transport,
-            TransportRequestUrlParams {
-                provider_api_format: "gemini:generate_content",
-                mapped_model: Some("gemini-3.1-pro-preview"),
-                upstream_is_stream: true,
-                request_query: Some("foo=bar"),
-                kiro_api_region: None,
-                api_operation: None,
-            },
-        )
-        .expect("vertex hook url");
 
-        assert_eq!(
-            url,
-            "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.1-pro-preview:streamGenerateContent?alt=sse&foo=bar&key=vertex-secret"
-        );
-    }
 
-    #[test]
-    fn uses_vertex_service_account_hook_before_default_gemini_url() {
-        let mut transport = sample_transport(
-            "vertex_ai",
-            "gemini:generate_content",
-            "https://aiplatform.googleapis.com",
-            None,
-        );
-        transport.key.auth_type = "service_account".to_string();
-        transport.key.decrypted_api_key = "__placeholder__".to_string();
-        transport.key.decrypted_auth_config = Some(
-            r#"{
-                "client_email":"svc@example.iam.gserviceaccount.com",
-                "private_key":"TEST-PRIVATE-KEY",
-                "project_id":"demo-project"
-            }"#
-            .to_string(),
-        );
 
-        let url = build_transport_request_url(
-            &transport,
-            TransportRequestUrlParams {
-                provider_api_format: "gemini:generate_content",
-                mapped_model: Some("gemini-3.1-pro-preview"),
-                upstream_is_stream: false,
-                request_query: Some("foo=bar&beta=1"),
-                kiro_api_region: None,
-                api_operation: None,
-            },
-        )
-        .expect("vertex service account hook url");
 
-        assert_eq!(
-            url,
-            "https://aiplatform.googleapis.com/v1/projects/demo-project/locations/global/publishers/google/models/gemini-3.1-pro-preview:generateContent?foo=bar"
-        );
-    }
-
-    #[test]
-    fn uses_vertex_service_account_hook_for_gemini_embedding_url() {
-        let mut transport = sample_transport(
-            "vertex_ai",
-            "gemini:embedding",
-            "https://aiplatform.googleapis.com",
-            None,
-        );
-        transport.endpoint.endpoint_kind = Some("embedding".to_string());
-        transport.key.auth_type = "service_account".to_string();
-        transport.key.decrypted_api_key = "__placeholder__".to_string();
-        transport.key.decrypted_auth_config = Some(
-            r#"{
-                "client_email":"svc@example.iam.gserviceaccount.com",
-                "private_key":"TEST-PRIVATE-KEY",
-                "project_id":"demo-project"
-            }"#
-            .to_string(),
-        );
-
-        let provider_request_body = json!({
-            "content": {"parts": [{"text": "hello"}]}
-        });
-        let url = build_transport_request_url_for_request_body(
-            &transport,
-            TransportRequestUrlParams {
-                provider_api_format: "gemini:embedding",
-                mapped_model: Some("gemini-embedding-2"),
-                upstream_is_stream: false,
-                request_query: Some("foo=bar&beta=1"),
-                kiro_api_region: None,
-                api_operation: None,
-            },
-            Some(&provider_request_body),
-        )
-        .expect("vertex embedding service account hook url");
-
-        assert_eq!(
-            url,
-            "https://aiplatform.googleapis.com/v1/projects/demo-project/locations/global/publishers/google/models/gemini-embedding-2:predict?foo=bar"
-        );
-    }
-
-    #[test]
-    fn gemini_cli_generate_content_uses_v1internal_code_assist_url() {
-        let transport = sample_transport(
-            "gemini_cli",
-            "gemini:generate_content",
-            "https://cloudcode-pa.googleapis.com",
-            None,
-        );
-
-        assert_eq!(
-            build_transport_request_url(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "gemini:generate_content",
-                    mapped_model: Some("gemini-2.5-pro"),
-                    upstream_is_stream: false,
-                    request_query: Some("key=blocked&beta=true&foo=bar"),
-                    kiro_api_region: None,
-                    api_operation: None,
-                },
-            )
-            .as_deref(),
-            Some("https://cloudcode-pa.googleapis.com/v1internal:generateContent?foo=bar")
-        );
-    }
-
-    #[test]
-    fn gemini_cli_stream_generate_content_uses_v1internal_code_assist_url() {
-        let transport = sample_transport(
-            "gemini_cli",
-            "gemini:generate_content",
-            "https://cloudcode-pa.googleapis.com",
-            None,
-        );
-
-        assert_eq!(
-            build_transport_request_url(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "gemini:generate_content",
-                    mapped_model: Some("gemini-2.5-pro"),
-                    upstream_is_stream: true,
-                    request_query: Some("foo=bar"),
-                    kiro_api_region: None,
-                    api_operation: None,
-                },
-            )
-            .as_deref(),
-            Some(
-                "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse&foo=bar"
-            )
-        );
-    }
-
-    #[test]
-    fn vertex_gemini_embedding_batch_request_uses_vertex_predict_endpoint() {
-        let mut transport = sample_transport(
-            "vertex_ai",
-            "gemini:embedding",
-            "https://aiplatform.googleapis.com",
-            None,
-        );
-        transport.endpoint.endpoint_kind = Some("embedding".to_string());
-        transport.key.auth_type = "service_account".to_string();
-        transport.key.decrypted_api_key = "__placeholder__".to_string();
-        transport.key.decrypted_auth_config = Some(
-            r#"{
-                "client_email":"svc@example.iam.gserviceaccount.com",
-                "private_key":"TEST-PRIVATE-KEY",
-                "project_id":"demo-project"
-            }"#
-            .to_string(),
-        );
-
-        let batch_body = json!({
-            "requests": [
-                {
-                    "model": "models/gemini-embedding-2",
-                    "content": {"parts": [{"text": "alpha"}]}
-                }
-            ]
-        });
-
-        assert_eq!(
-            build_transport_request_url_for_request_body(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "gemini:embedding",
-                    mapped_model: Some("gemini-embedding-2"),
-                    upstream_is_stream: false,
-                    request_query: None,
-                    kiro_api_region: None,
-                    api_operation: None,
-                },
-                Some(&batch_body),
-            )
-            .as_deref(),
-            Some(
-                "https://aiplatform.googleapis.com/v1/projects/demo-project/locations/global/publishers/google/models/gemini-embedding-2:predict"
-            )
-        );
-    }
 
     #[test]
     fn builds_openai_responses_url_for_formal_format_name() {
@@ -1165,7 +776,6 @@ mod tests {
                 mapped_model: None,
                 upstream_is_stream: false,
                 request_query: Some("tenant=demo"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -1175,11 +785,11 @@ mod tests {
     }
 
     #[test]
-    fn builds_openai_search_url_for_codex_provider_root() {
+    fn builds_openai_search_url_preserves_provider_path_root() {
         let transport = sample_transport(
-            "codex",
+            "custom",
             "openai:search",
-            "https://chatgpt.com/backend-api/codex",
+            "https://relay.example/backend-api/agent",
             None,
         );
 
@@ -1190,7 +800,6 @@ mod tests {
                 mapped_model: Some("gpt-5.6-luna"),
                 upstream_is_stream: false,
                 request_query: Some("tenant=demo"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -1198,7 +807,7 @@ mod tests {
 
         assert_eq!(
             url,
-            "https://chatgpt.com/backend-api/codex/alpha/search?tenant=demo"
+            "https://relay.example/backend-api/agent/alpha/search?tenant=demo"
         );
     }
 
@@ -1218,7 +827,6 @@ mod tests {
                 mapped_model: Some("gemini-2.5-pro"),
                 upstream_is_stream: false,
                 request_query: Some("key=client-key&foo=bar"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -1246,7 +854,6 @@ mod tests {
                 mapped_model: Some("gemini-2.5-pro"),
                 upstream_is_stream: true,
                 request_query: Some("key=client-key&foo=bar"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -1271,7 +878,6 @@ mod tests {
                 mapped_model: Some("gemini-2.5-pro"),
                 upstream_is_stream: false,
                 request_query: Some("foo=bar"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -1296,7 +902,6 @@ mod tests {
                 mapped_model: Some("gemini-2.5-pro"),
                 upstream_is_stream: true,
                 request_query: None,
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -1324,7 +929,6 @@ mod tests {
                 mapped_model: None,
                 upstream_is_stream: false,
                 request_query: None,
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -1349,7 +953,6 @@ mod tests {
                 mapped_model: Some("claude-sonnet-4"),
                 upstream_is_stream: false,
                 request_query: Some("key=gateway-secret&trace=1"),
-                kiro_api_region: None,
                 api_operation: Some(aether_ai_formats::ApiOperation::ClaudeMessagesCreate),
             },
         )
@@ -1383,7 +986,6 @@ mod tests {
                 mapped_model: Some("claude-sonnet-4"),
                 upstream_is_stream: false,
                 request_query: Some("key=gateway-secret&trace=1"),
-                kiro_api_region: None,
                 api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
             },
         )
@@ -1412,7 +1014,6 @@ mod tests {
                     mapped_model: Some("claude-sonnet-4"),
                     upstream_is_stream: false,
                     request_query: Some("KEY=client-secret&trace=1"),
-                    kiro_api_region: None,
                     api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
                 },
             )
@@ -1443,7 +1044,6 @@ mod tests {
                     mapped_model: Some("claude-sonnet-4"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-secret&trace=1"),
-                    kiro_api_region: None,
                     api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
                 },
             )
@@ -1469,7 +1069,6 @@ mod tests {
                     mapped_model: Some("claude-sonnet-4"),
                     upstream_is_stream: false,
                     request_query: None,
-                    kiro_api_region: None,
                     api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
                 },
             )
@@ -1495,7 +1094,6 @@ mod tests {
                     mapped_model: Some("claude-sonnet-4"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-secret&trace=1"),
-                    kiro_api_region: None,
                     api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
                 },
             )
@@ -1523,7 +1121,6 @@ mod tests {
                     mapped_model: Some("claude-sonnet-4"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-secret&trace=1"),
-                    kiro_api_region: None,
                     api_operation: Some(aether_ai_formats::ApiOperation::ClaudeMessagesCreate),
                 },
             )
@@ -1532,120 +1129,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn private_anthropic_adapters_reject_count_tokens_even_when_config_claims_support() {
-        for provider_type in ["kiro", "grok"] {
-            let mut transport = sample_transport(
-                provider_type,
-                "claude:messages",
-                "https://private.example",
-                None,
-            );
-            transport.endpoint.config = Some(json!({
-                "anthropic": {
-                    "supported_operations": ["messages", "count_tokens"],
-                    "count_tokens_path": "/v1/messages/count_tokens"
-                }
-            }));
 
-            assert!(build_transport_request_url(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "claude:messages",
-                    mapped_model: Some("claude-sonnet-4"),
-                    upstream_is_stream: false,
-                    request_query: None,
-                    kiro_api_region: Some("us-east-1"),
-                    api_operation: Some(ApiOperation::ClaudeCountTokens),
-                },
-            )
-            .is_none());
-        }
-    }
 
-    #[test]
-    fn claude_code_custom_root_keeps_messages_and_count_tokens_on_v1_surface() {
-        let mut transport = sample_transport(
-            "claude_code",
-            "claude:messages",
-            "https://proxy.example?key=base-secret",
-            None,
-        );
-        transport.endpoint.config = Some(json!({
-            "anthropic": {"supported_operations": ["messages", "count_tokens"]}
-        }));
-
-        assert_eq!(
-            build_transport_request_url(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "claude:messages",
-                    mapped_model: Some("claude-sonnet-4"),
-                    upstream_is_stream: false,
-                    request_query: Some("key=client-secret&trace=messages"),
-                    kiro_api_region: None,
-                    api_operation: Some(aether_ai_formats::ApiOperation::ClaudeMessagesCreate),
-                },
-            )
-            .as_deref(),
-            Some("https://proxy.example/v1/messages?key=base-secret&trace=messages")
-        );
-        assert_eq!(
-            build_transport_request_url(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "claude:messages",
-                    mapped_model: Some("claude-sonnet-4"),
-                    upstream_is_stream: false,
-                    request_query: Some("key=client-secret&trace=count"),
-                    kiro_api_region: None,
-                    api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
-                },
-            )
-            .as_deref(),
-            Some("https://proxy.example/v1/messages/count_tokens?key=base-secret&trace=count")
-        );
-    }
-
-    #[test]
-    fn claude_code_official_api_root_builds_documented_messages_urls() {
-        let mut transport = sample_transport(
-            "claude_code",
-            "claude:messages",
-            "https://api.anthropic.com/v1",
-            None,
-        );
-        transport.endpoint.config = Some(json!({
-            "anthropic": {"supported_operations": ["messages", "count_tokens"]}
-        }));
-
-        for (operation, expected_url) in [
-            (
-                ApiOperation::ClaudeMessagesCreate,
-                "https://api.anthropic.com/v1/messages",
-            ),
-            (
-                ApiOperation::ClaudeCountTokens,
-                "https://api.anthropic.com/v1/messages/count_tokens",
-            ),
-        ] {
-            assert_eq!(
-                build_transport_request_url(
-                    &transport,
-                    TransportRequestUrlParams {
-                        provider_api_format: "claude:messages",
-                        mapped_model: Some("claude-opus-4-6"),
-                        upstream_is_stream: false,
-                        request_query: None,
-                        kiro_api_region: None,
-                        api_operation: Some(operation),
-                    },
-                )
-                .as_deref(),
-                Some(expected_url)
-            );
-        }
-    }
 
     #[test]
     fn count_tokens_config_fields_fall_back_from_endpoint_to_provider() {
@@ -1673,7 +1158,6 @@ mod tests {
                     mapped_model: Some("claude-sonnet-4"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-secret&trace=1"),
-                    kiro_api_region: None,
                     api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
                 },
             )
@@ -1706,7 +1190,6 @@ mod tests {
                 mapped_model: Some("claude-sonnet-4"),
                 upstream_is_stream: false,
                 request_query: None,
-                kiro_api_region: None,
                 api_operation: Some(aether_ai_formats::ApiOperation::ClaudeCountTokens),
             },
         )
@@ -1730,7 +1213,6 @@ mod tests {
                     mapped_model: Some("claude-sonnet-4"),
                     upstream_is_stream: false,
                     request_query: Some("KEY=client-secret&trace=1"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1741,31 +1223,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn kiro_cross_format_helper_uses_region_specific_generate_assistant_url() {
-        let transport = sample_transport(
-            "kiro",
-            "claude:messages",
-            "https://codewhisperer.{region}.amazonaws.com/",
-            None,
-        );
-
-        let url = build_kiro_cross_format_upstream_url(
-            &transport,
-            "claude-sonnet-4",
-            "claude:messages",
-            true,
-            Some("key=gateway-secret&conversationId=abc"),
-            "us-west-2",
-        )
-        .expect("kiro url");
-
-        assert!(url.starts_with(
-            "https://codewhisperer.us-west-2.amazonaws.com/generateAssistantResponse"
-        ));
-        assert!(url.contains("conversationId=abc"));
-        assert!(!url.contains("gateway-secret"));
-    }
 
     #[test]
     fn embedding_request_url_builds_provider_default_paths() {
@@ -1808,7 +1265,6 @@ mod tests {
                     mapped_model: Some("text-embedding-3-small"),
                     upstream_is_stream: false,
                     request_query: Some("tenant=demo"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1823,7 +1279,6 @@ mod tests {
                     mapped_model: Some("jina-embeddings-v3"),
                     upstream_is_stream: false,
                     request_query: None,
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1838,7 +1293,6 @@ mod tests {
                     mapped_model: Some("gemini-embedding-001"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-key&foo=bar"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1855,7 +1309,6 @@ mod tests {
                     mapped_model: Some("doubao-embedding-text-240515"),
                     upstream_is_stream: false,
                     request_query: None,
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1870,7 +1323,6 @@ mod tests {
                     mapped_model: Some("qwen3-vl-embedding"),
                     upstream_is_stream: false,
                     request_query: None,
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1902,7 +1354,6 @@ mod tests {
                     mapped_model: Some("gemini-3.5-flash"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-key&trace=1"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1917,7 +1368,6 @@ mod tests {
                     mapped_model: Some("gemini-3.5-flash"),
                     upstream_is_stream: true,
                     request_query: Some("key=client-key&trace=2"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -1926,59 +1376,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn antigravity_hook_is_limited_to_generate_content() {
-        let transport = sample_transport(
-            "antigravity",
-            "gemini:interactions",
-            "https://daily-cloudcode-pa.googleapis.com",
-            None,
-        );
 
-        assert_eq!(
-            build_transport_request_url(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "gemini:interactions",
-                    mapped_model: Some("gemini-3.5-flash"),
-                    upstream_is_stream: false,
-                    request_query: Some("key=client-key"),
-                    kiro_api_region: None,
-                    api_operation: None,
-                },
-            )
-            .as_deref(),
-            Some("https://daily-cloudcode-pa.googleapis.com/v1/interactions")
-        );
-    }
-
-    #[test]
-    fn antigravity_generate_content_drops_client_api_key_query() {
-        let transport = sample_transport(
-            "antigravity",
-            "gemini:generate_content",
-            "https://daily-cloudcode-pa.googleapis.com",
-            None,
-        );
-
-        assert_eq!(
-            build_transport_request_url(
-                &transport,
-                TransportRequestUrlParams {
-                    provider_api_format: "gemini:generate_content",
-                    mapped_model: Some("gemini-3-flash-agent"),
-                    upstream_is_stream: true,
-                    request_query: Some("key=client-aether-key&trace=1&beta=true"),
-                    kiro_api_region: None,
-                    api_operation: None,
-                },
-            )
-            .as_deref(),
-            Some(
-                "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse&trace=1"
-            )
-        );
-    }
 
     #[test]
     fn embedding_request_url_preserves_google_openai_compat_roots() {
@@ -1986,12 +1384,6 @@ mod tests {
             "custom",
             "openai:embedding",
             "https://generativelanguage.googleapis.com/v1beta/openai",
-            None,
-        );
-        let vertex_openai = sample_transport(
-            "custom",
-            "openai:embedding",
-            "https://aiplatform.googleapis.com/v1/projects/project-1/locations/global/endpoints/openapi",
             None,
         );
 
@@ -2003,29 +1395,11 @@ mod tests {
                     mapped_model: Some("gemini-embedding-001"),
                     upstream_is_stream: false,
                     request_query: Some("trace=1"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
             .as_deref(),
             Some("https://generativelanguage.googleapis.com/v1beta/openai/embeddings?trace=1")
-        );
-        assert_eq!(
-            build_transport_request_url(
-                &vertex_openai,
-                TransportRequestUrlParams {
-                    provider_api_format: "openai:embedding",
-                    mapped_model: Some("gemini-embedding-001"),
-                    upstream_is_stream: false,
-                    request_query: None,
-                    kiro_api_region: None,
-                    api_operation: None,
-                },
-            )
-            .as_deref(),
-            Some(
-                "https://aiplatform.googleapis.com/v1/projects/project-1/locations/global/endpoints/openapi/embeddings"
-            )
         );
     }
 
@@ -2058,7 +1432,6 @@ mod tests {
                     mapped_model: Some("gemini-embedding-001"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-key&foo=bar"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
                 Some(&batch_body),
@@ -2095,7 +1468,6 @@ mod tests {
                     mapped_model: Some("gemini-embedding-001"),
                     upstream_is_stream: false,
                     request_query: None,
-                    kiro_api_region: None,
                     api_operation: None,
                 },
                 Some(&batch_body),
@@ -2125,7 +1497,6 @@ mod tests {
                     mapped_model: Some("rerank-1"),
                     upstream_is_stream: false,
                     request_query: Some("tenant=demo"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -2140,7 +1511,6 @@ mod tests {
                     mapped_model: Some("jina-reranker-v2-base-multilingual"),
                     upstream_is_stream: false,
                     request_query: None,
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -2184,7 +1554,6 @@ mod tests {
                     mapped_model: Some("text-embedding-3-small"),
                     upstream_is_stream: false,
                     request_query: Some("tenant=request&trace=1"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -2199,7 +1568,6 @@ mod tests {
                     mapped_model: Some("jina-embeddings-v3"),
                     upstream_is_stream: false,
                     request_query: Some("trace=2"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -2214,7 +1582,6 @@ mod tests {
                     mapped_model: Some("gemini-embedding-001"),
                     upstream_is_stream: false,
                     request_query: Some("key=client-key&trace=3"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -2229,7 +1596,6 @@ mod tests {
                     mapped_model: Some("doubao-embedding-text-240515"),
                     upstream_is_stream: false,
                     request_query: Some("trace=4"),
-                    kiro_api_region: None,
                     api_operation: None,
                 },
             )
@@ -2254,7 +1620,6 @@ mod tests {
                 mapped_model: None,
                 upstream_is_stream: false,
                 request_query: None,
-                kiro_api_region: None,
                 api_operation: None,
             },
         )
@@ -2277,7 +1642,6 @@ mod tests {
                 mapped_model: Some("gemini-embedding-001"),
                 upstream_is_stream: true,
                 request_query: Some("key=client-key&foo=bar"),
-                kiro_api_region: None,
                 api_operation: None,
             },
         )

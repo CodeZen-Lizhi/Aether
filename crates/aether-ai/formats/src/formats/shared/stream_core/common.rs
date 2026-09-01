@@ -292,6 +292,94 @@ pub fn openai_stream_terminal_error_body(payload: &Value) -> Option<Value> {
     Some(json!({ "error": Value::Object(error) }))
 }
 
+/// Extracts a terminal error body from a buffered provider SSE stream:
+/// a generic `event: error` payload or an OpenAI `response.failed` terminal
+/// event. Used to surface mid-stream upstream failures to the client.
+pub fn extract_stream_terminal_error_body(body: &[u8]) -> Option<Value> {
+    let text = std::str::from_utf8(body).ok()?;
+    let mut current_event_type: Option<String> = None;
+    for raw_line in text.lines() {
+        let line = raw_line.trim_matches('\r').trim();
+        if line.is_empty() || line.starts_with(':') {
+            continue;
+        }
+        if let Some(event_name) = line.strip_prefix("event:") {
+            current_event_type = Some(event_name.trim().to_string());
+            continue;
+        }
+        let data_line = if let Some(rest) = line.strip_prefix("data:") {
+            rest.trim()
+        } else {
+            line
+        };
+        if data_line.is_empty() || data_line == "[DONE]" {
+            continue;
+        }
+        let Ok(mut event) = serde_json::from_str::<Value>(data_line) else {
+            continue;
+        };
+        if let Some(event_object) = event.as_object_mut() {
+            if !event_object.contains_key("type") {
+                if let Some(event_name) = current_event_type.take() {
+                    event_object.insert("type".to_string(), Value::String(event_name));
+                }
+            }
+        }
+        if event
+            .get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.eq_ignore_ascii_case("error"))
+        {
+            return Some(normalize_stream_error_envelope(event));
+        }
+        if let Some(mut error_body) = openai_stream_terminal_error_body(&event) {
+            let response_failed_without_provider_type = event
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|event_type| event_type.eq_ignore_ascii_case("response.failed"))
+                && event
+                    .pointer("/response/error/type")
+                    .or_else(|| event.pointer("/error/type"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .is_none_or(str::is_empty);
+            if response_failed_without_provider_type {
+                if let Some(error) = error_body.get_mut("error").and_then(Value::as_object_mut) {
+                    error.insert(
+                        "type".to_string(),
+                        Value::String("stream_terminal_error".to_string()),
+                    );
+                }
+            }
+            return Some(error_body);
+        }
+        current_event_type = None;
+    }
+    None
+}
+
+fn normalize_stream_error_envelope(error: Value) -> Value {
+    let mut error = if error.get("error").is_some_and(|value| !value.is_null()) {
+        error
+    } else {
+        json!({ "error": error })
+    };
+    if let Some(error_object) = error.get_mut("error").and_then(Value::as_object_mut) {
+        if !error_object.contains_key("type") {
+            if let Some(kind) = error_object
+                .get("code")
+                .or_else(|| error_object.get("status"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                error_object.insert("type".to_string(), Value::String(kind.to_string()));
+            }
+        }
+    }
+    error
+}
+
 pub fn openai_stream_terminal_error_message(payload: &Value) -> Option<String> {
     openai_stream_terminal_error_body(payload)
         .and_then(|body| body.get("error").cloned())

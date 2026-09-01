@@ -1,21 +1,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use aether_data_contracts::repository::provider_catalog::{
-    StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
-};
-use aether_pool_core::PoolSchedulingPreset;
-use serde_json::{Map, Value};
+use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogEndpoint;
 
 use crate::capability::ProviderPoolCapability;
-use crate::presets::normalize_provider_scheduling_presets;
-use crate::provider::{ProviderPoolAdapter, ProviderPoolMemberInput};
-use crate::providers::{
-    AntigravityProviderPoolAdapter, ChatGptWebProviderPoolAdapter, CodexProviderPoolAdapter,
-    DefaultProviderPoolAdapter, GeminiCliProviderPoolAdapter, GrokProviderPoolAdapter,
-    KiroProviderPoolAdapter, WindsurfProviderPoolAdapter, CLAUDE_CODE_PROVIDER_POOL_ADAPTER,
-    VERTEX_AI_PROVIDER_POOL_ADAPTER,
-};
+use crate::provider::ProviderPoolAdapter;
+use crate::providers::DefaultProviderPoolAdapter;
 
 #[derive(Clone)]
 pub struct ProviderPoolService {
@@ -43,19 +33,6 @@ impl Default for ProviderPoolService {
 impl ProviderPoolService {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn with_builtin_adapters() -> Self {
-        Self::new()
-            .with_adapter(Arc::new(AntigravityProviderPoolAdapter))
-            .with_adapter(Arc::new(CLAUDE_CODE_PROVIDER_POOL_ADAPTER))
-            .with_adapter(Arc::new(CodexProviderPoolAdapter))
-            .with_adapter(Arc::new(GeminiCliProviderPoolAdapter))
-            .with_adapter(Arc::new(GrokProviderPoolAdapter))
-            .with_adapter(Arc::new(KiroProviderPoolAdapter))
-            .with_adapter(Arc::new(ChatGptWebProviderPoolAdapter))
-            .with_adapter(Arc::new(WindsurfProviderPoolAdapter))
-            .with_adapter(Arc::new(VERTEX_AI_PROVIDER_POOL_ADAPTER))
     }
 
     pub fn with_adapter(mut self, adapter: Arc<dyn ProviderPoolAdapter>) -> Self {
@@ -105,31 +82,5 @@ impl ProviderPoolService {
     pub fn quota_refresh_missing_endpoint_message(&self, provider_type: &str) -> String {
         self.adapter(provider_type)
             .quota_refresh_missing_endpoint_message()
-    }
-
-    pub fn normalize_scheduling_presets(
-        &self,
-        provider_type: &str,
-        scheduling_presets: &[PoolSchedulingPreset],
-    ) -> Vec<PoolSchedulingPreset> {
-        normalize_provider_scheduling_presets(
-            self.adapter(provider_type).as_ref(),
-            scheduling_presets,
-        )
-    }
-
-    pub fn member_signals(
-        &self,
-        provider_type: &str,
-        key: &StoredProviderCatalogKey,
-        auth_config: Option<&Map<String, Value>>,
-    ) -> aether_pool_core::PoolMemberSignals {
-        let adapter = self.adapter(provider_type);
-        let input = ProviderPoolMemberInput {
-            provider_type,
-            key,
-            auth_config,
-        };
-        adapter.member_signals(&input)
     }
 }

@@ -13,7 +13,10 @@ use super::verify::{
 };
 use crate::handlers::admin::request::AdminAppState;
 use aether_admin::provider::ops::{
-    build_headers, get_architecture, normalize_architecture_id, resolve_action_config,
+build_headers,
+get_architecture,
+normalize_architecture_id,
+resolve_action_config,
 };
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogProvider,

@@ -7,8 +7,9 @@ use super::super::cache_store::list_admin_monitoring_cache_affinity_records;
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::GatewayError;
 use aether_admin::observability::monitoring::{
-    admin_monitoring_bad_request_response, admin_monitoring_cache_provider_not_found_response,
-    build_admin_monitoring_cache_provider_delete_success_response,
+admin_monitoring_bad_request_response,
+admin_monitoring_cache_provider_not_found_response,
+build_admin_monitoring_cache_provider_delete_success_response,
 };
 use axum::{body::Body, response::Response};
 

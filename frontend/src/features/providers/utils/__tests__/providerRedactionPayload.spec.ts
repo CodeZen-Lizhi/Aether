@@ -11,8 +11,6 @@ function makeProvider(overrides: Partial<ProviderWithEndpointsSummary> = {}): Pr
   return {
     id: 'provider-1',
     name: 'Provider One',
-    provider_priority: 1,
-    keep_priority_on_conversion: false,
     enable_format_conversion: true,
     is_active: true,
     total_endpoints: 0,
@@ -26,7 +24,6 @@ function makeProvider(overrides: Partial<ProviderWithEndpointsSummary> = {}): Pr
     unhealthy_endpoints: 0,
     api_formats: [],
     endpoint_health_details: [],
-    ops_configured: false,
     created_at: '2026-05-02T00:00:00Z',
     updated_at: '2026-05-02T00:00:00Z',
     ...overrides,
@@ -54,14 +51,12 @@ describe('provider redaction payload helpers', () => {
       withProviderRedactionConfig(
         {
           name: 'Provider One',
-          config: { pool_advanced: { global_priority: 10 } },
         },
         false,
       ),
     ).toEqual({
       name: 'Provider One',
       config: {
-        pool_advanced: { global_priority: 10 },
         chat_pii_redaction: { enabled: false },
       },
     })

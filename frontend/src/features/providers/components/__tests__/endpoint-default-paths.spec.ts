@@ -25,57 +25,23 @@ describe('endpoint default paths', () => {
   it('uses Gemini Developer API resource paths for custom Gemini endpoints', () => {
     expect(getDefaultEndpointPath({
       apiFormat: 'gemini:generate_content',
-      providerType: 'custom',
       apiFormats,
     })).toBe('/models/{model}:{action}')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'gemini:embedding',
-      providerType: 'custom',
       apiFormats,
     })).toBe('/models/{model}:embedContent')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'gemini:interactions',
-      providerType: 'custom',
       apiFormats,
     })).toBe('/interactions')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'gemini:video',
-      providerType: 'custom',
       apiFormats,
     })).toBe('/models/{model}:predictLongRunning')
-  })
-
-  it('uses Vertex AI project/location paths for Vertex provider Gemini endpoints', () => {
-    expect(getDefaultEndpointPath({
-      apiFormat: 'gemini:generate_content',
-      providerType: 'vertex_ai',
-      apiFormats,
-    })).toBe('/v1/projects/{project_id}/locations/{region}/publishers/google/models/{model}:{action}')
-
-    expect(getDefaultEndpointPath({
-      apiFormat: 'gemini:embedding',
-      providerType: 'vertex_ai',
-      apiFormats,
-    })).toBe('/v1/projects/{project_id}/locations/{region}/publishers/google/models/{model}:predict')
-  })
-
-  it('uses Gemini CLI v1internal paths for fixed Gemini CLI endpoints', () => {
-    expect(getDefaultEndpointPath({
-      apiFormat: 'gemini:generate_content',
-      providerType: 'gemini_cli',
-      apiFormats,
-    })).toBe('/v1internal:{action}')
-  })
-
-  it('keeps Codex Responses root path without duplicating /v1', () => {
-    expect(getDefaultEndpointPath({
-      apiFormat: 'openai:responses',
-      providerType: 'codex',
-      apiFormats,
-    })).toBe('/responses')
   })
 
   it('uses separate Realtime and Codex Live endpoint defaults', () => {
@@ -85,7 +51,6 @@ describe('endpoint default paths', () => {
     })).toBe('https://api.openai.com/v1')
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:realtime',
-      providerType: 'openai',
       baseUrl: 'https://api.openai.com/v1',
       apiFormats,
     })).toBe('/realtime')
@@ -96,7 +61,6 @@ describe('endpoint default paths', () => {
     })).toBe('https://chatgpt.com/backend-api/codex')
     expect(getDefaultEndpointPath({
       apiFormat: 'codex:live',
-      providerType: 'codex',
       baseUrl: 'https://chatgpt.com/backend-api/codex',
       apiFormats,
     })).toBe('/live')
@@ -107,7 +71,6 @@ describe('endpoint default paths', () => {
     })).toBe('https://proxy.example.com/v1')
     expect(getDefaultEndpointPath({
       apiFormat: 'codex:live',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/v1',
       apiFormats,
     })).toBe('/live')
@@ -120,7 +83,6 @@ describe('endpoint default paths', () => {
     })).toBe('https://api.openai.com/v1')
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:search',
-      providerType: 'openai',
       baseUrl: 'https://api.openai.com/v1',
       apiFormats,
     })).toBe('/alpha/search')
@@ -131,7 +93,6 @@ describe('endpoint default paths', () => {
     })).toBe('https://chatgpt.com/backend-api/codex')
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:search',
-      providerType: 'codex',
       baseUrl: 'https://chatgpt.com/backend-api/codex',
       apiFormats,
     })).toBe('/alpha/search')
@@ -140,63 +101,54 @@ describe('endpoint default paths', () => {
   it('drops /v1 from API-root defaults because base URL is the API root', () => {
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:chat',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/api',
       apiFormats,
     })).toBe('/chat/completions')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:embedding',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/api?tenant=demo',
       apiFormats,
     })).toBe('/embeddings')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:rerank',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/api?tenant=demo',
       apiFormats,
     })).toBe('/rerank')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:image',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/api',
       apiFormats,
     })).toBe('/images/generations')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:video',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/api',
       apiFormats,
     })).toBe('/videos')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'jina:embedding',
-      providerType: 'custom',
       baseUrl: 'https://api.jina.ai/v1',
       apiFormats,
     })).toBe('/embeddings')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'jina:rerank',
-      providerType: 'custom',
       baseUrl: 'https://api.jina.ai/v1',
       apiFormats,
     })).toBe('/rerank')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:chat',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/openai',
       apiFormats,
     })).toBe('/chat/completions')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:chat',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com',
       apiFormats,
     })).toBe('/chat/completions')
@@ -205,14 +157,12 @@ describe('endpoint default paths', () => {
   it('drops /v1 from OpenAI-compatible defaults when base URL already includes a known API root', () => {
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:chat',
-      providerType: 'custom',
       baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
       apiFormats,
     })).toBe('/chat/completions')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'openai:responses',
-      providerType: 'custom',
       baseUrl: 'https://api.openai.example/v1',
       apiFormats,
     })).toBe('/responses')
@@ -221,21 +171,18 @@ describe('endpoint default paths', () => {
   it('drops /v1 from Claude Messages defaults because base URL is the API root', () => {
     expect(getDefaultEndpointPath({
       apiFormat: 'claude:messages',
-      providerType: 'custom',
       baseUrl: 'https://api.anthropic.example/v1',
       apiFormats,
     })).toBe('/messages')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'claude:messages',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/api',
       apiFormats,
     })).toBe('/messages')
 
     expect(getDefaultEndpointPath({
       apiFormat: 'claude:messages',
-      providerType: 'custom',
       baseUrl: 'https://proxy.example.com/anthropic',
       apiFormats,
     })).toBe('/messages')

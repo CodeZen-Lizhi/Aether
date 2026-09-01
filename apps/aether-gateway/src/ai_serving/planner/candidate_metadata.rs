@@ -1,6 +1,7 @@
 use aether_ai_serving::{
-    append_ai_execution_contract_fields_to_value, append_ai_ranking_metadata_to_object,
-    build_ai_candidate_metadata_from_candidate,
+append_ai_execution_contract_fields_to_value,
+append_ai_ranking_metadata_to_object,
+build_ai_candidate_metadata_from_candidate,
 };
 use aether_scheduler_core::{SchedulerMinimalCandidateSelectionCandidate, SchedulerRankingOutcome};
 use serde_json::{Map, Value};

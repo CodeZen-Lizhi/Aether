@@ -2,29 +2,11 @@ use std::collections::BTreeSet;
 
 use thiserror::Error;
 
-use crate::model::{RoutingGroupConfig, RoutingPoolPolicyOverride};
+use crate::model::RoutingGroupConfig;
 use crate::mutations::{validate_header_patch, validate_json_patch_operations};
 use crate::{RoutingAction, RoutingRulePhase};
 
 pub const MAX_ROUTING_ALLOWED_KEYS: usize = 512;
-
-const ROUTING_POOL_PRESETS: &[&str] = &[
-    "lru",
-    "cache_affinity",
-    "load_balance",
-    "single_account",
-    "priority_first",
-    "free_team_first",
-    "free_first",
-    "team_first",
-    "plus_first",
-    "pro_first",
-    "health_first",
-    "latency_first",
-    "cost_first",
-    "quota_balanced",
-    "recent_refresh",
-];
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum RoutingValidationError {
@@ -47,23 +29,6 @@ pub enum RoutingValidationError {
         count: usize,
         max: usize,
     },
-    #[error("routing pool policy {selector} has an empty provider id")]
-    EmptyPoolProviderId { selector: String },
-    #[error("routing pool policy {selector} uses unsupported preset: {preset}")]
-    UnsupportedPoolPreset { selector: String, preset: String },
-    #[error("routing pool policy {selector} contains duplicate preset: {preset}")]
-    DuplicatePoolPreset { selector: String, preset: String },
-    #[error("routing pool policy {selector} preset {preset} has invalid mode: {mode}")]
-    InvalidPoolPresetMode {
-        selector: String,
-        preset: String,
-        mode: String,
-    },
-    #[error("routing pool policy {selector} enables mutually exclusive distribution presets: {presets:?}")]
-    ConflictingPoolDistributionPresets {
-        selector: String,
-        presets: Vec<String>,
-    },
 }
 
 pub fn validate_routing_group_config(
@@ -78,18 +43,6 @@ pub fn validate_routing_group_config(
             format!("model:{}", model_policy.model.trim()),
             model_policy.allowed_keys.len(),
         )?;
-        for (provider_id, override_policy) in &model_policy.pool_policy_overrides {
-            let model_selector = format!("model:{}", model_policy.model.trim());
-            if provider_id.trim().is_empty() {
-                return Err(RoutingValidationError::EmptyPoolProviderId {
-                    selector: model_selector,
-                });
-            }
-            validate_pool_policy_override(
-                format!("{model_selector}:provider:{}", provider_id.trim()),
-                override_policy,
-            )?;
-        }
     }
     for rule in &config.rules {
         if rule.id.trim().is_empty() {
@@ -129,67 +82,6 @@ pub fn validate_routing_group_config(
         }
     }
     Ok(())
-}
-
-fn validate_pool_policy_override(
-    selector: String,
-    override_policy: &RoutingPoolPolicyOverride,
-) -> Result<(), RoutingValidationError> {
-    let mut seen = BTreeSet::new();
-    let mut enabled_distribution_presets = Vec::new();
-    for preset in &override_policy.scheduling_presets {
-        let normalized = preset.preset.trim().to_ascii_lowercase();
-        if !ROUTING_POOL_PRESETS.contains(&normalized.as_str()) {
-            return Err(RoutingValidationError::UnsupportedPoolPreset {
-                selector,
-                preset: normalized,
-            });
-        }
-        if !seen.insert(normalized.clone()) {
-            return Err(RoutingValidationError::DuplicatePoolPreset {
-                selector,
-                preset: normalized,
-            });
-        }
-        if let Some(mode) = preset.mode.as_deref() {
-            let mode = mode.trim().to_ascii_lowercase();
-            if !routing_pool_preset_mode_valid(&normalized, &mode) {
-                return Err(RoutingValidationError::InvalidPoolPresetMode {
-                    selector,
-                    preset: normalized,
-                    mode,
-                });
-            }
-        }
-        if preset.enabled && routing_pool_distribution_preset(&normalized) {
-            enabled_distribution_presets.push(normalized);
-        }
-    }
-    if enabled_distribution_presets.len() > 1 {
-        return Err(RoutingValidationError::ConflictingPoolDistributionPresets {
-            selector,
-            presets: enabled_distribution_presets,
-        });
-    }
-    Ok(())
-}
-
-fn routing_pool_preset_mode_valid(preset: &str, mode: &str) -> bool {
-    match preset {
-        "free_team_first" => matches!(mode, "free_only" | "team_only" | "both"),
-        "free_first" => mode == "free_only",
-        "team_first" => mode == "team_only",
-        "plus_first" => mode == "plus_only",
-        "pro_first" => mode == "pro_only",
-        _ => false,
-    }
-}
-
-fn routing_pool_distribution_preset(preset: &str) -> bool {
-    matches!(
-        preset,
-        "lru" | "cache_affinity" | "load_balance" | "single_account"
-    )
 }
 
 fn validate_allowed_key_count(
@@ -270,7 +162,6 @@ mod tests {
                 RoutingAction::SetScheduling {
                     priority_mode: None,
                     scheduling_mode: None,
-                    keep_priority_on_conversion: Some(true),
                 },
                 "set_scheduling",
             ),
@@ -385,105 +276,6 @@ mod tests {
 
         validate_routing_group_config(&config)
             .expect("allowed key selectors at the scan limit should remain valid");
-    }
-
-    #[test]
-    fn rejects_unknown_pool_override_preset() {
-        let config = pool_override_config(vec![pool_preset("typo_priority", true, None)]);
-
-        assert_eq!(
-            validate_routing_group_config(&config),
-            Err(RoutingValidationError::UnsupportedPoolPreset {
-                selector: "model:gpt-5:provider:provider-1".to_string(),
-                preset: "typo_priority".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn rejects_duplicate_pool_override_presets() {
-        let config = pool_override_config(vec![
-            pool_preset("health_first", true, None),
-            pool_preset(" HEALTH_FIRST ", false, None),
-        ]);
-
-        assert_eq!(
-            validate_routing_group_config(&config),
-            Err(RoutingValidationError::DuplicatePoolPreset {
-                selector: "model:gpt-5:provider:provider-1".to_string(),
-                preset: "health_first".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn rejects_invalid_pool_override_mode() {
-        let config =
-            pool_override_config(vec![pool_preset("free_team_first", true, Some("pro_only"))]);
-
-        assert_eq!(
-            validate_routing_group_config(&config),
-            Err(RoutingValidationError::InvalidPoolPresetMode {
-                selector: "model:gpt-5:provider:provider-1".to_string(),
-                preset: "free_team_first".to_string(),
-                mode: "pro_only".to_string(),
-            })
-        );
-    }
-
-    #[test]
-    fn rejects_conflicting_pool_override_distribution_modes() {
-        let config = pool_override_config(vec![
-            pool_preset("lru", true, None),
-            pool_preset("cache_affinity", true, None),
-        ]);
-
-        assert_eq!(
-            validate_routing_group_config(&config),
-            Err(RoutingValidationError::ConflictingPoolDistributionPresets {
-                selector: "model:gpt-5:provider:provider-1".to_string(),
-                presets: vec!["lru".to_string(), "cache_affinity".to_string()],
-            })
-        );
-    }
-
-    #[test]
-    fn accepts_valid_pool_override_modes_and_disabled_alternatives() {
-        let config = pool_override_config(vec![
-            pool_preset("cache_affinity", true, None),
-            pool_preset("lru", false, None),
-            pool_preset("free_team_first", true, Some("team_only")),
-        ]);
-
-        validate_routing_group_config(&config).expect("valid pool override should pass");
-    }
-
-    fn pool_override_config(
-        scheduling_presets: Vec<crate::RoutingSchedulingPreset>,
-    ) -> RoutingGroupConfig {
-        RoutingGroupConfig {
-            model_policies: vec![RoutingModelPolicy {
-                model: "gpt-5".to_string(),
-                pool_policy_overrides: std::collections::BTreeMap::from([(
-                    "provider-1".to_string(),
-                    RoutingPoolPolicyOverride { scheduling_presets },
-                )]),
-                ..RoutingModelPolicy::default()
-            }],
-            ..RoutingGroupConfig::default()
-        }
-    }
-
-    fn pool_preset(
-        preset: &str,
-        enabled: bool,
-        mode: Option<&str>,
-    ) -> crate::RoutingSchedulingPreset {
-        crate::RoutingSchedulingPreset {
-            preset: preset.to_string(),
-            enabled,
-            mode: mode.map(str::to_string),
-        }
     }
 
     fn key_ids(count: usize) -> Vec<String> {

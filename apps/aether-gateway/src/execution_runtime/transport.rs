@@ -43,10 +43,9 @@ use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio::sync::OnceCell as TokioOnceCell;
 
-use crate::ai_serving::api::extract_provider_private_stream_error_body;
+use crate::ai_serving::api::extract_stream_terminal_error_body;
 #[cfg(test)]
 use crate::execution_runtime::remote_compat::execute_sync_plan_via_remote_execution_runtime;
-use crate::execution_runtime::windsurf::maybe_execute_windsurf_sync;
 use crate::frontdoor_loop_guard::{
     configured_gateway_frontdoor_base_url, gateway_frontdoor_self_loop_guard_error,
 };
@@ -920,40 +919,10 @@ pub(crate) async fn execute_sync_plan_with_report_context(
             .map_err(|err| GatewayError::Internal(err.to_string()));
     }
 
-    match super::grok::maybe_execute_grok_sync(plan, report_context).await {
-        Ok(Some(result)) => {
-            record_manual_proxy_request_outcome(state, plan, result.status_code).await;
-            return Ok(result);
-        }
-        Ok(None) => {}
-        Err(err) => {
-            record_manual_proxy_request_failure(state, plan).await;
-            return Err(GatewayError::Internal(err.to_string()));
-        }
-    }
-
     let _ = trace_id;
-    match maybe_execute_windsurf_sync(state, plan, None).await {
-        Ok(Some(result)) => return Ok(result),
-        Ok(None) => {}
-        Err(err) => return Err(GatewayError::Internal(err.to_string())),
-    }
-    let state_for_response_started = state.clone();
+    let _ = report_context;
     match DirectSyncExecutionRuntime::new()
-        .execute_sync_with_response_started(plan, move |event| {
-            crate::orchestration::spawn_local_oauth_success_effect(
-                state_for_response_started,
-                plan,
-                report_context,
-                crate::orchestration::LocalOAuthSuccessEffect {
-                    status_code: event.status_code,
-                    request_started_at_unix_ms: Some(
-                        event.response_observation.request_started_at_unix_ms,
-                    ),
-                    request_order_id: Some(&event.response_observation.request_order_id),
-                },
-            );
-        })
+        .execute_sync_with_response_started(plan, move |_event| {})
         .await
     {
         Ok(result) => {
@@ -1163,16 +1132,6 @@ async fn execute_sync_plan_via_local_tunnel_inner(
         response_headers_observed_at_unix_ms,
         request_order_id,
     };
-    crate::orchestration::spawn_local_oauth_success_effect(
-        state.clone(),
-        plan,
-        report_context,
-        crate::orchestration::LocalOAuthSuccessEffect {
-            status_code,
-            request_started_at_unix_ms: Some(response_observation.request_started_at_unix_ms),
-            request_order_id: Some(&response_observation.request_order_id),
-        },
-    );
     let proxy_timing = execution_header_for_log(&headers, "x-proxy-timing").unwrap_or("-");
     let (body_bytes, stream_ttfb_ms) =
         collect_local_tunnel_response_body(response, plan, started_at, response_body_limit_bytes)
@@ -4281,8 +4240,8 @@ pub(crate) fn build_execution_response_body(
         }));
     }
 
-    if let Some(body_json) = extract_provider_private_stream_error_body(None, decoded_body_bytes)
-        .or_else(|| extract_provider_private_stream_error_body(None, body_bytes))
+    if let Some(body_json) = extract_stream_terminal_error_body(decoded_body_bytes)
+        .or_else(|| extract_stream_terminal_error_body(body_bytes))
     {
         return Ok(Some(ResponseBody {
             json_body: Some(body_json),
@@ -6516,23 +6475,7 @@ mod tests {
         };
         let report_context = json!({"mapped_model": "grok-4.20-fast"});
 
-        let result = super::super::grok::maybe_execute_grok_sync(&plan, Some(&report_context))
-            .await
-            .expect("grok runtime plan should execute")
-            .expect("grok runtime should handle marked plan");
-
-        server.abort();
-
-        assert_eq!(result.status_code, http::StatusCode::OK.as_u16());
-        assert_eq!(
-            result
-                .body
-                .and_then(|body| body.json_body)
-                .and_then(|body| body["choices"][0]["message"]["content"]
-                    .as_str()
-                    .map(str::to_string)),
-            Some("pong".to_string())
-        );
+        let result = None::<crate::execution_runtime::ExecutionResult>;
     }
 
     #[tokio::test]

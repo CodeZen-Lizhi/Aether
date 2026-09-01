@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aether_admin::provider::{
-    pool as admin_provider_pool_pure, status as admin_provider_status_pure,
+status as admin_provider_status_pure,
 };
 use aether_data_contracts::repository::candidates::StoredRequestCandidate;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
@@ -23,9 +23,7 @@ pub(super) struct CandidateRuntimeSelectionSnapshot {
     pub(super) recent_candidates: Vec<StoredRequestCandidate>,
     pub(super) provider_concurrent_limits: BTreeMap<String, usize>,
     pub(super) provider_key_rpm_states: BTreeMap<String, StoredProviderCatalogKey>,
-    pub(super) pool_provider_ids: BTreeSet<String>,
     provider_quota_blocks_requests: BTreeMap<String, bool>,
-    key_account_quota_exhausted: BTreeMap<String, bool>,
     key_oauth_invalid: BTreeMap<String, bool>,
     provider_key_rpm_reset_ats: BTreeMap<String, Option<u64>>,
 }
@@ -37,15 +35,6 @@ pub(super) async fn read_candidate_runtime_selection_snapshot(
     now_unix_secs: u64,
 ) -> Result<CandidateRuntimeSelectionSnapshot, GatewayError> {
     let provider_concurrent_limits = read_provider_concurrent_limits(state, candidates).await?;
-    let provider_pool_state = read_provider_pool_state_map(state, candidates).await?;
-    let provider_skip_exhausted_accounts = provider_pool_state
-        .iter()
-        .map(|(provider_id, state)| (provider_id.clone(), state.skip_exhausted_accounts))
-        .collect::<BTreeMap<_, _>>();
-    let pool_provider_ids = provider_pool_state
-        .iter()
-        .filter_map(|(provider_id, state)| state.pool_enabled.then_some(provider_id.clone()))
-        .collect::<BTreeSet<_>>();
     let provider_key_rpm_states = read_provider_key_rpm_states(state, candidates).await?;
     let recent_candidates = if runtime_snapshot_requires_recent_candidates(
         auth_snapshot,
@@ -57,11 +46,6 @@ pub(super) async fn read_candidate_runtime_selection_snapshot(
     } else {
         Vec::new()
     };
-    let key_account_quota_exhausted = read_key_account_quota_exhaustion_map(
-        candidates,
-        &provider_key_rpm_states,
-        &provider_skip_exhausted_accounts,
-    );
     let key_oauth_invalid =
         read_key_oauth_invalid_map(candidates, &provider_key_rpm_states, now_unix_secs);
     let provider_quota_blocks_requests =
@@ -73,9 +57,7 @@ pub(super) async fn read_candidate_runtime_selection_snapshot(
         recent_candidates,
         provider_concurrent_limits,
         provider_key_rpm_states,
-        pool_provider_ids,
         provider_quota_blocks_requests,
-        key_account_quota_exhausted,
         key_oauth_invalid,
         provider_key_rpm_reset_ats,
     })
@@ -135,9 +117,6 @@ pub(super) fn is_candidate_selectable(
     snapshot: &CandidateRuntimeSelectionSnapshot,
     now_unix_secs: u64,
 ) -> bool {
-    let pool_group = snapshot
-        .pool_provider_ids
-        .contains(candidate.provider_id.as_str());
     candidate_is_selectable_with_runtime_state(CandidateRuntimeSelectabilityInput {
         candidate,
         recent_candidates: &snapshot.recent_candidates,
@@ -149,27 +128,17 @@ pub(super) fn is_candidate_selectable(
             .get(candidate.provider_id.as_str())
             .copied()
             .unwrap_or(false),
-        account_quota_exhausted: !pool_group
-            && snapshot
-                .key_account_quota_exhausted
-                .get(candidate.key_id.as_str())
-                .copied()
-                .unwrap_or(false),
-        oauth_invalid: !pool_group
-            && snapshot
-                .key_oauth_invalid
-                .get(candidate.key_id.as_str())
-                .copied()
-                .unwrap_or(false),
-        enforce_key_circuit_breaker: !pool_group,
-        rpm_reset_at: (!pool_group)
-            .then(|| {
-                snapshot
-                    .provider_key_rpm_reset_ats
-                    .get(candidate.key_id.as_str())
-                    .copied()
-                    .flatten()
-            })
+        account_quota_exhausted: false,
+        oauth_invalid: snapshot
+            .key_oauth_invalid
+            .get(candidate.key_id.as_str())
+            .copied()
+            .unwrap_or(false),
+        enforce_key_circuit_breaker: true,
+        rpm_reset_at: snapshot
+            .provider_key_rpm_reset_ats
+            .get(candidate.key_id.as_str())
+            .copied()
             .flatten(),
     })
 }
@@ -179,45 +148,29 @@ pub(super) fn current_candidate_runtime_skip_reason(
     snapshot: &CandidateRuntimeSelectionSnapshot,
     now_unix_secs: u64,
 ) -> Option<&'static str> {
-    let pool_group = snapshot
-        .pool_provider_ids
-        .contains(candidate.provider_id.as_str());
-    let provider_quota_blocks_requests = snapshot
-        .provider_quota_blocks_requests
-        .get(candidate.provider_id.as_str())
-        .copied()
-        .unwrap_or(false);
-    let rpm_reset_at = (!pool_group)
-        .then(|| {
-            snapshot
-                .provider_key_rpm_reset_ats
-                .get(candidate.key_id.as_str())
-                .copied()
-                .flatten()
-        })
-        .flatten();
-
     candidate_runtime_skip_reason_with_state(CandidateRuntimeSelectabilityInput {
         candidate,
         recent_candidates: &snapshot.recent_candidates,
         provider_concurrent_limits: &snapshot.provider_concurrent_limits,
         provider_key_rpm_states: &snapshot.provider_key_rpm_states,
         now_unix_secs,
-        provider_quota_blocks_requests,
-        account_quota_exhausted: !pool_group
-            && snapshot
-                .key_account_quota_exhausted
-                .get(candidate.key_id.as_str())
-                .copied()
-                .unwrap_or(false),
-        oauth_invalid: !pool_group
-            && snapshot
-                .key_oauth_invalid
-                .get(candidate.key_id.as_str())
-                .copied()
-                .unwrap_or(false),
-        enforce_key_circuit_breaker: !pool_group,
-        rpm_reset_at,
+        provider_quota_blocks_requests: snapshot
+            .provider_quota_blocks_requests
+            .get(candidate.provider_id.as_str())
+            .copied()
+            .unwrap_or(false),
+        account_quota_exhausted: false,
+        oauth_invalid: snapshot
+            .key_oauth_invalid
+            .get(candidate.key_id.as_str())
+            .copied()
+            .unwrap_or(false),
+        enforce_key_circuit_breaker: true,
+        rpm_reset_at: snapshot
+            .provider_key_rpm_reset_ats
+            .get(candidate.key_id.as_str())
+            .copied()
+            .flatten(),
     })
 }
 
@@ -285,77 +238,6 @@ async fn read_provider_quota_block_map(
     }
 
     Ok(quota_blocks)
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct ProviderPoolState {
-    pool_enabled: bool,
-    skip_exhausted_accounts: bool,
-}
-
-async fn read_provider_pool_state_map(
-    state: &(impl SchedulerRuntimeState + ?Sized),
-    candidates: &[SchedulerMinimalCandidateSelectionCandidate],
-) -> Result<BTreeMap<String, ProviderPoolState>, GatewayError> {
-    let provider_ids = candidates
-        .iter()
-        .map(|candidate| candidate.provider_id.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    if provider_ids.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-
-    let providers = state
-        .read_provider_catalog_providers_by_ids(&provider_ids)
-        .await?;
-    Ok(providers
-        .into_iter()
-        .map(|provider| {
-            let pool_advanced = provider
-                .config
-                .as_ref()
-                .and_then(|value| value.get("pool_advanced"));
-            let skip_exhausted_accounts = pool_advanced
-                .and_then(serde_json::Value::as_object)
-                .and_then(|value| value.get("skip_exhausted_accounts"))
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false);
-            (
-                provider.id,
-                ProviderPoolState {
-                    pool_enabled: pool_advanced.is_some(),
-                    skip_exhausted_accounts,
-                },
-            )
-        })
-        .collect())
-}
-
-fn read_key_account_quota_exhaustion_map(
-    candidates: &[SchedulerMinimalCandidateSelectionCandidate],
-    provider_key_rpm_states: &BTreeMap<String, StoredProviderCatalogKey>,
-    provider_skip_exhausted_accounts: &BTreeMap<String, bool>,
-) -> BTreeMap<String, bool> {
-    candidates
-        .iter()
-        .map(|candidate| {
-            let exhausted = provider_skip_exhausted_accounts
-                .get(candidate.provider_id.as_str())
-                .copied()
-                .unwrap_or(false)
-                && provider_key_rpm_states
-                    .get(candidate.key_id.as_str())
-                    .is_some_and(|key| {
-                        admin_provider_pool_pure::admin_pool_key_account_quota_exhausted(
-                            key,
-                            candidate.provider_type.as_str(),
-                        )
-                    });
-            (candidate.key_id.clone(), exhausted)
-        })
-        .collect()
 }
 
 fn read_key_oauth_invalid_map(

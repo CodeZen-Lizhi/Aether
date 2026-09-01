@@ -39,9 +39,7 @@ SELECT
   quota_reset_day,
   quota_last_reset_at AS quota_last_reset_at_unix_secs,
   quota_expires_at AS quota_expires_at_unix_secs,
-  provider_priority,
   is_active,
-  keep_priority_on_conversion,
   enable_format_conversion,
   concurrent_limit,
   max_retries,
@@ -115,9 +113,7 @@ SELECT
   COALESCE(api_key, encrypted_key) AS api_key,
   auth_config,
   note,
-  internal_priority,
   rate_multipliers,
-  global_priority_by_format,
   allowed_models,
   expires_at AS expires_at_unix_secs,
   cache_ttl_minutes,
@@ -174,9 +170,7 @@ SELECT
   COALESCE(api_key, encrypted_key) AS api_key,
   auth_config,
   note,
-  internal_priority,
   rate_multipliers,
-  global_priority_by_format,
   allowed_models,
   expires_at AS expires_at_unix_secs,
   cache_ttl_minutes,
@@ -236,9 +230,7 @@ SELECT
     ELSE '{}'
   END AS auth_config,
   NULL AS note,
-  NULL AS internal_priority,
   NULL AS rate_multipliers,
-  NULL AS global_priority_by_format,
   NULL AS allowed_models,
   NULL AS expires_at_unix_secs,
   NULL AS cache_ttl_minutes,
@@ -340,7 +332,7 @@ impl SqliteProviderCatalogReadRepository {
         if active_only {
             push_eq(&mut builder, &mut where_clause, "is_active", true);
         }
-        builder.push(" ORDER BY provider_priority ASC, name ASC");
+        builder.push(" ORDER BY created_at ASC, id ASC");
         let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
         rows.iter().map(map_provider_row).collect()
     }
@@ -488,9 +480,9 @@ impl SqliteProviderCatalogReadRepository {
             ))
         })?;
         let order_by = match query.order {
-            ProviderCatalogKeyListOrder::Name => "internal_priority ASC, name ASC, id ASC",
+            ProviderCatalogKeyListOrder::Name => "name ASC, id ASC",
             ProviderCatalogKeyListOrder::CreatedAt => {
-                "internal_priority ASC, COALESCE(created_at, 0) ASC, id ASC"
+                "COALESCE(created_at, 0) ASC, id ASC"
             }
             ProviderCatalogKeyListOrder::CreatedAtAsc => {
                 "created_at IS NULL ASC, created_at ASC, name ASC, id ASC"
@@ -559,7 +551,7 @@ impl SqliteProviderCatalogReadRepository {
     pub async fn create_provider(
         &self,
         provider: &StoredProviderCatalogProvider,
-        shift_existing_priorities_from: Option<i32>,
+        _shift_existing_priorities_from: Option<i32>,
     ) -> Result<StoredProviderCatalogProvider, DataLayerError> {
         validate_provider(provider)?;
         let now = current_unix_secs();
@@ -567,31 +559,17 @@ impl SqliteProviderCatalogReadRepository {
         let updated_at = provider.updated_at_unix_secs.unwrap_or(now) as i64;
         let mut tx = self.pool.begin().await.map_sql_err()?;
 
-        if let Some(target_priority) = shift_existing_priorities_from {
-            sqlx::query(
-                r#"
-UPDATE providers
-SET provider_priority = provider_priority + 1
-WHERE provider_priority >= ?
-"#,
-            )
-            .bind(target_priority)
-            .execute(&mut *tx)
-            .await
-            .map_sql_err()?;
-        }
-
         sqlx::query(
             r#"
 INSERT INTO providers (
   id, name, description, website, provider_type, billing_type,
   monthly_quota_usd, monthly_used_usd, quota_reset_day,
-  quota_last_reset_at, quota_expires_at, provider_priority,
-  is_active, keep_priority_on_conversion, enable_format_conversion,
+  quota_last_reset_at, quota_expires_at,
+  is_active, enable_format_conversion,
   concurrent_limit, max_retries, proxy, request_timeout,
   stream_first_byte_timeout, config, created_at, updated_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
         )
         .bind(&provider.id)
@@ -619,9 +597,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             provider.quota_expires_at_unix_secs,
             "providers.quota_expires_at",
         )?)
-        .bind(provider.provider_priority)
         .bind(provider.is_active)
-        .bind(provider.keep_priority_on_conversion)
         .bind(provider.enable_format_conversion)
         .bind(provider.concurrent_limit)
         .bind(provider.max_retries)
@@ -664,9 +640,7 @@ SET
   quota_reset_day = ?,
   quota_last_reset_at = ?,
   quota_expires_at = ?,
-  provider_priority = ?,
   is_active = ?,
-  keep_priority_on_conversion = ?,
   enable_format_conversion = ?,
   concurrent_limit = ?,
   max_retries = ?,
@@ -702,9 +676,7 @@ WHERE id = ?
             provider.quota_expires_at_unix_secs,
             "providers.quota_expires_at",
         )?)
-        .bind(provider.provider_priority)
         .bind(provider.is_active)
-        .bind(provider.keep_priority_on_conversion)
         .bind(provider.enable_format_conversion)
         .bind(provider.concurrent_limit)
         .bind(provider.max_retries)
@@ -977,14 +949,9 @@ WHERE id = ?
             )?)
             .bind(&key.encrypted_auth_config)
             .bind(&key.note)
-            .bind(key.internal_priority)
             .bind(optional_json_to_string(
                 &key.rate_multipliers,
                 "provider_api_keys.rate_multipliers",
-            )?)
-            .bind(optional_json_to_string(
-                &key.global_priority_by_format,
-                "provider_api_keys.global_priority_by_format",
             )?)
             .bind(optional_json_to_string(
                 &key.allowed_models,
@@ -2755,25 +2722,18 @@ fn optional_json_to_string(
 fn key_insert_sql() -> &'static str {
     r#"
 INSERT INTO provider_api_keys (
-  id, provider_id, name, api_key, auth_type, capabilities, is_active,
-  api_formats, auth_type_by_format, allow_auth_channel_mismatch_formats,
-  auth_config, note, internal_priority, rate_multipliers,
-  global_priority_by_format, allowed_models, expires_at, cache_ttl_minutes,
-  max_probe_interval_minutes, proxy, fingerprint, rpm_limit, concurrent_limit,
-  learned_rpm_limit, concurrent_429_count, rpm_429_count, last_429_at,
-  last_429_type, adjustment_history, utilization_samples,
-  last_probe_increase_at, last_rpm_peak, request_count, total_tokens,
-  total_cost_usd, success_count, error_count, total_response_time_ms,
-  last_used_at, auto_fetch_models, last_models_fetch_at,
-  last_models_fetch_error, locked_models, model_include_patterns,
-  model_exclude_patterns, upstream_metadata, oauth_invalid_at,
-  oauth_invalid_reason, status_snapshot, health_by_format,
+  id, provider_id, name, api_key, auth_type, capabilities,
+  is_active, api_formats, auth_type_by_format, allow_auth_channel_mismatch_formats, auth_config, note,
+  rate_multipliers, allowed_models, expires_at, cache_ttl_minutes, max_probe_interval_minutes, proxy,
+  fingerprint, rpm_limit, concurrent_limit, learned_rpm_limit, concurrent_429_count, rpm_429_count,
+  last_429_at, last_429_type, adjustment_history, utilization_samples, last_probe_increase_at, last_rpm_peak,
+  request_count, total_tokens, total_cost_usd, success_count, error_count, total_response_time_ms,
+  last_used_at, auto_fetch_models, last_models_fetch_at, last_models_fetch_error, locked_models, model_include_patterns,
+  model_exclude_patterns, upstream_metadata, oauth_invalid_at, oauth_invalid_reason, status_snapshot, health_by_format,
   circuit_breaker_by_format, created_at, updated_at
 )
 VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-  ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 "#
 }
@@ -2793,9 +2753,7 @@ SET
   allow_auth_channel_mismatch_formats = ?,
   auth_config = ?,
   note = ?,
-  internal_priority = ?,
   rate_multipliers = ?,
-  global_priority_by_format = ?,
   allowed_models = ?,
   expires_at = ?,
   cache_ttl_minutes = ?,
@@ -2845,14 +2803,9 @@ fn key_update_query(
         )?)
         .bind(&key.encrypted_auth_config)
         .bind(&key.note)
-        .bind(key.internal_priority)
         .bind(optional_json_to_string(
             &key.rate_multipliers,
             "provider_api_keys.rate_multipliers",
-        )?)
-        .bind(optional_json_to_string(
-            &key.global_priority_by_format,
-            "provider_api_keys.global_priority_by_format",
         )?)
         .bind(optional_json_to_string(
             &key.allowed_models,
@@ -2934,17 +2887,10 @@ fn push_admin_key_assignments<'args>(
         .push_bind(&key.encrypted_auth_config)
         .push(", note = ")
         .push_bind(&key.note)
-        .push(", internal_priority = ")
-        .push_bind(key.internal_priority)
         .push(", rate_multipliers = ")
         .push_bind(optional_json_to_string(
             &key.rate_multipliers,
             "provider_api_keys.rate_multipliers",
-        )?)
-        .push(", global_priority_by_format = ")
-        .push_bind(optional_json_to_string(
-            &key.global_priority_by_format,
-            "provider_api_keys.global_priority_by_format",
         )?)
         .push(", allowed_models = ")
         .push_bind(optional_json_to_string(
@@ -3096,10 +3042,8 @@ fn map_provider_row(row: &SqliteRow) -> Result<StoredProviderCatalogProvider, Da
             "providers.quota_expires_at",
         )?,
     )
-    .with_routing_fields(row.try_get("provider_priority").map_sql_err()?)
     .with_transport_fields(
         row.try_get("is_active").map_sql_err()?,
-        row.try_get("keep_priority_on_conversion").map_sql_err()?,
         row.try_get("enable_format_conversion").map_sql_err()?,
         row.try_get("concurrent_limit").map_sql_err()?,
         row.try_get("max_retries").map_sql_err()?,
@@ -3220,10 +3164,6 @@ fn map_key_row(row: &SqliteRow) -> Result<StoredProviderCatalogKey, DataLayerErr
             "provider_api_keys.rate_multipliers",
         )?,
         optional_json_from_string(
-            row.try_get("global_priority_by_format").map_sql_err()?,
-            "provider_api_keys.global_priority_by_format",
-        )?,
-        optional_json_from_string(
             row.try_get("allowed_models").map_sql_err()?,
             "provider_api_keys.allowed_models",
         )?,
@@ -3315,7 +3255,6 @@ fn map_key_row(row: &SqliteRow) -> Result<StoredProviderCatalogKey, DataLayerErr
                 .map_sql_err()?,
             "provider_api_keys.allow_auth_channel_mismatch_formats",
         )?;
-        key.internal_priority = row.try_get("internal_priority").map_sql_err()?;
         key.cache_ttl_minutes = row.try_get("cache_ttl_minutes").map_sql_err()?;
         key.max_probe_interval_minutes = row.try_get("max_probe_interval_minutes").map_sql_err()?;
         key.last_429_type = row.try_get("last_429_type").map_sql_err()?;
@@ -3663,7 +3602,6 @@ mod tests {
             .await
             .expect("providers should list");
         assert_eq!(providers.len(), 1);
-        assert_eq!(providers[0].provider_priority, 10);
         assert_eq!(providers[0].monthly_quota_usd, Some(0.0));
         assert_eq!(providers[0].monthly_used_usd, Some(0.0));
 
@@ -4047,7 +3985,6 @@ mod tests {
             Some("encrypted-api-key".to_string()),
             Some("encrypted-auth-v1".to_string()),
             None,
-            Some(json!({"openai:responses": 17})),
             Some(json!(["gpt-5"])),
             Some(4_102_444_800),
             None,
@@ -4055,7 +3992,6 @@ mod tests {
         )
         .expect("key transport should build");
         key.note = Some("admin note".to_string());
-        key.internal_priority = 23;
         key.status_snapshot = Some(json!({
             "oauth": {"invalid": true, "source": "old-task"},
             "quota": {"remaining": 7},
@@ -4119,11 +4055,6 @@ mod tests {
         assert_eq!(stored.name, "Admin Managed Name");
         assert!(!stored.is_active);
         assert_eq!(stored.note.as_deref(), Some("admin note"));
-        assert_eq!(stored.internal_priority, 23);
-        assert_eq!(
-            stored.global_priority_by_format,
-            Some(json!({"openai:responses": 17}))
-        );
         assert_eq!(stored.allowed_models, Some(json!(["gpt-5"])));
         assert_eq!(
             stored.encrypted_api_key.as_deref(),
@@ -4205,7 +4136,6 @@ mod tests {
             None,
             Some("encrypted-api-absent".to_string()),
             Some("encrypted-auth-absent".to_string()),
-            None,
             None,
             None,
             None,
@@ -4444,9 +4374,7 @@ mod tests {
             Some(1_710_000_000),
             None,
         )
-        .with_routing_fields(20)
         .with_transport_fields(
-            true,
             true,
             true,
             Some(4),
@@ -4460,12 +4388,10 @@ mod tests {
             .create_provider(&provider, None)
             .await
             .expect("provider should create");
-        assert_eq!(created_provider.provider_priority, 20);
         assert_eq!(created_provider.proxy, Some(json!({"http":"proxy"})));
 
         let mut updated_provider = created_provider.clone();
         updated_provider.description = Some("updated provider".to_string());
-        updated_provider.provider_priority = 30;
         updated_provider.is_active = false;
         let updated_provider = repository
             .update_provider(&updated_provider)
@@ -4528,7 +4454,6 @@ mod tests {
             Some("enc-key".to_string()),
             Some("enc-auth".to_string()),
             Some(json!({"openai:chat":1.0})),
-            Some(json!({"openai:chat":10})),
             Some(json!(["gpt-4.1"])),
             Some(1_730_000_000),
             Some(json!({"http":"proxy"})),
@@ -4762,13 +4687,13 @@ mod tests {
         sqlx::query(
             r#"
 INSERT INTO providers (
-  id, name, description, website, provider_type, provider_priority,
+  id, name, description, website, provider_type,
   monthly_quota_usd, monthly_used_usd,
-  is_active, keep_priority_on_conversion, enable_format_conversion,
+  is_active, enable_format_conversion,
   config, created_at, updated_at
 ) VALUES (
   'provider-1', 'Provider One', 'test provider', 'https://example.com',
-  'custom', 10, 0, 0, 1, 1, 1, '{"region":"us"}', 1, 2
+  'custom', 0, 0, 1, 1, '{"region":"us"}', 1, 2
 )
 "#,
         )
@@ -4793,14 +4718,14 @@ INSERT INTO provider_endpoints (
             r#"
 INSERT INTO provider_api_keys (
   id, provider_id, name, api_key, auth_type, capabilities, is_active,
-  api_formats, auth_type_by_format, internal_priority, rpm_limit,
+  api_formats, auth_type_by_format, rpm_limit,
   concurrent_limit, request_count, total_tokens, total_cost_usd,
   success_count, error_count, total_response_time_ms, health_by_format,
   created_at, updated_at
 ) VALUES (
   'key-1', 'provider-1', 'default', 'enc-key', 'api_key',
   '{"cache_1h":true}', 1, '["openai:chat"]', '{"openai:chat":"api_key"}',
-  5, 120, 3, 10, 1234, 1.5, 9, 1, 4294967296, '{"openai:chat":{"score":1}}',
+  120, 3, 10, 1234, 1.5, 9, 1, 4294967296, '{"openai:chat":{"score":1}}',
   5, 6
 )
 "#,

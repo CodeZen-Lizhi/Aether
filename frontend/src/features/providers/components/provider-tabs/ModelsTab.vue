@@ -316,16 +316,15 @@ const selectedTestKeyIds = ref<string[]>([])
 const modelTestProviderKeys = ref<EndpointAPIKey[]>([])
 const modelTestKeysLoadedProviderId = ref<string | null>(null)
 const loadingModelTestKeys = ref(false)
-const isPoolManagedProvider = computed(() => Boolean(props.provider.pool_advanced))
 const activeEndpoints = computed(() => (props.endpoints ?? [])
   .filter(endpoint => {
     if (typeof endpoint.active_keys === 'number') {
       return endpoint.is_active !== false
         && isModelTestableApiFormat(endpoint.api_format)
         && (endpoint.active_keys > 0
-          || isModelTestableEndpoint(endpoint, props.providerKeys ?? [], props.provider.provider_type))
+          || isModelTestableEndpoint(endpoint, props.providerKeys ?? []))
     }
-    return isModelTestableEndpoint(endpoint, props.providerKeys ?? [], props.provider.provider_type)
+    return isModelTestableEndpoint(endpoint, props.providerKeys ?? [])
   }))
 const parsedTestRequestHeaders = computed(() => parseModelTestRequestHeadersDraft(testRequestHeadersDraft.value))
 const testRequestHeadersError = computed(() => parsedTestRequestHeaders.value.error)
@@ -359,13 +358,9 @@ const testKeyOptions = computed(() => {
     .filter((key) => {
       if (seen.has(key.id)) return false
       seen.add(key.id)
-      return modelTestKeySupportsEndpoint(key, endpoint, props.provider.provider_type)
+      return modelTestKeySupportsEndpoint(key, endpoint)
     })
-    .sort((left, right) => {
-      const priority = left.internal_priority - right.internal_priority
-      if (priority !== 0) return priority
-      return formatTestKeyOptionLabel(left).localeCompare(formatTestKeyOptionLabel(right))
-    })
+    .sort((left, right) => formatTestKeyOptionLabel(left).localeCompare(formatTestKeyOptionLabel(right)))
     .map(key => ({
       value: key.id,
       label: formatTestKeyOptionLabel(key),
@@ -603,7 +598,7 @@ async function handleStartPendingTest() {
   const modelName = model.global_model_name || model.provider_model_name
   const endpointPrefix = `[${formatApiFormat(endpoint.api_format)}] `
   await modelTest.startTest({
-    mode: isPoolManagedProvider.value ? 'pool' : 'global',
+    mode: 'global',
     modelName,
     displayLabel: `${endpointPrefix}${modelName}`,
     apiFormat: endpoint.api_format,

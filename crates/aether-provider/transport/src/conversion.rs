@@ -4,28 +4,13 @@ use aether_ai_formats::formats::matrix::{
 };
 use aether_ai_formats::normalize_api_format_alias;
 
-use crate::antigravity::is_antigravity_provider_transport;
 use crate::auth::{
     resolve_local_gemini_auth, resolve_local_openai_bearer_auth, resolve_local_standard_auth,
-};
-use crate::claude_code::local_claude_code_transport_unsupported_reason_with_network;
-use crate::kiro::{
-    is_kiro_claude_messages_transport, local_kiro_request_transport_unsupported_reason_with_network,
 };
 use crate::policy::{
     local_gemini_transport_unsupported_reason_with_network,
     local_openai_chat_transport_unsupported_reason,
     local_standard_transport_unsupported_reason_with_network,
-};
-use crate::vertex::{
-    is_vertex_api_key_transport_context, is_vertex_transport_context,
-    local_vertex_gemini_transport_unsupported_reason_with_network,
-    resolve_local_vertex_api_key_query_auth, VERTEX_API_KEY_QUERY_PARAM,
-};
-use crate::windsurf::{
-    is_windsurf_provider_transport,
-    local_windsurf_request_transport_unsupported_reason_with_network,
-    resolve_windsurf_cascade_auth,
 };
 use crate::GatewayProviderTransportSnapshot;
 
@@ -87,14 +72,6 @@ pub fn request_pair_allowed_for_transport(
     {
         return false;
     }
-    if is_kiro_claude_messages_transport(transport, &provider_api_format) {
-        return request_conversion_enabled_for_transport(
-            transport,
-            client_api_format.as_str(),
-            provider_api_format.as_str(),
-        ) && local_kiro_request_transport_unsupported_reason_with_network(transport)
-            .is_none();
-    }
     request_conversion_enabled_for_transport(
         transport,
         client_api_format.as_str(),
@@ -126,32 +103,6 @@ pub fn request_conversion_transport_unsupported_reason(
     transport: &GatewayProviderTransportSnapshot,
     _kind: RequestConversionKind,
 ) -> Option<&'static str> {
-    if transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("claude_code")
-        && normalize_api_format_alias(&transport.endpoint.api_format) == "claude:messages"
-    {
-        return local_claude_code_transport_unsupported_reason_with_network(
-            transport,
-            "claude:messages",
-        );
-    }
-    if is_kiro_claude_messages_transport(transport, &transport.endpoint.api_format) {
-        return local_kiro_request_transport_unsupported_reason_with_network(transport);
-    }
-    if is_windsurf_provider_transport(transport)
-        && normalize_api_format_alias(&transport.endpoint.api_format) == "openai:chat"
-    {
-        return local_windsurf_request_transport_unsupported_reason_with_network(transport);
-    }
-    if is_antigravity_provider_transport(transport)
-        && normalize_api_format_alias(&transport.endpoint.api_format) == "gemini:generate_content"
-    {
-        return None;
-    }
-
     match normalize_api_format_alias(&transport.endpoint.api_format).as_str() {
         "openai:chat" => local_openai_chat_transport_unsupported_reason(transport),
         "openai:responses" | "openai:responses:compact" => {
@@ -162,9 +113,6 @@ pub fn request_conversion_transport_unsupported_reason(
         }
         "claude:messages" => {
             local_standard_transport_unsupported_reason_with_network(transport, "claude:messages")
-        }
-        "gemini:generate_content" if is_vertex_transport_context(transport) => {
-            local_vertex_gemini_transport_unsupported_reason_with_network(transport)
         }
         "gemini:generate_content" => local_gemini_transport_unsupported_reason_with_network(
             transport,
@@ -194,14 +142,7 @@ pub fn request_pair_transport_unsupported_reason(
 
     match provider_api_format.as_str() {
         "gemini:embedding" => {
-            if is_vertex_transport_context(transport) {
-                local_vertex_gemini_transport_unsupported_reason_with_network(transport)
-            } else {
-                local_gemini_transport_unsupported_reason_with_network(
-                    transport,
-                    "gemini:embedding",
-                )
-            }
+            local_gemini_transport_unsupported_reason_with_network(transport, "gemini:embedding")
         }
         "openai:embedding"
         | "jina:embedding"
@@ -235,9 +176,6 @@ fn request_direct_auth_for_provider_format(
     provider_api_format: &str,
 ) -> Option<(String, String)> {
     match normalize_api_format_alias(provider_api_format).as_str() {
-        "openai:chat" if is_windsurf_provider_transport(transport) => {
-            resolve_windsurf_cascade_auth(transport)
-        }
         "openai:chat"
         | "openai:responses"
         | "openai:responses:compact"
@@ -247,14 +185,7 @@ fn request_direct_auth_for_provider_format(
         | "aliyun:multimodal_embedding"
         | "openai:rerank"
         | "jina:rerank" => resolve_local_openai_bearer_auth(transport),
-        "gemini:generate_content" | "gemini:embedding" => {
-            if is_vertex_api_key_transport_context(transport) {
-                resolve_local_vertex_api_key_query_auth(transport)
-                    .map(|auth| (VERTEX_API_KEY_QUERY_PARAM.to_string(), auth.value))
-            } else {
-                resolve_local_gemini_auth(transport)
-            }
-        }
+        "gemini:generate_content" | "gemini:embedding" => resolve_local_gemini_auth(transport),
         "claude:messages" => resolve_local_standard_auth(transport),
         _ => None,
     }
@@ -355,16 +286,6 @@ fn transport_key_supports_api_format(
     transport: &GatewayProviderTransportSnapshot,
     endpoint_api_format: &str,
 ) -> bool {
-    let inherits_provider_api_formats =
-        crate::provider_types::fixed_provider_key_inherits_api_formats(
-            transport.provider.provider_type.as_str(),
-            transport.key.auth_type.as_str(),
-            transport.key.decrypted_auth_config.as_deref(),
-        );
-    if inherits_provider_api_formats {
-        return true;
-    }
-
     match transport.key.api_formats.as_deref() {
         None => true,
         Some(formats) => formats.iter().any(|value| {
@@ -484,7 +405,6 @@ mod tests {
                 provider_type: provider_type.to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion,
                 concurrent_limit: None,
                 max_retries: None,
@@ -500,13 +420,7 @@ mod tests {
                 api_family: None,
                 endpoint_kind: None,
                 is_active: true,
-                base_url: if provider_type == "kiro" {
-                    "https://q.{region}.amazonaws.com".to_string()
-                } else if provider_type == "vertex_ai" {
-                    "https://aiplatform.googleapis.com".to_string()
-                } else {
-                    "https://api.example.com".to_string()
-                },
+                base_url: "https://api.example.com".to_string(),
                 header_rules: None,
                 body_rules: None,
                 max_retries: None,
@@ -527,7 +441,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -658,132 +571,6 @@ mod tests {
     }
 
     #[test]
-    fn vertex_gemini_transport_supports_cross_format_conversion_with_query_auth() {
-        let transport = transport_snapshot(
-            "vertex_ai",
-            "gemini:generate_content",
-            "api_key",
-            true,
-            None,
-        );
-
-        assert!(request_conversion_transport_supported(
-            &transport,
-            RequestConversionKind::ToGeminiStandard
-        ));
-        assert_eq!(
-            request_conversion_direct_auth(&transport, RequestConversionKind::ToGeminiStandard),
-            Some(("key".to_string(), "secret".to_string()))
-        );
-    }
-
-    #[test]
-    fn antigravity_gemini_transport_supports_standard_cross_format_conversion_via_envelope() {
-        let transport = transport_snapshot(
-            "antigravity",
-            "gemini:generate_content",
-            "oauth",
-            true,
-            None,
-        );
-
-        assert!(request_pair_allowed_for_transport(
-            &transport,
-            "openai:chat",
-            "gemini:generate_content"
-        ));
-        assert!(request_pair_allowed_for_transport(
-            &transport,
-            "openai:responses",
-            "gemini:generate_content"
-        ));
-        assert!(request_conversion_transport_supported(
-            &transport,
-            RequestConversionKind::ToGeminiStandard
-        ));
-    }
-
-    #[test]
-    fn vertex_gemini_embedding_transport_supports_openai_embedding_conversion() {
-        let transport = transport_snapshot("vertex_ai", "gemini:embedding", "api_key", true, None);
-
-        assert!(request_pair_allowed_for_transport(
-            &transport,
-            "openai:embedding",
-            "gemini:embedding"
-        ));
-        assert_eq!(
-            request_pair_direct_auth(&transport, "gemini:embedding"),
-            Some(("key".to_string(), "secret".to_string()))
-        );
-    }
-
-    #[test]
-    fn kiro_claude_messages_transport_supports_cross_format_conversion_via_envelope() {
-        let transport = transport_snapshot("kiro", "claude:messages", "bearer", true, None);
-
-        assert!(request_pair_allowed_for_transport(
-            &transport,
-            "openai:chat",
-            "claude:messages"
-        ));
-        assert!(request_conversion_transport_supported(
-            &transport,
-            RequestConversionKind::ToClaudeStandard
-        ));
-    }
-
-    #[test]
-    fn claude_code_messages_transport_supports_openai_conversions() {
-        let transport = transport_snapshot("claude_code", "claude:messages", "oauth", true, None);
-
-        for client_api_format in ["openai:chat", "openai:responses"] {
-            assert!(request_pair_allowed_for_transport(
-                &transport,
-                client_api_format,
-                "claude:messages"
-            ));
-            assert_eq!(
-                candidate_transport_pair_skip_reason(&transport, client_api_format),
-                None
-            );
-        }
-        assert!(request_conversion_transport_supported(
-            &transport,
-            RequestConversionKind::ToClaudeStandard
-        ));
-    }
-
-    #[test]
-    fn windsurf_openai_chat_anchor_supports_cross_format_conversion_via_cascade() {
-        let mut transport = transport_snapshot("windsurf", "openai:chat", "oauth", true, None);
-        transport.key.decrypted_api_key = "devin-session-token$abc".to_string();
-        transport.key.decrypted_auth_config = Some(r#"{"provider_type":"windsurf"}"#.to_string());
-
-        assert!(request_pair_allowed_for_transport(
-            &transport,
-            "claude:messages",
-            "openai:chat"
-        ));
-        assert!(request_pair_allowed_for_transport(
-            &transport,
-            "openai:responses",
-            "openai:chat"
-        ));
-        assert!(request_conversion_transport_supported(
-            &transport,
-            RequestConversionKind::ToOpenAIChat
-        ));
-        assert_eq!(
-            request_conversion_direct_auth(&transport, RequestConversionKind::ToOpenAIChat),
-            Some((
-                "authorization".to_string(),
-                "Bearer devin-session-token$abc".to_string()
-            ))
-        );
-    }
-
-    #[test]
     fn candidate_common_transport_policy_checks_active_state_format_and_allowed_models() {
         let mut transport = transport_snapshot("custom", "openai:chat", "bearer", true, None);
         transport.key.allowed_models = Some(vec!["gpt-4.1-mini".to_string()]);
@@ -832,21 +619,6 @@ mod tests {
                     mapping_matched_model: None,
                 },
                 Some("gpt-5.5-xhigh"),
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn fixed_provider_oauth_keys_inherit_endpoint_api_formats_for_candidate_policy() {
-        let mut transport = transport_snapshot("codex", "openai:responses", "oauth", true, None);
-        transport.key.api_formats = Some(vec!["openai:image".to_string()]);
-
-        assert_eq!(
-            candidate_common_transport_skip_reason(
-                &transport,
-                candidate_facts("openai:responses"),
-                None,
             ),
             None
         );

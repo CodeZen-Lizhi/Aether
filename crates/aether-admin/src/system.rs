@@ -415,10 +415,6 @@ pub struct AdminSystemConfigProviderKey {
     #[serde(default)]
     pub rate_multipliers: Option<Value>,
     #[serde(default)]
-    pub internal_priority: Option<i32>,
-    #[serde(default)]
-    pub global_priority_by_format: Option<Value>,
-    #[serde(default)]
     pub auth_type_by_format: Option<Value>,
     #[serde(default)]
     pub allow_auth_channel_mismatch_formats: Option<Vec<String>>,
@@ -490,10 +486,6 @@ pub struct AdminSystemConfigProvider {
     pub monthly_quota_usd: Option<f64>,
     #[serde(default)]
     pub quota_reset_day: Option<u64>,
-    #[serde(default)]
-    pub provider_priority: Option<i32>,
-    #[serde(default)]
-    pub keep_priority_on_conversion: Option<bool>,
     #[serde(default)]
     pub enable_format_conversion: Option<bool>,
     #[serde(default = "default_true")]
@@ -1357,7 +1349,6 @@ pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value>
         "proxy_node_metrics_cleanup_batch_size" => Some(json!(5000)),
         "enable_provider_checkin" => Some(json!(true)),
         "provider_checkin_time" => Some(json!("01:05")),
-        "provider_priority_mode" => Some(json!("provider")),
         "scheduling_mode" => Some(json!("cache_affinity")),
         "auto_delete_expired_keys" => Some(json!(false)),
         "backup_s3_enabled" => Some(json!(false)),
@@ -1385,7 +1376,6 @@ pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value>
         "cyber_continue_failover" => Some(json!(false)),
         "enable_model_directives" => Some(json!(false)),
         "model_directives" => Some(aether_ai_formats::default_model_directives_config()),
-        "keep_priority_on_conversion" => Some(json!(false)),
         "audit_log_retention_days" => Some(json!(30)),
         "enable_db_maintenance" => Some(json!(true)),
         "system_proxy_node_id" => Some(serde_json::Value::Null),

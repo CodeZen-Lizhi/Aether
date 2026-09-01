@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use crate::auth::{build_passthrough_headers_with_auth, resolve_local_openai_bearer_auth};
-use crate::grok::{is_grok_provider_transport, resolve_grok_session_auth};
 use crate::policy::local_standard_transport_unsupported_reason_with_network;
 use crate::rules::apply_local_header_rules_with_request_headers;
 use crate::snapshot::GatewayProviderTransportSnapshot;
@@ -25,39 +24,12 @@ pub fn openai_image_transport_unsupported_reason(
     transport: &GatewayProviderTransportSnapshot,
     api_format: &str,
 ) -> Option<&'static str> {
-    let reason = local_standard_transport_unsupported_reason_with_network(transport, api_format);
-    if is_dedicated_openai_image_provider(transport)
-        && matches!(
-            reason,
-            Some("transport_provider_type_unsupported")
-                | Some("transport_oauth_resolution_unsupported")
-        )
-    {
-        return None;
-    }
-    reason
-}
-
-fn is_dedicated_openai_image_provider(transport: &GatewayProviderTransportSnapshot) -> bool {
-    transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("chatgpt_web")
-        || transport
-            .provider
-            .provider_type
-            .trim()
-            .eq_ignore_ascii_case("codex")
-        || is_grok_provider_transport(transport)
+    local_standard_transport_unsupported_reason_with_network(transport, api_format)
 }
 
 pub fn resolve_openai_image_auth(
     transport: &GatewayProviderTransportSnapshot,
 ) -> Option<(String, String)> {
-    if is_grok_provider_transport(transport) {
-        return resolve_grok_session_auth(transport);
-    }
     resolve_local_openai_bearer_auth(transport)
 }
 
@@ -108,7 +80,8 @@ mod tests {
 
     use super::{
         build_openai_image_headers, build_openai_image_upstream_url,
-        openai_image_transport_unsupported_reason, ProviderOpenAiImageHeadersInput,
+        openai_image_transport_unsupported_reason, resolve_openai_image_auth,
+        ProviderOpenAiImageHeadersInput,
     };
     use crate::snapshot::{
         GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
@@ -120,10 +93,9 @@ mod tests {
             provider: GatewayProviderTransportProvider {
                 id: "provider-1".to_string(),
                 name: "Provider".to_string(),
-                provider_type: "codex".to_string(),
+                provider_type: "custom".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -160,7 +132,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -172,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_openai_image_url_uses_images_surface() {
+    fn openai_image_url_uses_images_surface() {
         let url = build_openai_image_upstream_url(
             &sample_transport(),
             Some("/v1/images/generations"),
@@ -183,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_openai_image_edit_url_uses_images_edit_surface() {
+    fn openai_image_edit_url_uses_images_edit_surface() {
         let url = build_openai_image_upstream_url(
             &sample_transport(),
             Some("/v1/images/edits"),
@@ -218,66 +189,22 @@ mod tests {
         assert_eq!(url, "https://api.openai.com/v1/images/edits?trace=1");
     }
 
+
+
+
+
+
     #[test]
-    fn chatgpt_web_is_supported_by_dedicated_openai_image_transport_policy() {
-        let mut transport = sample_transport();
-        transport.provider.provider_type = "chatgpt_web".to_string();
+    fn custom_openai_image_transport_uses_standard_policy() {
+        let transport = sample_transport();
 
         assert_eq!(
             openai_image_transport_unsupported_reason(&transport, "openai:image"),
             None
         );
-    }
-
-    #[test]
-    fn grok_is_supported_by_dedicated_openai_image_transport_policy() {
-        let mut transport = sample_transport();
-        transport.provider.provider_type = "grok".to_string();
-
         assert_eq!(
-            openai_image_transport_unsupported_reason(&transport, "openai:image"),
-            None
-        );
-    }
-
-    #[test]
-    fn codex_is_supported_by_dedicated_openai_image_transport_policy() {
-        let mut transport = sample_transport();
-        transport.provider.provider_type = "codex".to_string();
-        transport.key.auth_type = "oauth".to_string();
-        transport.key.decrypted_auth_config = Some(json!({"access_token":"token"}).to_string());
-
-        assert_eq!(
-            openai_image_transport_unsupported_reason(&transport, "openai:image"),
-            None
-        );
-    }
-
-    #[test]
-    fn grok_oauth_session_is_supported_by_dedicated_openai_image_transport_policy() {
-        let mut transport = sample_transport();
-        transport.provider.provider_type = "grok".to_string();
-        transport.key.auth_type = "oauth".to_string();
-        transport.key.decrypted_api_key = String::new();
-        transport.key.decrypted_auth_config = Some(json!({"sso_token":"abc"}).to_string());
-
-        assert_eq!(
-            openai_image_transport_unsupported_reason(&transport, "openai:image"),
-            None
-        );
-    }
-
-    #[test]
-    fn chatgpt_web_oauth_is_supported_by_dedicated_openai_image_transport_policy() {
-        let mut transport = sample_transport();
-        transport.provider.provider_type = "chatgpt_web".to_string();
-        transport.key.auth_type = "oauth".to_string();
-        transport.key.decrypted_api_key = String::new();
-        transport.key.decrypted_auth_config = Some(json!({"access_token":"token"}).to_string());
-
-        assert_eq!(
-            openai_image_transport_unsupported_reason(&transport, "openai:image"),
-            None
+            resolve_openai_image_auth(&transport),
+            Some(("authorization".to_string(), "Bearer secret".to_string()))
         );
     }
 
@@ -291,7 +218,7 @@ mod tests {
             auth_value: "Bearer secret",
             accept: Some("text/event-stream"),
             header_rules: Some(&json!([
-                {"action":"set","key":"x-image-route","value":"codex"}
+                {"action":"set","key":"x-image-route","value":"generic-route"}
             ])),
             provider_request_body: &json!({"model":"gpt-5.4-mini"}),
             original_request_body: &json!({"prompt":"draw"}),
@@ -310,7 +237,7 @@ mod tests {
             headers.get("accept"),
             Some(&"text/event-stream".to_string())
         );
-        assert_eq!(headers.get("x-image-route"), Some(&"codex".to_string()));
+        assert_eq!(headers.get("x-image-route"), Some(&"generic-route".to_string()));
     }
 
     #[test]
@@ -375,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_images_omits_explicit_accept_header() {
+    fn openai_images_omits_explicit_accept_header() {
         let transport = sample_transport();
         let mut request_headers = HeaderMap::new();
         request_headers.insert("accept", "text/event-stream".parse().expect("valid header"));

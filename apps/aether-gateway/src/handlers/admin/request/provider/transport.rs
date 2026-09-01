@@ -26,64 +26,6 @@ impl<'a> AdminAppState<'a> {
             .await
     }
 
-    pub(crate) async fn resolve_local_oauth_request_auth(
-        &self,
-        transport: &AdminGatewayProviderTransportSnapshot,
-    ) -> Result<Option<crate::provider_transport::LocalResolvedOAuthRequestAuth>, GatewayError>
-    {
-        self.app.resolve_local_oauth_request_auth(transport).await
-    }
-
-    pub(crate) async fn resolve_local_oauth_header_auth(
-        &self,
-        transport: &AdminGatewayProviderTransportSnapshot,
-    ) -> Result<Option<(String, String)>, GatewayError> {
-        Ok(
-            match self.resolve_local_oauth_request_auth(transport).await? {
-                Some(crate::provider_transport::LocalResolvedOAuthRequestAuth::Header {
-                    name,
-                    value,
-                }) => Some((name, value)),
-                _ => None,
-            },
-        )
-    }
-
-    pub(crate) async fn resolve_local_oauth_kiro_request_auth(
-        &self,
-        transport: &AdminGatewayProviderTransportSnapshot,
-    ) -> Result<Option<AdminKiroRequestAuth>, GatewayError> {
-        Ok(
-            match self.resolve_local_oauth_request_auth(transport).await? {
-                Some(crate::provider_transport::LocalResolvedOAuthRequestAuth::Kiro(auth)) => {
-                    Some(auth)
-                }
-                _ => None,
-            },
-        )
-    }
-
-    pub(crate) fn resolve_local_antigravity_identity_headers(
-        &self,
-        transport: &AdminGatewayProviderTransportSnapshot,
-    ) -> Option<(String, BTreeMap<String, String>)> {
-        match crate::provider_transport::antigravity::resolve_local_antigravity_request_auth(
-            transport,
-        ) {
-            crate::provider_transport::antigravity::AntigravityRequestAuthSupport::Supported(
-                auth,
-            ) => Some((
-                auth.project_id.clone(),
-                crate::provider_transport::antigravity::build_antigravity_static_identity_headers(
-                    &auth,
-                ),
-            )),
-            crate::provider_transport::antigravity::AntigravityRequestAuthSupport::Unsupported(
-                _,
-            ) => None,
-        }
-    }
-
     pub(crate) async fn resolve_transport_proxy_snapshot_with_tunnel_affinity(
         &self,
         transport: &AdminGatewayProviderTransportSnapshot,
@@ -100,26 +42,6 @@ impl<'a> AdminAppState<'a> {
         self.app
             .resolve_transport_proxy_source_with_tunnel_affinity(transport)
             .await
-    }
-
-    pub(crate) fn fixed_provider_template(
-        &self,
-        provider_type: &str,
-    ) -> Option<&'static crate::provider_transport::provider_types::FixedProviderTemplate> {
-        crate::provider_transport::provider_types::fixed_provider_template(provider_type)
-    }
-
-    pub(crate) fn provider_type_is_fixed(&self, provider_type: &str) -> bool {
-        crate::provider_transport::provider_types::provider_type_is_fixed(provider_type)
-    }
-
-    pub(crate) fn provider_type_enables_format_conversion_by_default(
-        &self,
-        provider_type: &str,
-    ) -> bool {
-        crate::provider_transport::provider_types::provider_type_enables_format_conversion_by_default(
-            provider_type,
-        )
     }
 
     pub(crate) async fn resolve_admin_connector_proxy_snapshot(

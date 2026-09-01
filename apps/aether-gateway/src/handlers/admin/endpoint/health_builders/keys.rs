@@ -214,7 +214,7 @@ pub(crate) async fn recover_all_admin_key_health(
         let api_formats = provider
             .as_ref()
             .map(|provider| {
-                provider_key_effective_api_formats(&key, &provider.provider_type, &endpoints)
+                provider_key_effective_api_formats(&key)
             })
             .unwrap_or_default();
         payload_items.push(json!({

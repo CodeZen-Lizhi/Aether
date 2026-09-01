@@ -25,7 +25,6 @@ pub struct GatewayProviderTransportProvider {
     pub provider_type: String,
     pub website: Option<String>,
     pub is_active: bool,
-    pub keep_priority_on_conversion: bool,
     pub enable_format_conversion: bool,
     pub concurrent_limit: Option<i32>,
     pub max_retries: Option<i32>,
@@ -66,7 +65,6 @@ pub struct GatewayProviderTransportKey {
     pub allowed_models: Option<Vec<String>>,
     pub capabilities: Option<serde_json::Value>,
     pub rate_multipliers: Option<serde_json::Value>,
-    pub global_priority_by_format: Option<serde_json::Value>,
     pub expires_at_unix_secs: Option<u64>,
     pub proxy: Option<serde_json::Value>,
     pub fingerprint: Option<serde_json::Value>,
@@ -260,15 +258,13 @@ mod tests {
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             true,
             Some(32),
             Some(3),
             Some(serde_json::json!({"url":"http://provider-proxy"})),
             Some(20.0),
             Some(8.0),
-            Some(serde_json::json!({"region":"global"})),
-        )
+            Some(serde_json::json!({"region":"global"})))
     }
 
     fn sample_endpoint() -> StoredProviderCatalogEndpoint {
@@ -289,8 +285,7 @@ mod tests {
             Some("/v1/chat/completions".to_string()),
             Some(serde_json::json!({"api_version":"v1"})),
             Some(serde_json::json!({"allow":["openai:chat"]})),
-            Some(serde_json::json!({"url":"http://endpoint-proxy"})),
-        )
+            Some(serde_json::json!({"url":"http://endpoint-proxy"})))
         .expect("endpoint transport fields should build")
     }
 
@@ -317,12 +312,10 @@ mod tests {
             encrypted_api_key,
             Some(encrypted_auth_config),
             Some(serde_json::json!({"openai:chat": 0.8})),
-            Some(serde_json::json!({"openai:chat": 1})),
             Some(serde_json::json!(["gpt-4.1", "gpt-4.1-mini"])),
             Some(1_800_000_000),
             Some(serde_json::json!({"node_id":"proxy-node-1"})),
-            Some(serde_json::json!({"transport_profile":"chrome_136"})),
-        )
+            Some(serde_json::json!({"transport_profile":"chrome_136"})))
         .expect("key transport fields should build")
     }
 
@@ -354,7 +347,6 @@ mod tests {
                     provider_type: "custom".to_string(),
                     website: Some("https://openai.com".to_string()),
                     is_active: true,
-                    keep_priority_on_conversion: false,
                     enable_format_conversion: true,
                     concurrent_limit: Some(32),
                     max_retries: Some(3),
@@ -397,7 +389,6 @@ mod tests {
                     allowed_models: Some(vec!["gpt-4.1".to_string(), "gpt-4.1-mini".to_string(),]),
                     capabilities: Some(serde_json::json!({"cache_1h": true})),
                     rate_multipliers: Some(serde_json::json!({"openai:chat": 0.8})),
-                    global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
                     expires_at_unix_secs: Some(1_800_000_000),
                     proxy: Some(serde_json::json!({"node_id":"proxy-node-1"})),
                     fingerprint: Some(serde_json::json!({"transport_profile":"chrome_136"})),
@@ -472,8 +463,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-        )
+            None)
         .expect("endpoint transport fields should build");
         let encrypted_api_key =
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-live-openai")
@@ -500,9 +490,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
-        )
+            None)
         .expect("key transport fields should build");
         let state = TestSnapshotSource::new(
             vec![provider],
@@ -553,8 +541,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-        )
+            None)
         .expect("endpoint transport fields should build");
         let key = StoredProviderCatalogKey::new(
             "key-legacy-1".to_string(),
@@ -573,9 +560,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
-        )
+            None)
         .expect("key transport fields should build");
         let state = TestSnapshotSource::new(
             vec![provider],
@@ -652,12 +637,10 @@ mod tests {
             encrypted_api_key,
             None,
             None,
-            None,
             Some(serde_json::json!("[\"gpt-5.2\", \"gpt-5\"]")),
             None,
             None,
-            None,
-        )
+            None)
         .expect("key transport fields should build");
 
         let mapped =
@@ -688,12 +671,10 @@ mod tests {
             encrypted_api_key,
             None,
             None,
-            None,
             Some(serde_json::json!("gpt-5.2")),
             None,
             None,
-            None,
-        )
+            None)
         .expect("key transport fields should build");
 
         let mapped =
@@ -723,8 +704,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-        )
+            None)
         .expect("endpoint transport fields should build");
         let encrypted_api_key =
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-live-openai")
@@ -751,9 +731,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
-        )
+            None)
         .expect("key transport fields should build");
         let state = TestSnapshotSource::new(
             vec![provider],
@@ -798,8 +776,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-        )
+            None)
         .expect("endpoint transport fields should build");
         let encrypted_api_key =
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-live-openai")
@@ -826,9 +803,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
-        )
+            None)
         .expect("key transport fields should build");
         let state = TestSnapshotSource::new(
             vec![provider],
@@ -871,8 +846,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-        )
+            None)
         .expect("endpoint transport fields should build");
         let encrypted_api_key =
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-live-openai")
@@ -906,9 +880,7 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
-        )
+            None)
         .expect("key transport fields should build");
         let state = TestSnapshotSource::new(
             vec![provider],
@@ -946,14 +918,12 @@ mod tests {
         let provider = sample_provider().with_transport_fields(
             true,
             false,
-            false,
             None,
             Some(2),
             Some(serde_json::Value::Null),
             Some(20.0),
             Some(8.0),
-            Some(serde_json::Value::Null),
-        );
+            Some(serde_json::Value::Null));
         let endpoint = StoredProviderCatalogEndpoint::new(
             "endpoint-null-json".to_string(),
             "provider-1".to_string(),
@@ -971,8 +941,7 @@ mod tests {
             None,
             Some(serde_json::Value::Null),
             Some(serde_json::Value::Null),
-            Some(serde_json::Value::Null),
-        )
+            Some(serde_json::Value::Null))
         .expect("endpoint transport fields should build");
         let encrypted_api_key =
             encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-live-openai")
@@ -992,11 +961,9 @@ mod tests {
             None,
             Some(serde_json::Value::Null),
             Some(serde_json::Value::Null),
-            Some(serde_json::Value::Null),
             None,
             Some(serde_json::Value::Null),
-            Some(serde_json::Value::Null),
-        )
+            Some(serde_json::Value::Null))
         .expect("key transport fields should build");
         let state = TestSnapshotSource::new(
             vec![provider],
@@ -1026,7 +993,6 @@ mod tests {
         assert_eq!(snapshot.key.allowed_models, None);
         assert_eq!(snapshot.key.capabilities, None);
         assert_eq!(snapshot.key.rate_multipliers, None);
-        assert_eq!(snapshot.key.global_priority_by_format, None);
         assert_eq!(snapshot.key.proxy, None);
         assert_eq!(snapshot.key.fingerprint, None);
         assert!(supports_local_openai_chat_transport(&snapshot));

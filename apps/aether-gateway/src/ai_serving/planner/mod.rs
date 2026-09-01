@@ -1,7 +1,6 @@
 use crate::ai_serving::{AiExecutionDecision, AiExecutionPlanPayload, GatewayControlDecision};
 use crate::{AppState, GatewayError};
 
-mod antigravity;
 mod candidate_affinity_cache;
 mod candidate_materialization;
 mod candidate_metadata;
@@ -13,12 +12,9 @@ mod candidate_transport_ranking_facts;
 mod common;
 mod decision;
 mod decision_input;
-mod gemini_cli;
 mod materialization_policy;
 mod passthrough;
 mod plan_builders;
-mod pool_scheduler;
-pub(crate) mod pool_scores;
 mod redaction;
 mod report_context;
 mod request_gzip;
@@ -46,9 +42,6 @@ pub(crate) use self::plan_builders::{
     build_openai_responses_sync_plan_from_decision, build_passthrough_sync_plan_from_decision,
     build_standard_stream_plan_from_decision, build_standard_sync_plan_from_decision,
     AiStreamAttempt, AiSyncAttempt,
-};
-pub(crate) use self::pool_scores::{
-    build_provider_key_pool_score_upsert, provider_key_pool_score_id, provider_key_pool_score_scope,
 };
 pub(crate) use self::redaction::resolve_provider_chat_pii_redaction;
 pub(crate) use self::request_gzip::resolve_transport_request_encoding_policy;
@@ -82,19 +75,19 @@ pub(crate) use self::standard::{
     build_local_stream_plan_and_reports as build_standard_family_stream_plan_and_reports,
     build_local_sync_attempt_source as build_standard_family_sync_attempt_source,
     build_local_sync_plan_and_reports as build_standard_family_sync_plan_and_reports,
-    codex_model_capabilities_for_transport, maybe_build_responses_websocket_decision,
+    maybe_build_responses_websocket_decision,
     openai_responses_reasoning_replay_policy, set_local_openai_chat_execution_exhausted_diagnostic,
     validate_final_openai_provider_request, ResponsesWebSocketBodyNormalization,
     ResponsesWebSocketDecision, ResponsesWebSocketPinnedCandidate,
 };
 pub(crate) use self::state::{
-    GatewayAuthApiKeySnapshot, GatewayProviderTransportSnapshot, LocalResolvedOAuthRequestAuth,
-    PlannerAppState,
+    GatewayAuthApiKeySnapshot, GatewayProviderTransportSnapshot, PlannerAppState,
 };
-pub(crate) use aether_ai_serving::extract_ai_pool_sticky_session_token as extract_pool_sticky_session_token;
 pub(crate) use aether_ai_serving::{
-    build_ai_execution_decision_response, AiExecutionDecisionResponseParts,
-    CandidateFailureDiagnostic, CandidateFailureDiagnosticKind,
+build_ai_execution_decision_response,
+AiExecutionDecisionResponseParts,
+CandidateFailureDiagnostic,
+CandidateFailureDiagnosticKind,
 };
 
 pub(crate) struct ResolvedTunnelSchedulerAffinityContext {

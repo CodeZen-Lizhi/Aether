@@ -41,7 +41,6 @@ pub fn parse_request(
         FormatId::AliyunMultimodalEmbedding => aliyun::embedding::request::from(body, ctx),
         FormatId::OpenAiRealtime
         | FormatId::OpenAiSearch
-        | FormatId::CodexLive
         | FormatId::GeminiInteractions => None,
     }
     .ok_or_else(|| FormatError::RequestParseFailed {
@@ -78,7 +77,6 @@ fn emit_request_inner(
         FormatId::AliyunMultimodalEmbedding => aliyun::embedding::request::to(request, ctx),
         FormatId::OpenAiRealtime
         | FormatId::OpenAiSearch
-        | FormatId::CodexLive
         | FormatId::GeminiInteractions => None,
     }
     .ok_or_else(|| FormatError::RequestEmitFailed {
@@ -392,7 +390,6 @@ pub fn parse_response(
         | FormatId::GeminiEmbedding
         | FormatId::DoubaoEmbedding
         | FormatId::AliyunMultimodalEmbedding
-        | FormatId::CodexLive
         | FormatId::GeminiInteractions => None,
     }
     .ok_or_else(|| FormatError::ResponseParseFailed {
@@ -433,7 +430,6 @@ fn emit_response_inner(
         | FormatId::GeminiEmbedding
         | FormatId::DoubaoEmbedding
         | FormatId::AliyunMultimodalEmbedding
-        | FormatId::CodexLive
         | FormatId::GeminiInteractions => None,
     }
     .ok_or_else(|| FormatError::ResponseEmitFailed {
@@ -1214,8 +1210,7 @@ fn standard_request_root_field_is_audited(source: FormatId, key: &str) -> bool {
         | FormatId::JinaEmbedding
         | FormatId::JinaRerank
         | FormatId::DoubaoEmbedding
-        | FormatId::AliyunMultimodalEmbedding
-        | FormatId::CodexLive => true,
+        | FormatId::AliyunMultimodalEmbedding => true,
     }
 }
 
@@ -1877,8 +1872,7 @@ fn validate_source_response_stop_enums(
         | FormatId::JinaEmbedding
         | FormatId::JinaRerank
         | FormatId::DoubaoEmbedding
-        | FormatId::AliyunMultimodalEmbedding
-        | FormatId::CodexLive => Ok(()),
+        | FormatId::AliyunMultimodalEmbedding => Ok(()),
     }
 }
 

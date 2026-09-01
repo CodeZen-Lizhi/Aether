@@ -1444,18 +1444,6 @@ fn canonicalize_test_json(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn build_test_payment_callback_signature(payload: &serde_json::Value, secret: &str) -> String {
-    use hmac::Mac;
-
-    let canonical = serde_json::to_string(&canonicalize_test_json(payload))
-        .expect("payment callback payload should serialize");
-    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes())
-        .expect("payment callback secret should build");
-    mac.update(canonical.as_bytes());
-    let signature = mac.finalize().into_bytes();
-    signature.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 fn sample_auth_user(now: chrono::DateTime<chrono::Utc>) -> StoredUserAuthRecord {
     StoredUserAuthRecord::new(
         "user-auth-1".to_string(),

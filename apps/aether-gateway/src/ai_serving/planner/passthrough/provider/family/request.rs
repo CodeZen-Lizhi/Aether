@@ -10,19 +10,9 @@ use crate::ai_serving::planner::common::{
 use crate::ai_serving::planner::redaction::{
     request_identity_response_encoding_when_redacted, resolve_provider_chat_pii_redaction,
 };
-use crate::ai_serving::transport::antigravity::{
-    build_antigravity_safe_v1internal_request, build_antigravity_static_identity_headers,
-    classify_local_antigravity_request_support, AntigravityEnvelopeRequestType,
-    AntigravityRequestAuthUnsupportedReason, AntigravityRequestEnvelopeSupport,
-    AntigravityRequestSideSupport, AntigravityRequestSideUnsupportedReason,
-};
 use crate::ai_serving::transport::{
-    build_gemini_cli_v1internal_request, build_grok_browser_headers, build_grok_upstream_url,
-    build_same_format_provider_headers, resolve_local_gemini_cli_request_auth,
-    GeminiCliRequestAuth, GeminiCliRequestAuthSupport, GeminiCliRequestEnvelopeSupport,
-    GrokHeaderInput, SameFormatProviderCompatibilityEdit,
+    build_same_format_provider_headers, SameFormatProviderCompatibilityEdit,
     SameFormatProviderCompatibilityEditAction, SameFormatProviderHeadersInput,
-    GEMINI_CLI_USER_AGENT, GROK_CHAT_PATH,
 };
 use crate::ai_serving::{CandidateFailureDiagnostic, GatewayProviderTransportSnapshot};
 use crate::{AppState, GatewayError};
@@ -41,8 +31,8 @@ use super::{
     LocalSameFormatProviderSpec,
 };
 use crate::ai_serving::planner::standard::{
-    codex_model_capabilities_for_transport, openai_provider_request_contract_failure_extra_data,
-    openai_responses_reasoning_replay_policy, same_format_provider_request_body_failure_extra_data,
+    openai_provider_request_contract_failure_extra_data, openai_responses_reasoning_replay_policy,
+    same_format_provider_request_body_failure_extra_data,
 };
 
 pub(crate) fn resolve_same_format_provider_transport_unsupported_reason_for_trace(
@@ -78,33 +68,13 @@ pub(crate) fn resolve_same_format_provider_transport_unsupported_reason_for_trac
         },
         None,
     );
-    if !behavior.is_antigravity
-        && !behavior.is_claude_code_transport
-        && !behavior.is_gemini_cli
-        && !behavior.is_vertex
-        && !behavior.is_kiro
-    {
-        return None;
-    }
-
-    let family = if provider_api_format.starts_with("gemini:") {
-        crate::ai_serving::LocalSameFormatProviderFamily::Gemini
-    } else {
-        crate::ai_serving::LocalSameFormatProviderFamily::Standard
-    };
-    policy::same_format_provider_transport_unsupported_reason(
-        &behavior,
-        transport,
-        family,
-        provider_api_format,
-    )
+    let _ = behavior;
+    let _ = transport;
+    None
 }
 
 pub(crate) struct LocalSameFormatProviderCandidatePayloadParts {
     pub(super) transport: Arc<GatewayProviderTransportSnapshot>,
-    pub(super) is_antigravity: bool,
-    pub(super) is_gemini_cli: bool,
-    pub(super) is_kiro: bool,
     pub(super) auth_header: Option<String>,
     pub(super) auth_value: Option<String>,
     pub(super) provider_api_format: String,
@@ -207,8 +177,6 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
             Some(effective_headers),
             prepared.upstream_is_stream,
             prepared.force_body_stream_field,
-            prepared.kiro_auth.as_ref(),
-            prepared.is_claude_code,
             false,
             reasoning_replay_policy,
         )
@@ -225,25 +193,21 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
                 body_json,
                 attempt.eligible.provider_api_format.as_str(),
                 prepared.transport.endpoint.body_rules.as_ref(),
-                if prepared.kiro_auth.is_some() {
-                    "kiro_envelope"
-                } else {
-                    "same_format"
-                },
+                "same_format",
             ),
         )
         .await;
         return Ok(None);
     };
-    let mut base_provider_request_body = base_provider_request.body;
+    let mut provider_request_body = base_provider_request.body;
     let mut compatibility_edits = base_provider_request.compatibility_edits;
     if let Some(mapping) = model_directive_mapping.as_ref() {
         let before_mapping = base_provider_request_body.clone();
         crate::ai_serving::apply_model_directive_mapping_patch(
-            &mut base_provider_request_body,
+            &mut provider_request_body,
             mapping,
         );
-        if before_mapping != base_provider_request_body {
+        if before_mapping != provider_request_body {
             compatibility_edits.push(SameFormatProviderCompatibilityEdit {
                 field: "model_directive_mapping".to_string(),
                 action: SameFormatProviderCompatibilityEditAction::RuntimeRewrite,
@@ -252,31 +216,20 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
         }
         // Directive mapping is a deep-merge patch and may overwrite/add `stream`;
         // re-enforce stream-field policy afterward.
-        // Kiro behavior classification already hard-requires upstream streaming,
-        // and the Kiro envelope does not use a top-level body stream field.
-        if prepared.kiro_auth.is_none() {
-            enforce_provider_body_stream_policy(
-                &mut base_provider_request_body,
-                prepared.provider_api_format.as_str(),
-                prepared.upstream_is_stream,
-                request_requires_body_stream_field(body_json, prepared.force_body_stream_field),
-            );
-        }
+        enforce_provider_body_stream_policy(
+            &mut provider_request_body,
+            prepared.provider_api_format.as_str(),
+            prepared.upstream_is_stream,
+            request_requires_body_stream_field(body_json, prepared.force_body_stream_field),
+        );
     }
 
     let source_model = body_json
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or(input.requested_model.as_str());
-    let codex_model_capabilities = codex_model_capabilities_for_transport(
-        &transport,
-        prepared.provider_api_format.as_str(),
-        prepared.mapped_model.as_str(),
-        source_model,
-    );
-    if let Err(violation) =
-        crate::ai_serving::finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy(
-            &mut base_provider_request_body,
+    if let Err(violation) = crate::ai_serving::finalize_openai_provider_request(
+            &mut provider_request_body,
             crate::ai_serving::OpenAiProviderRequestFinalization {
                 source_api_format: spec.api_format,
                 provider_api_format: prepared.provider_api_format.as_str(),
@@ -290,7 +243,6 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
                     prepared.force_body_stream_field,
                 ),
             },
-            codex_model_capabilities.as_ref(),
             reasoning_replay_policy,
         )
     {
@@ -313,149 +265,6 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
         return Ok(None);
     }
 
-    let antigravity_auth = if prepared.is_antigravity {
-        let mut antigravity_support = classify_local_antigravity_request_support(
-            &transport,
-            &base_provider_request_body,
-            AntigravityEnvelopeRequestType::Agent,
-        );
-        if matches!(
-            antigravity_support,
-            AntigravityRequestSideSupport::Unsupported(
-                AntigravityRequestSideUnsupportedReason::UnsupportedAuth(
-                    AntigravityRequestAuthUnsupportedReason::MissingProjectId
-                )
-            )
-        ) {
-            if let Some(hydrated) = state
-                .hydrate_antigravity_project_metadata_for_transport(&transport)
-                .await
-            {
-                transport = Arc::new(hydrated);
-                antigravity_support = classify_local_antigravity_request_support(
-                    &transport,
-                    &base_provider_request_body,
-                    AntigravityEnvelopeRequestType::Agent,
-                );
-            }
-        }
-        match antigravity_support {
-            AntigravityRequestSideSupport::Supported(spec) => Some(spec.auth),
-            AntigravityRequestSideSupport::Unsupported(_) => {
-                mark_skipped_local_same_format_provider_candidate(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "transport_unsupported",
-                )
-                .await;
-                return Ok(None);
-            }
-        }
-    } else {
-        None
-    };
-    let gemini_cli_auth = if prepared.behavior.is_gemini_cli {
-        let mut auth = match resolve_local_gemini_cli_request_auth(&transport) {
-            GeminiCliRequestAuthSupport::Supported(auth) => auth,
-            GeminiCliRequestAuthSupport::Unsupported(_) => {
-                mark_skipped_local_same_format_provider_candidate(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "transport_auth_unavailable",
-                )
-                .await;
-                return Ok(None);
-            }
-        };
-        if auth.project_id.is_none() {
-            auth = match state
-                .hydrate_gemini_cli_project_metadata_for_transport(&transport)
-                .await
-            {
-                Some(hydrated) => {
-                    transport = Arc::new(hydrated);
-                    match resolve_local_gemini_cli_request_auth(&transport) {
-                        GeminiCliRequestAuthSupport::Supported(auth) => auth,
-                        GeminiCliRequestAuthSupport::Unsupported(_) => {
-                            GeminiCliRequestAuth::default()
-                        }
-                    }
-                }
-                None => GeminiCliRequestAuth::default(),
-            };
-        }
-        Some(auth)
-    } else {
-        None
-    };
-    let mut provider_request_body = if let Some(antigravity_auth) = antigravity_auth.as_ref() {
-        match build_antigravity_safe_v1internal_request(
-            antigravity_auth,
-            trace_id,
-            &prepared.mapped_model,
-            &base_provider_request_body,
-            AntigravityEnvelopeRequestType::Agent,
-        ) {
-            AntigravityRequestEnvelopeSupport::Supported(envelope) => envelope,
-            AntigravityRequestEnvelopeSupport::Unsupported(_) => {
-                mark_skipped_local_same_format_provider_candidate_with_extra_data(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "provider_request_body_missing",
-                    same_format_provider_request_body_failure_extra_data(
-                        body_json,
-                        attempt.eligible.provider_api_format.as_str(),
-                        prepared.transport.endpoint.body_rules.as_ref(),
-                        "antigravity_envelope",
-                    ),
-                )
-                .await;
-                return Ok(None);
-            }
-        }
-    } else if let Some(gemini_cli_auth) = gemini_cli_auth.as_ref() {
-        match build_gemini_cli_v1internal_request(
-            gemini_cli_auth,
-            trace_id,
-            &prepared.mapped_model,
-            &base_provider_request_body,
-        ) {
-            GeminiCliRequestEnvelopeSupport::Supported(envelope) => envelope,
-            GeminiCliRequestEnvelopeSupport::Unsupported(_) => {
-                mark_skipped_local_same_format_provider_candidate_with_extra_data(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "provider_request_body_missing",
-                    same_format_provider_request_body_failure_extra_data(
-                        body_json,
-                        attempt.eligible.provider_api_format.as_str(),
-                        prepared.transport.endpoint.body_rules.as_ref(),
-                        "gemini_cli_v1internal_envelope",
-                    ),
-                )
-                .await;
-                return Ok(None);
-            }
-        }
-    } else {
-        base_provider_request_body
-    };
     if crate::ai_serving::transport::enforce_same_format_provider_api_operation_body_policy(
         &mut provider_request_body,
         spec.operation,
@@ -467,27 +276,16 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
         });
     }
 
-    let is_grok = prepared
-        .transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("grok");
     let transport_profile = crate::ai_serving::transport::resolve_transport_profile(&transport);
-    let upstream_url = if is_grok {
-        Some(build_grok_upstream_url(&transport, GROK_CHAT_PATH))
-    } else {
-        super::super::request::build_same_format_upstream_url(
-            parts,
-            &transport,
-            &prepared.mapped_model,
-            prepared.provider_api_format.as_str(),
-            spec,
-            prepared.upstream_is_stream,
-            prepared.kiro_auth.as_ref(),
-            Some(&provider_request_body),
-        )
-    };
+    let upstream_url = super::super::request::build_same_format_upstream_url(
+        parts,
+        &transport,
+        &prepared.mapped_model,
+        prepared.provider_api_format.as_str(),
+        spec,
+        prepared.upstream_is_stream,
+        Some(&provider_request_body),
+    );
     let Some(upstream_url) = upstream_url else {
         mark_skipped_local_same_format_provider_candidate_with_failure_diagnostic(
             state,
@@ -507,26 +305,9 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
         return Ok(None);
     };
 
-    let mut extra_headers = antigravity_auth
-        .as_ref()
-        .map(build_antigravity_static_identity_headers)
-        .unwrap_or_default();
-    if prepared.behavior.is_gemini_cli {
-        extra_headers.insert("user-agent".to_string(), GEMINI_CLI_USER_AGENT.to_string());
-    }
-    let Some(mut provider_request_headers) = (if is_grok {
-        build_grok_browser_headers(GrokHeaderInput {
-            transport: &transport,
-            transport_profile: transport_profile.as_ref(),
-            request_headers: Some(effective_headers),
-            content_type: "application/json",
-            accept: "text/event-stream",
-            header_rules: transport.endpoint.header_rules.as_ref(),
-            provider_request_body: &provider_request_body,
-            original_request_body: body_json,
-        })
-    } else {
-        build_same_format_provider_headers(SameFormatProviderHeadersInput {
+    let extra_headers = BTreeMap::new();
+    let Some(mut provider_request_headers) = build_same_format_provider_headers(
+        SameFormatProviderHeadersInput {
             headers: effective_headers,
             provider_request_body: &provider_request_body,
             original_request_body: body_json,
@@ -536,13 +317,8 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
             auth_header: prepared.auth_header.as_deref(),
             auth_value: prepared.auth_value.as_deref(),
             extra_headers: &extra_headers,
-            kiro_auth_config: prepared.kiro_auth.as_ref().map(|auth| &auth.auth_config),
-            kiro_machine_id: prepared
-                .kiro_auth
-                .as_ref()
-                .map(|auth| auth.machine_id.as_str()),
-        })
-    }) else {
+        },
+    ) else {
         mark_skipped_local_same_format_provider_candidate_with_failure_diagnostic(
             state,
             input,
@@ -560,28 +336,6 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
         .await;
         return Ok(None);
     };
-    crate::ai_serving::apply_codex_openai_special_headers(
-        &mut provider_request_headers,
-        &provider_request_body,
-        effective_headers,
-        transport.provider.provider_type.as_str(),
-        prepared.provider_api_format.as_str(),
-        Some(trace_id),
-        transport.key.decrypted_auth_config.as_deref(),
-    );
-    let provider_model = provider_request_body
-        .get("model")
-        .and_then(Value::as_str)
-        .unwrap_or(prepared.mapped_model.as_str());
-    crate::ai_serving::apply_codex_openai_responses_lite_header_for_request_body_with_capabilities(
-        &mut provider_request_headers,
-        Some(&provider_request_body),
-        transport.provider.provider_type.as_str(),
-        prepared.provider_api_format.as_str(),
-        provider_model,
-        source_model,
-        codex_model_capabilities.as_ref(),
-    );
     request_identity_response_encoding_when_redacted(
         &mut provider_request_headers,
         redaction.redacted,
@@ -589,9 +343,6 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
 
     Ok(Some(LocalSameFormatProviderCandidatePayloadParts {
         transport,
-        is_antigravity: prepared.is_antigravity,
-        is_gemini_cli: prepared.behavior.is_gemini_cli,
-        is_kiro: prepared.is_kiro,
         auth_header: prepared.auth_header,
         auth_value: prepared.auth_value,
         provider_api_format: prepared.provider_api_format,
@@ -618,86 +369,4 @@ fn same_format_provider_operation_skip_reason(
         operation,
     ))
     .then_some("transport_operation_unsupported")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::same_format_provider_operation_skip_reason;
-    use crate::ai_serving::transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider,
-    };
-    use crate::ai_serving::{ApiOperation, GatewayProviderTransportSnapshot};
-
-    fn private_adapter_transport(provider_type: &str) -> GatewayProviderTransportSnapshot {
-        GatewayProviderTransportSnapshot {
-            provider: GatewayProviderTransportProvider {
-                id: "provider-1".to_string(),
-                name: provider_type.to_string(),
-                provider_type: provider_type.to_string(),
-                website: None,
-                is_active: true,
-                keep_priority_on_conversion: false,
-                enable_format_conversion: true,
-                concurrent_limit: None,
-                max_retries: None,
-                proxy: None,
-                request_timeout_secs: None,
-                stream_first_byte_timeout_secs: None,
-                config: None,
-            },
-            endpoint: GatewayProviderTransportEndpoint {
-                id: "endpoint-1".to_string(),
-                provider_id: "provider-1".to_string(),
-                api_format: "claude:messages".to_string(),
-                api_family: Some("claude".to_string()),
-                endpoint_kind: Some("chat".to_string()),
-                is_active: true,
-                base_url: "https://private.example".to_string(),
-                header_rules: None,
-                body_rules: None,
-                max_retries: None,
-                custom_path: None,
-                config: None,
-                format_acceptance_config: None,
-                proxy: None,
-            },
-            key: GatewayProviderTransportKey {
-                id: "key-1".to_string(),
-                provider_id: "provider-1".to_string(),
-                name: "key".to_string(),
-                auth_type: "oauth".to_string(),
-                is_active: true,
-                api_formats: None,
-                auth_type_by_format: None,
-                allow_auth_channel_mismatch_formats: None,
-                allowed_models: None,
-                capabilities: None,
-                rate_multipliers: None,
-                global_priority_by_format: None,
-                expires_at_unix_secs: None,
-                proxy: None,
-                fingerprint: None,
-                upstream_metadata: None,
-                decrypted_api_key: String::new(),
-                decrypted_auth_config: None,
-            },
-        }
-    }
-
-    #[test]
-    fn private_adapter_count_tokens_is_rejected_by_pre_auth_operation_gate() {
-        for provider_type in ["kiro", "grok"] {
-            let transport = private_adapter_transport(provider_type);
-            assert_eq!(
-                same_format_provider_operation_skip_reason(
-                    &transport,
-                    "claude:messages",
-                    Some(ApiOperation::ClaudeCountTokens),
-                ),
-                Some("transport_operation_unsupported"),
-                "provider_type={provider_type}"
-            );
-        }
-    }
 }

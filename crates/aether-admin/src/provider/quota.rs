@@ -14,24 +14,6 @@ const CODEX_ACTIVE_LIMIT_HEADER: &str = "x-codex-active-limit";
 const CODEX_HEADER_PREFIX: &str = "x-codex-";
 const CODEX_LIMIT_NAME_HEADER_SUFFIX: &str = "-limit-name";
 
-pub fn provider_auto_remove_banned_keys(config: Option<&serde_json::Value>) -> bool {
-    config
-        .and_then(|value| value.get("pool_advanced"))
-        .and_then(serde_json::Value::as_object)
-        .and_then(|object| object.get("auto_remove_banned_keys"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-}
-
-pub fn provider_auto_remove_quota_exhausted_keys(config: Option<&serde_json::Value>) -> bool {
-    config
-        .and_then(|value| value.get("pool_advanced"))
-        .and_then(serde_json::Value::as_object)
-        .and_then(|object| object.get("auto_remove_quota_exhausted_keys"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-}
-
 pub fn should_auto_remove_structured_reason(reason: Option<&str>) -> bool {
     provider_status::should_auto_remove_account_state(&provider_status::resolve_pool_account_state(
         None, None, reason,
@@ -3836,8 +3818,8 @@ mod tests {
         parse_gemini_cli_retrieve_user_quota_response,
         parse_gemini_cli_v1internal_credits_response, parse_windsurf_model_configs_response,
         parse_windsurf_rate_limit_response, parse_windsurf_user_status_response,
-        provider_auto_remove_quota_exhausted_keys, quota_refresh_success_invalid_state,
-        should_auto_remove_structured_reason, CodexQuotaMergeContext, CodexQuotaWindowCoverage,
+        quota_refresh_success_invalid_state, should_auto_remove_structured_reason,
+        CodexQuotaMergeContext, CodexQuotaWindowCoverage,
         OAUTH_ACCOUNT_BLOCK_PREFIX, OAUTH_EXPIRED_PREFIX, OAUTH_REFRESH_FAILED_PREFIX,
         OAUTH_REQUEST_FAILED_PREFIX,
     };
@@ -5527,29 +5509,6 @@ mod tests {
             .expect("structured execution error should be retained");
         assert!(detail.contains(r#""code":"invalid_task_id""#));
         assert!(detail.contains(r#""message":"registered task is no longer valid""#));
-        assert!(
-            aether_provider_transport::is_codex_agent_identity_invalid_task_response(
-                result.status_code,
-                Some(&detail),
-            )
-        );
-    }
-
-    #[test]
-    fn provider_auto_remove_quota_exhausted_keys_defaults_to_false() {
-        assert!(!provider_auto_remove_quota_exhausted_keys(None));
-        assert!(!provider_auto_remove_quota_exhausted_keys(Some(&json!({
-            "pool_advanced": {}
-        }))));
-    }
-
-    #[test]
-    fn provider_auto_remove_quota_exhausted_keys_reads_pool_advanced_flag() {
-        assert!(provider_auto_remove_quota_exhausted_keys(Some(&json!({
-            "pool_advanced": {
-                "auto_remove_quota_exhausted_keys": true
-            }
-        }))));
     }
 
     #[test]

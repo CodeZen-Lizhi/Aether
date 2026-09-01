@@ -11,7 +11,6 @@ pub struct AiCandidateResolutionRequest<'a> {
     pub client_api_format: &'a str,
     pub requested_model: Option<&'a str>,
     pub mode: AiCandidateResolutionMode,
-    pub expand_pool_groups: bool,
 }
 
 impl<'a> AiCandidateResolutionRequest<'a> {
@@ -20,7 +19,6 @@ impl<'a> AiCandidateResolutionRequest<'a> {
             client_api_format,
             requested_model,
             mode: AiCandidateResolutionMode::Standard,
-            expand_pool_groups: false,
         }
     }
 
@@ -32,13 +30,7 @@ impl<'a> AiCandidateResolutionRequest<'a> {
             client_api_format,
             requested_model,
             mode: AiCandidateResolutionMode::WithoutTransportPairGate,
-            expand_pool_groups: false,
         }
-    }
-
-    pub fn logical_pool_groups(mut self) -> Self {
-        self.expand_pool_groups = false;
-        self
     }
 }
 
@@ -99,11 +91,6 @@ pub trait AiCandidateResolutionPort: Send + Sync {
         candidates: Vec<Self::Eligible>,
         normalized_client_api_format: &str,
     ) -> Result<Vec<Self::Eligible>, Self::Error>;
-
-    async fn apply_pool_scheduler(
-        &self,
-        candidates: Vec<Self::Eligible>,
-    ) -> Result<(Vec<Self::Eligible>, Vec<Self::Skipped>), Self::Error>;
 }
 
 pub async fn run_ai_candidate_resolution<Port>(
@@ -148,13 +135,6 @@ where
     let ranked = port
         .rank_eligible_candidates(eligible, normalized_client_api_format.as_str())
         .await?;
-    let ranked = if request.expand_pool_groups {
-        let (ranked, pool_skipped) = port.apply_pool_scheduler(ranked).await?;
-        skipped.extend(pool_skipped);
-        ranked
-    } else {
-        ranked
-    };
 
     Ok(AiCandidateResolutionOutcome {
         eligible_candidates: ranked,
@@ -183,42 +163,6 @@ where
             ),
             AiCandidateResolutionMode::WithoutTransportPairGate => None,
         })
-}
-
-pub fn extract_ai_pool_sticky_session_token(body_json: &serde_json::Value) -> Option<String> {
-    fn non_empty_str(value: Option<&serde_json::Value>) -> Option<&str> {
-        value
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-    }
-
-    let object = body_json.as_object()?;
-
-    non_empty_str(object.get("prompt_cache_key"))
-        .or_else(|| non_empty_str(object.get("conversation_id")))
-        .or_else(|| non_empty_str(object.get("conversationId")))
-        .or_else(|| non_empty_str(object.get("session_id")))
-        .or_else(|| non_empty_str(object.get("sessionId")))
-        .or_else(|| {
-            object
-                .get("metadata")
-                .and_then(serde_json::Value::as_object)
-                .and_then(|metadata| {
-                    non_empty_str(metadata.get("session_id"))
-                        .or_else(|| non_empty_str(metadata.get("conversation_id")))
-                })
-        })
-        .or_else(|| {
-            object
-                .get("conversationState")
-                .and_then(serde_json::Value::as_object)
-                .and_then(|state| {
-                    non_empty_str(state.get("conversationId"))
-                        .or_else(|| non_empty_str(state.get("sessionId")))
-                })
-        })
-        .map(ToOwned::to_owned)
 }
 
 #[cfg(test)]
@@ -317,18 +261,10 @@ mod tests {
             candidates.reverse();
             Ok(candidates)
         }
-
-        async fn apply_pool_scheduler(
-            &self,
-            candidates: Vec<Self::Eligible>,
-        ) -> Result<(Vec<Self::Eligible>, Vec<Self::Skipped>), Self::Error> {
-            self.calls.lock().unwrap().push("pool".to_string());
-            Ok((candidates, vec!["pool:cooldown".to_string()]))
-        }
     }
 
     #[tokio::test]
-    async fn resolution_reads_transport_gates_candidates_then_ranks_without_expanding_pools() {
+    async fn resolution_reads_transport_gates_candidates_then_ranks() {
         let port = TestPort::default();
 
         let outcome = run_ai_candidate_resolution(
@@ -392,66 +328,6 @@ mod tests {
                 "common:unsupported:",
                 "rank:openai:chat",
             ]
-        );
-    }
-
-    #[tokio::test]
-    async fn resolution_can_keep_pool_groups_logical() {
-        let port = TestPort::default();
-
-        let outcome = run_ai_candidate_resolution(
-            &port,
-            vec!["first", "second"],
-            AiCandidateResolutionRequest::standard("openai:chat", Some("gpt-4.1"))
-                .logical_pool_groups(),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            outcome.eligible_candidates,
-            ["eligible:second", "eligible:first"]
-        );
-        assert!(outcome.skipped_candidates.is_empty());
-        assert_eq!(
-            port.calls.lock().unwrap().as_slice(),
-            [
-                "transport:first",
-                "common:first:gpt-4.1",
-                "pair:first:openai:chat:gpt-4.1",
-                "transport:second",
-                "common:second:gpt-4.1",
-                "pair:second:openai:chat:gpt-4.1",
-                "rank:openai:chat",
-            ]
-        );
-    }
-
-    #[test]
-    fn sticky_session_token_is_extracted_from_known_request_fields() {
-        assert_eq!(
-            extract_ai_pool_sticky_session_token(&json!({
-                "prompt_cache_key": " cache-a ",
-                "conversation_id": "conversation-b"
-            }))
-            .as_deref(),
-            Some("cache-a")
-        );
-
-        assert_eq!(
-            extract_ai_pool_sticky_session_token(&json!({
-                "metadata": {"conversation_id": " conversation-c "}
-            }))
-            .as_deref(),
-            Some("conversation-c")
-        );
-
-        assert_eq!(
-            extract_ai_pool_sticky_session_token(&json!({
-                "conversationState": {"sessionId": " session-d "}
-            }))
-            .as_deref(),
-            Some("session-d")
         );
     }
 }

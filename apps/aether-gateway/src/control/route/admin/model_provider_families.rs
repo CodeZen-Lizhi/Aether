@@ -139,39 +139,6 @@ pub(super) fn classify_admin_model_provider_family_route(
         ))
     } else if method == http::Method::GET
         && normalized_path.starts_with("/api/admin/providers/")
-        && normalized_path.ends_with("/pool-status")
-    {
-        Some(classified(
-            "admin_proxy",
-            "providers_manage",
-            "pool_status",
-            "admin:providers",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && normalized_path.starts_with("/api/admin/providers/")
-        && normalized_path.contains("/pool/clear-cooldown/")
-    {
-        Some(classified(
-            "admin_proxy",
-            "providers_manage",
-            "clear_pool_cooldown",
-            "admin:providers",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && normalized_path.starts_with("/api/admin/providers/")
-        && normalized_path.contains("/pool/reset-cost/")
-    {
-        Some(classified(
-            "admin_proxy",
-            "providers_manage",
-            "reset_pool_cost",
-            "admin:providers",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && normalized_path.starts_with("/api/admin/providers/")
         && normalized_path.ends_with("/models")
         && normalized_path.matches('/').count() == 5
     {

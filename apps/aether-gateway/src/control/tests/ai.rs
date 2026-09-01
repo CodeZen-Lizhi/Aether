@@ -1,4 +1,7 @@
-use aether_ai_formats::{ApiOperation, ClientSurface};
+use aether_ai_formats::{
+ApiOperation,
+ClientSurface,
+};
 use http::Uri;
 
 use super::super::auth::GatewayCredentialCarrier;

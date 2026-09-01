@@ -8,7 +8,6 @@ use crate::conversion::{
     request_conversion_enabled_for_transport, request_conversion_transport_unsupported_reason,
     request_pair_allowed_for_transport,
 };
-use crate::grok::grok_browser_resolved_transport_profile_from_auth_config;
 use crate::network::{
     resolve_transport_profile, resolve_transport_profile_id, transport_proxy_is_locally_supported,
 };
@@ -18,7 +17,6 @@ use crate::policy::{
     local_standard_transport_unsupported_reason_with_network,
 };
 use crate::rules::{body_rules_are_locally_supported, header_rules_are_locally_supported};
-use crate::same_format_provider::same_format_provider_transport_unsupported_reason_for_trace;
 use crate::snapshot::GatewayProviderTransportSnapshot;
 
 pub fn build_request_trace_proxy_value(
@@ -90,34 +88,8 @@ pub fn build_transport_diagnostics(
         .and_then(|value| value.get("transport_profile"))
         .cloned()
         .unwrap_or(Value::Null);
-    let configured_legacy_grok_transport_profile = if transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("grok")
-    {
-        transport
-            .key
-            .decrypted_auth_config
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .and_then(|value| serde_json::from_str::<Value>(value).ok())
-            .and_then(|value| value.as_object().cloned())
-            .and_then(|auth_config| {
-                grok_browser_resolved_transport_profile_from_auth_config(
-                    &auth_config,
-                    "grok_auth_config",
-                )
-                .and_then(|profile| serde_json::to_value(profile).ok())
-            })
-            .unwrap_or(Value::Null)
-    } else {
-        Value::Null
-    };
     let has_oauth_config = transport.key.decrypted_auth_config.is_some();
-    let oauth_resolution_supported =
-        !has_oauth_config || crate::supports_local_oauth_request_auth_resolution(transport);
+    let oauth_resolution_supported = !has_oauth_config;
     let request_transport_unsupported_reason = resolve_request_transport_unsupported_reason(
         transport,
         client_api_format,
@@ -131,7 +103,6 @@ pub fn build_transport_diagnostics(
         "endpoint_is_active": transport.endpoint.is_active,
         "key_is_active": transport.key.is_active,
         "provider_enable_format_conversion": transport.provider.enable_format_conversion,
-        "provider_keep_priority_on_conversion": transport.provider.keep_priority_on_conversion,
         "endpoint_format_acceptance_config": transport.endpoint.format_acceptance_config,
         "endpoint_custom_path": transport.endpoint.custom_path,
         "header_rules": transport.endpoint.header_rules,
@@ -152,7 +123,6 @@ pub fn build_transport_diagnostics(
         "fingerprint": transport.key.fingerprint,
         "configured_key_transport_profile": configured_key_transport_profile,
         "configured_provider_transport_profile": configured_provider_transport_profile,
-        "configured_legacy_grok_transport_profile": configured_legacy_grok_transport_profile,
         "resolved_transport_profile_id": resolved_transport_profile_id,
         "resolved_transport_profile": resolved_transport_profile,
         "request_pair": {
@@ -264,12 +234,6 @@ fn resolve_request_transport_unsupported_reason(
     let client_api_format = client_api_format.trim().to_ascii_lowercase();
     let provider_api_format = provider_api_format.trim().to_ascii_lowercase();
     if client_api_format == provider_api_format {
-        if let Some(skip_reason) = same_format_provider_transport_unsupported_reason_for_trace(
-            transport,
-            provider_api_format.as_str(),
-        ) {
-            return Some(skip_reason);
-        }
         return match provider_api_format.as_str() {
             "openai:chat" => local_openai_chat_transport_unsupported_reason(transport),
             "gemini:generate_content" => local_gemini_transport_unsupported_reason_with_network(
@@ -303,10 +267,9 @@ mod tests {
             provider: GatewayProviderTransportProvider {
                 id: "provider-1".to_string(),
                 name: "RightCode".to_string(),
-                provider_type: "codex".to_string(),
+                provider_type: "custom".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: true,
                 concurrent_limit: None,
                 max_retries: None,
@@ -337,7 +300,7 @@ mod tests {
             key: GatewayProviderTransportKey {
                 id: "key-1".to_string(),
                 provider_id: "provider-1".to_string(),
-                name: "codex".to_string(),
+                name: "custom".to_string(),
                 auth_type: "oauth".to_string(),
                 is_active: true,
                 api_formats: None,
@@ -346,7 +309,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: Some(json!({
@@ -364,68 +326,12 @@ mod tests {
         }
     }
 
-    fn sample_claude_code_transport_without_auth() -> GatewayProviderTransportSnapshot {
-        GatewayProviderTransportSnapshot {
-            provider: GatewayProviderTransportProvider {
-                id: "provider-cc-1".to_string(),
-                name: "NekoCode".to_string(),
-                provider_type: "claude_code".to_string(),
-                website: Some("https://nekocode.ai".to_string()),
-                is_active: true,
-                keep_priority_on_conversion: false,
-                enable_format_conversion: true,
-                concurrent_limit: None,
-                max_retries: None,
-                proxy: None,
-                request_timeout_secs: None,
-                stream_first_byte_timeout_secs: None,
-                config: None,
-            },
-            endpoint: GatewayProviderTransportEndpoint {
-                id: "endpoint-cc-1".to_string(),
-                provider_id: "provider-cc-1".to_string(),
-                api_format: "claude:messages".to_string(),
-                api_family: Some("claude".to_string()),
-                endpoint_kind: Some("cli".to_string()),
-                is_active: true,
-                base_url: "https://api.anthropic.com".to_string(),
-                header_rules: None,
-                body_rules: None,
-                max_retries: None,
-                custom_path: None,
-                config: None,
-                format_acceptance_config: None,
-                proxy: None,
-            },
-            key: GatewayProviderTransportKey {
-                id: "key-cc-1".to_string(),
-                provider_id: "provider-cc-1".to_string(),
-                name: "CC".to_string(),
-                auth_type: "api_key".to_string(),
-                is_active: true,
-                api_formats: Some(vec!["claude:messages".to_string()]),
-                auth_type_by_format: None,
-                allow_auth_channel_mismatch_formats: None,
-                allowed_models: None,
-                capabilities: None,
-                rate_multipliers: None,
-                global_priority_by_format: None,
-                expires_at_unix_secs: None,
-                proxy: None,
-                fingerprint: None,
-                upstream_metadata: None,
-                decrypted_api_key: "__placeholder__".to_string(),
-                decrypted_auth_config: None,
-            },
-        }
-    }
-
     #[test]
     fn transport_diagnostics_include_format_and_network_policy() {
         let diagnostics =
             build_transport_diagnostics(&sample_transport(), "claude:messages", "openai:responses");
 
-        assert_eq!(diagnostics["provider_type"], "codex");
+        assert_eq!(diagnostics["provider_type"], "custom");
         assert_eq!(
             diagnostics["fingerprint"]["transport_profile"]["profile_id"],
             "chrome_136"
@@ -438,56 +344,6 @@ mod tests {
         assert!(diagnostics["request_pair"]["transport_unsupported_reason"].is_null());
     }
 
-    #[test]
-    fn transport_diagnostics_use_provider_private_same_format_reason() {
-        let diagnostics = build_transport_diagnostics(
-            &sample_claude_code_transport_without_auth(),
-            "claude:messages",
-            "claude:messages",
-        );
-
-        assert_eq!(
-            diagnostics["request_pair"]["transport_unsupported_reason"],
-            Value::String("transport_auth_unavailable".to_string())
-        );
-    }
-
-    fn sample_grok_transport_with_legacy_user_agent() -> GatewayProviderTransportSnapshot {
-        let mut transport = sample_transport();
-        transport.provider.provider_type = "grok".to_string();
-        transport.key.fingerprint = None;
-        transport.provider.config = None;
-        transport.key.decrypted_auth_config = Some(
-            json!({
-                "sso_token": "sso-token",
-                "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
-            })
-            .to_string(),
-        );
-        transport
-    }
-
-    #[test]
-    fn transport_diagnostics_include_legacy_grok_transport_profile() {
-        let diagnostics = build_transport_diagnostics(
-            &sample_grok_transport_with_legacy_user_agent(),
-            "openai:chat",
-            "openai:chat",
-        );
-
-        assert_eq!(
-            diagnostics["configured_legacy_grok_transport_profile"]["profile_id"],
-            "chrome137"
-        );
-        assert_eq!(
-            diagnostics["resolved_transport_profile"]["profile_id"],
-            "chrome137"
-        );
-        assert_eq!(
-            diagnostics["resolved_transport_profile"]["backend"],
-            "browser_wreq"
-        );
-    }
 
     #[test]
     fn request_trace_proxy_value_sanitizes_url_and_marks_config_source() {

@@ -19,7 +19,6 @@ pub struct AiExecutionReportContextParts<'a> {
     pub candidate_id: &'a str,
     pub candidate_index: u32,
     pub retry_index: u32,
-    pub pool_key_index: Option<u32>,
     pub model: &'a str,
     pub provider_name: &'a str,
     pub provider_id: &'a str,
@@ -208,36 +207,9 @@ pub fn build_ai_execution_report_context(parts: AiExecutionReportContextParts<'_
                 .expect("provider request headers should serialize"),
         );
     }
-    if let Some(pool_key_index) = parts.pool_key_index {
-        object.insert(
-            "pool_key_index".to_string(),
-            Value::Number(pool_key_index.into()),
-        );
-    }
 
     object.extend(parts.extra_fields);
     Value::Object(object)
-}
-
-pub fn provider_stream_event_api_format_for_provider_type(
-    provider_type: &str,
-) -> Option<&'static str> {
-    match provider_type.trim().to_ascii_lowercase().as_str() {
-        "codex" => Some("openai:responses"),
-        _ => None,
-    }
-}
-
-pub fn insert_provider_stream_event_api_format(
-    extra_fields: &mut Map<String, Value>,
-    provider_type: &str,
-) {
-    if let Some(api_format) = provider_stream_event_api_format_for_provider_type(provider_type) {
-        extra_fields.insert(
-            "provider_stream_event_api_format".to_string(),
-            Value::String(api_format.to_string()),
-        );
-    }
 }
 
 pub fn build_ai_report_context_original_request_echo(
@@ -296,7 +268,6 @@ mod tests {
             candidate_id: "candidate-a",
             candidate_index: 3,
             retry_index: 1,
-            pool_key_index: Some(0),
             model: "gpt-5",
             provider_name: "RightCode",
             provider_id: "provider-1",
@@ -332,7 +303,6 @@ mod tests {
         assert_eq!(report["user_id"], "user-1");
         assert_eq!(report["candidate_index"], 3);
         assert_eq!(report["retry_index"], 1);
-        assert_eq!(report["pool_key_index"], 0);
         assert_eq!(report["original_headers"]["x-trace-id"], "trace-a");
         assert_eq!(report["original_request_body"]["model"], "gpt-5");
         assert_eq!(report["ranking_index"], 1);
@@ -341,22 +311,6 @@ mod tests {
             "Bearer token"
         );
         assert_eq!(report["extra"], "value");
-    }
-
-    #[test]
-    fn provider_stream_event_api_format_is_codex_only() {
-        assert_eq!(
-            provider_stream_event_api_format_for_provider_type("codex"),
-            Some("openai:responses")
-        );
-        assert_eq!(
-            provider_stream_event_api_format_for_provider_type(" CODEX "),
-            Some("openai:responses")
-        );
-        assert_eq!(
-            provider_stream_event_api_format_for_provider_type("openai"),
-            None
-        );
     }
 
     #[test]

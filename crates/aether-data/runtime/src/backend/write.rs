@@ -12,7 +12,6 @@ use crate::repository::gemini_file_mappings::GeminiFileMappingWriteRepository;
 use crate::repository::global_models::GlobalModelWriteRepository;
 use crate::repository::management_tokens::ManagementTokenWriteRepository;
 use crate::repository::oauth_providers::OAuthProviderWriteRepository;
-use crate::repository::pool_scores::PoolMemberScoreWriteRepository;
 use crate::repository::provider_catalog::ProviderCatalogWriteRepository;
 use crate::repository::proxy_nodes::ProxyNodeWriteRepository;
 use crate::repository::quota::ProviderQuotaWriteRepository;
@@ -33,7 +32,6 @@ pub struct DataWriteRepositories {
     global_models: Option<Arc<dyn GlobalModelWriteRepository>>,
     management_tokens: Option<Arc<dyn ManagementTokenWriteRepository>>,
     oauth_providers: Option<Arc<dyn OAuthProviderWriteRepository>>,
-    pool_scores: Option<Arc<dyn PoolMemberScoreWriteRepository>>,
     proxy_nodes: Option<Arc<dyn ProxyNodeWriteRepository>>,
     provider_catalog: Option<Arc<dyn ProviderCatalogWriteRepository>>,
     provider_quotas: Option<Arc<dyn ProviderQuotaWriteRepository>>,
@@ -59,7 +57,6 @@ impl fmt::Debug for DataWriteRepositories {
             .field("has_global_models", &self.global_models.is_some())
             .field("has_management_tokens", &self.management_tokens.is_some())
             .field("has_oauth_providers", &self.oauth_providers.is_some())
-            .field("has_pool_scores", &self.pool_scores.is_some())
             .field("has_proxy_nodes", &self.proxy_nodes.is_some())
             .field("has_provider_catalog", &self.provider_catalog.is_some())
             .field("has_provider_quotas", &self.provider_quotas.is_some())
@@ -119,9 +116,6 @@ impl DataWriteRepositories {
         }
         if self.oauth_providers.is_none() {
             self.oauth_providers = Some(SqliteBackend::oauth_provider_write_repository(backend));
-        }
-        if self.pool_scores.is_none() {
-            self.pool_scores = Some(SqliteBackend::pool_score_write_repository(backend));
         }
         if self.proxy_nodes.is_none() {
             self.proxy_nodes = Some(SqliteBackend::proxy_node_write_repository(backend));
@@ -188,10 +182,6 @@ impl DataWriteRepositories {
         self.oauth_providers.clone()
     }
 
-    pub fn pool_scores(&self) -> Option<Arc<dyn PoolMemberScoreWriteRepository>> {
-        self.pool_scores.clone()
-    }
-
     pub fn proxy_nodes(&self) -> Option<Arc<dyn ProxyNodeWriteRepository>> {
         self.proxy_nodes.clone()
     }
@@ -230,7 +220,6 @@ impl DataWriteRepositories {
             || self.global_models.is_some()
             || self.management_tokens.is_some()
             || self.oauth_providers.is_some()
-            || self.pool_scores.is_some()
             || self.proxy_nodes.is_some()
             || self.provider_catalog.is_some()
             || self.provider_quotas.is_some()

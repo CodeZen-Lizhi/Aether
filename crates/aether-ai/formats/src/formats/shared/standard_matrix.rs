@@ -13,10 +13,6 @@ use serde_json::Value;
 
 use crate::formats::shared::model_directives::apply_model_directive_overrides_from_request;
 
-use crate::formats::openai::responses::codex::{
-    apply_codex_openai_responses_chat_body_edits, apply_codex_openai_responses_special_body_edits,
-    apply_openai_responses_compact_special_body_edits,
-};
 use crate::formats::shared::standard_normalize::{
     build_local_openai_chat_request_body_with_model_directives,
     is_claude_messages_shaped_body_on_openai_chat_endpoint,
@@ -111,7 +107,7 @@ pub fn build_standard_request_body_with_model_directives_and_request_headers_and
     body_json: &Value,
     client_api_format: &str,
     mapped_model: &str,
-    provider_type: &str,
+    _provider_type: &str,
     provider_api_format: &str,
     request_path: &str,
     upstream_is_stream: bool,
@@ -175,31 +171,13 @@ pub fn build_standard_request_body_with_model_directives_and_request_headers_and
     ) {
         return None;
     }
-    let client_is_openai_responses_family = matches!(
-        aether_ai_formats::normalize_api_format_alias(client_api_format).as_str(),
-        "openai:responses" | "openai:responses:compact"
-    );
-    if client_is_openai_responses_family {
-        apply_codex_openai_responses_special_body_edits(
-            &mut provider_request_body,
-            provider_type,
-            provider_api_format,
-            body_rules,
-            user_api_key_id,
-        );
-    } else {
-        apply_codex_openai_responses_chat_body_edits(
-            &mut provider_request_body,
-            provider_type,
-            provider_api_format,
-            body_rules,
-            user_api_key_id,
-        );
+    if crate::is_openai_responses_compact_format(provider_api_format) {
+        if let Some(body_object) = provider_request_body.as_object_mut() {
+            crate::formats::openai::responses::request::apply_compact_request_projection(
+                body_object,
+            );
+        }
     }
-    apply_openai_responses_compact_special_body_edits(
-        &mut provider_request_body,
-        provider_api_format,
-    );
     crate::formats::openai::responses::strip_incompatible_openai_responses_reasoning_items_with_policy(
         &mut provider_request_body,
         provider_api_format,
@@ -950,7 +928,7 @@ mod tests {
         assert_eq!(converted["stream"], true);
     }
 
-    fn codex_default_body_rules() -> Value {
+    fn default_body_rules() -> Value {
         json!([
             {"action":"drop","path":"max_output_tokens"},
             {"action":"drop","path":"temperature"},
@@ -1510,8 +1488,8 @@ mod tests {
     }
 
     #[test]
-    fn applies_codex_body_rules_for_all_standard_sources_to_openai_responses() {
-        let body_rules = codex_default_body_rules();
+    fn applies_body_rules_for_all_standard_sources_to_openai_responses() {
+        let body_rules = default_body_rules();
 
         for client_api_format in STANDARD_SURFACES {
             let (mut request, request_path) = sample_request_for(client_api_format);
@@ -1524,7 +1502,7 @@ mod tests {
                 &request,
                 client_api_format,
                 "gpt-5.5",
-                "codex",
+                "custom",
                 "openai:responses",
                 request_path,
                 true,
@@ -1532,7 +1510,7 @@ mod tests {
                 Some("key-1"),
             )
             .unwrap_or_else(|| {
-                panic!("{client_api_format} -> openai:responses should build with codex body rules")
+                panic!("{client_api_format} -> openai:responses should build with body rules")
             });
 
             assert_eq!(converted["model"], "gpt-5.5");
@@ -1549,7 +1527,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_store_body_rule_preserves_response_input_item_ids() {
+    fn store_body_rule_preserves_response_input_item_ids() {
         let request = json!({
             "model": "gpt-5.4",
             "input": [{
@@ -1565,7 +1543,7 @@ mod tests {
             &request,
             "openai:responses",
             "gpt-5.4",
-            "codex",
+            "custom",
             "openai:responses",
             "/v1/responses",
             true,
@@ -1615,7 +1593,7 @@ mod tests {
     }
 
     #[test]
-    fn standard_codex_responses_strip_cache_control_without_synthesizing_a_cache_key() {
+    fn standard_responses_strip_cache_control_without_synthesizing_a_cache_key() {
         fn claude_request(user_text: &str) -> Value {
             json!({
                 "model": "claude-sonnet",
@@ -1638,26 +1616,26 @@ mod tests {
             &body_a,
             "claude:messages",
             "gpt-5.4",
-            "codex",
+            "custom",
             "openai:responses",
             "/v1/messages",
             true,
             None,
             Some("key-a"),
         )
-        .expect("claude to codex responses request should build");
+        .expect("claude to openai responses request should build");
         let converted_b = build_standard_request_body(
             &body_b,
             "claude:messages",
             "gpt-5.4",
-            "codex",
+            "custom",
             "openai:responses",
             "/v1/messages",
             true,
             None,
             Some("key-a"),
         )
-        .expect("claude to codex responses request should build");
+        .expect("claude to openai responses request should build");
 
         assert!(converted_a.get("prompt_cache_key").is_none());
         assert!(converted_b.get("prompt_cache_key").is_none());
@@ -1984,7 +1962,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_responses_nested_tools_survive_claude_messages_and_kiro_envelope_conversion() {
+    fn openai_responses_nested_tools_survive_claude_messages_conversion() {
         let request = json!({
             "model": "gpt-5",
             "input": "Use the weather tool for Shanghai.",
@@ -2012,7 +1990,7 @@ mod tests {
             &request,
             "openai:responses",
             "claude-sonnet-4.6",
-            "kiro",
+            "custom",
             "claude:messages",
             "/v1/responses",
             true,

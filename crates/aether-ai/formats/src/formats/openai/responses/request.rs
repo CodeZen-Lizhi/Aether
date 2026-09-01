@@ -56,9 +56,11 @@ pub struct OpenAiResponsesRequestContractViolation {
 const COMPACT_OMITTED_REQUEST_FIELDS: &[&str] = &[
     "client_metadata",
     "include",
+    "previous_response_id",
     "store",
     "stream",
     "stream_options",
+    "temperature",
     "tool_choice",
 ];
 
@@ -294,7 +296,7 @@ pub fn to_raw(
     Some(output)
 }
 
-pub(super) fn apply_compact_request_projection(output: &mut Map<String, Value>) {
+pub(crate) fn apply_compact_request_projection(output: &mut Map<String, Value>) {
     for field in COMPACT_OMITTED_REQUEST_FIELDS {
         output.remove(*field);
     }
@@ -1570,7 +1572,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_request_uses_the_codex_request_projection() {
+    fn compact_request_uses_the_compact_request_projection() {
         let source = json!({
             "model": "gpt-5.6-sol",
             "input": [{
@@ -1578,12 +1580,14 @@ mod tests {
                 "role": "user",
                 "content": [{"type": "input_text", "text": "hello"}]
             }],
-            "client_metadata": {"origin": "codex"},
+            "client_metadata": {"origin": "mapping"},
             "include": ["reasoning.encrypted_content"],
             "store": false,
             "stream": true,
             "stream_options": {"reasoning_summary_delivery": "sequential_cutoff"},
             "tool_choice": "auto",
+            "temperature": 0.5,
+            "previous_response_id": "resp_42",
             "parallel_tool_calls": true,
             "reasoning": {"effort": "max", "context": "all_turns"},
             "text": {"verbosity": "medium"},

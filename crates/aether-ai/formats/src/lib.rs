@@ -39,19 +39,10 @@ pub use formats::openai::reasoning::{
 };
 pub use formats::openai::request_contract::{
     finalize_openai_provider_request,
-    finalize_openai_provider_request_with_codex_model_capabilities,
-    finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy,
-    finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy_for_websocket_continuation,
+    finalize_openai_provider_request_with_reasoning_replay_policy,
+    finalize_openai_provider_request_with_reasoning_replay_policy_for_websocket_continuation,
     validate_openai_provider_request_contract, OpenAiProviderRequestContractViolation,
     OpenAiProviderRequestFinalization,
-};
-pub use formats::openai::responses::codex::{
-    build_codex_model_catalog_metadata, bundled_codex_model_cards,
-    codex_responses_lite_tool_is_client_executed, effective_codex_model_cards,
-    parse_codex_auth_identity, project_codex_catalog_model_card,
-    resolve_codex_responses_model_capabilities, CodexAuthIdentity, CodexResponsesModelCapabilities,
-    CODEX_CLIENT_ORIGINATOR, CODEX_CLIENT_USER_AGENT, CODEX_CLIENT_VERSION,
-    CODEX_MODEL_CATALOG_METADATA_FIELD, CODEX_RESPONSES_LITE_HEADER,
 };
 pub use formats::openai::responses::request::{
     validate_openai_responses_request_contract, OpenAiResponsesRequestContractViolation,
@@ -83,9 +74,9 @@ pub use formats::shared::model_directives::{
 };
 pub use formats::shared::request::{
     endpoint_config_forces_upstream_stream_policy, enforce_request_body_stream_field,
-    forbid_upstream_streaming_for_provider, force_upstream_streaming_for_provider,
-    parse_direct_request_body, resolve_upstream_is_stream_for_provider,
-    resolve_upstream_is_stream_from_endpoint_config, UPSTREAM_IS_STREAM_KEY,
+    forbid_upstream_streaming_for_provider, parse_direct_request_body,
+    resolve_upstream_is_stream_for_provider, resolve_upstream_is_stream_from_endpoint_config,
+    UPSTREAM_IS_STREAM_KEY,
 };
 pub use protocol::canonical::{
     canonical_request_unknown_block_count, canonical_response_unknown_block_count,

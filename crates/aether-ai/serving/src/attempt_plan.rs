@@ -455,13 +455,6 @@ mod tests {
 
     #[test]
     fn build_ai_execution_plan_without_request_gzip_policy_leaves_json_uncompressed() {
-        let large_codex_url = test_plan_for_url_and_body(
-            "https://chatgpt.com/backend-api/codex/responses",
-            RequestBody::from_json(json!({
-                "model": "gpt-5.5",
-                "input": "x".repeat(DEFAULT_REQUEST_GZIP_MIN_JSON_BYTES),
-            })),
-        );
         let large_openai = test_plan_for_url_and_body(
             "https://api.openai.com/v1/responses",
             RequestBody::from_json(json!({
@@ -470,7 +463,6 @@ mod tests {
             })),
         );
 
-        assert_eq!(large_codex_url.content_encoding, None);
         assert_eq!(large_openai.content_encoding, None);
     }
 
@@ -536,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn build_ai_execution_plan_gzips_explicit_json_request_for_non_codex() {
+    fn build_ai_execution_plan_gzips_explicit_json_request_when_enabled() {
         let mut payload = test_decision();
         payload.request_gzip = Some(AiRequestGzipPolicy {
             enabled: Some(true),
@@ -604,7 +596,7 @@ mod tests {
             AiExecutionPlanFromDecisionParts {
                 core,
                 method: "POST".to_string(),
-                url: "https://chatgpt.com/backend-api/codex/responses".to_string(),
+                url: "https://api.example.com/v1/responses".to_string(),
                 headers: BTreeMap::new(),
                 content_type: Some("application/json".to_string()),
                 body: RequestBody::from_json(json!({
@@ -616,19 +608,6 @@ mod tests {
         );
 
         assert_eq!(plan.content_encoding, None);
-    }
-
-    #[test]
-    fn infer_ai_upstream_base_url_preserves_codex_base_path() {
-        assert_eq!(
-            infer_ai_upstream_base_url("https://tiger.bookapi.cc/codex/responses").as_deref(),
-            Some("https://tiger.bookapi.cc/codex")
-        );
-        assert_eq!(
-            infer_ai_upstream_base_url("https://chatgpt.com/backend-api/codex/responses")
-                .as_deref(),
-            Some("https://chatgpt.com/backend-api/codex")
-        );
     }
 
     #[test]

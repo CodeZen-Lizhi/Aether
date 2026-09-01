@@ -319,7 +319,6 @@
                                   : 'bg-muted-foreground/20 text-muted-foreground'"
                               >
                                 <span v-if="providerIndex === 0">首选</span>
-                                <span v-else>P{{ providerEntry.provider.provider_priority }}</span>
                               </div>
 
                               <!-- 第二列：状态指示灯 -->
@@ -666,10 +665,9 @@ interface GlobalKeyEntry {
   priority_api_format: string
 }
 
-// 全局 Key 模式下的优先级分组
+// 全局 Key 模式下的 Key 分组
 interface GlobalKeyGroup {
   priority: number | null
-  demote_cross_format: boolean
   keys: GlobalKeyEntry[]
 }
 
@@ -791,25 +789,6 @@ function targetFormatsForEndpoint(
   )
 }
 
-function keepPriorityOnConversion(provider: RoutingProviderInfo): boolean {
-  return !!(routingData.value?.keep_priority_on_conversion || provider.keep_priority_on_conversion)
-}
-
-function shouldDemoteCrossFormat(
-  targetApiFormat: string,
-  entryApiFormat: string,
-  provider: RoutingProviderInfo
-): boolean {
-  return targetApiFormat !== entryApiFormat && !keepPriorityOnConversion(provider)
-}
-
-function resolvedGlobalKeyPriority(keyEntry: GlobalKeyEntry): number {
-  const priorityByFormat = keyEntry.key.global_priority_by_format
-  if (!priorityByFormat) return 999
-  const value = priorityByFormat[keyEntry.priority_api_format]
-  return typeof value === 'number' ? value : 999
-}
-
 // 按 API 格式分组的计算属性
 const apiFormatGroups = computed<ApiFormatGroup[]>(() => {
   if (!routingData.value) return []
@@ -855,51 +834,26 @@ const apiFormatGroups = computed<ApiFormatGroup[]>(() => {
   // 转换为数组并计算统计
   const groups: ApiFormatGroup[] = []
   for (const [format, data] of formatMap) {
-    // Provider 排序（提供商优先模式）
+    // Provider 排序（活跃优先，其余保持调度策略返回的顺序）
     const sortedProviders = [...data.providers].sort((a, b) => {
       const aActive = a.provider.is_active && a.provider.model_is_active
       const bActive = b.provider.is_active && b.provider.model_is_active
       if (aActive !== bActive) return bActive ? 1 : -1
-      const aDemoted = shouldDemoteCrossFormat(format, a.priority_api_format, a.provider)
-      const bDemoted = shouldDemoteCrossFormat(format, b.priority_api_format, b.provider)
-      if (aDemoted !== bDemoted) return aDemoted ? 1 : -1
-      return a.provider.provider_priority - b.provider.provider_priority
+      return 0
     })
 
-    // Key 按全局优先级分组排序（全局 Key 优先模式）
-    const keyGroupMap = new Map<string, GlobalKeyGroup>()
-    for (const keyEntry of data.allKeys) {
-      const priority = resolvedGlobalKeyPriority(keyEntry)
-      const demoteCrossFormat = shouldDemoteCrossFormat(format, keyEntry.priority_api_format, keyEntry.provider)
-      const groupKey = `${demoteCrossFormat ? 1 : 0}:${priority}`
-      if (!keyGroupMap.has(groupKey)) {
-        keyGroupMap.set(groupKey, {
-          priority: priority === 999 ? null : priority,
-          demote_cross_format: demoteCrossFormat,
-          keys: []
-        })
-      }
-      keyGroupMap.get(groupKey)?.keys.push(keyEntry)
-    }
-
-    // 转换为分组数组并排序
-    const keyGroups: GlobalKeyGroup[] = Array.from(keyGroupMap.values())
-      .sort((a, b) => {
-        if (a.demote_cross_format !== b.demote_cross_format) {
-          return a.demote_cross_format ? 1 : -1
-        }
-        return (a.priority ?? 999) - (b.priority ?? 999)
-      })
-      .map(group => ({
-        ...group,
-        keys: group.keys.sort((a, b) => {
-          // 同优先级内按活跃状态和健康度排序
+    // 全局 Key 优先模式：按调度策略返回的顺序展示
+    const keyGroups: GlobalKeyGroup[] = [
+      {
+        priority: null,
+        keys: [...data.allKeys].sort((a, b) => {
           const aActive = a.key.is_active && a.provider.is_active && a.provider.model_is_active
           const bActive = b.key.is_active && b.provider.is_active && b.provider.model_is_active
           if (aActive !== bActive) return bActive ? 1 : -1
           return b.key.health_score - a.key.health_score
-        })
-      }))
+        }),
+      },
+    ]
 
     const activeProviders = sortedProviders.filter(
       e => e.provider.is_active && e.provider.model_is_active && e.endpoint?.is_active && e.active_keys > 0
@@ -1110,26 +1064,7 @@ interface KeyPriorityGroup {
 }
 
 function getKeyPriorityGroups(keys: RoutingKeyInfo[]): KeyPriorityGroup[] {
-  const groups = new Map<number, KeyPriorityGroup>()
-
-  for (const key of keys) {
-    // 提供商优先模式：按 internal_priority 分组
-    const priority = key.internal_priority ?? 999
-
-    if (!groups.has(priority)) {
-      groups.set(priority, {
-        priority: priority === 999 ? null : priority,
-        keys: []
-      })
-    }
-    groups.get(priority)?.keys.push(key)
-  }
-
-  return Array.from(groups.values()).sort((a, b) => {
-    const pa = a.priority ?? 999
-    const pb = b.priority ?? 999
-    return pa - pb
-  })
+  return keys.length > 0 ? [{ priority: null, keys: [...keys] }] : []
 }
 
 // 获取提供商状态样式

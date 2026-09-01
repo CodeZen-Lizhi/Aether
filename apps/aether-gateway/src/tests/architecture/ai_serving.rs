@@ -2720,7 +2720,10 @@ fn ai_serving_owns_pure_planner_diagnostics_and_execution_labels() {
     let execution_runtime = read_workspace_file("apps/aether-gateway/src/execution_runtime/mod.rs");
     assert!(
         execution_runtime
-            .contains("pub(crate) use aether_ai_serving::{ConversionMode, ExecutionStrategy};"),
+            .contains("pub(crate) use aether_ai_serving::{
+ConversionMode,
+ExecutionStrategy,
+};"),
         "gateway execution_runtime should reuse serving-owned execution labels"
     );
     for forbidden in [

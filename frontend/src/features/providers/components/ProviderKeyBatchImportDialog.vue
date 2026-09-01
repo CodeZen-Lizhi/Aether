@@ -281,17 +281,15 @@ import {
   Textarea,
 } from '@/components/ui'
 import ProviderKeyImportSettingsFields from './ProviderKeyImportSettingsFields.vue'
-import { batchImportPoolKeys, type PoolKeySettingsPatch } from '@/api/endpoints/pool'
+import { type KeyImportSettings } from './ProviderKeyImportSettingsFields.vue'
+import { addProviderKey } from '@/api/endpoints'
 import { useToast } from '@/composables/useToast'
 import { parseApiError } from '@/utils/errorParser'
 import { parseProviderKeyBatchImport } from '@/features/providers/utils/providerKeyBatchImport'
 
 type WizardStep = 1 | 2 | 3
 type AuthType = 'api_key' | 'bearer'
-type ImportSettings = Required<Pick<PoolKeySettingsPatch,
-  'internal_priority' | 'rpm_limit' | 'concurrent_limit' | 'cache_ttl_minutes'
-  | 'max_probe_interval_minutes' | 'is_active' | 'note' | 'proxy_node_id'
->>
+type ImportSettings = KeyImportSettings
 
 interface ReviewImportItem {
   lineNumber: number
@@ -433,7 +431,6 @@ watch(inputText, () => {
 
 function createDefaultSettings(): ImportSettings {
   return {
-    internal_priority: 50,
     rpm_limit: null,
     concurrent_limit: null,
     cache_ttl_minutes: 5,
@@ -448,22 +445,8 @@ function copySettings(source: ImportSettings): ImportSettings {
   return { ...source }
 }
 
-function buildSettingsPayload(
-  source: ImportSettings,
-  includeEmptyProxy = false,
-): PoolKeySettingsPatch {
-  return {
-    internal_priority: source.internal_priority,
-    rpm_limit: source.rpm_limit,
-    concurrent_limit: source.concurrent_limit,
-    cache_ttl_minutes: source.cache_ttl_minutes,
-    max_probe_interval_minutes: source.max_probe_interval_minutes,
-    is_active: source.is_active,
-    note: source.note.trim() || null,
-    ...((source.proxy_node_id || includeEmptyProxy)
-      ? { proxy_node_id: source.proxy_node_id || null }
-      : {}),
-  }
+function buildKeyProxy(source: ImportSettings): { node_id: string } | null {
+  return source.proxy_node_id ? { node_id: source.proxy_node_id } : null
 }
 
 function handleDialogUpdate(value: boolean): void {
@@ -554,27 +537,36 @@ async function submitImport(): Promise<void> {
   if (!canImport.value) return
   importing.value = true
   try {
-    const result = await batchImportPoolKeys(props.providerId, {
-      keys: reviewItems.value.map(item => ({
-        name: item.name.trim(),
-        api_key: item.apiKey.trim(),
-        auth_type: item.customized ? item.authType : authType.value,
-        ...(item.customized
-          ? {
-              api_formats: item.apiFormats,
-              settings: buildSettingsPayload(item.settings, true),
-            }
-          : {}),
-      })),
-      api_formats: selectedApiFormats.value,
-      settings: buildSettingsPayload(settings),
-    })
-    if (result.imported > 0) emit('saved')
-    if (result.errors.length > 0) {
-      warning(`已导入 ${result.imported} 个，${result.errors.length} 个失败`)
+    let imported = 0
+    const failures: string[] = []
+    for (const item of reviewItems.value) {
+      try {
+        const itemSettings = item.customized ? item.settings : settings
+        await addProviderKey(props.providerId, {
+          name: item.name.trim(),
+          api_key: item.apiKey.trim(),
+          auth_type: item.customized ? item.authType : authType.value,
+          api_formats: item.customized ? item.apiFormats : selectedApiFormats.value,
+          rpm_limit: itemSettings.rpm_limit,
+          concurrent_limit: itemSettings.concurrent_limit,
+          cache_ttl_minutes: itemSettings.cache_ttl_minutes,
+          max_probe_interval_minutes: itemSettings.max_probe_interval_minutes,
+          is_active: itemSettings.is_active,
+          note: itemSettings.note.trim() || undefined,
+          proxy: buildKeyProxy(itemSettings),
+        })
+        imported += 1
+      } catch (itemError) {
+        failures.push(item.name.trim())
+        console.error('批量导入 Key 失败:', item.name, itemError)
+      }
+    }
+    if (imported > 0) emit('saved')
+    if (failures.length > 0) {
+      warning(`已导入 ${imported} 个，${failures.length} 个失败：${failures.join('、')}`)
       return
     }
-    success(`已导入 ${result.imported} 个 Key`)
+    success(`已导入 ${imported} 个 Key`)
     emit('close')
   } catch (error) {
     showError(parseApiError(error, '批量导入 Key 失败'))

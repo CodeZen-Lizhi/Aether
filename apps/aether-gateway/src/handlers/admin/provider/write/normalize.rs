@@ -3,12 +3,8 @@ use std::collections::BTreeSet;
 pub(crate) fn normalize_provider_type_input(value: &str) -> Result<String, String> {
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {
-        "custom" | "claude_code" | "kiro" | "codex" | "chatgpt_web" | "gemini_cli"
-        | "antigravity" | "vertex_ai" | "grok" | "windsurf" => Ok(normalized),
-        _ => Err(
-            "provider_type 仅支持 custom / claude_code / kiro / codex / chatgpt_web / gemini_cli / antigravity / vertex_ai / grok / windsurf"
-                .to_string(),
-        ),
+        "custom" => Ok(normalized),
+        _ => Err("provider_type 仅支持 custom".to_string()),
     }
 }
 
@@ -159,8 +155,8 @@ fn json_string_array(values: Vec<String>) -> serde_json::Value {
 pub(crate) fn normalize_auth_type(value: Option<&str>) -> Result<String, String> {
     let auth_type = value.unwrap_or("api_key").trim().to_ascii_lowercase();
     match auth_type.as_str() {
-        "api_key" | "service_account" | "oauth" | "bearer" => Ok(auth_type),
-        _ => Err("auth_type 仅支持 api_key / service_account / oauth / bearer".to_string()),
+        "api_key" | "service_account" | "bearer" => Ok(auth_type),
+        _ => Err("auth_type 仅支持 api_key / service_account / bearer".to_string()),
     }
 }
 
@@ -169,20 +165,6 @@ pub(crate) fn normalize_max_probe_interval_minutes(value: i32) -> Result<i32, St
         Ok(value)
     } else {
         Err("max_probe_interval_minutes 必须在 0 到 32 之间".to_string())
-    }
-}
-
-pub(crate) fn normalize_pool_advanced_config(
-    value: Option<serde_json::Value>,
-) -> Result<Option<serde_json::Value>, String> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    match value {
-        serde_json::Value::Null => Ok(None),
-        // `pool_advanced: {}` still means "enable pool mode with defaults".
-        serde_json::Value::Object(map) => Ok(Some(serde_json::Value::Object(map))),
-        _ => Err("pool_advanced 必须是 JSON 对象".to_string()),
     }
 }
 
@@ -255,35 +237,6 @@ pub(crate) fn validate_responses_websocket_config(
     Ok(())
 }
 
-pub(crate) fn validate_vertex_api_formats(
-    provider_type: &str,
-    auth_type: &str,
-    api_formats: &[String],
-) -> Result<(), String> {
-    if !provider_type.trim().eq_ignore_ascii_case("vertex_ai") {
-        return Ok(());
-    }
-
-    let allowed = match auth_type {
-        "api_key" => &["gemini:generate_content", "gemini:embedding"][..],
-        "service_account" | "vertex_ai" => &["gemini:generate_content", "gemini:embedding"][..],
-        _ => return Ok(()),
-    };
-    let invalid = api_formats
-        .iter()
-        .filter(|value| !allowed.contains(&value.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    if invalid.is_empty() {
-        return Ok(());
-    }
-    Err(format!(
-        "Vertex {auth_type} 不支持以下 API 格式: {}；允许: {}",
-        invalid.join(", "),
-        allowed.join(", ")
-    ))
-}
-
 fn normalize_json_like_object(
     value: Option<serde_json::Value>,
     field_name: &str,
@@ -303,21 +256,12 @@ mod tests {
     use super::{
         normalize_allow_auth_channel_mismatch_formats, normalize_api_format_json_object_keys,
         normalize_api_format_list, normalize_auth_type, normalize_auth_type_by_format,
-        normalize_chat_pii_redaction_config, normalize_pool_advanced_config,
+        normalize_chat_pii_redaction_config,
         normalize_provider_type_input, normalize_rate_multipliers,
         reconcile_allow_auth_channel_mismatch_formats, remove_responses_websocket_enabled,
         set_responses_websocket_enabled, validate_responses_websocket_config,
-        validate_vertex_api_formats,
     };
     use serde_json::json;
-
-    #[test]
-    fn normalize_pool_advanced_preserves_empty_object() {
-        assert_eq!(
-            normalize_pool_advanced_config(Some(json!({}))).expect("empty object should normalize"),
-            Some(json!({}))
-        );
-    }
 
     #[test]
     fn rate_multipliers_require_non_negative_finite_numbers() {
@@ -332,18 +276,6 @@ mod tests {
         ] {
             assert!(normalize_rate_multipliers(Some(value)).is_err());
         }
-    }
-
-    #[test]
-    fn normalize_pool_advanced_rejects_legacy_booleans() {
-        assert_eq!(
-            normalize_pool_advanced_config(Some(json!(true))).unwrap_err(),
-            "pool_advanced 必须是 JSON 对象"
-        );
-        assert_eq!(
-            normalize_pool_advanced_config(Some(json!(false))).unwrap_err(),
-            "pool_advanced 必须是 JSON 对象"
-        );
     }
 
     #[test]
@@ -390,19 +322,12 @@ mod tests {
     }
 
     #[test]
-    fn normalize_provider_type_supports_chatgpt_web() {
+    fn normalize_provider_type_only_accepts_custom() {
         assert_eq!(
-            normalize_provider_type_input(" ChatGPT_Web ").expect("type should normalize"),
-            "chatgpt_web"
+            normalize_provider_type_input(" Custom ").expect("type should normalize"),
+            "custom"
         );
-    }
-
-    #[test]
-    fn normalize_provider_type_supports_grok() {
-        assert_eq!(
-            normalize_provider_type_input(" Grok ").expect("type should normalize"),
-            "grok"
-        );
+        assert!(normalize_provider_type_input("codex").is_err());
     }
 
     #[test]
@@ -516,35 +441,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn validate_vertex_api_formats_rejects_unimplemented_anthropic_transport() {
-        assert!(validate_vertex_api_formats(
-            "vertex_ai",
-            "service_account",
-            &["claude:messages".to_string()],
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn validate_vertex_api_formats_allows_gemini_embedding() {
-        assert!(validate_vertex_api_formats(
-            "vertex_ai",
-            "api_key",
-            &[
-                "gemini:generate_content".to_string(),
-                "gemini:embedding".to_string()
-            ],
-        )
-        .is_ok());
-        assert!(validate_vertex_api_formats(
-            "vertex_ai",
-            "service_account",
-            &[
-                "gemini:generate_content".to_string(),
-                "gemini:embedding".to_string()
-            ],
-        )
-        .is_ok());
-    }
 }

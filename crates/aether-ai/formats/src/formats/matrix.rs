@@ -57,7 +57,7 @@ pub fn request_candidate_api_format_preference(
     if client_api_format == "openai:responses:compact" {
         return (provider_api_format == "openai:responses:compact").then_some((0, 0));
     }
-    if matches!(client_api_format.as_str(), "openai:realtime" | "codex:live") {
+    if client_api_format == "openai:realtime" {
         return (provider_api_format == client_api_format).then_some((0, 0));
     }
     if client_api_format == "openai:search" {
@@ -117,9 +117,6 @@ pub fn request_candidate_api_formats(
     }
     if client_api_format == "openai:realtime" {
         return vec!["openai:realtime"];
-    }
-    if client_api_format == "codex:live" {
-        return vec!["codex:live"];
     }
     if client_api_format == "openai:search" {
         return vec!["openai:search"];
@@ -762,23 +759,11 @@ mod tests {
             vec!["openai:realtime"]
         );
         assert_eq!(
-            request_candidate_api_formats("/v1/live", true),
-            vec!["codex:live"]
-        );
-        assert_eq!(
             request_candidate_api_format_preference("openai:realtime", "openai:realtime"),
             Some((0, 0))
         );
         assert_eq!(
-            request_candidate_api_format_preference("codex:live", "codex:live"),
-            Some((0, 0))
-        );
-        assert_eq!(
             request_candidate_api_format_preference("openai:realtime", "openai:responses"),
-            None
-        );
-        assert_eq!(
-            request_candidate_api_format_preference("codex:live", "openai:responses"),
             None
         );
     }

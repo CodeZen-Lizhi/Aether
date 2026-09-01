@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use aether_admin::provider::quota as admin_provider_quota_pure;
 use aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyRuntimeMetadataUpdate;
-use aether_provider_pool::grok_quota_window_key_for_model;
 use aether_usage_runtime::{
     extract_gemini_file_mapping_entries, gemini_file_mapping_cache_key, normalize_gemini_file_name,
     report_request_id, GatewayStreamReportRequest, GatewaySyncReportRequest,
@@ -371,6 +370,36 @@ async fn sync_gemini_cli_credits_from_report(
     // Credits returned by the provider are an authoritative snapshot; do not
     // replay it over a newer local namespace after a CAS conflict.
     Ok(false)
+}
+
+fn grok_mode_id_for_model(model: Option<&str>) -> &'static str {
+    let model = model.unwrap_or_default().to_ascii_lowercase();
+    if model.contains("4.3") || model.contains("computer") {
+        "grok-420-computer-use-sa"
+    } else if model.contains("multi-agent") {
+        "heavy"
+    } else if model.contains("non-reasoning") || model.contains("fast") || model.contains("lite") {
+        "fast"
+    } else if model.contains("expert") || model.contains("reasoning") {
+        "expert"
+    } else if model.contains("0309-heavy") {
+        "auto"
+    } else if model.contains("heavy") {
+        "heavy"
+    } else {
+        "auto"
+    }
+}
+
+fn grok_quota_window_key_for_model(model: Option<&str>) -> Option<&'static str> {
+    Some(match grok_mode_id_for_model(model) {
+        "fast" => "quota_fast",
+        "auto" => "quota_auto",
+        "expert" => "quota_expert",
+        "heavy" => "quota_heavy",
+        "grok-420-computer-use-sa" => "quota_grok_4_3",
+        _ => return None,
+    })
 }
 
 fn grok_quota_reset_after_seconds(

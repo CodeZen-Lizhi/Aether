@@ -1,17 +1,9 @@
-export interface RoutingCandidateRankVector {
-  provider_priority_before: number
-  provider_priority_after: number
-  key_priority_before: number
-  key_priority_after: number
-}
-
 export interface RoutingCandidateTrace {
-  candidate_kind: 'provider' | 'pool_group'
+  candidate_kind: 'provider'
   provider_id: string
   endpoint_id: string
   model_id: string
   key_id?: string | null
-  ranking_vector: RoutingCandidateRankVector
   skip_reason?: string | null
   selected_order?: number | null
 }
@@ -25,14 +17,12 @@ export interface RoutingDecisionTrace {
   resolved_model: string
   client_api_format: string
   global_candidates: RoutingCandidateTrace[]
-  pool_expansion: unknown[]
   runtime_facts: Record<string, unknown>
 }
 
 export function candidateTraceLabel(candidate: RoutingCandidateTrace): string {
-  const kind = candidate.candidate_kind === 'pool_group' ? '号池' : 'Provider'
   const key = candidate.key_id ? ` / ${candidate.key_id}` : ''
-  return `${kind} ${candidate.provider_id}${key}`
+  return `Provider ${candidate.provider_id}${key}`
 }
 
 export function summarizeRoutingTrace(trace: RoutingDecisionTrace): string[] {

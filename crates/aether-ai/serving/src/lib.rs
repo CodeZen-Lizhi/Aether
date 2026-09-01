@@ -24,34 +24,6 @@ pub mod runtime_miss;
 pub mod surface_spec;
 
 pub use aether_ai_formats::UPSTREAM_IS_STREAM_KEY;
-pub use aether_pool_core::{
-    normalize_enabled_pool_presets, run_pool_scheduler, PoolCandidateFacts, PoolCandidateInput,
-    PoolCandidateOrchestration, PoolMemberSignals, PoolRuntimeState, PoolScheduledCandidate,
-    PoolSchedulerOutcome, PoolSchedulingConfig, PoolSchedulingPreset, PoolSkippedCandidate,
-    POOL_ACCOUNT_BLOCKED_SKIP_REASON, POOL_ACCOUNT_EXHAUSTED_SKIP_REASON,
-    POOL_COOLDOWN_SKIP_REASON, POOL_COST_LIMIT_REACHED_SKIP_REASON,
-};
-pub use aether_pool_core::{
-    normalize_enabled_pool_presets as normalize_enabled_ai_pool_presets,
-    run_pool_scheduler as run_ai_pool_scheduler, PoolCandidateFacts as AiPoolCandidateFacts,
-    PoolCandidateInput as AiPoolCandidateInput,
-    PoolCandidateOrchestration as AiPoolCandidateOrchestration,
-    PoolMemberSignals as AiPoolCatalogKeyContext, PoolRuntimeState as AiPoolRuntimeState,
-    PoolScheduledCandidate as AiPoolScheduledCandidate,
-    PoolSchedulerOutcome as AiPoolSchedulerOutcome, PoolSchedulingConfig as AiPoolSchedulingConfig,
-    PoolSchedulingPreset as AiPoolSchedulingPreset, PoolSkippedCandidate as AiPoolSkippedCandidate,
-    POOL_ACCOUNT_BLOCKED_SKIP_REASON as AI_POOL_ACCOUNT_BLOCKED_SKIP_REASON,
-    POOL_ACCOUNT_EXHAUSTED_SKIP_REASON as AI_POOL_ACCOUNT_EXHAUSTED_SKIP_REASON,
-    POOL_COOLDOWN_SKIP_REASON as AI_POOL_COOLDOWN_SKIP_REASON,
-    POOL_COST_LIMIT_REACHED_SKIP_REASON as AI_POOL_COST_LIMIT_REACHED_SKIP_REASON,
-};
-pub use aether_pool_core::{
-    probe_freshness_score, probe_freshness_score_with_ttl, score_pool_member,
-    score_pool_member_with_rules, PoolMemberScoreInput, PoolMemberScoreOutput,
-    PoolMemberScoreRules, PoolMemberScoreWeights, POOL_SCORE_VERSION,
-    PROBE_FAILURE_COOLDOWN_THRESHOLD, PROBE_FAILURE_PENALTY, PROBE_FRESHNESS_TTL_SECONDS,
-    REQUEST_FAILURE_PENALTY, UNSCHEDULABLE_SCORE_CAP,
-};
 pub use attempt_loop::{
     run_ai_attempt_loop, AiAttemptExecutionOutcome, AiAttemptLoopOutcome, AiAttemptLoopPort,
     AiAttemptRetryScope, AiExecutionAttempt,
@@ -73,10 +45,9 @@ pub use candidate_metadata::{
     AiCandidateMetadataParts,
 };
 pub use candidate_persistence::{
-    ai_candidate_extra_data_with_ranking, ai_should_persist_available_candidate_for_pool_key,
-    ai_should_persist_skipped_candidate_for_pool_membership,
-    run_ai_available_candidate_persistence, run_ai_skipped_candidate_persistence,
-    AiAvailableCandidatePersistencePort, AiSkippedCandidatePersistencePort,
+    ai_candidate_extra_data_with_ranking, run_ai_available_candidate_persistence,
+    run_ai_skipped_candidate_persistence, AiAvailableCandidatePersistencePort,
+    AiSkippedCandidatePersistencePort,
 };
 pub use candidate_persistence_policy::{
     ai_candidate_persistence_policy_spec, AiCandidatePersistencePolicyKind,
@@ -95,8 +66,8 @@ pub use candidate_ranking::{
     AiRankingSchedulingMode,
 };
 pub use candidate_resolution::{
-    extract_ai_pool_sticky_session_token, run_ai_candidate_resolution, AiCandidateResolutionMode,
-    AiCandidateResolutionOutcome, AiCandidateResolutionPort, AiCandidateResolutionRequest,
+    run_ai_candidate_resolution, AiCandidateResolutionMode, AiCandidateResolutionOutcome,
+    AiCandidateResolutionPort, AiCandidateResolutionRequest,
 };
 pub use decision_input::{run_ai_authenticated_decision_input, AiAuthenticatedDecisionInputPort};
 pub use decision_path::{
@@ -125,7 +96,6 @@ pub use plan_payload::{
 pub use ranking_metadata::append_ai_ranking_metadata_to_object;
 pub use report_context::{
     build_ai_execution_report_context, build_ai_report_context_original_request_echo,
-    insert_provider_stream_event_api_format, provider_stream_event_api_format_for_provider_type,
     AiExecutionReportContextParts, AiRequestOrigin,
 };
 pub use request_body_diagnostics::{

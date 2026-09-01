@@ -5,49 +5,31 @@ use aether_contracts::ResolvedTransportProfile;
 use serde_json::Value;
 
 use crate::ai_serving::planner::candidate_preparation::{
-    prepare_header_authenticated_candidate, prepare_header_authenticated_candidate_from_auth,
-    OauthPreparationContext,
+    prepare_header_authenticated_candidate, OauthPreparationContext,
 };
 use crate::ai_serving::planner::common::{
     endpoint_config_forces_body_stream_field, enforce_provider_body_stream_policy,
     request_requires_body_stream_field, resolve_upstream_is_stream_for_provider,
-};
-use crate::ai_serving::planner::gemini_cli::{
-    build_gemini_cli_v1internal_provider_request, GeminiCliV1InternalRequestError,
-    GeminiCliV1InternalRequestInput,
 };
 use crate::ai_serving::planner::redaction::{
     request_identity_response_encoding_when_redacted, resolve_provider_chat_pii_redaction,
 };
 use crate::ai_serving::planner::spec_metadata::local_standard_spec_metadata;
 use crate::ai_serving::planner::standard::{
-    apply_codex_openai_special_headers, apply_deepseek_tool_call_thinking_compat,
-    codex_model_capabilities_for_transport, is_deepseek_provider,
+    apply_deepseek_tool_call_thinking_compat, is_deepseek_provider,
     openai_provider_request_contract_failure_extra_data, openai_responses_reasoning_replay_policy,
     request_body_build_failure_extra_data, request_conversion_failure_extra_data,
 };
-use crate::ai_serving::transport::kiro::{
-    build_kiro_provider_headers, build_kiro_provider_request_body,
-    is_kiro_claude_messages_transport, KiroProviderHeadersInput, KiroRequestAuth,
-    KIRO_ENVELOPE_NAME,
-};
 use crate::ai_serving::transport::{
-    build_grok_browser_headers, build_grok_upstream_url, build_kiro_cross_format_upstream_url,
     build_openai_image_headers, build_openai_image_upstream_url,
-    build_standard_provider_request_headers, build_windsurf_cascade_headers,
-    build_windsurf_cascade_request_body, build_windsurf_cascade_upstream_url,
-    is_gemini_cli_provider_transport, is_windsurf_provider_transport,
-    local_windsurf_request_transport_unsupported_reason_with_network,
-    openai_image_transport_unsupported_reason, resolve_grok_session_auth,
-    resolve_openai_image_auth, GrokHeaderInput, ProviderOpenAiImageHeadersInput,
-    StandardProviderRequestHeadersInput, GEMINI_CLI_V1INTERNAL_ENVELOPE_NAME, GROK_CHAT_PATH,
-    WINDSURF_ENVELOPE_NAME,
+    build_standard_provider_request_headers, openai_image_transport_unsupported_reason,
+    resolve_openai_image_auth, ProviderOpenAiImageHeadersInput,
+    StandardProviderRequestHeadersInput,
 };
 use crate::ai_serving::{
     build_openai_image_request_body_from_gemini_image_request, gemini_request_is_image_generation,
-    project_codex_openai_image_api_request_body, project_openai_image_api_request_body,
-    CandidateFailureDiagnostic, GatewayProviderTransportSnapshot, LocalResolvedOAuthRequestAuth,
-    OpenAiImageOperation,
+    project_openai_image_api_request_body, CandidateFailureDiagnostic,
+    GatewayProviderTransportSnapshot, OpenAiImageOperation,
 };
 use crate::{AppState, GatewayError};
 
@@ -74,13 +56,6 @@ pub(crate) struct LocalStandardCandidatePayloadParts {
     pub(super) request_redacted: bool,
 }
 
-fn is_grok_text_provider_api_format(provider_api_format: &str) -> bool {
-    matches!(
-        crate::ai_serving::normalize_api_format_alias(provider_api_format).as_str(),
-        "openai:chat" | "openai:responses" | "openai:responses:compact" | "claude:messages"
-    )
-}
-
 fn provider_preserves_claude_thinking_signatures(provider_type: &str, base_url: &str) -> bool {
     let provider_type = provider_type.trim().to_ascii_lowercase();
     let base_url = base_url.trim().to_ascii_lowercase();
@@ -90,7 +65,7 @@ fn provider_preserves_claude_thinking_signatures(provider_type: &str, base_url: 
             || base_url.contains("api.aws"));
     matches!(
         provider_type.as_str(),
-        "anthropic" | "claude_code" | "bedrock" | "aws_bedrock" | "amazon_bedrock"
+        "anthropic" | "bedrock" | "aws_bedrock" | "amazon_bedrock"
     ) || base_url.contains("api.anthropic.com")
         || is_bedrock_runtime_url
 }
@@ -302,14 +277,19 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
     let planner_state = crate::ai_serving::PlannerAppState::new(state);
     let candidate = &attempt.eligible.candidate;
     let transport = &attempt.eligible.transport;
-    let transport_profile = crate::ai_serving::transport::resolve_transport_profile(transport);
     let provider_api_format = attempt.eligible.provider_api_format.as_str();
     let effective_headers = input.effective_headers(&parts.headers);
-    let is_grok = transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("grok");
+    let force_body_stream_field =
+        endpoint_config_forces_body_stream_field(transport.endpoint.config.as_ref());
+    let upstream_is_stream = resolve_upstream_is_stream_for_provider(
+        transport.endpoint.config.as_ref(),
+        provider_api_format,
+        spec_metadata.require_streaming,
+        false,
+    );
+    let model_directive_resolution = input
+        .model_directive_policy
+        .resolve_reasoning(provider_api_format, Some(&input.requested_model));
     if spec_metadata.api_format == "gemini:generate_content"
         && provider_api_format == "openai:image"
         && gemini_request_is_image_generation(body_json)
@@ -327,121 +307,6 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
             .await,
         );
     }
-    let is_kiro_claude_cli = is_kiro_claude_messages_transport(transport, provider_api_format);
-    if is_grok && is_grok_text_provider_api_format(provider_api_format) {
-        let prepared_candidate = match prepare_header_authenticated_candidate(
-            planner_state,
-            transport,
-            candidate,
-            resolve_grok_session_auth(transport),
-            OauthPreparationContext {
-                trace_id,
-                api_format: provider_api_format,
-                operation: "standard_family_grok_text_request",
-            },
-        )
-        .await
-        {
-            Ok(prepared) => prepared,
-            Err(skip_reason) => {
-                mark_skipped_local_standard_candidate(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    skip_reason,
-                )
-                .await;
-                return Ok(None);
-            }
-        };
-
-        let redaction = resolve_provider_chat_pii_redaction(
-            state,
-            parts,
-            body_json,
-            &input.auth_context,
-            spec_metadata.api_format,
-            crate::ai_serving::OpenAiResponsesReasoningReplayPolicy::OpenAiItemIds,
-            &attempt.candidate_id,
-        )
-        .await?;
-        let body_json = redaction.body_json.as_ref();
-
-        let mut provider_request_body = body_json.clone();
-        if let Some(object) = provider_request_body.as_object_mut() {
-            object.insert(
-                "model".to_string(),
-                serde_json::Value::String(prepared_candidate.mapped_model.clone()),
-            );
-        }
-
-        let upstream_is_stream = resolve_upstream_is_stream_for_provider(
-            transport.endpoint.config.as_ref(),
-            transport.provider.provider_type.as_str(),
-            provider_api_format,
-            spec_metadata.require_streaming,
-            false,
-        );
-        let force_body_stream_field =
-            endpoint_config_forces_body_stream_field(transport.endpoint.config.as_ref());
-        enforce_provider_body_stream_policy(
-            &mut provider_request_body,
-            provider_api_format,
-            upstream_is_stream,
-            request_requires_body_stream_field(body_json, force_body_stream_field),
-        );
-
-        let upstream_url = build_grok_upstream_url(transport, GROK_CHAT_PATH);
-        let Some(mut provider_request_headers) = build_grok_browser_headers(GrokHeaderInput {
-            transport,
-            transport_profile: transport_profile.as_ref(),
-            request_headers: Some(effective_headers),
-            content_type: "application/json",
-            accept: "text/event-stream",
-            header_rules: transport.endpoint.header_rules.as_ref(),
-            provider_request_body: &provider_request_body,
-            original_request_body: body_json,
-        }) else {
-            mark_skipped_local_standard_candidate_with_failure_diagnostic(
-                state,
-                input,
-                trace_id,
-                candidate,
-                attempt.candidate_index,
-                &attempt.candidate_id,
-                "transport_header_rules_apply_failed",
-                CandidateFailureDiagnostic::header_rules_apply_failed(
-                    spec_metadata.api_format,
-                    provider_api_format,
-                    "grok_standard_family_headers",
-                ),
-            )
-            .await;
-            return Ok(None);
-        };
-        request_identity_response_encoding_when_redacted(
-            &mut provider_request_headers,
-            redaction.redacted,
-        );
-
-        return Ok(Some(LocalStandardCandidatePayloadParts {
-            auth_header: prepared_candidate.auth_header,
-            auth_value: prepared_candidate.auth_value,
-            mapped_model: prepared_candidate.mapped_model,
-            provider_api_format: provider_api_format.to_string(),
-            provider_request_body,
-            provider_request_headers,
-            upstream_url,
-            upstream_is_stream,
-            envelope_name: None,
-            transport: Arc::clone(transport),
-            transport_profile,
-            request_redacted: redaction.redacted,
-        }));
-    }
 
     if !crate::ai_serving::request_pair_allowed_for_transport(
         transport,
@@ -451,17 +316,11 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
         return Ok(None);
     }
 
-    let is_windsurf_cascade =
-        provider_api_format == "openai:chat" && is_windsurf_provider_transport(transport);
-    let transport_unsupported_reason = if is_windsurf_cascade {
-        local_windsurf_request_transport_unsupported_reason_with_network(transport)
-    } else {
-        crate::ai_serving::request_pair_transport_unsupported_reason(
-            transport,
-            spec_metadata.api_format,
-            provider_api_format,
-        )
-    };
+    let transport_unsupported_reason = crate::ai_serving::request_pair_transport_unsupported_reason(
+        transport,
+        spec_metadata.api_format,
+        provider_api_format,
+    );
     if let Some(skip_reason) = transport_unsupported_reason {
         mark_skipped_local_standard_candidate(
             state,
@@ -481,93 +340,30 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
         api_format: provider_api_format,
         operation: "standard_family_cross_format",
     };
-    let kiro_auth = if is_kiro_claude_cli {
-        match crate::ai_serving::planner::candidate_preparation::resolve_candidate_oauth_auth(
-            planner_state,
-            transport,
-            oauth_context,
-        )
-        .await
-        {
-            Some(LocalResolvedOAuthRequestAuth::Kiro(auth)) => Some(auth),
-            _ => {
-                mark_skipped_local_standard_candidate(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "transport_auth_unavailable",
-                )
-                .await;
-                return Ok(None);
-            }
-        }
-    } else {
-        None
-    };
-
-    let prepared_candidate = if let Some(kiro_auth) = kiro_auth.as_ref() {
-        match prepare_header_authenticated_candidate_from_auth(
-            candidate,
-            kiro_auth.name.to_string(),
-            kiro_auth.value.clone(),
-        ) {
-            Ok(prepared) => prepared,
-            Err(skip_reason) => {
-                mark_skipped_local_standard_candidate(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    skip_reason,
-                )
-                .await;
-                return Ok(None);
-            }
-        }
-    } else {
-        match prepare_header_authenticated_candidate(
-            planner_state,
-            transport,
-            candidate,
-            crate::ai_serving::request_pair_direct_auth(transport, provider_api_format),
-            oauth_context,
-        )
-        .await
-        {
-            Ok(prepared) => prepared,
-            Err(skip_reason) => {
-                mark_skipped_local_standard_candidate(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    skip_reason,
-                )
-                .await;
-                return Ok(None);
-            }
+    let prepared_candidate = match prepare_header_authenticated_candidate(
+        planner_state,
+        transport,
+        candidate,
+        request_conversion_direct_auth(transport, spec_metadata.api_format),
+        oauth_context,
+    )
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(skip_reason) => {
+            mark_skipped_local_standard_candidate(
+                state,
+                input,
+                trace_id,
+                candidate,
+                attempt.candidate_index,
+                &attempt.candidate_id,
+                skip_reason,
+            )
+            .await;
+            return Ok(None);
         }
     };
-
-    let upstream_is_stream = resolve_upstream_is_stream_for_provider(
-        transport.endpoint.config.as_ref(),
-        transport.provider.provider_type.as_str(),
-        provider_api_format,
-        spec_metadata.require_streaming,
-        is_kiro_claude_cli,
-    );
-    let force_body_stream_field =
-        endpoint_config_forces_body_stream_field(transport.endpoint.config.as_ref());
-    let model_directive_resolution = input
-        .model_directive_policy
-        .resolve_reasoning(provider_api_format, Some(&input.requested_model));
     let model_directive_mapping = match model_directive_resolution
         .mapping_patch_for_mapped_model(&prepared_candidate.mapped_model)
     {
@@ -618,11 +414,7 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
             provider_api_format,
             parts.uri.path(),
             upstream_is_stream,
-            if is_kiro_claude_cli || is_windsurf_cascade {
-                None
-            } else {
-                transport.endpoint.body_rules.as_ref()
-            },
+            transport.endpoint.body_rules.as_ref(),
             Some(input.auth_context.api_key_id.as_str()),
             Some(effective_headers),
             false,
@@ -750,14 +542,8 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
             .get("model")
             .and_then(Value::as_str)
             .unwrap_or(input.requested_model.as_str());
-        let codex_model_capabilities = codex_model_capabilities_for_transport(
-            transport,
-            provider_api_format,
-            prepared_candidate.mapped_model.as_str(),
-            source_model,
-        );
         if let Err(violation) =
-            crate::ai_serving::finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy(
+            crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy(
                 &mut provider_request_body,
                 crate::ai_serving::OpenAiProviderRequestFinalization {
                     source_api_format: spec_metadata.api_format,
@@ -772,7 +558,6 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
                         force_body_stream_field,
                     ),
                 },
-                codex_model_capabilities.as_ref(),
                 reasoning_replay_policy,
             )
         {
@@ -794,69 +579,6 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
             .await;
             return Ok(None);
         }
-    }
-
-    if let Some(kiro_auth) = kiro_auth.as_ref() {
-        return Ok(build_kiro_cross_format_payload_parts(
-            state,
-            parts,
-            trace_id,
-            body_json,
-            input,
-            attempt,
-            transport,
-            provider_api_format,
-            prepared_candidate.mapped_model,
-            prepared_candidate.auth_header,
-            prepared_candidate.auth_value,
-            provider_request_body,
-            upstream_is_stream,
-            kiro_auth,
-            redaction.redacted,
-        )
-        .await);
-    }
-    if is_windsurf_cascade {
-        return Ok(build_windsurf_cross_format_payload_parts(
-            state,
-            parts,
-            trace_id,
-            body_json,
-            input,
-            attempt,
-            transport,
-            provider_api_format,
-            prepared_candidate.mapped_model,
-            prepared_candidate.auth_header,
-            prepared_candidate.auth_value,
-            provider_request_body,
-            upstream_is_stream,
-            redaction.redacted,
-        )
-        .await);
-    }
-
-    if normalized_provider_api_format == "gemini:generate_content"
-        && is_gemini_cli_provider_transport(transport)
-    {
-        return Ok(build_gemini_cli_cross_format_payload_parts(
-            state,
-            parts,
-            trace_id,
-            body_json,
-            input,
-            attempt,
-            transport,
-            spec_metadata.api_format,
-            provider_api_format,
-            prepared_candidate.mapped_model,
-            prepared_candidate.auth_header,
-            prepared_candidate.auth_value,
-            provider_request_body,
-            upstream_is_stream,
-            redaction.redacted,
-        )
-        .await);
     }
 
     let upstream_url = match crate::ai_serving::planner::standard::build_standard_upstream_url(
@@ -920,15 +642,6 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
         return Ok(None);
     };
     let mut provider_request_headers = resolved_headers.headers;
-    apply_codex_openai_special_headers(
-        &mut provider_request_headers,
-        &provider_request_body,
-        effective_headers,
-        transport.provider.provider_type.as_str(),
-        provider_api_format,
-        Some(trace_id),
-        transport.key.decrypted_auth_config.as_deref(),
-    );
     request_identity_response_encoding_when_redacted(
         &mut provider_request_headers,
         redaction.redacted,
@@ -960,265 +673,6 @@ fn apply_transport_request_body_semantics(
         transport,
         provider_api_format,
     )
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn build_gemini_cli_cross_format_payload_parts(
-    state: &AppState,
-    parts: &http::request::Parts,
-    trace_id: &str,
-    original_body_json: &serde_json::Value,
-    input: &LocalStandardDecisionInput,
-    attempt: &LocalStandardCandidateAttempt,
-    transport: &Arc<GatewayProviderTransportSnapshot>,
-    client_api_format: &str,
-    provider_api_format: &str,
-    mapped_model: String,
-    auth_header: String,
-    auth_value: String,
-    gemini_request_body: Value,
-    upstream_is_stream: bool,
-    request_redacted: bool,
-) -> Option<LocalStandardCandidatePayloadParts> {
-    let candidate = &attempt.eligible.candidate;
-    let effective_headers = input.effective_headers(&parts.headers);
-    let resolved =
-        match build_gemini_cli_v1internal_provider_request(GeminiCliV1InternalRequestInput {
-            state,
-            parts,
-            transport,
-            trace_id,
-            mapped_model: &mapped_model,
-            provider_api_format,
-            auth_header: &auth_header,
-            auth_value: &auth_value,
-            request_headers: effective_headers,
-            original_request_body: original_body_json,
-            gemini_request_body: &gemini_request_body,
-            upstream_is_stream,
-        })
-        .await
-        {
-            Ok(resolved) => resolved,
-            Err(GeminiCliV1InternalRequestError::ProjectUnavailable) => {
-                mark_skipped_local_standard_candidate(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "transport_auth_unavailable",
-                )
-                .await;
-                return None;
-            }
-            Err(GeminiCliV1InternalRequestError::EnvelopeUnsupported) => {
-                mark_skipped_local_standard_candidate_with_extra_data(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "provider_request_body_build_failed",
-                    request_body_build_failure_extra_data(
-                        original_body_json,
-                        client_api_format,
-                        provider_api_format,
-                    ),
-                )
-                .await;
-                return None;
-            }
-            Err(GeminiCliV1InternalRequestError::UpstreamUrlUnavailable) => {
-                mark_skipped_local_standard_candidate_with_failure_diagnostic(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "upstream_url_missing",
-                    CandidateFailureDiagnostic::upstream_url_missing(
-                        client_api_format,
-                        provider_api_format,
-                        "standard_family_gemini_cli_url",
-                    ),
-                )
-                .await;
-                return None;
-            }
-            Err(GeminiCliV1InternalRequestError::HeaderRulesApplyFailed) => {
-                mark_skipped_local_standard_candidate_with_failure_diagnostic(
-                    state,
-                    input,
-                    trace_id,
-                    candidate,
-                    attempt.candidate_index,
-                    &attempt.candidate_id,
-                    "transport_header_rules_apply_failed",
-                    CandidateFailureDiagnostic::header_rules_apply_failed(
-                        client_api_format,
-                        provider_api_format,
-                        "standard_family_gemini_cli_headers",
-                    ),
-                )
-                .await;
-                return None;
-            }
-        };
-
-    let mut provider_request_headers = resolved.headers.headers;
-    apply_codex_openai_special_headers(
-        &mut provider_request_headers,
-        &resolved.body,
-        effective_headers,
-        resolved.transport.provider.provider_type.as_str(),
-        provider_api_format,
-        Some(trace_id),
-        resolved.transport.key.decrypted_auth_config.as_deref(),
-    );
-    request_identity_response_encoding_when_redacted(
-        &mut provider_request_headers,
-        request_redacted,
-    );
-
-    Some(LocalStandardCandidatePayloadParts {
-        auth_header: resolved.headers.auth_header,
-        auth_value: resolved.headers.auth_value,
-        mapped_model,
-        provider_api_format: provider_api_format.to_string(),
-        provider_request_body: resolved.body,
-        provider_request_headers,
-        upstream_url: resolved.upstream_url,
-        upstream_is_stream,
-        envelope_name: Some(GEMINI_CLI_V1INTERNAL_ENVELOPE_NAME),
-        transport: resolved.transport,
-        transport_profile: None,
-        request_redacted,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn build_windsurf_cross_format_payload_parts(
-    state: &AppState,
-    parts: &http::request::Parts,
-    trace_id: &str,
-    original_body_json: &serde_json::Value,
-    input: &LocalStandardDecisionInput,
-    attempt: &LocalStandardCandidateAttempt,
-    transport: &Arc<GatewayProviderTransportSnapshot>,
-    provider_api_format: &str,
-    mapped_model: String,
-    auth_header: String,
-    auth_value: String,
-    openai_chat_request_body: Value,
-    upstream_is_stream: bool,
-    request_redacted: bool,
-) -> Option<LocalStandardCandidatePayloadParts> {
-    let candidate = &attempt.eligible.candidate;
-    let effective_headers = input.effective_headers(&parts.headers);
-    let provider_request_body = match build_windsurf_cascade_request_body(
-        &openai_chat_request_body,
-        &mapped_model,
-        &auth_value,
-        transport.endpoint.body_rules.as_ref(),
-        Some(effective_headers),
-        upstream_is_stream,
-    ) {
-        Some(body) => body,
-        None => {
-            mark_skipped_local_standard_candidate_with_extra_data(
-                state,
-                input,
-                trace_id,
-                candidate,
-                attempt.candidate_index,
-                &attempt.candidate_id,
-                "provider_request_body_build_failed",
-                request_body_build_failure_extra_data(
-                    &openai_chat_request_body,
-                    provider_api_format,
-                    provider_api_format,
-                ),
-            )
-            .await;
-            return None;
-        }
-    };
-    let upstream_url = match build_windsurf_cascade_upstream_url(
-        transport.endpoint.base_url.as_str(),
-        parts.uri.query(),
-    ) {
-        Some(url) => url,
-        None => {
-            mark_skipped_local_standard_candidate_with_failure_diagnostic(
-                state,
-                input,
-                trace_id,
-                candidate,
-                attempt.candidate_index,
-                &attempt.candidate_id,
-                "upstream_url_missing",
-                CandidateFailureDiagnostic::upstream_url_missing(
-                    provider_api_format,
-                    provider_api_format,
-                    "standard_family_windsurf_url",
-                ),
-            )
-            .await;
-            return None;
-        }
-    };
-    let mut provider_request_headers = match build_windsurf_cascade_headers(
-        effective_headers,
-        &provider_request_body,
-        original_body_json,
-        transport.endpoint.header_rules.as_ref(),
-        &auth_header,
-        &auth_value,
-        upstream_is_stream,
-    ) {
-        Some(headers) => headers,
-        None => {
-            mark_skipped_local_standard_candidate_with_failure_diagnostic(
-                state,
-                input,
-                trace_id,
-                candidate,
-                attempt.candidate_index,
-                &attempt.candidate_id,
-                "transport_header_rules_apply_failed",
-                CandidateFailureDiagnostic::header_rules_apply_failed(
-                    provider_api_format,
-                    provider_api_format,
-                    "standard_family_windsurf_headers",
-                ),
-            )
-            .await;
-            return None;
-        }
-    };
-    request_identity_response_encoding_when_redacted(
-        &mut provider_request_headers,
-        request_redacted,
-    );
-
-    Some(LocalStandardCandidatePayloadParts {
-        auth_header,
-        auth_value,
-        mapped_model,
-        provider_api_format: provider_api_format.to_string(),
-        provider_request_body,
-        provider_request_headers,
-        upstream_url,
-        upstream_is_stream,
-        envelope_name: Some(WINDSURF_ENVELOPE_NAME),
-        transport: Arc::clone(transport),
-        transport_profile: None,
-        request_redacted,
-    })
 }
 
 async fn resolve_local_gemini_image_to_openai_image_candidate_payload_parts(
@@ -1306,35 +760,25 @@ async fn resolve_local_gemini_image_to_openai_image_candidate_payload_parts(
 
     let upstream_is_stream = resolve_upstream_is_stream_for_provider(
         transport.endpoint.config.as_ref(),
-        transport.provider.provider_type.as_str(),
         provider_api_format,
         client_requires_streaming && candidate.supports_streaming,
         false,
     );
-    let is_codex = transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("codex");
     let mut provider_request_body = converted.body_json;
     if upstream_is_stream {
         provider_request_body
             .as_object_mut()?
             .insert("stream".to_string(), Value::Bool(true));
     }
-    provider_request_body = if is_codex {
-        project_codex_openai_image_api_request_body(&provider_request_body, converted.operation)?
-    } else {
-        project_openai_image_api_request_body(
-            &provider_request_body,
-            &prepared_candidate.mapped_model,
-            converted.operation,
-            crate::image_capabilities::openai_image_provider_max_generation_count_for_model(
-                transport.provider.provider_type.as_str(),
-                Some(prepared_candidate.mapped_model.as_str()),
-            ),
-        )?
-    };
+    provider_request_body = project_openai_image_api_request_body(
+        &provider_request_body,
+        &prepared_candidate.mapped_model,
+        converted.operation,
+        crate::image_capabilities::openai_image_provider_max_generation_count_for_model(
+            transport.provider.provider_type.as_str(),
+            Some(prepared_candidate.mapped_model.as_str()),
+        ),
+    )?;
     let request_path = match converted.operation {
         OpenAiImageOperation::Generate => "/v1/images/generations",
         OpenAiImageOperation::Edit => "/v1/images/edits",
@@ -1347,9 +791,7 @@ async fn resolve_local_gemini_image_to_openai_image_candidate_payload_parts(
             headers: effective_headers,
             auth_header: &prepared_candidate.auth_header,
             auth_value: &prepared_candidate.auth_value,
-            accept: if is_codex {
-                None
-            } else if upstream_is_stream {
+            accept: if upstream_is_stream {
                 Some("text/event-stream")
             } else {
                 Some("application/json")
@@ -1376,16 +818,6 @@ async fn resolve_local_gemini_image_to_openai_image_candidate_payload_parts(
         .await;
         return None;
     };
-    apply_codex_openai_special_headers(
-        &mut provider_request_headers,
-        &provider_request_body,
-        effective_headers,
-        transport.provider.provider_type.as_str(),
-        provider_api_format,
-        Some(trace_id),
-        transport.key.decrypted_auth_config.as_deref(),
-    );
-
     Some(LocalStandardCandidatePayloadParts {
         auth_header: prepared_candidate.auth_header,
         auth_value: prepared_candidate.auth_value,
@@ -1399,132 +831,6 @@ async fn resolve_local_gemini_image_to_openai_image_candidate_payload_parts(
         transport: Arc::clone(transport),
         transport_profile: None,
         request_redacted: false,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn build_kiro_cross_format_payload_parts(
-    state: &AppState,
-    parts: &http::request::Parts,
-    trace_id: &str,
-    original_body_json: &serde_json::Value,
-    input: &LocalStandardDecisionInput,
-    attempt: &LocalStandardCandidateAttempt,
-    transport: &Arc<GatewayProviderTransportSnapshot>,
-    provider_api_format: &str,
-    mapped_model: String,
-    auth_header: String,
-    auth_value: String,
-    claude_request_body: Value,
-    upstream_is_stream: bool,
-    kiro_auth: &KiroRequestAuth,
-    request_redacted: bool,
-) -> Option<LocalStandardCandidatePayloadParts> {
-    let candidate = &attempt.eligible.candidate;
-    let effective_headers = input.effective_headers(&parts.headers);
-    let provider_request_body = match build_kiro_provider_request_body(
-        &claude_request_body,
-        &mapped_model,
-        &kiro_auth.auth_config,
-        transport.endpoint.body_rules.as_ref(),
-        Some(effective_headers),
-    ) {
-        Some(body) => body,
-        None => {
-            mark_skipped_local_standard_candidate_with_extra_data(
-                state,
-                input,
-                trace_id,
-                candidate,
-                attempt.candidate_index,
-                &attempt.candidate_id,
-                "provider_request_body_build_failed",
-                request_body_build_failure_extra_data(
-                    &claude_request_body,
-                    provider_api_format,
-                    provider_api_format,
-                ),
-            )
-            .await;
-            return None;
-        }
-    };
-    let upstream_url = match build_kiro_cross_format_upstream_url(
-        transport,
-        &mapped_model,
-        provider_api_format,
-        upstream_is_stream,
-        parts.uri.query(),
-        kiro_auth.auth_config.effective_api_region(),
-    ) {
-        Some(url) => url,
-        None => {
-            mark_skipped_local_standard_candidate_with_failure_diagnostic(
-                state,
-                input,
-                trace_id,
-                candidate,
-                attempt.candidate_index,
-                &attempt.candidate_id,
-                "upstream_url_missing",
-                CandidateFailureDiagnostic::upstream_url_missing(
-                    provider_api_format,
-                    provider_api_format,
-                    "standard_family_kiro_url",
-                ),
-            )
-            .await;
-            return None;
-        }
-    };
-    let mut provider_request_headers = match build_kiro_provider_headers(KiroProviderHeadersInput {
-        headers: effective_headers,
-        provider_request_body: &provider_request_body,
-        original_request_body: original_body_json,
-        header_rules: transport.endpoint.header_rules.as_ref(),
-        auth_header: &auth_header,
-        auth_value: &auth_value,
-        auth_config: &kiro_auth.auth_config,
-        machine_id: kiro_auth.machine_id.as_str(),
-    }) {
-        Some(headers) => headers,
-        None => {
-            mark_skipped_local_standard_candidate_with_failure_diagnostic(
-                state,
-                input,
-                trace_id,
-                candidate,
-                attempt.candidate_index,
-                &attempt.candidate_id,
-                "transport_header_rules_apply_failed",
-                CandidateFailureDiagnostic::header_rules_apply_failed(
-                    provider_api_format,
-                    provider_api_format,
-                    "standard_family_kiro_headers",
-                ),
-            )
-            .await;
-            return None;
-        }
-    };
-    request_identity_response_encoding_when_redacted(
-        &mut provider_request_headers,
-        request_redacted,
-    );
-
-    Some(LocalStandardCandidatePayloadParts {
-        auth_header,
-        auth_value,
-        mapped_model,
-        provider_api_format: provider_api_format.to_string(),
-        provider_request_body,
-        provider_request_headers,
-        upstream_url,
-        upstream_is_stream,
-        envelope_name: Some(KIRO_ENVELOPE_NAME),
-        transport: Arc::clone(transport),
-        transport_profile: None,
-        request_redacted,
     })
 }
 

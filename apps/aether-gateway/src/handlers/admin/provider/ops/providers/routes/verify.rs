@@ -7,7 +7,10 @@ use super::super::verify::admin_provider_ops_local_verify_response;
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::admin::shared::attach_admin_audit_response;
 use crate::GatewayError;
-use aether_admin::provider::ops::{admin_provider_ops_verify_failure, normalize_architecture_id};
+use aether_admin::provider::ops::{
+admin_provider_ops_verify_failure,
+normalize_architecture_id,
+};
 use axum::{
     body::{Body, Bytes},
     http,

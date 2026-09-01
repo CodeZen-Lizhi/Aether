@@ -47,8 +47,6 @@ describe('ProviderDetailDrawer loading priorities', () => {
     expect(source).not.toContain('backdrop-blur-sm')
     expect(source).toContain('v-if="provider && open && endpointDialogOpen"')
     expect(source).toContain('v-if="open && keyFormDialogOpen"')
-    expect(source).toContain('v-if="open && oauthAccountDialogOpen && provider"')
-    expect(source).toContain('v-if="open && oauthKeyEditDialogOpen"')
     expect(source).toContain('v-if="open && keyPermissionsDialogOpen"')
     expect(source).toContain('v-if="open && modelFormDialogOpen && provider"')
     expect(source).toContain('v-if="open && batchAssignDialogOpen && provider"')

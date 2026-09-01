@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -8,7 +6,7 @@ use crate::actions::{
     RoutingAction, RoutingRulePhase, RoutingSchedulingMode, RoutingSetPriorityMode,
 };
 use crate::conditions::RoutingConditionContext;
-use crate::model::{RoutingGroupConfig, RoutingModelPolicy, RoutingPoolPolicyOverride};
+use crate::model::{RoutingGroupConfig, RoutingModelPolicy};
 use crate::mutations::{validate_header_patch, validate_json_patch_operations, MutationPlan};
 use crate::ranking::RankingOverlay;
 use crate::validation::validate_routing_group_config;
@@ -56,11 +54,8 @@ pub struct ResolvedRoutingPolicy {
     pub resolved_model: String,
     pub priority_mode: RoutingSetPriorityMode,
     pub scheduling_mode: RoutingSchedulingMode,
-    pub keep_priority_on_conversion: bool,
     pub ranking_overlay: RankingOverlay,
     pub mutation_plan: MutationPlan,
-    #[serde(default)]
-    pub pool_policy_overrides: BTreeMap<String, RoutingPoolPolicyOverride>,
     #[serde(default)]
     pub matched_rules: Vec<MatchedRoutingRule>,
 }
@@ -88,10 +83,8 @@ pub fn resolve_routing_policy(
         resolved_model: input.resolved_model.to_string(),
         priority_mode: config.default_policy.priority_mode,
         scheduling_mode: config.default_policy.scheduling_mode,
-        keep_priority_on_conversion: config.default_policy.keep_priority_on_conversion,
         ranking_overlay: RankingOverlay::default(),
         mutation_plan: MutationPlan::default(),
-        pool_policy_overrides: BTreeMap::new(),
         matched_rules: Vec::new(),
     };
 
@@ -163,15 +156,6 @@ fn apply_model_policy(policy: &mut ResolvedRoutingPolicy, model_policy: &Routing
             .iter()
             .map(|(key, value)| (key.clone(), *value)),
     );
-    policy.ranking_overlay.pool_priority_overrides.extend(
-        model_policy
-            .pool_priority_overrides
-            .iter()
-            .map(|(key, value)| (key.clone(), *value)),
-    );
-    policy
-        .pool_policy_overrides
-        .extend(model_policy.pool_policy_overrides.clone());
 }
 
 fn apply_action(
@@ -197,16 +181,12 @@ fn apply_action(
         RoutingAction::SetScheduling {
             priority_mode,
             scheduling_mode,
-            keep_priority_on_conversion,
         } => {
             if let Some(priority_mode) = priority_mode {
                 policy.priority_mode = *priority_mode;
             }
             if let Some(scheduling_mode) = scheduling_mode {
                 policy.scheduling_mode = *scheduling_mode;
-            }
-            if let Some(keep_priority_on_conversion) = keep_priority_on_conversion {
-                policy.keep_priority_on_conversion = *keep_priority_on_conversion;
             }
         }
         RoutingAction::SetProviderPriority {
@@ -294,7 +274,6 @@ mod tests {
                 model: "gpt-5".to_string(),
                 allowed_providers: vec!["provider-a".to_string()],
                 provider_priority_overrides: BTreeMap::from([("provider-a".to_string(), 0)]),
-                pool_priority_overrides: BTreeMap::from([("provider-a".to_string(), 3)]),
                 ..RoutingModelPolicy::default()
             }],
             rules: vec![RoutingRule {
@@ -343,13 +322,6 @@ mod tests {
                 .get("provider-a"),
             Some(&0)
         );
-        assert_eq!(
-            policy
-                .ranking_overlay
-                .pool_priority_overrides
-                .get("provider-a"),
-            Some(&3)
-        );
         assert_eq!(policy.matched_rules.len(), 1);
         assert_eq!(policy.mutation_plan.body_patch.len(), 1);
     }
@@ -361,7 +333,6 @@ mod tests {
             default_policy: RoutingDefaultPolicy {
                 priority_mode: RoutingSetPriorityMode::GlobalKey,
                 scheduling_mode: RoutingSchedulingMode::LoadBalance,
-                keep_priority_on_conversion: true,
             },
             model_policies: vec![RoutingModelPolicy {
                 model: "special-model".to_string(),
@@ -392,7 +363,6 @@ mod tests {
 
         assert_eq!(special.priority_mode, RoutingSetPriorityMode::GlobalKey);
         assert_eq!(special.scheduling_mode, RoutingSchedulingMode::LoadBalance);
-        assert!(special.keep_priority_on_conversion);
         assert_eq!(
             special.ranking_overlay.allowed_providers,
             vec!["provider-special"]
@@ -425,7 +395,6 @@ mod tests {
 
         assert_eq!(ordinary.priority_mode, RoutingSetPriorityMode::GlobalKey);
         assert_eq!(ordinary.scheduling_mode, RoutingSchedulingMode::LoadBalance);
-        assert!(ordinary.keep_priority_on_conversion);
         assert!(ordinary.ranking_overlay.allowed_providers.is_empty());
         assert!(ordinary.ranking_overlay.allowed_keys.is_empty());
         assert!(ordinary

@@ -48,7 +48,7 @@ use tracing::warn;
 use crate::clock::current_unix_ms;
 use crate::orchestration::{
     apply_local_stream_failure_effects, apply_local_stream_success_effects,
-    release_local_pool_key_lease, LocalExecutionEffectContext, LocalStreamFailureEffect,
+    LocalExecutionEffectContext, LocalStreamFailureEffect,
 };
 use crate::request_candidate_runtime::record_local_request_candidate_status;
 use crate::usage::{submit_stream_report, GatewayStreamReportRequest};
@@ -210,46 +210,29 @@ pub(crate) enum AttemptCandidateError {
     TerminalError,
 }
 
-/// 一次 attempt 结束后要投射给供应商/密钥池的效果。
-///
-/// 每个分支都会释放 pool key lease：`ProviderFailure` 由 `PoolError` 释放，
-/// `ProviderSuccess` 由 `PoolSuccessStream` 释放，其余情况直接释放。少一条
-/// 分支就会把 lease 挂到 TTL 过期，等于短时间占死一把 key。
+/// 一次 attempt 结束后要投射给供应商/密钥的效果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AttemptProviderEffect {
-    /// 既不投射成功也不投射失败，只把 lease 还回去。
-    ReleasePoolKeyLease,
+    /// 既不投射成功也不投射失败。
+    NoProviderEffect,
     ProviderFailure,
     ProviderSuccess,
-}
-
-impl AttemptProviderEffect {
-    /// 把「每个分支都必须释放 lease」这条不变量显式化，便于测试锁住
-    /// 「没进任何分支导致 lease 泄漏」这类回归。
-    const fn releases_pool_key_lease(self) -> bool {
-        match self {
-            Self::ReleasePoolKeyLease | Self::ProviderFailure | Self::ProviderSuccess => true,
-        }
-    }
 }
 
 /// 判定一次 attempt 结束后要投射的效果。
 ///
 /// 关键分支是「记账层判成 failed，但这一轮没有投射供应商失败」：例如合法的
 /// `response.incomplete`（写满 max_output_tokens）。共享 usage 判定目前仍会
-/// 把这类终态记成失败，但供应商本身工作正常，既不该扣健康分，也不能因为落
-/// 不到任何分支而漏掉 lease 释放。
+/// 把这类终态记成失败，但供应商本身工作正常，既不该扣健康分。
 pub(crate) const fn classify_attempt_provider_effect(
     cancelled: bool,
     projects_provider_failure: bool,
-    failed: bool,
+    _failed: bool,
 ) -> AttemptProviderEffect {
     if cancelled {
-        AttemptProviderEffect::ReleasePoolKeyLease
+        AttemptProviderEffect::NoProviderEffect
     } else if projects_provider_failure {
         AttemptProviderEffect::ProviderFailure
-    } else if failed {
-        AttemptProviderEffect::ReleasePoolKeyLease
     } else {
         AttemptProviderEffect::ProviderSuccess
     }
@@ -724,10 +707,8 @@ impl ExecutionAttemptLifecycle {
             .stage_guard
             .await_stage(self.trace_id.as_str(), "provider_effects", async {
                 match settlement.provider_effect {
-                    AttemptProviderEffect::ReleasePoolKeyLease => {
-                        release_local_pool_key_lease(state, effect_context).await;
-                    }
-                    AttemptProviderEffect::ProviderFailure => {
+                    AttemptProviderEffect::NoProviderEffect
+                    | AttemptProviderEffect::ProviderFailure => {
                         let response_text = provider_error_body
                             .or(terminal_summary.parser_error.as_deref())
                             .unwrap_or(reason);
@@ -748,32 +729,6 @@ impl ExecutionAttemptLifecycle {
             })
             .await
             .is_some();
-        if !effects_completed {
-            // The provider-effects future was dropped at the caller's stage bound.  Lease
-            // cleanup must not be dropped by that same bound as well: retain an owned copy of
-            // the exact report context (including its lease token/fencing token) and let the
-            // cleanup task finish after the caller stops waiting.  The underlying conditional
-            // release is idempotent, and a context without a lease is a no-op.
-            let release_state = state.clone();
-            let release_plan = self.plan.clone();
-            let release_report_context = payload.report_context.clone();
-            self.stage_guard
-                .await_detachable_stage(
-                    self.trace_id.as_str(),
-                    "pool_lease_release_after_effect_timeout",
-                    async move {
-                        release_local_pool_key_lease(
-                            &release_state,
-                            LocalExecutionEffectContext {
-                                plan: &release_plan,
-                                report_context: release_report_context.as_ref(),
-                            },
-                        )
-                        .await;
-                    },
-                )
-                .await;
-        }
 
         // 4. execution report
         if settlement.submit_execution_report {
@@ -970,7 +925,7 @@ mod tests {
                         billing: AttemptBilling::Void,
                         candidate_status: AttemptCandidateStatus::Cancelled,
                         candidate_error: AttemptCandidateError::Cancelled,
-                        provider_effect: AttemptProviderEffect::ReleasePoolKeyLease,
+                        provider_effect: AttemptProviderEffect::NoProviderEffect,
                         submit_execution_report: false,
                     },
                     "delivery={delivery:?} report_failure={report_represents_failure}"
@@ -997,7 +952,7 @@ mod tests {
                 billing: AttemptBilling::Void,
                 candidate_status: AttemptCandidateStatus::Cancelled,
                 candidate_error: AttemptCandidateError::Cancelled,
-                provider_effect: AttemptProviderEffect::ReleasePoolKeyLease,
+                provider_effect: AttemptProviderEffect::NoProviderEffect,
                 submit_execution_report: false,
             }
         );
@@ -1043,7 +998,7 @@ mod tests {
                 billing: AttemptBilling::Billed,
                 candidate_status: AttemptCandidateStatus::Failed,
                 candidate_error: AttemptCandidateError::TerminalError,
-                provider_effect: AttemptProviderEffect::ReleasePoolKeyLease,
+                provider_effect: AttemptProviderEffect::NoProviderEffect,
                 submit_execution_report: true,
             }
         );
@@ -1204,7 +1159,7 @@ mod tests {
         // 明确落到「只释放 lease」的分支，否则 lease 会挂到 TTL 过期。
         let effect = classify_attempt_provider_effect(false, false, true);
 
-        assert_eq!(effect, AttemptProviderEffect::ReleasePoolKeyLease);
+        assert_eq!(effect, AttemptProviderEffect::NoProviderEffect);
         assert!(effect.releases_pool_key_lease());
     }
 
@@ -1215,15 +1170,15 @@ mod tests {
                 true,
                 false,
                 false,
-                AttemptProviderEffect::ReleasePoolKeyLease,
+                AttemptProviderEffect::NoProviderEffect,
             ),
-            (true, true, true, AttemptProviderEffect::ReleasePoolKeyLease),
+            (true, true, true, AttemptProviderEffect::NoProviderEffect),
             (false, true, true, AttemptProviderEffect::ProviderFailure),
             (
                 false,
                 false,
                 true,
-                AttemptProviderEffect::ReleasePoolKeyLease,
+                AttemptProviderEffect::NoProviderEffect,
             ),
             (false, false, false, AttemptProviderEffect::ProviderSuccess),
         ] {

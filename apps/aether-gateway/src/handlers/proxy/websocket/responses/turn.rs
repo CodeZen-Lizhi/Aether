@@ -1268,7 +1268,7 @@ mod tests {
         assert_eq!(settlement.billing, AttemptBilling::Billed);
         assert_eq!(
             settlement.provider_effect,
-            AttemptProviderEffect::ReleasePoolKeyLease
+            AttemptProviderEffect::NoProviderEffect
         );
         assert!(settlement.submit_execution_report);
     }
@@ -1387,7 +1387,7 @@ mod tests {
         );
         assert_eq!(
             settlement.provider_effect,
-            AttemptProviderEffect::ReleasePoolKeyLease
+            AttemptProviderEffect::NoProviderEffect
         );
         assert!(!settlement.submit_execution_report);
     }
@@ -1484,7 +1484,7 @@ mod tests {
         assert_eq!(settlement.candidate_error, AttemptCandidateError::Cancelled);
         assert_eq!(
             settlement.provider_effect,
-            AttemptProviderEffect::ReleasePoolKeyLease
+            AttemptProviderEffect::NoProviderEffect
         );
         assert!(!settlement.submit_execution_report);
     }

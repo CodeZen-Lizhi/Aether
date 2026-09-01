@@ -689,19 +689,19 @@ mod tests {
     }
 
     #[test]
-    fn openai_responses_url_preserves_codex_path_prefix() {
+    fn openai_responses_url_preserves_provider_path_prefix() {
         assert_eq!(
-            build_openai_responses_url("https://tiger.bookapi.cc/codex", None, false),
-            "https://tiger.bookapi.cc/codex/responses"
+            build_openai_responses_url("https://tiger.bookapi.cc/agent", None, false),
+            "https://tiger.bookapi.cc/agent/responses"
         );
         assert_eq!(
-            build_openai_responses_url("https://tiger.bookapi.cc/codex?tenant=demo", None, true),
-            "https://tiger.bookapi.cc/codex/responses/compact?tenant=demo"
+            build_openai_responses_url("https://tiger.bookapi.cc/agent?tenant=demo", None, true),
+            "https://tiger.bookapi.cc/agent/responses/compact?tenant=demo"
         );
     }
 
     #[test]
-    fn openai_search_url_preserves_api_and_codex_roots() {
+    fn openai_search_url_preserves_api_and_provider_roots() {
         assert_eq!(
             build_openai_search_url(
                 "https://api.openai.com/v1?tenant=base",
@@ -710,8 +710,8 @@ mod tests {
             "https://api.openai.com/v1/alpha/search?tenant=request&trace=1"
         );
         assert_eq!(
-            build_openai_search_url("https://chatgpt.com/backend-api/codex/", None),
-            "https://chatgpt.com/backend-api/codex/alpha/search"
+            build_openai_search_url("https://relay.example/backend-api/agent/", None),
+            "https://relay.example/backend-api/agent/alpha/search"
         );
     }
 

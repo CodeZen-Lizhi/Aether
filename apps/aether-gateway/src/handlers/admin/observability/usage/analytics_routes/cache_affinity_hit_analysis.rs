@@ -3,8 +3,10 @@ use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::query_param_value;
 use crate::GatewayError;
 use aether_admin::observability::usage::{
-    admin_usage_bad_request_response, admin_usage_data_unavailable_response,
-    admin_usage_parse_recent_hours, ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
+admin_usage_bad_request_response,
+admin_usage_data_unavailable_response,
+admin_usage_parse_recent_hours,
+ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
 };
 use aether_data_contracts::repository::usage::UsageCacheAffinityHitSummaryQuery;
 use axum::{

@@ -26,7 +26,6 @@ use crate::formats::claude::messages::stream::ClaudeProviderState;
 use crate::formats::gemini::generate_content::stream::GeminiProviderState;
 use crate::formats::openai::chat::stream::{OpenAIChatProviderState, OpenAIResponsesProviderState};
 use crate::formats::shared::model_directives::model_directive_display_model_from_report_context;
-use crate::formats::shared::response::sanitize_claude_read_tool_inputs;
 use crate::formats::shared::stream_core::common::{
     content_part_from_openai_image_generation_item, gemini_usage_metadata_from_usage,
     map_openai_finish_reason_to_gemini, parse_json_arguments_value,
@@ -683,11 +682,6 @@ fn maybe_build_standard_same_format_sync_body(
     }
 
     let mut body_json = body_json.clone();
-    if expected_api_format == "claude:messages"
-        && anthropic_legacy_compatibility_enabled(report_context)
-    {
-        sanitize_claude_read_tool_inputs(&mut body_json);
-    }
 
     Some(client_body_with_report_context_model(
         body_json,
@@ -751,11 +745,6 @@ fn maybe_build_standard_same_format_stream_sync_body(
     else {
         return Ok(None);
     };
-    if provider_stream_event_api_format == "claude:messages"
-        && anthropic_legacy_compatibility_enabled(report_context)
-    {
-        sanitize_claude_read_tool_inputs(&mut body);
-    }
     if api_format_is_gemini_generate_content(&provider_stream_event_api_format)
         && !gemini_generate_content_body_has_visible_output(&body)
     {
@@ -775,21 +764,6 @@ fn maybe_build_standard_same_format_stream_sync_body(
         report_context,
         &client_api_format,
     )))
-}
-
-pub(super) fn anthropic_legacy_compatibility_enabled(report_context: &Value) -> bool {
-    if let Some(profile) = report_context.get("anthropic_compatibility_profile") {
-        return profile
-            .as_str()
-            .map(str::trim)
-            .is_some_and(|profile| profile.eq_ignore_ascii_case("claude_code_legacy"));
-    }
-
-    report_context
-        .get("provider_type")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .is_some_and(|provider_type| provider_type.eq_ignore_ascii_case("claude_code"))
 }
 
 fn maybe_build_openai_responses_same_family_sync_body(
@@ -4524,145 +4498,6 @@ mod tests {
         .expect("body should exist");
 
         assert_eq!(body_json, provider_body_json);
-    }
-
-    #[test]
-    fn same_format_claude_sync_body_sanitizes_only_for_legacy_compatibility() {
-        let native_report_context = json!({
-            "provider_api_format": "claude:messages",
-            "client_api_format": "claude:messages",
-            "needs_conversion": false,
-        });
-        let provider_body_json = json!({
-            "id": "msg_read",
-            "type": "message",
-            "role": "assistant",
-            "model": "claude-sonnet-4-6",
-            "future_message_field": {"preserve": true},
-            "content": [
-                {
-                    "type": "tool_use",
-                    "id": "toolu_read",
-                    "name": "Read",
-                    "input": {
-                        "file_path": "/tmp/a.txt",
-                        "limit": 20,
-                        "pages": "",
-                        "future_input_field": 42
-                    },
-                    "future_block_field": "keep"
-                },
-                {
-                    "type": "tool_use",
-                    "id": "toolu_search",
-                    "name": "Search",
-                    "input": {
-                        "query": "",
-                        "pages": ""
-                    }
-                }
-            ]
-        });
-
-        let native_body = maybe_build_standard_same_format_sync_body_from_normalized_payload(
-            "claude_chat_sync_finalize",
-            200,
-            Some(&native_report_context),
-            Some(&provider_body_json),
-            None,
-        )
-        .expect("native same-format sync body should succeed")
-        .expect("native body should exist");
-        assert_eq!(native_body, provider_body_json);
-
-        let legacy_report_context = json!({
-            "provider_api_format": "claude:messages",
-            "client_api_format": "claude:messages",
-            "needs_conversion": false,
-            "anthropic_compatibility_profile": "claude_code_legacy",
-        });
-
-        let body_json = maybe_build_standard_same_format_sync_body_from_normalized_payload(
-            "claude_chat_sync_finalize",
-            200,
-            Some(&legacy_report_context),
-            Some(&provider_body_json),
-            None,
-        )
-        .expect("same-format sync body should succeed")
-        .expect("body should exist");
-
-        assert_eq!(
-            body_json["content"][0]["input"],
-            json!({
-                "file_path": "/tmp/a.txt",
-                "limit": 20,
-                "future_input_field": 42,
-            })
-        );
-        assert_eq!(body_json["content"][0]["future_block_field"], "keep");
-        assert_eq!(body_json["future_message_field"]["preserve"], true);
-        assert_eq!(
-            body_json["content"][1]["input"],
-            json!({
-                "query": "",
-                "pages": "",
-            })
-        );
-    }
-
-    #[test]
-    fn same_format_claude_stream_sync_body_sanitizes_only_for_legacy_compatibility() {
-        let stream = concat!(
-            "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_read\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-6\",\"content\":[],\"future_message_field\":{\"keep\":true}}}\n\n",
-            "event: content_block_start\n",
-            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_read\",\"name\":\"Read\",\"input\":{},\"future_block_field\":\"keep\"}}\n\n",
-            "event: content_block_delta\n",
-            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"/tmp/a.txt\\\",\\\"pages\\\":\\\"\\\"}\"}}\n\n",
-            "event: content_block_stop\n",
-            "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
-            "event: message_stop\n",
-            "data: {\"type\":\"message_stop\"}\n\n",
-        );
-        let body_base64 = base64::engine::general_purpose::STANDARD.encode(stream);
-        let native_report_context = json!({
-            "provider_api_format": "claude:messages",
-            "client_api_format": "claude:messages",
-            "needs_conversion": false,
-        });
-
-        let native_body = maybe_build_standard_same_format_sync_body_from_normalized_payload(
-            "claude_chat_sync_finalize",
-            200,
-            Some(&native_report_context),
-            None,
-            Some(&body_base64),
-        )
-        .expect("native stream sync body should succeed")
-        .expect("native stream sync body should exist");
-        assert_eq!(native_body["content"][0]["input"]["pages"], "");
-        assert_eq!(native_body["content"][0]["future_block_field"], "keep");
-        assert_eq!(native_body["future_message_field"]["keep"], true);
-
-        let legacy_report_context = json!({
-            "provider_api_format": "claude:messages",
-            "client_api_format": "claude:messages",
-            "needs_conversion": false,
-            "provider_type": "claude_code",
-        });
-        let legacy_body = maybe_build_standard_same_format_sync_body_from_normalized_payload(
-            "claude_chat_sync_finalize",
-            200,
-            Some(&legacy_report_context),
-            None,
-            Some(&body_base64),
-        )
-        .expect("legacy stream sync body should succeed")
-        .expect("legacy stream sync body should exist");
-        assert!(legacy_body["content"][0]["input"].get("pages").is_none());
-        assert_eq!(legacy_body["content"][0]["future_block_field"], "keep");
-        assert_eq!(legacy_body["future_message_field"]["keep"], true);
     }
 
     #[test]

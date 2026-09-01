@@ -454,33 +454,12 @@ describe('isModelTestableEndpoint', () => {
       is_active: true,
     }, [{ api_formats: ['openai:search'], is_active: true }])).toBe(false)
   })
-
-  it('lets fixed provider OAuth keys inherit testable endpoint formats', () => {
-    const keys = [{
-      api_formats: ['legacy:mismatch'],
-      auth_type: 'oauth',
-      is_active: true,
-    }]
-
-    expect(isModelTestableEndpoint({
-      api_format: 'openai:image',
-      is_active: true,
-    }, keys, 'chatgpt_web')).toBe(true)
-    expect(isModelTestableEndpoint({
-      api_format: 'openai:image',
-      is_active: true,
-    }, keys, 'custom')).toBe(false)
-  })
 })
 
 describe('formatModelTestDiagnostic', () => {
   it('maps model permission skips to an actionable label', () => {
     expect(formatModelTestDiagnostic('key_model_not_allowed'))
       .toBe('Key 未允许当前模型，已跳过')
-  })
-
-  it('maps pool account blocked scheduler code to an actionable label', () => {
-    expect(formatModelTestDiagnostic('pool_account_blocked')).toBe('账号已失效，需重新授权')
   })
 
   it('keeps unknown diagnostics unchanged', () => {

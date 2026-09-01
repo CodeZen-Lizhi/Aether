@@ -1,6 +1,10 @@
 use aether_ai_serving::{
-    run_ai_sync_execution_path, AiPlanFallbackReason, AiServingExecutionOutcome,
-    AiSyncExecutionPathPort, AiSyncExecutionStep, OriginalRequestPayload,
+run_ai_sync_execution_path,
+AiPlanFallbackReason,
+AiServingExecutionOutcome,
+AiSyncExecutionPathPort,
+AiSyncExecutionStep,
+OriginalRequestPayload,
 };
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
@@ -19,14 +23,14 @@ use crate::control::GatewayControlDecision;
 use crate::{AppState, GatewayError, GatewayFallbackReason};
 
 use super::{
-    build_direct_plan_bypass_cache_key, execute_sync_plan_and_reports_with_transfer_tracker,
+    execute_sync_plan_and_reports_with_transfer_tracker,
     maybe_execute_sync_via_local_decision, maybe_execute_sync_via_local_gemini_files_decision,
     maybe_execute_sync_via_local_image_decision,
     maybe_execute_sync_via_local_openai_responses_decision,
     maybe_execute_sync_via_local_same_format_provider_decision,
     maybe_execute_sync_via_local_standard_decision, maybe_execute_sync_via_local_video_decision,
     maybe_execute_sync_via_plan_fallback, maybe_execute_sync_via_remote_decision,
-    parse_local_request_body, should_skip_direct_plan, LocalExecutionRequestOutcome,
+    parse_local_request_body, LocalExecutionRequestOutcome,
     ProviderTransferTracker,
 };
 
@@ -73,12 +77,6 @@ pub(crate) async fn maybe_execute_via_sync_decision_path(
         }
     }
 
-    let bypass_cache_key =
-        build_direct_plan_bypass_cache_key(plan_kind, parts, body_bytes, decision);
-    if should_skip_direct_plan(state, &bypass_cache_key) {
-        return Ok(LocalExecutionRequestOutcome::NoPath);
-    }
-
     let port = GatewaySyncExecutionPathPort {
         state,
         parts,
@@ -88,7 +86,6 @@ pub(crate) async fn maybe_execute_via_sync_decision_path(
         body_base64,
         body_is_empty: body_bytes.is_empty(),
         plan_kind,
-        bypass_cache_key,
         scheduler_supported: supports_sync_execution_decision_kind(plan_kind),
         transfer_tracker: ProviderTransferTracker::default(),
     };
@@ -107,7 +104,6 @@ struct GatewaySyncExecutionPathPort<'a> {
     body_base64: Option<String>,
     body_is_empty: bool,
     plan_kind: &'a str,
-    bypass_cache_key: String,
     scheduler_supported: bool,
     transfer_tracker: ProviderTransferTracker,
 }
@@ -258,7 +254,6 @@ impl AiSyncExecutionPathPort for GatewaySyncExecutionPathPort<'_> {
             self.body_json,
             self.body_base64.clone(),
             self.plan_kind,
-            self.bypass_cache_key.clone(),
             gateway_fallback_reason(reason),
             &self.transfer_tracker,
         )

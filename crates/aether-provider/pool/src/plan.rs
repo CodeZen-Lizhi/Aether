@@ -6,12 +6,7 @@ pub fn derive_plan_tier(
     key: &StoredProviderCatalogKey,
     auth_config: Option<&Map<String, Value>>,
 ) -> Option<String> {
-    let has_auth_config = auth_config.is_some()
-        || key
-            .encrypted_auth_config
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty());
-    if !provider_pool_auth_managed(key, provider_type, has_auth_config) {
+    if !provider_pool_auth_managed(key) {
         return None;
     }
 
@@ -92,13 +87,6 @@ pub fn normalize_provider_plan_tier(value: &str, provider_type: &str) -> Option<
     (!normalized.is_empty()).then_some(normalized)
 }
 
-fn provider_pool_auth_managed(
-    key: &StoredProviderCatalogKey,
-    provider_type: &str,
-    has_auth_config: bool,
-) -> bool {
+fn provider_pool_auth_managed(key: &StoredProviderCatalogKey) -> bool {
     key.auth_type.trim().eq_ignore_ascii_case("oauth")
-        || (provider_type.trim().eq_ignore_ascii_case("kiro")
-            && key.auth_type.trim().eq_ignore_ascii_case("bearer")
-            && has_auth_config)
 }

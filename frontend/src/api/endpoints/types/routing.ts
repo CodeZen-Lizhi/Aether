@@ -7,8 +7,6 @@ export interface RoutingKeyInfo {
   id: string
   name: string
   masked_key: string
-  internal_priority: number
-  global_priority_by_format?: Record<string, number> | null  // 按 API 格式的全局优先级
   rpm_limit?: number | null
   is_adaptive: boolean
   effective_rpm?: number | null
@@ -57,9 +55,7 @@ export interface RoutingProviderInfo {
   id: string
   name: string
   model_id: string
-  provider_priority: number
   enable_format_conversion?: boolean
-  keep_priority_on_conversion?: boolean
   billing_type?: string | null
   monthly_quota_usd?: number | null
   monthly_used_usd?: number | null
@@ -98,6 +94,5 @@ export interface ModelRoutingPreviewResponse {
   active_providers: number
   scheduling_mode: string
   priority_mode: string
-  keep_priority_on_conversion?: boolean
   all_keys_whitelist: GlobalKeyWhitelistItem[]
 }

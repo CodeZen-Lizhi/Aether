@@ -10,8 +10,11 @@ use super::responses::{admin_provider_ops_action_error, admin_provider_ops_actio
 use super::support::{admin_provider_ops_request_method, admin_provider_ops_request_url};
 use crate::handlers::admin::request::AdminAppState;
 use aether_admin::provider::ops::{
-    attach_balance_checkin_outcome, parse_query_balance_payload, ProviderOpsArchitectureSpec,
-    ProviderOpsBalanceMode, ProviderOpsCheckinMode,
+attach_balance_checkin_outcome,
+parse_query_balance_payload,
+ProviderOpsArchitectureSpec,
+ProviderOpsBalanceMode,
+ProviderOpsCheckinMode,
 };
 use aether_contracts::ProxySnapshot;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogProvider;

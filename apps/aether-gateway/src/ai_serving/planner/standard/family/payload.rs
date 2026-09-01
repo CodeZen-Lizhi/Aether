@@ -312,9 +312,11 @@ mod tests {
     use std::sync::Arc;
 
     use aether_provider_transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
-    };
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+GatewayProviderTransportSnapshot,
+};
     use aether_scheduler_core::SchedulerMinimalCandidateSelectionCandidate;
     use serde_json::json;
 

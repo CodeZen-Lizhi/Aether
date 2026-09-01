@@ -4,7 +4,6 @@ use crate::ai_serving::is_json_request;
 use crate::ai_serving::{
     endpoint_config_forces_upstream_stream_policy as endpoint_config_forces_upstream_stream_policy_impl,
     enforce_request_body_stream_field as enforce_request_body_stream_field_impl,
-    force_upstream_streaming_for_provider as force_upstream_streaming_for_provider_impl,
     parse_direct_request_body as parse_direct_request_body_impl,
     resolve_format_upstream_is_stream_for_provider as resolve_upstream_is_stream_for_provider_impl,
 };
@@ -42,23 +41,14 @@ pub(crate) fn parse_direct_request_body(
     parse_direct_request_body_impl(is_json_request, body_bytes.as_ref())
 }
 
-pub(crate) fn force_upstream_streaming_for_provider(
-    provider_type: &str,
-    provider_api_format: &str,
-) -> bool {
-    force_upstream_streaming_for_provider_impl(provider_type, provider_api_format)
-}
-
 pub(crate) fn resolve_upstream_is_stream_for_provider(
     endpoint_config: Option<&serde_json::Value>,
-    provider_type: &str,
     provider_api_format: &str,
     client_is_stream: bool,
     hard_requires_streaming: bool,
 ) -> bool {
     resolve_upstream_is_stream_for_provider_impl(
         endpoint_config,
-        provider_type,
         provider_api_format,
         client_is_stream,
         hard_requires_streaming,
@@ -116,92 +106,12 @@ mod tests {
     use super::{
         endpoint_config_forces_body_stream_field, enforce_provider_body_stream_policy,
         extract_requested_model_from_request, extract_standard_requested_model,
-        force_upstream_streaming_for_provider, resolve_upstream_is_stream_for_provider,
+        resolve_upstream_is_stream_for_provider,
         RequestedModelFamily,
     };
     use axum::http::Request;
     use serde_json::json;
 
-    #[test]
-    fn forces_streaming_for_codex_openai_responses() {
-        assert!(force_upstream_streaming_for_provider(
-            "codex",
-            "openai:responses"
-        ));
-        assert!(!force_upstream_streaming_for_provider(
-            "codex",
-            "openai:responses:compact"
-        ));
-    }
-
-    #[test]
-    fn does_not_force_streaming_for_compact_or_other_provider_types() {
-        assert!(!force_upstream_streaming_for_provider(
-            "codex",
-            "openai:responses:compact"
-        ));
-        assert!(!force_upstream_streaming_for_provider(
-            "codex",
-            "openai:responses:compact"
-        ));
-        assert!(!force_upstream_streaming_for_provider(
-            "openai",
-            "openai:responses"
-        ));
-    }
-
-    #[test]
-    fn resolves_endpoint_upstream_stream_policy_with_provider_hard_constraints() {
-        assert!(resolve_upstream_is_stream_for_provider(
-            Some(&json!({"upstream_stream_policy": "force_stream"})),
-            "openai",
-            "openai:chat",
-            false,
-            false,
-        ));
-        assert!(!resolve_upstream_is_stream_for_provider(
-            Some(&json!({"upstream_stream_policy": "force_non_stream"})),
-            "openai",
-            "openai:chat",
-            true,
-            false,
-        ));
-        assert!(resolve_upstream_is_stream_for_provider(
-            Some(&json!({"upstream_stream_policy": "auto"})),
-            "openai",
-            "openai:chat",
-            true,
-            false,
-        ));
-        assert!(resolve_upstream_is_stream_for_provider(
-            Some(&json!({"upstream_stream_policy": "force_non_stream"})),
-            "codex",
-            "openai:responses",
-            true,
-            false,
-        ));
-        assert!(!resolve_upstream_is_stream_for_provider(
-            Some(&json!({"upstream_stream_policy": "force_stream"})),
-            "codex",
-            "openai:image",
-            true,
-            true,
-        ));
-        assert!(!resolve_upstream_is_stream_for_provider(
-            Some(&json!({"upstream_stream_policy": "force_stream"})),
-            "codex",
-            "openai:responses:compact",
-            true,
-            true,
-        ));
-        assert!(!resolve_upstream_is_stream_for_provider(
-            Some(&json!({"upstream_stream_policy": "force_stream"})),
-            "custom",
-            "openai:responses:compact",
-            true,
-            true,
-        ));
-    }
 
     #[test]
     fn enforces_provider_body_stream_policy_for_body_and_streamless_formats() {

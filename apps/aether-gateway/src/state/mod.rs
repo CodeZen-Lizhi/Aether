@@ -3,18 +3,19 @@ use super::error::GatewayError;
 
 mod admin_types;
 mod app;
+mod auth_module;
 mod bootstrap_admin;
 mod cache;
 mod catalog;
 mod core;
 mod cors;
 mod integrations;
-mod oauth;
 mod proxy;
 mod routing_profiles;
 mod runtime;
 #[cfg(test)]
 mod testing;
+mod transport_snapshot;
 mod types;
 mod video;
 
@@ -38,10 +39,6 @@ pub(crate) use self::cache::{
     PROVIDER_TRANSPORT_SNAPSHOT_CACHE_STALE_TTL, PROVIDER_TRANSPORT_SNAPSHOT_CACHE_TTL,
 };
 pub use self::cors::FrontdoorCorsConfig;
-pub(crate) use self::oauth::{
-    provider_transport_context_allows_credential_rotation, AgentIdentityAuthConfigFence,
-    CodexRuntimeOAuthObservation, ProviderTransportCredentialFence,
-};
 pub(crate) use self::types::{
     AdminWalletMutationOutcome, GatewayAdminPaymentCallbackView, GatewayUserPreferenceView,
     GatewayUserSessionView, LocalExecutionRuntimeMissDiagnostic, LocalMutationOutcome,

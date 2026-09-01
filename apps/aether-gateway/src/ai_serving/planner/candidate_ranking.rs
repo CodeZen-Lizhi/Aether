@@ -1,7 +1,11 @@
 use aether_ai_serving::{
-    ai_ranking_context, build_ai_rankable_candidate, run_ai_candidate_ranking,
-    AiCandidateRankingPort, AiRankableCandidateParts, AiRankingContextConfig,
-    AiRankingSchedulingMode,
+ai_ranking_context,
+build_ai_rankable_candidate,
+run_ai_candidate_ranking,
+AiCandidateRankingPort,
+AiRankableCandidateParts,
+AiRankingContextConfig,
+AiRankingSchedulingMode,
 };
 use aether_routing_core::{ResolvedRoutingPolicy, RoutingSchedulingMode, RoutingSetPriorityMode};
 use async_trait::async_trait;
@@ -268,8 +272,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use aether_ai_serving::{
-        ai_ranking_context, build_ai_rankable_candidate, AiRankableCandidateParts,
-    };
+ai_ranking_context,
+build_ai_rankable_candidate,
+AiRankableCandidateParts,
+};
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data_contracts::repository::provider_catalog::{
         StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,

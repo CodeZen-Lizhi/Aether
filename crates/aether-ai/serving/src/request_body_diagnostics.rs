@@ -72,9 +72,6 @@ fn openai_provider_request_contract_violation_parts(
     violation: &OpenAiProviderRequestContractViolation,
 ) -> (&str, &str) {
     match violation {
-        OpenAiProviderRequestContractViolation::CodexCompact(violation) => {
-            (violation.field, violation.reason)
-        }
         OpenAiProviderRequestContractViolation::Responses(violation) => {
             (violation.field, violation.reason)
         }
@@ -322,7 +319,7 @@ fn is_openai_responses_client_format(client_api_format: &str) -> bool {
 fn diagnose_same_format_provider_request_body_failure(
     body_json: &Value,
     body_rules: Option<&Value>,
-    context: &str,
+    _context: &str,
 ) -> Option<RequestBodyBuildDiagnostic> {
     if !body_json.is_object() {
         return Some(diagnostic("$", "反代请求体必须是 JSON object"));
@@ -333,20 +330,10 @@ fn diagnose_same_format_provider_request_body_failure(
             "Endpoint Body 规则必须是数组，本地反代无法应用该配置",
         ));
     }
-    match context {
-        "kiro_envelope" => Some(diagnostic(
-            "$",
-            "Kiro 反代请求体包装失败；请检查 Kiro auth_config 与 Endpoint Body 规则",
-        )),
-        "antigravity_envelope" => Some(diagnostic(
-            "$",
-            "Antigravity 反代请求体包装失败；请检查请求体是否满足该传输封装要求",
-        )),
-        _ => Some(diagnostic(
-            "$",
-            "反代请求体构建失败；当前路径未返回更细的字段信息",
-        )),
-    }
+    Some(diagnostic(
+        "$",
+        "反代请求体构建失败；当前路径未返回更细的字段信息",
+    ))
 }
 
 fn diagnose_openai_chat_cross_format_request(

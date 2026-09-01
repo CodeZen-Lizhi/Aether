@@ -4,7 +4,6 @@ use crate::ai_serving::transport::{
     resolve_same_format_provider_direct_auth as resolve_same_format_provider_direct_auth_impl,
     same_format_provider_transport_supported as same_format_provider_transport_supported_impl,
     same_format_provider_transport_unsupported_reason as same_format_provider_transport_unsupported_reason_impl,
-    should_try_same_format_provider_oauth_auth as should_try_same_format_provider_oauth_auth_impl,
     GatewayProviderTransportSnapshot, SameFormatProviderFamily, SameFormatProviderRequestBehavior,
     SameFormatProviderRequestBehaviorParams,
 };
@@ -55,20 +54,6 @@ pub(super) fn same_format_provider_transport_unsupported_reason(
         transport,
         same_format_provider_family(family),
         api_format,
-    )
-}
-
-pub(super) fn should_try_same_format_provider_oauth_auth(
-    behavior: &SameFormatProviderRequestBehavior,
-    transport: &GatewayProviderTransportSnapshot,
-    family: LocalSameFormatProviderFamily,
-    provider_api_format: &str,
-) -> bool {
-    should_try_same_format_provider_oauth_auth_impl(
-        behavior,
-        transport,
-        same_format_provider_family(family),
-        provider_api_format,
     )
 }
 

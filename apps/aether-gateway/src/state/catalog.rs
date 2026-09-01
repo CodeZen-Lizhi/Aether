@@ -1,6 +1,6 @@
 use super::{AppState, GatewayError, LocalMutationOutcome, LocalProviderDeleteTaskState};
 use crate::handlers::shared::sync_provider_key_oauth_status_snapshot;
-use aether_data_contracts::repository::{candidates, global_models, pool_scores, provider_catalog};
+use aether_data_contracts::repository::{candidates, global_models, provider_catalog};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::warn;
 
@@ -587,25 +587,6 @@ impl AppState {
             )
             .await
             .map_err(|err| GatewayError::Internal(err.to_string()))?;
-        for key_id in key_ids {
-            if let Err(err) = self
-                .data
-                .delete_pool_member_scores_for_member(
-                    &pool_scores::PoolMemberIdentity::provider_api_key(
-                        provider_id.to_string(),
-                        key_id.to_string(),
-                    ),
-                )
-                .await
-            {
-                warn!(
-                    provider_id,
-                    key_id,
-                    error = ?err,
-                    "gateway provider catalog cleanup: failed to delete pool member scores"
-                );
-            }
-        }
         if !endpoint_ids.is_empty() || !key_ids.is_empty() {
             self.invalidate_provider_routing_caches();
         }
@@ -876,38 +857,12 @@ impl AppState {
         &self,
         key_id: &str,
     ) -> Result<bool, GatewayError> {
-        let existing_key = self
-            .data
-            .list_provider_catalog_keys_by_ids(&[key_id.to_string()])
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))?
-            .into_iter()
-            .next();
         let deleted = self
             .data
             .delete_provider_catalog_key(key_id)
             .await
             .map_err(|err| GatewayError::Internal(err.to_string()))?;
         if deleted {
-            if let Some(key) = existing_key {
-                if let Err(err) = self
-                    .data
-                    .delete_pool_member_scores_for_member(
-                        &pool_scores::PoolMemberIdentity::provider_api_key(
-                            key.provider_id.clone(),
-                            key.id.clone(),
-                        ),
-                    )
-                    .await
-                {
-                    warn!(
-                        provider_id = %key.provider_id,
-                        key_id = %key.id,
-                        error = ?err,
-                        "gateway provider catalog key delete: failed to delete pool member scores"
-                    );
-                }
-            }
             self.invalidate_provider_routing_caches();
         }
         Ok(deleted)
@@ -923,23 +878,6 @@ impl AppState {
             .await
             .map_err(|err| GatewayError::Internal(err.to_string()))?;
         if deleted {
-            if let Err(err) = self
-                .data
-                .delete_pool_member_scores_for_member(
-                    &pool_scores::PoolMemberIdentity::provider_api_key(
-                        delete.expected_credential.provider_id.clone(),
-                        delete.key_id.clone(),
-                    ),
-                )
-                .await
-            {
-                warn!(
-                    provider_id = %delete.expected_credential.provider_id,
-                    key_id = %delete.key_id,
-                    error = ?err,
-                    "gateway provider catalog OAuth credential CAS delete: failed to delete pool member scores"
-                );
-            }
             self.invalidate_provider_routing_caches();
         }
         Ok(deleted)

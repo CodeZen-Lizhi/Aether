@@ -93,14 +93,14 @@
                   密钥信息
                 </TableHead>
                 <SortableTableHead
-                  class="w-[240px] h-12 font-semibold"
+                  class="w-[190px] h-12 font-semibold"
                   column-key="balance"
                   :sortable="false"
                   :filter-active="filterBalance !== 'all'"
                   filter-title="筛选余额类型"
                   filter-content-class="w-40 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"
                 >
-                  钱包
+                  统计/限制
                   <template #filter="{ close }">
                     <TableFilterMenu
                       v-model="filterBalance"
@@ -109,9 +109,6 @@
                     />
                   </template>
                 </SortableTableHead>
-                <TableHead class="w-[190px] h-12 font-semibold">
-                  统计/限制
-                </TableHead>
                 <TableHead class="w-[140px] h-12 font-semibold">
                   创建时间
                 </TableHead>
@@ -146,7 +143,7 @@
             <TableBody>
               <TableRow v-if="filteredApiKeys.length === 0">
                 <TableCell
-                  colspan="8"
+                  colspan="7"
                   class="h-64 text-center"
                 >
                   <EmptyState
@@ -283,15 +280,6 @@
                 </TableCell>
                 <TableCell class="py-4">
                   <div class="flex justify-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7"
-                      title="一键安装并配置 CLI"
-                      @click="openInstallDialog(apiKey)"
-                    >
-                      <Terminal class="h-3.5 w-3.5" />
-                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -464,28 +452,10 @@
                     variant="outline"
                     size="sm"
                     class="h-8 text-xs"
-                    @click="openInstallDialog(apiKey)"
-                  >
-                    <Terminal class="mr-1.5 h-3.5 w-3.5" />
-                    安装
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="h-8 text-xs"
                     @click="editApiKey(apiKey)"
                   >
                     <SquarePen class="mr-1.5 h-3.5 w-3.5" />
                     编辑
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="h-8 text-xs"
-                    @click="openAddBalanceDialog(apiKey)"
-                  >
-                    <DollarSign class="mr-1.5 h-3.5 w-3.5" />
-                    资金
                   </Button>
                   <Button
                     variant="outline"
@@ -588,133 +558,15 @@
       </template>
     </Dialog>
 
-    <!-- 一键安装并配置 CLI 对话框 -->
-    <Dialog
-      v-model="showInstallDialog"
-      size="lg"
-    >
-      <template #header>
-        <div class="border-b border-border px-6 py-4">
-          <div class="flex items-center gap-3">
-            <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 flex-shrink-0">
-              <Terminal class="h-5 w-5 text-primary" />
-            </div>
-            <div class="flex-1 min-w-0">
-              <h3 class="text-lg font-semibold text-foreground leading-tight">
-                一键安装并配置 CLI
-              </h3>
-              <p class="text-xs text-muted-foreground truncate">
-                当前密钥：{{ selectedInstallApiKey?.name || selectedInstallApiKey?.key_display || '未选择' }}
-              </p>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <div class="space-y-5">
-        <div class="rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
-          选择要配置的 CLI 和目标系统，Aether 会生成 15 分钟内有效的一次性 install code。页面命令不会包含原始 API Key。
-        </div>
-
-        <div class="space-y-2">
-          <Label class="text-sm font-semibold">目标 CLI</Label>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <Button
-              v-for="option in installCliOptions"
-              :key="option.value"
-              :variant="installCli === option.value ? 'default' : 'outline'"
-              class="justify-start h-auto py-3"
-              @click="selectInstallCli(option.value)"
-            >
-              {{ option.label }}
-            </Button>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <Label class="text-sm font-semibold">目标系统</Label>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <Button
-              v-for="option in installSystemOptions"
-              :key="option.value"
-              :variant="installSystem === option.value ? 'default' : 'outline'"
-              class="justify-start h-auto py-3"
-              @click="selectInstallSystem(option.value)"
-            >
-              {{ option.label }}
-            </Button>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <div class="flex items-center justify-between gap-2">
-            <Label class="text-sm font-semibold">复制到目标机器执行</Label>
-            <div class="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                class="gap-1.5"
-                :disabled="installLoading || !installCommand"
-                :title="installCopied ? '已复制' : '一键复制安装命令'"
-                @click="copyInstallCommand"
-              >
-                <CheckCircle
-                  v-if="installCopied"
-                  class="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
-                />
-                <Copy
-                  v-else
-                  class="h-3.5 w-3.5"
-                />
-                {{ installCopied ? '已复制' : '一键复制' }}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                :disabled="installLoading || !selectedInstallApiKey"
-                @click="refreshInstallCommand"
-              >
-                {{ installLoading ? '生成中...' : '重新生成' }}
-              </Button>
-            </div>
-          </div>
-          <div class="rounded-lg border border-border/60 bg-background overflow-hidden">
-            <pre class="max-h-32 overflow-x-auto whitespace-pre-wrap break-all p-3 text-xs font-mono">{{ installCommand || '正在生成短命令...' }}</pre>
-          </div>
-          <p class="text-xs text-muted-foreground">
-            {{ installCommandHint }}
-          </p>
-        </div>
-      </div>
-
-      <template #footer>
-        <Button
-          variant="outline"
-          class="h-10 px-5"
-          @click="showInstallDialog = false"
-        >
-          关闭
-        </Button>
-        <Button
-          class="h-10 px-5 shadow-lg shadow-primary/20"
-          :disabled="!installCommand || installLoading"
-          @click="copyInstallCommand"
-        >
-          {{ installCopied ? '已复制' : '复制命令' }}
-        </Button>
-      </template>
-    </Dialog>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useClipboard } from '@/composables/useClipboard'
 import { adminApi, type AdminApiKey, type CreateStandaloneApiKeyRequest } from '@/api/admin'
-import type { ApiKeyInstallSession, InstallSessionTargetSystem, InstallTargetCli } from '@/api/me'
 import { EmptyState, LoadingState } from '@/components/common'
 
 import {
@@ -746,12 +598,10 @@ import {
   Key,
   Trash2,
   Power,
-  DollarSign,
   Copy,
   CheckCircle,
   SquarePen,
-  Search,
-  Terminal
+  Search
 } from 'lucide-vue-next'
 
 import { StandaloneKeyFormDialog, type StandaloneKeyFormData } from '@/features/api-keys'
@@ -769,16 +619,8 @@ const total = ref(0)
 const currentPage = ref(1)
 const limit = ref(100)
 const showNewKeyDialog = ref(false)
-const showInstallDialog = ref(false)
 const newKeyValue = ref('')
 const keyInput = ref<HTMLInputElement>()
-const selectedInstallApiKey = ref<AdminApiKey | null>(null)
-const installCli = ref<InstallTargetCli>('claude_code')
-const installSystem = ref<InstallSessionTargetSystem>('linux')
-const installSession = ref<ApiKeyInstallSession | null>(null)
-const installLoading = ref(false)
-const installCopied = ref(false)
-let installCopiedResetTimer: ReturnType<typeof setTimeout> | null = null
 
 // 统一的表单对话框状态
 const showKeyFormDialog = ref(false)
@@ -798,18 +640,6 @@ const statusFilters = [
   { value: 'inactive' as const, label: '禁用' }
 ]
 
-const installCliOptions: Array<{ value: InstallTargetCli; label: string }> = [
-  { value: 'claude_code', label: 'Claude Code' },
-  { value: 'codex_cli', label: 'Codex CLI' },
-  { value: 'gemini_cli', label: 'Gemini CLI' }
-]
-
-const installSystemOptions: Array<{ value: InstallSessionTargetSystem; label: string }> = [
-  { value: 'macos', label: 'macOS' },
-  { value: 'linux', label: 'Linux' },
-  { value: 'windows', label: 'Windows' }
-]
-
 const balanceFilters = [
   { value: 'all' as const, label: '全部类型' },
   { value: 'limited' as const, label: '限额' },
@@ -818,20 +648,6 @@ const balanceFilters = [
 
 const hasActiveFilters = computed(() => {
   return searchQuery.value !== '' || filterStatus.value !== 'all' || filterBalance.value !== 'all'
-})
-
-const installCommand = computed(() => {
-  if (!installSession.value) return ''
-  return installSystem.value === 'windows'
-    ? installSession.value.powershell_command
-    : installSession.value.unix_command
-})
-
-const installCommandHint = computed(() => {
-  if (installSystem.value === 'windows') {
-    return 'Windows 请在 PowerShell 中执行。install code 使用后立即失效，如需再次执行请重新生成。'
-  }
-  return 'macOS / Linux 请在 sh 兼容终端中执行。install code 使用后立即失效，如需再次执行请重新生成。'
 })
 
 function clearFilters() {
@@ -880,31 +696,8 @@ const filteredApiKeys = computed(() => {
 
 
 onMounted(async () => {
-  installSystem.value = detectCurrentSystem()
   await refreshApiKeys()
 })
-
-onBeforeUnmount(() => {
-  resetInstallCopiedState()
-})
-
-watch(showInstallDialog, (isOpen) => {
-  if (!isOpen) {
-    resetInstallCopiedState()
-  }
-})
-
-function clearInstallCopiedResetTimer() {
-  if (installCopiedResetTimer) {
-    clearTimeout(installCopiedResetTimer)
-    installCopiedResetTimer = null
-  }
-}
-
-function resetInstallCopiedState() {
-  clearInstallCopiedResetTimer()
-  installCopied.value = false
-}
 
 async function refreshApiKeys() {
   loading.value = true
@@ -933,64 +726,6 @@ async function refreshApiKeys() {
 function handlePageChange(page: number) {
   currentPage.value = page
   refreshApiKeys()
-}
-
-function detectCurrentSystem(): InstallSessionTargetSystem {
-  const platform = window.navigator.platform.toLowerCase()
-  const userAgent = window.navigator.userAgent.toLowerCase()
-  if (platform.includes('mac')) return 'macos'
-  if (platform.includes('win') || userAgent.includes('windows')) return 'windows'
-  return 'linux'
-}
-
-async function openInstallDialog(apiKey: AdminApiKey) {
-  selectedInstallApiKey.value = apiKey
-  installSession.value = null
-  resetInstallCopiedState()
-  showInstallDialog.value = true
-  await refreshInstallCommand()
-}
-
-async function selectInstallCli(value: InstallTargetCli) {
-  installCli.value = value
-  await refreshInstallCommand()
-}
-
-async function selectInstallSystem(value: InstallSessionTargetSystem) {
-  installSystem.value = value
-  await refreshInstallCommand()
-}
-
-async function refreshInstallCommand() {
-  if (!selectedInstallApiKey.value) return
-  installLoading.value = true
-  installSession.value = null
-  resetInstallCopiedState()
-  try {
-    installSession.value = await adminApi.createApiKeyInstallSession(selectedInstallApiKey.value.id, {
-      target_cli: installCli.value,
-      target_system: installSystem.value,
-    })
-  } catch (err: unknown) {
-    log.error('生成 CLI 安装命令失败:', err)
-    error(parseApiError(err, '生成 CLI 安装命令失败'))
-  } finally {
-    installLoading.value = false
-  }
-}
-
-async function copyInstallCommand() {
-  if (!installCommand.value) return
-  const copied = await copyToClipboard(installCommand.value, false)
-  if (!copied) return
-
-  installCopied.value = true
-  success('安装命令已复制到剪贴板')
-  clearInstallCopiedResetTimer()
-  installCopiedResetTimer = setTimeout(() => {
-    installCopied.value = false
-    installCopiedResetTimer = null
-  }, 2000)
 }
 
 async function toggleApiKey(apiKey: AdminApiKey) {

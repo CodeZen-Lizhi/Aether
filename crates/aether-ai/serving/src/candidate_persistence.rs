@@ -140,14 +140,6 @@ where
     Ok(())
 }
 
-pub fn ai_should_persist_available_candidate_for_pool_key(pool_key_index: Option<u32>) -> bool {
-    pool_key_index.is_none()
-}
-
-pub fn ai_should_persist_skipped_candidate_for_pool_membership(is_pool_candidate: bool) -> bool {
-    !is_pool_candidate
-}
-
 pub fn ai_candidate_extra_data_with_ranking(
     extra_data: Option<Value>,
     ranking: Option<&SchedulerRankingOutcome>,
@@ -384,20 +376,6 @@ mod tests {
                 "skipped:b:4:candidate-2:extra:b",
             ]
         );
-    }
-
-    #[test]
-    fn pool_candidate_persistence_policy_skips_pool_keys_until_execution() {
-        assert!(ai_should_persist_available_candidate_for_pool_key(None));
-        assert!(!ai_should_persist_available_candidate_for_pool_key(Some(0)));
-        assert!(!ai_should_persist_available_candidate_for_pool_key(Some(1)));
-
-        assert!(ai_should_persist_skipped_candidate_for_pool_membership(
-            false
-        ));
-        assert!(!ai_should_persist_skipped_candidate_for_pool_membership(
-            true
-        ));
     }
 
     #[test]

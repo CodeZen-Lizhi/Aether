@@ -4,7 +4,7 @@ use url::form_urlencoded;
 use crate::contracts::{
     ClientSurface, CLAUDE_CHAT_STREAM_PLAN_KIND, CLAUDE_CHAT_SYNC_PLAN_KIND,
     CLAUDE_CLI_STREAM_PLAN_KIND, CLAUDE_CLI_SYNC_PLAN_KIND, CLAUDE_COUNT_TOKENS_SYNC_PLAN_KIND,
-    CODEX_LIVE_STREAM_PLAN_KIND, GEMINI_CHAT_STREAM_PLAN_KIND, GEMINI_CHAT_SYNC_PLAN_KIND,
+    GEMINI_CHAT_STREAM_PLAN_KIND, GEMINI_CHAT_SYNC_PLAN_KIND,
     GEMINI_CLI_STREAM_PLAN_KIND, GEMINI_CLI_SYNC_PLAN_KIND, GEMINI_EMBEDDING_SYNC_PLAN_KIND,
     GEMINI_FILES_DELETE_PLAN_KIND, GEMINI_FILES_DOWNLOAD_PLAN_KIND, GEMINI_FILES_GET_PLAN_KIND,
     GEMINI_FILES_LIST_PLAN_KIND, GEMINI_FILES_UPLOAD_PLAN_KIND,
@@ -101,14 +101,6 @@ pub fn resolve_execution_runtime_stream_plan_kind_with_client_surface(
         return Some(GEMINI_INTERACTIONS_STREAM_PLAN_KIND);
     }
 
-    if route_family == Some("antigravity")
-        && route_kind == Some("stream_generate_content")
-        && *method == Method::POST
-        && path == "/v1internal:streamGenerateContent"
-    {
-        return Some(GEMINI_CLI_STREAM_PLAN_KIND);
-    }
-
     if route_family == Some("openai")
         && is_openai_responses_route_kind(route_kind)
         && *method == Method::POST
@@ -123,15 +115,6 @@ pub fn resolve_execution_runtime_stream_plan_kind_with_client_surface(
         && path == "/v1/realtime"
     {
         return Some(OPENAI_REALTIME_STREAM_PLAN_KIND);
-    }
-
-    if route_family == Some("codex")
-        && route_kind == Some("live")
-        && ((*method == Method::GET
-            && (path == "/v1/live" || path.starts_with("/v1/live/") || path == "/v1/realtime"))
-            || (*method == Method::POST && matches!(path, "/v1/live" | "/v1/realtime/calls")))
-    {
-        return Some(CODEX_LIVE_STREAM_PLAN_KIND);
     }
 
     if route_family == Some("openai")
@@ -587,7 +570,6 @@ pub fn supports_stream_execution_decision_kind(plan_kind: &str) -> bool {
     matches!(
         plan_kind,
         OPENAI_CHAT_STREAM_PLAN_KIND
-            | CODEX_LIVE_STREAM_PLAN_KIND
             | OPENAI_REALTIME_STREAM_PLAN_KIND
             | CLAUDE_CHAT_STREAM_PLAN_KIND
             | GEMINI_CHAT_STREAM_PLAN_KIND
@@ -615,7 +597,7 @@ mod tests {
     };
     use crate::contracts::{
         CLAUDE_CHAT_STREAM_PLAN_KIND, CLAUDE_CHAT_SYNC_PLAN_KIND, CLAUDE_CLI_STREAM_PLAN_KIND,
-        CLAUDE_CLI_SYNC_PLAN_KIND, CODEX_LIVE_STREAM_PLAN_KIND, GEMINI_CHAT_STREAM_PLAN_KIND,
+        CLAUDE_CLI_SYNC_PLAN_KIND, GEMINI_CHAT_STREAM_PLAN_KIND,
         GEMINI_CHAT_SYNC_PLAN_KIND, GEMINI_CLI_STREAM_PLAN_KIND, GEMINI_CLI_SYNC_PLAN_KIND,
         GEMINI_EMBEDDING_SYNC_PLAN_KIND, GEMINI_INTERACTIONS_STREAM_PLAN_KIND,
         GEMINI_INTERACTIONS_SYNC_PLAN_KIND, OPENAI_CHAT_STREAM_PLAN_KIND,
@@ -721,32 +703,6 @@ mod tests {
         );
         assert!(supports_stream_execution_decision_kind(
             OPENAI_REALTIME_STREAM_PLAN_KIND
-        ));
-    }
-
-    #[test]
-    fn resolves_codex_live_call_create_and_websocket_routes() {
-        for (method, path) in [
-            (Method::POST, "/v1/live"),
-            (Method::POST, "/v1/realtime/calls"),
-            (Method::GET, "/v1/live"),
-            (Method::GET, "/v1/live/rtc_opaque"),
-            (Method::GET, "/v1/realtime"),
-        ] {
-            assert_eq!(
-                resolve_execution_runtime_stream_plan_kind(
-                    Some("ai_public"),
-                    Some("codex"),
-                    Some("live"),
-                    None,
-                    &method,
-                    path,
-                ),
-                Some(CODEX_LIVE_STREAM_PLAN_KIND)
-            );
-        }
-        assert!(supports_stream_execution_decision_kind(
-            CODEX_LIVE_STREAM_PLAN_KIND
         ));
     }
 
@@ -926,32 +882,6 @@ mod tests {
                 "/v1beta/models/gemini-2.5-pro:streamGenerateContent",
             ),
             Some(GEMINI_CLI_STREAM_PLAN_KIND)
-        );
-    }
-
-    #[test]
-    fn resolves_antigravity_v1internal_stream_plan_kind_as_gemini_cli_stream() {
-        assert_eq!(
-            resolve_execution_runtime_stream_plan_kind(
-                Some("ai_public"),
-                Some("antigravity"),
-                Some("stream_generate_content"),
-                Some("bearer_like"),
-                &Method::POST,
-                "/v1internal:streamGenerateContent",
-            ),
-            Some(GEMINI_CLI_STREAM_PLAN_KIND)
-        );
-        assert_eq!(
-            resolve_execution_runtime_sync_plan_kind(
-                Some("ai_public"),
-                Some("antigravity"),
-                Some("stream_generate_content"),
-                Some("bearer_like"),
-                &Method::POST,
-                "/v1internal:streamGenerateContent",
-            ),
-            None
         );
     }
 

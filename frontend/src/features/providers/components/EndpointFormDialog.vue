@@ -36,7 +36,6 @@
                 </Badge>
               </div>
               <div
-                v-if="!isEndpointConfigReadOnly"
                 class="flex items-center gap-1.5"
               >
                 <!-- 格式转换按钮 -->
@@ -130,7 +129,6 @@
                 </Button>
                 <!-- 删除 -->
                 <Button
-                  v-if="!isFixedProvider"
                   variant="ghost"
                   size="icon"
                   class="h-7 w-7 hover:text-destructive"
@@ -153,7 +151,6 @@
                     <Input
                       :model-value="getEndpointEditState(endpoint.id)?.url ?? endpoint.base_url"
                       :placeholder="getEndpointBaseUrlPlaceholder(endpoint.api_format)"
-                      :disabled="isFixedProvider"
                       @update:model-value="(v) => updateEndpointField(endpoint.id, 'url', v)"
                     />
                   </div>
@@ -175,7 +172,7 @@
                 </div>
                 <!-- 保存/撤销按钮（URL/路径有修改时显示） -->
                 <div
-                  v-if="!isEndpointConfigReadOnly && hasUrlChanges(endpoint)"
+                  v-if="hasUrlChanges(endpoint)"
                   class="flex items-center gap-1 shrink-0"
                 >
                   <Button
@@ -202,7 +199,6 @@
 
               <!-- 请求/响应规则（请求头、请求体和响应头规则） -->
               <Collapsible
-                v-if="!isEndpointConfigReadOnly"
                 v-model:open="endpointRulesExpanded[endpoint.id]"
               >
                 <div class="flex items-center gap-2">
@@ -301,18 +297,6 @@
                     >
                       <Plus class="w-3 h-3 mr-1" />
                       响应头
-                    </Button>
-                    <Button
-                      v-if="isFixedProvider && hasDefaultBodyRules(endpoint.api_format)"
-                      variant="ghost"
-                      size="sm"
-                      class="h-7 text-xs px-2"
-                      title="重置请求体"
-                      :disabled="resettingDefaultRulesEndpointId === endpoint.id"
-                      @click="handleResetBodyRulesToDefault(endpoint)"
-                    >
-                      <RotateCcw class="w-3 h-3 mr-1" />
-                      重置请求体
                     </Button>
                   </div>
                 </div>
@@ -928,7 +912,7 @@
 
       <!-- 添加新端点 -->
       <div
-        v-if="!isFixedProvider && availableFormats.length > 0"
+        v-if="availableFormats.length > 0"
         class="rounded-lg border border-dashed p-3"
       >
         <!-- 卡片头部：API 格式选择 + 添加按钮 -->
@@ -1436,7 +1420,6 @@ function handleBodyRuleDragEnd(endpointId: string) {
 // 状态
 const addingEndpoint = ref(false)
 const savingEndpointId = ref<string | null>(null)
-const resettingDefaultRulesEndpointId = ref<string | null>(null)
 const deletingEndpointId = ref<string | null>(null)
 const togglingEndpointId = ref<string | null>(null)
 const togglingFormatEndpointId = ref<string | null>(null)
@@ -1879,15 +1862,6 @@ function initBodyRuleSetValueForEditor(value: unknown): { value: string } {
 // 内部状态
 const internalOpen = computed(() => props.modelValue)
 
-const isFixedProvider = computed(() => {
-  const t = props.provider?.provider_type
-  return !!t && t !== 'custom'
-})
-
-const isEndpointConfigReadOnly = computed(() => {
-  return (props.provider?.provider_type || '').trim().toLowerCase() === 'gemini_cli'
-})
-
 // 新端点表单
 const newEndpoint = ref({
   api_format: '',
@@ -1921,12 +1895,6 @@ const deleteConfirmDescription = computed(() => {
 function defaultBodyRulesCacheKey(apiFormat: string): string {
   const providerType = (props.provider?.provider_type || '').toLowerCase()
   return providerType ? `${apiFormat}:${providerType}` : apiFormat
-}
-
-function hasDefaultBodyRules(apiFormat: string): boolean {
-  const cacheKey = defaultBodyRulesCacheKey(apiFormat)
-  if (!defaultBodyRulesLoaded.value[cacheKey]) return false
-  return (defaultBodyRulesByFormat.value[cacheKey]?.length || 0) > 0
 }
 
 async function loadDefaultBodyRulesForFormat(apiFormat: string, force = false): Promise<BodyRule[]> {
@@ -1964,10 +1932,8 @@ async function preloadDefaultBodyRules(endpoints: ProviderEndpoint[]): Promise<v
 
 // 获取指定 API 格式的默认路径
 function getDefaultPath(apiFormat: string, baseUrl?: string): string {
-  const providerType = (props.provider?.provider_type || '').toLowerCase()
   return getDefaultEndpointPath({
     apiFormat,
-    providerType,
     baseUrl,
     apiFormats: apiFormats.value,
   })
@@ -3103,41 +3069,6 @@ function resetEndpointChanges(endpoint: ProviderEndpoint) {
   }
 }
 
-async function handleResetBodyRulesToDefault(endpoint: ProviderEndpoint) {
-  resettingDefaultRulesEndpointId.value = endpoint.id
-  try {
-    const defaultRules = await loadDefaultBodyRulesForFormat(endpoint.api_format, true)
-    if (!defaultRules.length) {
-      showError(legacyT('该端点没有默认请求体规则'))
-      return
-    }
-
-    if (!endpointEditStates.value[endpoint.id]) {
-      endpointEditStates.value[endpoint.id] = initEndpointEditState(endpoint)
-    }
-    const state = endpointEditStates.value[endpoint.id]
-    if (!state) return
-
-    const resetState = initEndpointEditState({
-      ...endpoint,
-      body_rules: defaultRules,
-    })
-    state.bodyRules = resetState.bodyRules
-    endpointRulesExpanded.value[endpoint.id] = (state.rules.length + state.responseRules.length + state.bodyRules.length) > 0
-    clearBodyRuleDragState(endpoint.id)
-    clearBodyRuleSelectOpen(endpoint.id)
-    if (isEndpointRulesJsonMode(endpoint.id)) {
-      refreshEndpointRulesJsonDraft(endpoint.id)
-    }
-    success(legacyT('已重置请求体为默认规则，请点击保存生效'))
-  } catch (error: unknown) {
-    showError(localizedApiError(error, '重置失败'), legacyT('错误'))
-  } finally {
-    resettingDefaultRulesEndpointId.value = null
-  }
-}
-
-// 将可编辑规则数组转换为 API 需要的 HeaderRule[]
 function rulesToHeaderRules(rules: EditableRule[]): HeaderRule[] | null {
   const result: HeaderRule[] = []
 
@@ -3312,8 +3243,6 @@ watch(() => props.endpoints, (endpoints) => {
 
 // 保存端点
 async function saveEndpoint(endpoint: ProviderEndpoint) {
-  if (isEndpointConfigReadOnly.value) return
-
   if (isEndpointRulesJsonMode(endpoint.id) && endpointRulesJsonDirty.value[endpoint.id]) {
     if (!applyEndpointRulesJsonDraft(endpoint.id, { notify: false })) return
   }
@@ -3343,12 +3272,10 @@ async function saveEndpoint(endpoint: ProviderEndpoint) {
 
   savingEndpointId.value = endpoint.id
   try {
-    // 仅提交变更字段；fixed provider 锁定 base_url，但允许覆盖 custom_path。
+    // 仅提交变更字段。
     const payload: Record<string, unknown> = {}
 
-    if (!isFixedProvider.value) {
-      if (state.url !== endpoint.base_url) payload.base_url = state.url
-    }
+    if (state.url !== endpoint.base_url) payload.base_url = state.url
     if (state.path !== (endpoint.custom_path || '')) payload.custom_path = state.path || null
 
     if (hasRulesChanges(endpoint)) payload.header_rules = rulesToHeaderRules(state.rules)
@@ -3402,7 +3329,7 @@ function getCurrentUpstreamStreamPolicy(endpoint: ProviderEndpoint): string {
 }
 
 function getFixedUpstreamStreamPolicy(endpoint: ProviderEndpoint) {
-  return fixedEndpointUpstreamStreamPolicy(props.provider?.provider_type, endpoint.api_format)
+  return fixedEndpointUpstreamStreamPolicy(endpoint.api_format)
 }
 
 function isUpstreamStreamPolicyLocked(endpoint: ProviderEndpoint): boolean {

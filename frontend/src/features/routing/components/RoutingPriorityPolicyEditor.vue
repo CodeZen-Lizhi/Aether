@@ -179,12 +179,6 @@
               <div class="flex items-center gap-2">
                 <span class="truncate text-sm font-medium">{{ row.name }}</span>
                 <span
-                  v-if="row.kind === 'pool'"
-                  class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
-                >
-                  Pool
-                </span>
-                <span
                   v-if="!row.is_active"
                   class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
                 >
@@ -316,7 +310,6 @@ import {
   getModelPolicy,
   normalizeRoutingGroupConfig,
   setModelKeyPriorityOverrides,
-  setModelPoolPriorityOverrides,
   setModelProviderPriorityOverrides,
   type RoutingDefaultPolicy,
   type RoutingGroupConfig,
@@ -334,7 +327,6 @@ interface ProviderPriorityRow {
 
 interface KeyPriorityRow {
   id: string
-  kind: 'key' | 'pool'
   target_id: string
   name: string
   masked: string
@@ -343,8 +335,6 @@ interface KeyPriorityRow {
   priority: number
   provider_id: string
   provider_name: string
-  pool_key_count?: number
-  pool_active_key_count?: number
 }
 
 interface GlobalKeySource {
@@ -353,8 +343,6 @@ interface GlobalKeySource {
   provider_name: string
   name: string
   api_key_masked: string
-  internal_priority: number
-  global_priority_by_format: Record<string, number> | null
   is_active: boolean
   provider_active: boolean
   api_formats: string[]
@@ -429,16 +417,6 @@ const providerIdByName = computed(() => {
   }
   return map
 })
-const poolProviderIds = computed(() => {
-  const set = new Set<string>()
-  for (const provider of providers.value) {
-    if (provider.pool_advanced) {
-      set.add(provider.id)
-    }
-  }
-  return set
-})
-
 const providerRows = computed<ProviderPriorityRow[]>(() => {
   const overrides = targetModelPolicy.value.provider_priority_overrides
   return providers.value
@@ -447,7 +425,7 @@ const providerRows = computed<ProviderPriorityRow[]>(() => {
       name: provider.name,
       is_active: provider.is_active,
       api_formats: provider.api_formats ?? [],
-      priority: priorityValue(overrides[provider.id], provider.provider_priority),
+      priority: priorityValue(overrides[provider.id], 0),
     }))
     .sort(comparePriorityRows)
 })
@@ -455,38 +433,24 @@ const providerRows = computed<ProviderPriorityRow[]>(() => {
 const keyRows = computed<KeyPriorityRow[]>(() => {
   const format = selectedApiFormat.value
   const keyOverrides = targetModelPolicy.value.key_priority_overrides
-  const poolOverrides = targetModelPolicy.value.pool_priority_overrides
-  const normalRows: KeyPriorityRow[] = []
-  const poolGroups = new Map<string, GlobalKeySource[]>()
 
+  const rows: KeyPriorityRow[] = []
   for (const key of keysByFormat.value[format] ?? []) {
     const providerId = resolveProviderId(key)
-    if (isPoolManagedProvider(providerId)) {
-      if (!poolGroups.has(providerId)) {
-        poolGroups.set(providerId, [])
-      }
-      poolGroups.get(providerId)?.push(key)
-      continue
-    }
-    normalRows.push({
+    rows.push({
       id: key.id,
-      kind: 'key',
       target_id: key.id,
       name: key.name,
       masked: key.api_key_masked,
       is_active: key.is_active && key.provider_active,
       api_formats: key.api_formats,
-      priority: priorityValue(keyOverrides[key.id], fallbackKeyPriority(key, format)),
+      priority: priorityValue(keyOverrides[key.id], 0),
       provider_id: providerId,
       provider_name: key.provider_name,
     })
   }
 
-  const poolRows = Array.from(poolGroups.entries()).map(([providerId, keys]) =>
-    buildPoolRow(format, providerId, keys, poolOverrides)
-  )
-
-  return [...normalRows, ...poolRows].sort(comparePriorityRows)
+  return rows.sort(comparePriorityRows)
 })
 
 watch(effectivePriorityMode, mode => {
@@ -679,65 +643,30 @@ function setKeyPriority(keyId: string, event: Event): void {
   if (priority == null) return
   const row = keyRows.value.find(item => item.id === keyId)
   if (!row) return
-  if (row.kind === 'pool') {
-    updatePoolOverrides({
-      ...targetModelPolicy.value.pool_priority_overrides,
-      [row.target_id]: priority,
-    })
-  } else {
-    updateKeyOverrides({
-      ...targetModelPolicy.value.key_priority_overrides,
-      [row.target_id]: priority,
-    })
-  }
+  updateKeyOverrides({
+    ...targetModelPolicy.value.key_priority_overrides,
+    [row.target_id]: priority,
+  })
 }
 
 function moveKey(keyId: string, direction: -1 | 1): void {
   const rows = moveRow(keyRows.value, keyId, direction)
-  updateVisibleKeyAndPoolOverrides(rows)
+  updateVisibleKeyOverrides(rows)
 }
 
 function updateKeyOverrides(overrides: Record<string, number>): void {
   updateConfig(setModelKeyPriorityOverrides(config.value, targetModel.value, overrides))
 }
 
-function updatePoolOverrides(overrides: Record<string, number>): void {
-  updateConfig(setModelPoolPriorityOverrides(config.value, targetModel.value, overrides))
-}
-
-function updateKeyAndPoolOverrides(
-  keyOverrides: Record<string, number>,
-  poolOverrides: Record<string, number>,
-): void {
-  const next = setModelPoolPriorityOverrides(
-    setModelKeyPriorityOverrides(config.value, targetModel.value, keyOverrides),
-    targetModel.value,
-    poolOverrides,
-  )
-  updateConfig(next)
-}
-
-function updateVisibleKeyAndPoolOverrides(rows: KeyPriorityRow[]): void {
+function updateVisibleKeyOverrides(rows: KeyPriorityRow[]): void {
   const keyOverrides = { ...targetModelPolicy.value.key_priority_overrides }
-  const poolOverrides = { ...targetModelPolicy.value.pool_priority_overrides }
-
   for (const row of keyRows.value) {
-    if (row.kind === 'pool') {
-      delete poolOverrides[row.target_id]
-    } else {
-      delete keyOverrides[row.target_id]
-    }
+    delete keyOverrides[row.target_id]
   }
-
   rows.forEach((row, index) => {
-    if (row.kind === 'pool') {
-      poolOverrides[row.target_id] = index
-    } else {
-      keyOverrides[row.target_id] = index
-    }
+    keyOverrides[row.target_id] = index
   })
-
-  updateKeyAndPoolOverrides(keyOverrides, poolOverrides)
+  updateKeyOverrides(keyOverrides)
 }
 
 function handleProviderDragStart(providerId: string, event: DragEvent): void {
@@ -807,7 +736,7 @@ function handleKeyDrop(keyId: string): void {
     return
   }
   const rows = reorderRows(keyRows.value, draggedId, keyId)
-  updateVisibleKeyAndPoolOverrides(rows)
+  updateVisibleKeyOverrides(rows)
   handleKeyDragEnd()
 }
 
@@ -890,14 +819,6 @@ function priorityValue(override: number | undefined, fallback: number | null | u
   return 0
 }
 
-function fallbackKeyPriority(key: GlobalKeySource, format: string): number {
-  const normalizedFormat = normalizeFormat(format)
-  if (normalizedFormat && typeof key.global_priority_by_format?.[normalizedFormat] === 'number') {
-    return key.global_priority_by_format[normalizedFormat]
-  }
-  return key.internal_priority
-}
-
 function normalizeGlobalKeys(format: string, rawKeys: Record<string, unknown>[]): GlobalKeySource[] {
   const deduped = new Map<string, GlobalKeySource>()
   for (const raw of rawKeys) {
@@ -905,15 +826,12 @@ function normalizeGlobalKeys(format: string, rawKeys: Record<string, unknown>[])
     if (!id) continue
     const providerName = String(raw.provider_name || '')
     const providerId = String(raw.provider_id || '') || providerIdByName.value.get(providerName) || ''
-    const priorityMap = normalizePriorityMap(raw.global_priority_by_format as Record<string, unknown> | null | undefined)
     const source: GlobalKeySource = {
       id,
       provider_id: providerId,
       provider_name: providerName || providerById.value.get(providerId)?.name || 'Unknown Provider',
       name: String(raw.name || 'Unnamed Key'),
       api_key_masked: String(raw.api_key_masked || '***'),
-      internal_priority: toNumberOrNull(raw.internal_priority) ?? 0,
-      global_priority_by_format: Object.keys(priorityMap).length > 0 ? priorityMap : null,
       is_active: raw.is_active !== false,
       provider_active: raw.provider_active !== false,
       api_formats: Array.isArray(raw.api_formats) ? raw.api_formats.map(item => normalizeFormat(String(item))).filter(Boolean) : [format],
@@ -929,50 +847,15 @@ function normalizeGlobalKeys(format: string, rawKeys: Record<string, unknown>[])
     deduped.set(id, {
       ...existing,
       ...source,
-      global_priority_by_format: {
-        ...(existing.global_priority_by_format ?? {}),
-        ...(source.global_priority_by_format ?? {}),
-      },
       api_formats: Array.from(new Set([...existing.api_formats, ...source.api_formats])),
     })
   }
   return Array.from(deduped.values())
 }
 
-function buildPoolRow(
-  format: string,
-  providerId: string,
-  keys: GlobalKeySource[],
-  overrides: Record<string, number>,
-): KeyPriorityRow {
-  const provider = providerById.value.get(providerId)
-  const activeKeyCount = keys.filter(key => key.is_active).length
-  return {
-    id: `pool:${providerId}:${format}`,
-    kind: 'pool',
-    target_id: providerId,
-    name: provider?.name || keys[0]?.provider_name || '未知 Provider',
-    masked: '[Pool]',
-    is_active: (provider?.is_active ?? keys.some(key => key.provider_active)) && activeKeyCount > 0,
-    api_formats: [format],
-    priority: priorityValue(
-      overrides[providerId],
-      provider?.pool_advanced?.global_priority ?? provider?.provider_priority ?? 999999,
-    ),
-    provider_id: providerId,
-    provider_name: provider?.name || keys[0]?.provider_name || 'Unknown Provider',
-    pool_key_count: keys.length,
-    pool_active_key_count: activeKeyCount,
-  }
-}
-
 function resolveProviderId(key: Pick<GlobalKeySource, 'provider_id' | 'provider_name'>): string {
   if (key.provider_id) return key.provider_id
   return providerIdByName.value.get(key.provider_name) || ''
-}
-
-function isPoolManagedProvider(providerId: string): boolean {
-  return providerId !== '' && poolProviderIds.value.has(providerId)
 }
 
 function normalizeFormat(value: string | null | undefined): string {
@@ -985,18 +868,6 @@ function formatLabel(format: string): string {
 
 function formatShortLabel(format: string): string {
   return formatApiFormatShort(format)
-}
-
-function normalizePriorityMap(value: Record<string, unknown> | null | undefined): Record<string, number> {
-  if (!value) return {}
-  const normalized: Record<string, number> = {}
-  for (const [rawFormat, rawPriority] of Object.entries(value)) {
-    const format = normalizeFormat(rawFormat)
-    const priority = toNumberOrNull(rawPriority)
-    if (!format || priority == null) continue
-    normalized[format] = priority
-  }
-  return normalized
 }
 
 function toNumberOrNull(value: unknown): number | null {

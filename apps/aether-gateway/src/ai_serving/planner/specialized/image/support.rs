@@ -20,8 +20,7 @@ use crate::ai_serving::planner::materialization_policy::{
     build_local_candidate_persistence_policy, LocalCandidatePersistencePolicyKind,
 };
 use crate::ai_serving::planner::spec_metadata::local_openai_image_spec_metadata;
-use crate::ai_serving::{
-    extract_pool_sticky_session_token, request_candidate_api_formats,
+use crate::ai_serving::{request_candidate_api_formats,
     resolve_local_decision_execution_runtime_auth_context, CandidateFailureDiagnostic,
     ExecutionRuntimeAuthContext, GatewayControlDecision, PlannerAppState,
 };
@@ -238,8 +237,6 @@ pub(super) async fn build_local_openai_image_candidate_attempt_source<'a>(
             }
         }
     }
-
-    let sticky_session_token = extract_pool_sticky_session_token(body_json);
     let persistence_policy = build_local_candidate_persistence_policy(
         &input.auth_context,
         input.required_capabilities.as_ref(),
@@ -255,7 +252,7 @@ pub(super) async fn build_local_openai_image_candidate_attempt_source<'a>(
         input.client_session_affinity.as_ref(),
         input.required_capabilities.as_ref(),
         input.routing_policy.as_ref(),
-        sticky_session_token.as_deref(),
+        None,
         input.request_auth_channel.as_deref(),
         persistence_policy,
         candidates,
@@ -317,7 +314,6 @@ async fn materialize_local_openai_image_candidate_attempts(
     preselection_skipped: Vec<SkippedLocalExecutionCandidate>,
     api_format: &str,
 ) -> Vec<LocalOpenAiImageCandidateAttempt> {
-    let sticky_session_token = extract_pool_sticky_session_token(body_json);
     let persistence_policy = build_local_candidate_persistence_policy(
         &input.auth_context,
         input.required_capabilities.as_ref(),
@@ -332,7 +328,7 @@ async fn materialize_local_openai_image_candidate_attempts(
         input.client_session_affinity.as_ref(),
         input.required_capabilities.as_ref(),
         input.routing_policy.as_ref(),
-        sticky_session_token.as_deref(),
+        None,
         input.request_auth_channel.as_deref(),
         persistence_policy,
         candidates,

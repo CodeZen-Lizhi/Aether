@@ -2944,9 +2944,7 @@ fn decode_body_for_storage(body_base64: Option<&str>) -> Option<Value> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(body_base64)
         .ok()?;
-    if let Some(error_body) =
-        aether_ai_formats::api::extract_provider_private_stream_error_body(None, &bytes)
-    {
+    if let Some(error_body) = aether_ai_formats::api::extract_stream_terminal_error_body(&bytes) {
         return Some(error_body);
     }
     if let Ok(json_body) = serde_json::from_slice::<Value>(&bytes) {

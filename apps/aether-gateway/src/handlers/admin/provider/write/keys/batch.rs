@@ -11,8 +11,6 @@ const BATCH_EDITABLE_KEY_FIELDS: &[&str] = &[
     "cache_ttl_minutes",
     "capabilities",
     "concurrent_limit",
-    "global_priority_by_format",
-    "internal_priority",
     "is_active",
     "locked_models",
     "max_probe_interval_minutes",

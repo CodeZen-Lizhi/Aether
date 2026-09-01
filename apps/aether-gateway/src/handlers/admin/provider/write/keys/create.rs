@@ -1,9 +1,8 @@
-use crate::handlers::admin::provider::oauth::provisioning::rotate_codex_credential_generation;
 use crate::handlers::admin::provider::shared::payloads::AdminProviderKeyCreateRequest;
 use crate::handlers::admin::provider::write::normalize::{
     normalize_allow_auth_channel_mismatch_formats, normalize_api_format_json_object_keys,
     normalize_api_format_list, normalize_auth_type, normalize_auth_type_by_format,
-    normalize_max_probe_interval_minutes, normalize_rate_multipliers, validate_vertex_api_formats,
+    normalize_max_probe_interval_minutes, normalize_rate_multipliers,
 };
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::admin::shared::{
@@ -14,7 +13,6 @@ use crate::handlers::shared::normalize_optional_api_key_concurrent_limit;
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogKey, StoredProviderCatalogProvider,
 };
-use aether_provider_transport::provider_types::provider_type_is_fixed;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -35,7 +33,6 @@ pub(crate) async fn build_admin_create_provider_key_record(
             .ok_or_else(|| "api_formats 为必填字段".to_string())?,
     );
     let auth_type = normalize_auth_type(payload.auth_type.as_deref())?;
-    validate_vertex_api_formats(&provider.provider_type, &auth_type, &api_formats)?;
     let auth_type_by_format = if matches!(auth_type.as_str(), "api_key" | "bearer") {
         normalize_auth_type_by_format(
             payload.auth_type_by_format,
@@ -53,24 +50,8 @@ pub(crate) async fn build_admin_create_provider_key_record(
         .and_then(serde_json::Value::as_object)
         .cloned();
 
-    if auth_config
-        .as_ref()
-        .is_some_and(aether_provider_transport::is_codex_agent_identity_auth_config_value)
-    {
-        return Err(
-            "Agent Identity 凭据必须通过专属创建或导入接口管理，不能通过通用 Key 接口写入"
-                .to_string(),
-        );
-    }
-
-    match auth_type.as_str() {
-        "service_account" if auth_config_object.is_none() => {
-            return Err("Service Account 认证模式下 auth_config 为必填字段".to_string());
-        }
-        "oauth" if !api_key.is_empty() => {
-            return Err("OAuth 认证模式下不允许直接填写 api_key".to_string());
-        }
-        _ => {}
+    if auth_type == "service_account" && auth_config_object.is_none() {
+        return Err("Service Account 认证模式下 auth_config 为必填字段".to_string());
     }
 
     let existing_keys = state
@@ -157,8 +138,6 @@ pub(crate) async fn build_admin_create_provider_key_record(
         .ok()
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
-    let inherits_provider_api_formats =
-        auth_type == "oauth" && provider_type_is_fixed(&provider.provider_type);
     let mut key = StoredProviderCatalogKey::new(
         Uuid::new_v4().to_string(),
         provider.id.clone(),
@@ -169,11 +148,7 @@ pub(crate) async fn build_admin_create_provider_key_record(
     )
     .map_err(|err| err.to_string())?
     .with_transport_fields(
-        if inherits_provider_api_formats {
-            None
-        } else {
-            Some(json!(api_formats))
-        },
+        Some(json!(api_formats)),
         encrypted_api_key,
         encrypted_auth_config,
         normalize_rate_multipliers(payload.rate_multipliers)?,
@@ -188,7 +163,6 @@ pub(crate) async fn build_admin_create_provider_key_record(
         .note
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    key.internal_priority = payload.internal_priority.unwrap_or(50);
     key.rpm_limit = payload.rpm_limit;
     key.concurrent_limit = normalize_optional_api_key_concurrent_limit(payload.concurrent_limit)?;
     key.cache_ttl_minutes = payload.cache_ttl_minutes.unwrap_or(5);
@@ -217,7 +191,6 @@ pub(crate) async fn build_admin_create_provider_key_record(
     )?;
     key.created_at_unix_ms = Some(now_unix_secs);
     key.updated_at_unix_secs = Some(now_unix_secs);
-    rotate_codex_credential_generation(&mut key, &provider.provider_type);
     Ok(key)
 }
 

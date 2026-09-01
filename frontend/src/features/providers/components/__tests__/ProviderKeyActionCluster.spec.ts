@@ -68,7 +68,6 @@ function createProviderKey(overrides: Partial<EndpointAPIKey> = {}): EndpointAPI
     api_key_masked: 'sk-***',
     auth_type: 'api_key',
     name: 'Primary key',
-    internal_priority: 10,
     cache_ttl_minutes: 0,
     max_probe_interval_minutes: 5,
     health_score: 0.42,
@@ -106,13 +105,12 @@ function mount(props: Record<string, unknown>) {
 }
 
 describe('ProviderKeyActionCluster', () => {
-  it('renders circuit, health, proxy and antigravity actions', () => {
+  it('renders circuit, health and proxy actions', () => {
     const { root, unmount } = mount({
       apiKey: createProviderKey({
         circuit_breaker_open: true,
         proxy: { node_id: 'proxy-node-1' },
       }),
-      providerType: 'antigravity',
       recoverable: true,
       recoverTitle: 'Recover key',
       circuitBreakerTitle: 'Circuit is open',
@@ -127,7 +125,6 @@ describe('ProviderKeyActionCluster', () => {
     expect(root.querySelector('[data-testid="provider-key-health"]')?.textContent).toContain('42%')
     expect(root.querySelector('button[title="Recover key"]')).toBeTruthy()
     expect(root.querySelector('button[title="代理: Tokyo"]')).toBeTruthy()
-    expect(root.querySelector('button[title="配额详情"]')).toBeTruthy()
     expect(root.querySelector('[data-testid="provider-key-toggle-active"]')?.getAttribute('aria-label')).toBe('点击停用')
 
     unmount()
@@ -137,7 +134,6 @@ describe('ProviderKeyActionCluster', () => {
     const onRecover = vi.fn()
     const onPermissions = vi.fn()
     const onEdit = vi.fn()
-    const onOpenAntigravityQuota = vi.fn()
     const onToggleActive = vi.fn()
     const onDelete = vi.fn()
     const onClearProxy = vi.fn()
@@ -145,7 +141,6 @@ describe('ProviderKeyActionCluster', () => {
 
     const { root, unmount } = mount({
       apiKey: createProviderKey({ proxy: { node_id: 'proxy-node-1' } }),
-      providerType: 'antigravity',
       recoverable: true,
       recoverTitle: 'Recover key',
       proxyPopoverOpen: true,
@@ -153,7 +148,6 @@ describe('ProviderKeyActionCluster', () => {
       onRecover,
       onPermissions,
       onEdit,
-      onOpenAntigravityQuota,
       onToggleActive,
       onDelete,
       onClearProxy,
@@ -163,7 +157,6 @@ describe('ProviderKeyActionCluster', () => {
     ;(root.querySelector('button[title="Recover key"]') as HTMLButtonElement).click()
     ;(root.querySelector('button[title="模型权限"]') as HTMLButtonElement).click()
     ;(root.querySelector('button[title="编辑密钥"]') as HTMLButtonElement).click()
-    ;(root.querySelector('button[title="配额详情"]') as HTMLButtonElement).click()
     ;(root.querySelector('button[title="点击停用"]') as HTMLButtonElement).click()
     ;(root.querySelector('button[title="删除密钥"]') as HTMLButtonElement).click()
     ;(Array.from(root.querySelectorAll('button')).find(button => button.textContent?.includes('清除')) as HTMLButtonElement).click()
@@ -172,7 +165,6 @@ describe('ProviderKeyActionCluster', () => {
     expect(onRecover).toHaveBeenCalledTimes(1)
     expect(onPermissions).toHaveBeenCalledTimes(1)
     expect(onEdit).toHaveBeenCalledTimes(1)
-    expect(onOpenAntigravityQuota).toHaveBeenCalledTimes(1)
     expect(onToggleActive).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledTimes(1)
     expect(onClearProxy).toHaveBeenCalledTimes(1)

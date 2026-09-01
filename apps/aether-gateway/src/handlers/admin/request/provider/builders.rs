@@ -118,14 +118,6 @@ impl<'a> AdminAppState<'a> {
         crate::handlers::admin::provider::write::reveal::build_admin_reveal_key_payload(self, key)
     }
 
-    pub(crate) async fn build_admin_export_key_payload(
-        &self,
-        key: &aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey,
-    ) -> Result<serde_json::Value, String> {
-        crate::handlers::admin::provider::write::reveal::build_admin_export_key_payload(self, key)
-            .await
-    }
-
     pub(crate) async fn build_admin_providers_payload(
         &self,
         skip: usize,

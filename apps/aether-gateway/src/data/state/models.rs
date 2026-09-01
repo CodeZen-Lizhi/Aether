@@ -116,26 +116,6 @@ impl GatewayDataState {
         .await
     }
 
-    pub(crate) async fn list_pool_key_candidate_rows_for_group(
-        &self,
-        query: &StoredPoolKeyCandidateRowsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-        match &self.minimal_candidate_selection_reader {
-            Some(repository) => repository.list_pool_key_rows_for_group(query).await,
-            None => Ok(Vec::new()),
-        }
-    }
-
-    pub(crate) async fn list_pool_key_candidate_rows_for_group_key_ids(
-        &self,
-        query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-        match &self.minimal_candidate_selection_reader {
-            Some(repository) => repository.list_pool_key_rows_for_group_key_ids(query).await,
-            None => Ok(Vec::new()),
-        }
-    }
-
     pub(crate) async fn list_public_global_models(
         &self,
         query: &PublicGlobalModelQuery,

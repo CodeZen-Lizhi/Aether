@@ -5,14 +5,9 @@ use serde_json::{Map, Value};
 
 pub(crate) mod admission;
 pub(crate) mod attempt_lifecycle;
-mod chatgpt_web_image;
 mod constants;
 mod fallback;
-mod grok;
-mod kiro_cache;
-mod kiro_web_search;
 pub(crate) mod ndjson;
-mod oauth_retry;
 #[cfg(test)]
 pub(crate) mod remote_compat;
 mod response_header_rules;
@@ -23,12 +18,10 @@ pub(crate) mod submission;
 pub(crate) mod sync;
 pub(crate) mod transport;
 mod transport_failure;
-mod windsurf;
 
 pub(crate) use self::admission::{
     acquire_upstream_execution_gate, UpstreamExecutionGateProvider, UPSTREAM_EXECUTION_GATE_NAME,
 };
-pub(crate) use self::chatgpt_web_image::maybe_execute_chatgpt_web_image_sync;
 pub(crate) use self::constants::{
     MAX_ERROR_BODY_BYTES, MAX_STREAM_PREFETCH_BYTES, MAX_STREAM_PREFETCH_FRAMES,
 };
@@ -49,7 +42,10 @@ pub(crate) use crate::orchestration::{
     append_local_failover_policy_to_value, LocalFailoverAnalysis, LocalFailoverDecision,
 };
 pub(crate) use aether_ai_serving::AdaptationMode;
-pub(crate) use aether_ai_serving::{ConversionMode, ExecutionStrategy};
+pub(crate) use aether_ai_serving::{
+ConversionMode,
+ExecutionStrategy,
+};
 
 pub(crate) fn ai_attempt_retry_scope_from_failure_disposition(
     disposition: crate::orchestration::FailureDisposition,

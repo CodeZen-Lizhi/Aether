@@ -54,7 +54,6 @@ const apiKey: EndpointAPIKey = {
   api_key_masked: 'sk-***',
   auth_type: 'api_key',
   name: 'Primary key',
-  internal_priority: 0,
   allowed_models: ['gpt-5'],
   cache_ttl_minutes: 0,
   max_probe_interval_minutes: 5,

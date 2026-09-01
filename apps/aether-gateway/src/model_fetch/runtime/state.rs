@@ -11,7 +11,7 @@ use aether_model_fetch::{ModelFetchAssociationStore, ModelFetchTransportRuntime}
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::provider_transport::{GatewayProviderTransportSnapshot, LocalResolvedOAuthRequestAuth};
+use crate::provider_transport::GatewayProviderTransportSnapshot;
 use crate::{AppState, GatewayError};
 
 #[async_trait]
@@ -42,14 +42,6 @@ pub(crate) trait ModelFetchRuntimeState:
         &self,
         plan: &ExecutionPlan,
     ) -> Result<ExecutionResult, GatewayError>;
-
-    async fn read_recent_codex_catalog_client_version(
-        &self,
-        _provider_id: &str,
-        _key_id: &str,
-    ) -> Option<String> {
-        None
-    }
 
     async fn update_provider_catalog_key_model_fetch_state(
         &self,

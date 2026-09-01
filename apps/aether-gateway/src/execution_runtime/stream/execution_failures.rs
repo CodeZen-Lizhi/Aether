@@ -28,7 +28,7 @@ use crate::orchestration::{
     resolve_local_transport_failover_analysis_for_attempt, with_upstream_response_report_context,
     LocalAdaptiveRateLimitEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
     LocalExecutionEffectContext, LocalFailoverAnalysis, LocalFailoverDecision,
-    LocalHealthFailureEffect, LocalOAuthInvalidationEffect, LocalPoolErrorEffect,
+    LocalHealthFailureEffect,
 };
 use crate::request_candidate_runtime::record_report_request_candidate_status;
 use crate::request_diagnostics::attach_current_request_diagnostics_and_candidate_timing_to_report_context;
@@ -372,7 +372,6 @@ async fn record_stream_sync_failure(
                 plan,
                 report_context,
             },
-            LocalExecutionEffect::PoolStreamTimeout,
         )
         .await;
     }
@@ -410,32 +409,6 @@ async fn record_stream_sync_failure(
         LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
             status_code: payload.status_code,
             classification: failure_analysis.classification,
-        }),
-    )
-    .await;
-    apply_local_execution_effect(
-        state,
-        LocalExecutionEffectContext {
-            plan,
-            report_context,
-        },
-        LocalExecutionEffect::OauthInvalidation(LocalOAuthInvalidationEffect {
-            status_code: payload.status_code,
-            response_text: error_body.as_deref(),
-        }),
-    )
-    .await;
-    apply_local_execution_effect(
-        state,
-        LocalExecutionEffectContext {
-            plan,
-            report_context,
-        },
-        LocalExecutionEffect::PoolError(LocalPoolErrorEffect {
-            status_code: payload.status_code,
-            classification: failure_analysis.classification,
-            headers: &payload.headers,
-            error_body: error_body.as_deref(),
         }),
     )
     .await;
@@ -711,7 +684,6 @@ async fn handle_prefetch_transport_stream_failure(
                 plan,
                 report_context: payload.report_context.as_ref(),
             },
-            LocalExecutionEffect::PoolStreamTimeout,
         )
         .await;
     }
@@ -922,11 +894,9 @@ mod tests {
             "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"This content was flagged for possible cybersecurity risk.\",\"code\":\"cyber_policy_violation\",\"param\":\"input\",\"details\":{\"policy_category\":\"cybersecurity\",\"appeal_allowed\":true}}}}\n\n",
         )
         .as_bytes();
-        let terminal_error = crate::ai_serving::api::extract_provider_private_stream_error_body(
-            None,
-            provider_buffered_body,
-        )
-        .expect("raw upstream SSE should expose its terminal provider error JSON");
+        let terminal_error =
+            crate::ai_serving::api::extract_stream_terminal_error_body(provider_buffered_body)
+                .expect("raw upstream SSE should expose its terminal provider error JSON");
         let failure = build_stream_failure_from_provider_error_body(400, &terminal_error);
 
         let payload = build_stream_failure_sync_payload(

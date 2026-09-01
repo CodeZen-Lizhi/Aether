@@ -6,8 +6,8 @@ use super::provider_types::{
 use super::snapshot::GatewayProviderTransportSnapshot;
 use super::{
     body_rules_are_locally_supported, header_rules_are_locally_supported,
-    resolve_transport_profile, supports_local_oauth_request_auth_resolution,
-    transport_profile_is_configured, transport_proxy_is_locally_supported,
+    resolve_transport_profile, transport_profile_is_configured,
+    transport_proxy_is_locally_supported,
 };
 
 pub fn supports_local_openai_chat_transport(transport: &GatewayProviderTransportSnapshot) -> bool {
@@ -68,9 +68,7 @@ pub fn local_openai_chat_transport_unsupported_reason(
     if !body_rules_are_locally_supported(transport.endpoint.body_rules.as_ref()) {
         return Some("transport_body_rules_unsupported");
     }
-    if transport.key.decrypted_auth_config.is_some()
-        && !supports_local_oauth_request_auth_resolution(transport)
-    {
+    if transport.key.decrypted_auth_config.is_some() {
         return Some("transport_oauth_resolution_unsupported");
     }
     if !transport_proxy_is_locally_supported(transport) {
@@ -91,55 +89,34 @@ pub fn local_standard_transport_unsupported_reason(
     transport: &GatewayProviderTransportSnapshot,
     api_format: &str,
 ) -> Option<&'static str> {
-    local_same_format_transport_unsupported_reason(
-        transport,
-        api_format,
-        false,
-        provider_type_supports_local_same_format_transport,
-    )
+    local_same_format_transport_unsupported_reason(transport, api_format, false)
 }
 
 pub fn local_gemini_transport_unsupported_reason(
     transport: &GatewayProviderTransportSnapshot,
     api_format: &str,
 ) -> Option<&'static str> {
-    local_same_format_transport_unsupported_reason(
-        transport,
-        api_format,
-        false,
-        provider_type_supports_local_same_format_transport,
-    )
+    local_same_format_transport_unsupported_reason(transport, api_format, false)
 }
 
 pub fn local_standard_transport_unsupported_reason_with_network(
     transport: &GatewayProviderTransportSnapshot,
     api_format: &str,
 ) -> Option<&'static str> {
-    local_same_format_transport_unsupported_reason(
-        transport,
-        api_format,
-        true,
-        provider_type_supports_local_same_format_transport,
-    )
+    local_same_format_transport_unsupported_reason(transport, api_format, true)
 }
 
 pub fn local_gemini_transport_unsupported_reason_with_network(
     transport: &GatewayProviderTransportSnapshot,
     api_format: &str,
 ) -> Option<&'static str> {
-    local_same_format_transport_unsupported_reason(
-        transport,
-        api_format,
-        true,
-        provider_type_supports_local_same_format_transport,
-    )
+    local_same_format_transport_unsupported_reason(transport, api_format, true)
 }
 
 fn local_same_format_transport_unsupported_reason(
     transport: &GatewayProviderTransportSnapshot,
     api_format: &str,
     allow_network_passthrough: bool,
-    provider_type_supported: fn(&str) -> bool,
 ) -> Option<&'static str> {
     if !transport.provider.is_active || !transport.endpoint.is_active || !transport.key.is_active {
         return if !transport.provider.is_active {
@@ -159,9 +136,7 @@ fn local_same_format_transport_unsupported_reason(
     if !body_rules_are_locally_supported(transport.endpoint.body_rules.as_ref()) {
         return Some("transport_body_rules_unsupported");
     }
-    if transport.key.decrypted_auth_config.is_some()
-        && !supports_local_oauth_request_auth_resolution(transport)
-    {
+    if transport.key.decrypted_auth_config.is_some() {
         return Some("transport_oauth_resolution_unsupported");
     }
     let has_custom_path = transport
@@ -189,7 +164,7 @@ fn local_same_format_transport_unsupported_reason(
         return Some("transport_proxy_or_profile_unsupported");
     }
 
-    if !provider_type_supported(&transport.provider.provider_type) {
+    if !provider_type_supports_local_same_format_transport(&transport.provider.provider_type) {
         return Some("transport_provider_type_unsupported");
     }
     if aether_ai_formats::is_embedding_api_format(api_format) {
@@ -263,7 +238,6 @@ mod tests {
                 provider_type: provider_type.to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -300,7 +274,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -312,28 +285,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_embedding_provider_format_pairs() {
-        let openai_on_gemini = sample_transport("openai", "gemini:embedding", Some("embedding"));
-        let gemini_on_openai = sample_transport("gemini", "openai:embedding", Some("embedding"));
-        let chat_marked_embedding = sample_transport("openai", "openai:embedding", Some("chat"));
+    fn rejects_embedding_formats_for_non_custom_provider_types() {
+        let openai_on_openai = sample_transport("openai", "openai:embedding", Some("embedding"));
+        let gemini_on_gemini = sample_transport("gemini", "gemini:embedding", Some("embedding"));
+        let custom_on_chat_kind = sample_transport("custom", "openai:embedding", Some("chat"));
 
         assert_eq!(
             local_standard_transport_unsupported_reason_with_network(
-                &openai_on_gemini,
-                "gemini:embedding"
-            ),
-            Some("transport_provider_type_unsupported")
-        );
-        assert_eq!(
-            local_standard_transport_unsupported_reason_with_network(
-                &gemini_on_openai,
+                &openai_on_openai,
                 "openai:embedding"
             ),
             Some("transport_provider_type_unsupported")
         );
         assert_eq!(
             local_standard_transport_unsupported_reason_with_network(
-                &chat_marked_embedding,
+                &gemini_on_gemini,
+                "gemini:embedding"
+            ),
+            Some("transport_provider_type_unsupported")
+        );
+        assert_eq!(
+            local_standard_transport_unsupported_reason_with_network(
+                &custom_on_chat_kind,
                 "openai:embedding"
             ),
             Some("transport_endpoint_kind_unsupported")
@@ -341,27 +314,19 @@ mod tests {
     }
 
     #[test]
-    fn accepts_supported_embedding_provider_format_pairs() {
-        for (provider_type, api_format) in [
-            ("openai", "openai:embedding"),
-            ("gemini", "gemini:embedding"),
-            ("google", "gemini:embedding"),
-            ("jina", "jina:embedding"),
-            ("doubao", "doubao:embedding"),
-            ("volcengine", "doubao:embedding"),
-            ("aliyun", "aliyun:multimodal_embedding"),
-            ("dashscope", "aliyun:multimodal_embedding"),
-            ("custom", "openai:embedding"),
-            ("custom", "gemini:embedding"),
-            ("custom", "jina:embedding"),
-            ("custom", "doubao:embedding"),
-            ("custom", "aliyun:multimodal_embedding"),
+    fn custom_supports_known_embedding_formats() {
+        for api_format in [
+            "openai:embedding",
+            "gemini:embedding",
+            "jina:embedding",
+            "doubao:embedding",
+            "aliyun:multimodal_embedding",
         ] {
-            let transport = sample_transport(provider_type, api_format, Some("embedding"));
+            let transport = sample_transport("custom", api_format, Some("embedding"));
             assert_eq!(
                 local_standard_transport_unsupported_reason_with_network(&transport, api_format),
                 None,
-                "{provider_type} should support {api_format}"
+                "custom should support {api_format}"
             );
         }
     }
@@ -369,7 +334,7 @@ mod tests {
     #[test]
     fn embedding_policy_accepts_embedding_endpoint_kind_aliases_only() {
         for endpoint_kind in [None, Some(""), Some(" embedding "), Some("EMBEDDINGS")] {
-            let transport = sample_transport("openai", "openai:embedding", endpoint_kind);
+            let transport = sample_transport("custom", "openai:embedding", endpoint_kind);
             assert_eq!(
                 local_standard_transport_unsupported_reason_with_network(
                     &transport,
@@ -381,7 +346,7 @@ mod tests {
         }
 
         for endpoint_kind in [Some("chat"), Some("responses"), Some("image")] {
-            let transport = sample_transport("openai", "openai:embedding", endpoint_kind);
+            let transport = sample_transport("custom", "openai:embedding", endpoint_kind);
             assert_eq!(
                 local_standard_transport_unsupported_reason_with_network(
                     &transport,

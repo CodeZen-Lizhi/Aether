@@ -689,6 +689,13 @@ ORDER BY id
             .expect("in-memory sqlite pool");
         run_migrations(&pool).await.expect("run sqlite migrations");
 
+        // 20260901 裁剪迁移已删除 global_priority_by_format；被测的 20260821
+        // 历史迁移 SQL 仍引用该列，重放前需恢复列以保持幂等性覆盖。
+        sqlx::raw_sql("ALTER TABLE provider_api_keys ADD COLUMN global_priority_by_format TEXT;")
+            .execute(&pool)
+            .await
+            .expect("legacy global_priority_by_format column should be restorable");
+
         sqlx::raw_sql(
             r#"
 INSERT INTO users (
@@ -718,19 +725,19 @@ INSERT INTO providers (id, name, provider_type, created_at, updated_at) VALUES
 INSERT INTO provider_api_keys (
   id, provider_id, name, api_formats, auth_type_by_format,
   allow_auth_channel_mismatch_formats, rate_multipliers,
-  global_priority_by_format, created_at, updated_at
+  created_at, updated_at
 ) VALUES
   (
     'provider-key-codex', 'provider-codex', 'Codex key',
     '["openai:responses"]', '{"openai:responses":"oauth"}',
     '["openai:responses"]', '{"openai:responses":1.25}',
-    '{"openai:responses":17}', 1, 1
+    1, 1
   ),
   (
     'provider-key-openai', 'provider-openai', 'OpenAI key',
     '["openai:responses"]', '{"openai:responses":"api_key"}',
     '["openai:responses"]', '{"openai:responses":2.0}',
-    '{"openai:responses":23}', 1, 1
+    1, 1
   );
 "#,
         )
@@ -786,10 +793,10 @@ INSERT INTO provider_api_keys (
             );
         }
 
-        let codex_key = sqlx::query_as::<_, (String, String, String, String, String)>(
+        let codex_key = sqlx::query_as::<_, (String, String, String, String)>(
             r#"
 SELECT api_formats, auth_type_by_format, allow_auth_channel_mismatch_formats,
-       rate_multipliers, global_priority_by_format
+       rate_multipliers
 FROM provider_api_keys
 WHERE id = 'provider-key-codex'
 "#,
@@ -812,10 +819,6 @@ WHERE id = 'provider-key-codex'
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&codex_key.3).unwrap(),
             serde_json::json!({"openai:responses": 1.25, "codex:live": 1.25})
-        );
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&codex_key.4).unwrap(),
-            serde_json::json!({"openai:responses": 17, "codex:live": 17})
         );
 
         let openai_formats: String = sqlx::query_scalar(

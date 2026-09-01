@@ -670,7 +670,7 @@ mod tests {
                 None,
                 Some(
                     r#"{
-                        "provider_type": "codex",
+                        "provider_type": "custom",
                         "access_token_import_temporary": true,
                         "headers": {
                             "authorization": "Bearer imported-session",
@@ -690,7 +690,7 @@ mod tests {
             &mut headers,
             Some(
                 r#"{
-                    "provider_type": "codex",
+                    "provider_type": "custom",
                     "access_token_import_temporary": true,
                     "headers": {
                         "authorization": "Bearer imported-session",

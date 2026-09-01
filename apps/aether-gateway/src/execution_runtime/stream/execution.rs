@@ -9,7 +9,10 @@ use std::sync::{
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use aether_ai_serving::{AiAttemptExecutionOutcome, AiAttemptRetryScope};
+use aether_ai_serving::{
+AiAttemptExecutionOutcome,
+AiAttemptRetryScope,
+};
 use aether_contracts::{
     ExecutionPlan, ExecutionResponseObservation, ExecutionStreamTerminalSummary,
     ExecutionTelemetry, StandardizedUsage, StreamFrame, StreamFramePayload,
@@ -62,10 +65,9 @@ use self::execution_failures::{
 };
 use crate::ai_serving::api::{
     extract_stream_terminal_error_body, maybe_bridge_standard_sync_json_to_stream,
-    maybe_build_provider_private_stream_normalizer, maybe_build_stream_response_rewriter,
-    normalize_provider_private_report_context, StreamingStandardTerminalObserver,
+    maybe_build_stream_response_rewriter, StreamingStandardTerminalObserver,
     CLAUDE_CHAT_STREAM_PLAN_KIND, CLAUDE_CLI_STREAM_PLAN_KIND, GEMINI_CHAT_STREAM_PLAN_KIND,
-    GEMINI_CLI_STREAM_PLAN_KIND, GEMINI_INTERACTIONS_STREAM_PLAN_KIND,
+    GEMINI_INTERACTIONS_STREAM_PLAN_KIND,
     OPENAI_CHAT_STREAM_PLAN_KIND, OPENAI_IMAGE_STREAM_PLAN_KIND,
     OPENAI_RESPONSES_COMPACT_STREAM_PLAN_KIND, OPENAI_RESPONSES_STREAM_PLAN_KIND,
     UPSTREAM_IS_STREAM_KEY,
@@ -78,17 +80,6 @@ use crate::clock::current_unix_ms as current_request_candidate_unix_ms;
 use crate::constants::{CONTROL_CANDIDATE_ID_HEADER, CONTROL_REQUEST_ID_HEADER};
 use crate::control::GatewayControlDecision;
 use crate::execution_runtime::build_direct_execution_frame_stream;
-use crate::execution_runtime::chatgpt_web_image::maybe_execute_chatgpt_web_image_stream;
-use crate::execution_runtime::grok::maybe_execute_grok_stream;
-use crate::execution_runtime::kiro_cache::{
-    billed_input_tokens as kiro_billed_input_tokens, build_kiro_prompt_cache_profile,
-    compute_kiro_prompt_cache_usage, estimate_kiro_prompt_input_tokens,
-    kiro_simulated_cache_enabled_from_provider_config,
-    kiro_simulated_cache_enabled_from_report_context, KiroPromptCacheUsage,
-    KIRO_SIMULATED_CACHE_ENABLED_CONTEXT_FIELD,
-};
-use crate::execution_runtime::kiro_web_search::maybe_execute_kiro_web_search_stream;
-use crate::execution_runtime::oauth_retry::refresh_oauth_plan_auth_for_retry;
 #[cfg(test)]
 use crate::execution_runtime::remote_compat::post_stream_plan_to_remote_execution_runtime;
 use crate::execution_runtime::submission::{
@@ -102,7 +93,6 @@ use crate::execution_runtime::transport::{
     stream_first_byte_timeout_message, DirectSyncExecutionRuntime, DirectUpstreamResponse,
     DirectUpstreamStreamExecution, ExecutionRuntimeTransportError,
 };
-use crate::execution_runtime::windsurf::maybe_execute_windsurf_stream;
 use crate::execution_runtime::{
     ai_attempt_retry_scope_from_failure_disposition, apply_endpoint_response_header_rules,
     attach_provider_response_headers_to_report_context, local_failover_response_text,
@@ -117,13 +107,12 @@ use crate::execution_runtime::{
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
     apply_local_execution_effect, build_local_error_flow_metadata, classify_failure_disposition,
-    cyber_continue_failover_enabled, spawn_local_oauth_success_effect,
+    cyber_continue_failover_enabled,
     trace_upstream_response_body, with_error_flow_report_context,
     with_upstream_response_report_context, FailureDisposition, FailureTokenAction,
     LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
     LocalExecutionEffect, LocalExecutionEffectContext, LocalFailoverAnalysis,
-    LocalHealthFailureEffect, LocalHealthSuccessEffect, LocalOAuthInvalidationEffect,
-    LocalOAuthSuccessEffect, LocalPoolErrorEffect,
+    LocalHealthFailureEffect, LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::{
     acquire_provider_pool_in_flight_guard, ProviderPoolInFlightGuard,
@@ -159,7 +148,6 @@ const BASIC_STREAM_BODY_ANALYSIS_LIMIT_BYTES: usize = 5 * 1024 * 1024;
 const STREAM_IDLE_LOG_INTERVAL: Duration = Duration::from_secs(60);
 const STREAM_IDLE_LOG_INTERVAL_MS: u64 = 60_000;
 const REWRITTEN_STREAM_PREFETCH_TIMEOUT: Duration = Duration::from_millis(750);
-const OAUTH_ERROR_PREFETCH_MAX_WAIT: Duration = Duration::from_millis(750);
 const ANTHROPIC_POST_STOP_DRAIN_MAX_WAIT: Duration = Duration::from_millis(250);
 const ANTHROPIC_POST_STOP_DRAIN_MAX_FRAMES: usize = 8;
 const ANTHROPIC_POST_STOP_DRAIN_MAX_BYTES: usize = 64 * 1024;
@@ -678,278 +666,6 @@ fn build_stream_usage_payload(
     }
 }
 
-fn seed_kiro_report_context_input_tokens(plan: &ExecutionPlan, report_context: &mut Option<Value>) {
-    if !plan
-        .provider_name
-        .as_deref()
-        .is_some_and(|provider_name| provider_name.eq_ignore_ascii_case("Kiro"))
-    {
-        return;
-    }
-
-    let Some(context) = report_context.as_mut().and_then(Value::as_object_mut) else {
-        return;
-    };
-    if context
-        .get("input_tokens")
-        .and_then(Value::as_u64)
-        .is_some_and(|input_tokens| input_tokens > 0)
-    {
-        return;
-    }
-
-    let Some(original_request_body) = context.get("original_request_body").cloned() else {
-        return;
-    };
-    let estimated_input_tokens = estimate_kiro_prompt_input_tokens(&original_request_body);
-    context.insert(
-        "input_tokens".to_string(),
-        Value::from(estimated_input_tokens),
-    );
-}
-
-async fn seed_kiro_simulated_cache_enabled(
-    state: &AppState,
-    plan: &ExecutionPlan,
-    report_context: &mut Option<Value>,
-) {
-    if !plan
-        .provider_name
-        .as_deref()
-        .is_some_and(|provider_name| provider_name.eq_ignore_ascii_case("Kiro"))
-    {
-        return;
-    }
-
-    let enabled = match state
-        .read_provider_catalog_providers_by_ids(std::slice::from_ref(&plan.provider_id))
-        .await
-    {
-        Ok(providers) => providers
-            .iter()
-            .find(|provider| provider.id == plan.provider_id)
-            .filter(|provider| provider.provider_type.eq_ignore_ascii_case("kiro"))
-            .is_some_and(|provider| {
-                kiro_simulated_cache_enabled_from_provider_config(provider.config.as_ref())
-            }),
-        Err(err) => {
-            warn!(
-                event_name = "kiro_simulated_cache_config_read_failed",
-                log_type = "event",
-                request_id = %plan.request_id,
-                provider_id = %plan.provider_id,
-                error = ?err,
-                "failed to read Kiro simulated cache provider config; defaulting disabled"
-            );
-            false
-        }
-    };
-
-    let Some(context) = report_context.as_mut().and_then(Value::as_object_mut) else {
-        return;
-    };
-    if enabled {
-        context.insert(
-            KIRO_SIMULATED_CACHE_ENABLED_CONTEXT_FIELD.to_string(),
-            Value::Bool(true),
-        );
-    } else {
-        context.remove(KIRO_SIMULATED_CACHE_ENABLED_CONTEXT_FIELD);
-    }
-}
-
-async fn seed_kiro_report_context_prompt_cache_usage(
-    state: &AppState,
-    plan: &ExecutionPlan,
-    report_context: &mut Option<Value>,
-) {
-    if !plan
-        .provider_name
-        .as_deref()
-        .is_some_and(|provider_name| provider_name.eq_ignore_ascii_case("Kiro"))
-    {
-        return;
-    }
-
-    let simulated_cache_enabled =
-        kiro_simulated_cache_enabled_from_report_context(report_context.as_ref());
-    let Some(context) = report_context.as_mut().and_then(Value::as_object_mut) else {
-        return;
-    };
-    if context
-        .get("kiro_web_search_mcp")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        return;
-    }
-    if !simulated_cache_enabled {
-        return;
-    }
-    if kiro_cache_usage_from_context_object(context).is_some() {
-        return;
-    }
-
-    let Some(original_request_body) = context.get("original_request_body").cloned() else {
-        return;
-    };
-    let input_tokens = context
-        .get("input_tokens")
-        .and_then(Value::as_u64)
-        .filter(|value| *value > 0)
-        .unwrap_or_else(|| {
-            let estimated = estimate_kiro_prompt_input_tokens(&original_request_body);
-            context.insert("input_tokens".to_string(), Value::from(estimated));
-            estimated
-        });
-    let Some(profile) = build_kiro_prompt_cache_profile(&original_request_body, input_tokens)
-    else {
-        return;
-    };
-
-    let cache_usage = compute_kiro_prompt_cache_usage(
-        state.runtime_state(),
-        kiro_stream_cache_credential_id(plan),
-        &profile,
-    )
-    .await;
-    if cache_usage.cache_creation_input_tokens == 0 && cache_usage.cache_read_input_tokens == 0 {
-        return;
-    }
-    context.insert(
-        "cache_creation_input_tokens".to_string(),
-        Value::from(cache_usage.cache_creation_input_tokens),
-    );
-    context.insert(
-        "cache_read_input_tokens".to_string(),
-        Value::from(cache_usage.cache_read_input_tokens),
-    );
-}
-
-fn kiro_stream_cache_credential_id(plan: &ExecutionPlan) -> String {
-    format!("{}:{}:{}", plan.provider_id, plan.endpoint_id, plan.key_id)
-}
-
-fn kiro_cache_usage_from_context_object(
-    context: &serde_json::Map<String, Value>,
-) -> Option<KiroPromptCacheUsage> {
-    let cache_creation_input_tokens = context
-        .get("cache_creation_input_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let cache_read_input_tokens = context
-        .get("cache_read_input_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    (cache_creation_input_tokens > 0 || cache_read_input_tokens > 0).then_some(
-        KiroPromptCacheUsage {
-            cache_creation_input_tokens,
-            cache_read_input_tokens,
-        },
-    )
-}
-
-fn kiro_cache_usage_from_report_context(report_context: &Value) -> Option<KiroPromptCacheUsage> {
-    report_context
-        .as_object()
-        .and_then(kiro_cache_usage_from_context_object)
-}
-
-async fn maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-    state: &AppState,
-    plan: &ExecutionPlan,
-    report_context: Option<&Value>,
-    summary: &mut Option<ExecutionStreamTerminalSummary>,
-) {
-    if !plan
-        .provider_name
-        .as_deref()
-        .is_some_and(|provider_name| provider_name.eq_ignore_ascii_case("Kiro"))
-    {
-        return;
-    }
-
-    let Some(report_context) = report_context else {
-        return;
-    };
-    let Some(original_request_body) = report_context.get("original_request_body") else {
-        return;
-    };
-    let simulated_cache_enabled =
-        kiro_simulated_cache_enabled_from_report_context(Some(report_context));
-
-    let summary = summary.get_or_insert_with(ExecutionStreamTerminalSummary::default);
-    let usage = summary
-        .standardized_usage
-        .get_or_insert_with(StandardizedUsage::new);
-    let estimated_input_tokens = report_context
-        .get("input_tokens")
-        .and_then(Value::as_u64)
-        .filter(|value| *value > 0)
-        .unwrap_or_else(|| {
-            let estimated_input_tokens = estimate_kiro_prompt_input_tokens(original_request_body);
-            if estimated_input_tokens > 0 {
-                estimated_input_tokens
-            } else {
-                usage.input_tokens.max(0) as u64
-            }
-        });
-
-    if !simulated_cache_enabled {
-        usage.cache_creation_tokens = 0;
-        usage.cache_read_tokens = 0;
-        if usage.input_tokens <= 0 {
-            usage.input_tokens = estimated_input_tokens as i64;
-        }
-        return;
-    }
-
-    if let Some(cache_usage) = kiro_cache_usage_from_report_context(report_context) {
-        usage.input_tokens = kiro_billed_input_tokens(estimated_input_tokens, cache_usage) as i64;
-        usage.cache_creation_tokens = cache_usage.cache_creation_input_tokens as i64;
-        usage.cache_read_tokens = cache_usage.cache_read_input_tokens as i64;
-        return;
-    }
-
-    if usage.cache_creation_tokens > 0 || usage.cache_read_tokens > 0 {
-        if usage.input_tokens <= 0 {
-            usage.input_tokens = kiro_billed_input_tokens(
-                estimated_input_tokens,
-                KiroPromptCacheUsage {
-                    cache_creation_input_tokens: usage.cache_creation_tokens.max(0) as u64,
-                    cache_read_input_tokens: usage.cache_read_tokens.max(0) as u64,
-                },
-            ) as i64;
-        }
-        return;
-    }
-
-    if usage.input_tokens <= 0 {
-        usage.input_tokens = estimated_input_tokens as i64;
-    }
-
-    let Some(profile) =
-        build_kiro_prompt_cache_profile(original_request_body, estimated_input_tokens)
-    else {
-        return;
-    };
-
-    let cache_usage = compute_kiro_prompt_cache_usage(
-        state.runtime_state(),
-        kiro_stream_cache_credential_id(plan),
-        &profile,
-    )
-    .await;
-    if cache_usage.cache_creation_input_tokens == 0 && cache_usage.cache_read_input_tokens == 0 {
-        return;
-    }
-
-    let billed_input_tokens = kiro_billed_input_tokens(estimated_input_tokens, cache_usage);
-    usage.input_tokens = billed_input_tokens as i64;
-    usage.cache_creation_tokens = cache_usage.cache_creation_input_tokens as i64;
-    usage.cache_read_tokens = cache_usage.cache_read_input_tokens as i64;
-}
-
 fn append_stream_capture_bytes(
     buffer: &mut Vec<u8>,
     chunk: &[u8],
@@ -1204,65 +920,6 @@ async fn execute_in_process_stream_with_oauth_retry(
 ) -> Result<DirectUpstreamStreamExecution, InProcessStreamExecutionError> {
     let mut execution = execute_in_process_stream(state, plan, trace_id).await?;
     apply_stream_summary_report_context(&mut execution, report_context);
-    let uses_oauth_credential = stream_plan_uses_oauth_credential(state, plan).await;
-    let embedded_oauth_credential = execution.status_code == 200
-        && plan
-            .provider_api_format
-            .eq_ignore_ascii_case("claude:messages")
-        && uses_oauth_credential;
-    let prefetched_failure = if embedded_oauth_credential {
-        prefetch_direct_anthropic_stream_failure(&mut execution, plan, report_context).await
-    } else {
-        None
-    };
-    let analyzed_prefetched_failure = match prefetched_failure {
-        Some(failure) => {
-            Some(analyze_prefetched_stream_failure(state, plan, report_context, failure).await)
-        }
-        None => None,
-    };
-    let response_text = if let Some(failure) = analyzed_prefetched_failure.as_ref() {
-        Some(failure.response_text.clone())
-    } else if execution.status_code == 403 && uses_oauth_credential {
-        prefetch_direct_stream_error_body(&mut execution).await
-    } else if execution.status_code == 401
-        && stream_plan_uses_codex_agent_identity(state, plan).await
-    {
-        prefetch_direct_stream_error_body(&mut execution).await
-    } else {
-        None
-    };
-    let retry_status_code = analyzed_prefetched_failure
-        .as_ref()
-        .map(|failure| failure.status_code)
-        .unwrap_or(execution.status_code);
-    let retry_requested =
-        analyzed_prefetched_failure
-            .as_ref()
-            .map_or(execution.status_code >= 400, |failure| {
-                matches!(
-                    failure.disposition.token_action,
-                    FailureTokenAction::ForceRefresh
-                )
-            });
-    if retry_requested
-        && uses_oauth_credential
-        && refresh_oauth_plan_auth_for_retry(
-            state,
-            plan,
-            retry_status_code,
-            response_text.as_deref(),
-            trace_id,
-            report_context,
-            Some(execution.response_observation.request_started_at_unix_ms),
-            Some(&execution.response_observation.request_order_id),
-        )
-        .await
-    {
-        drop(execution);
-        execution = execute_in_process_stream(state, plan, trace_id).await?;
-        apply_stream_summary_report_context(&mut execution, report_context);
-    }
     Ok(execution)
 }
 
@@ -1270,200 +927,6 @@ async fn execute_in_process_stream_with_oauth_retry(
 struct PrefetchedStreamFailure {
     status_code: u16,
     response_text: String,
-}
-
-#[derive(Debug)]
-struct AnalyzedPrefetchedStreamFailure {
-    status_code: u16,
-    response_text: String,
-    #[allow(dead_code)]
-    analysis: LocalFailoverAnalysis,
-    disposition: FailureDisposition,
-}
-
-async fn analyze_prefetched_stream_failure(
-    state: &AppState,
-    plan: &ExecutionPlan,
-    report_context: Option<&Value>,
-    failure: PrefetchedStreamFailure,
-) -> AnalyzedPrefetchedStreamFailure {
-    let analysis = resolve_local_candidate_failover_analysis_stream(
-        state,
-        plan,
-        report_context,
-        failure.status_code,
-        Some(failure.response_text.as_str()),
-    )
-    .await;
-    let disposition = classify_failure_disposition(
-        plan.provider_api_format.as_str(),
-        analysis.classification,
-        failure.status_code,
-    );
-    AnalyzedPrefetchedStreamFailure {
-        status_code: failure.status_code,
-        response_text: failure.response_text,
-        analysis,
-        disposition,
-    }
-}
-
-async fn stream_plan_uses_oauth_credential(state: &AppState, plan: &ExecutionPlan) -> bool {
-    state
-        .read_provider_transport_snapshot(&plan.provider_id, &plan.endpoint_id, &plan.key_id)
-        .await
-        .ok()
-        .flatten()
-        .as_ref()
-        .is_some_and(|transport| {
-            aether_provider_transport::auth::resolve_local_auth_type_for_transport_format(transport)
-                .eq_ignore_ascii_case("oauth")
-        })
-}
-
-async fn prefetch_direct_anthropic_stream_failure(
-    execution: &mut DirectUpstreamStreamExecution,
-    plan: &ExecutionPlan,
-    report_context: Option<&Value>,
-) -> Option<PrefetchedStreamFailure> {
-    if execution.status_code != 200 {
-        return None;
-    }
-    let normalized_stream_report_context =
-        normalize_provider_private_report_context(report_context);
-    let policy = StreamCommitPolicy::for_response(
-        true,
-        execution.headers.get("content-type").map(String::as_str),
-        plan.provider_api_format.as_str(),
-        plan.client_api_format.as_str(),
-        maybe_build_provider_private_stream_normalizer(report_context).is_some(),
-        maybe_build_stream_response_rewriter(normalized_stream_report_context.as_ref()).is_some(),
-        false,
-    );
-    if !policy.is_native_anthropic() {
-        return None;
-    }
-
-    let mut gate = StreamCommitGate::new(policy);
-    let precommit_started_at = Instant::now();
-    let max_wait = policy.max_precommit_wait()?;
-    let mut observed_first_body = execution
-        .prefetched_body
-        .iter()
-        .any(|item| item.as_ref().is_ok_and(|chunk| !chunk.is_empty()));
-    while gate.is_uncommitted() {
-        let wait = select_direct_anthropic_prefetch_wait(
-            precommit_started_at,
-            max_wait,
-            execution.started_at,
-            execution.stream_first_byte_timeout,
-            observed_first_body,
-            Instant::now(),
-        );
-        if wait.remaining.is_zero() {
-            if wait.commit_on_timeout {
-                gate.commit();
-            }
-            break;
-        }
-        let next_chunk = match tokio::time::timeout(
-            wait.remaining,
-            next_direct_upstream_response_chunk(&mut execution.response),
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(_) => {
-                if wait.commit_on_timeout {
-                    gate.commit();
-                }
-                break;
-            }
-        };
-        let chunk = match next_chunk {
-            Ok(Some(chunk)) => chunk,
-            Ok(None) => break,
-            Err(error) => {
-                execution.prefetched_body.push_back(Err(error));
-                break;
-            }
-        };
-        if chunk.is_empty() {
-            continue;
-        }
-        observed_first_body = true;
-        execution.prefetched_body.push_back(Ok(chunk.clone()));
-        match gate.observe_provider_bytes(&chunk) {
-            StreamPrecommitObservation::Pending => {}
-            StreamPrecommitObservation::Commit => break,
-            StreamPrecommitObservation::UpstreamError {
-                status_code,
-                body_json,
-            } => {
-                let response_text = serde_json::to_string(&body_json)
-                    .unwrap_or_else(|_| String::from_utf8_lossy(&chunk).into_owned());
-                return Some(PrefetchedStreamFailure {
-                    status_code,
-                    response_text,
-                });
-            }
-        }
-    }
-    execution.stream_precommit_committed = !gate.is_uncommitted();
-    None
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct DirectAnthropicPrefetchWait {
-    remaining: Duration,
-    commit_on_timeout: bool,
-}
-
-fn select_direct_anthropic_prefetch_wait(
-    precommit_started_at: Instant,
-    max_precommit_wait: Duration,
-    upstream_started_at: Instant,
-    first_byte_timeout: Option<Duration>,
-    observed_first_body: bool,
-    now: Instant,
-) -> DirectAnthropicPrefetchWait {
-    let precommit_remaining =
-        max_precommit_wait.saturating_sub(now.saturating_duration_since(precommit_started_at));
-    if observed_first_body {
-        return DirectAnthropicPrefetchWait {
-            remaining: precommit_remaining,
-            commit_on_timeout: true,
-        };
-    }
-    let Some(first_byte_timeout) = first_byte_timeout else {
-        return DirectAnthropicPrefetchWait {
-            remaining: precommit_remaining,
-            commit_on_timeout: true,
-        };
-    };
-    let first_byte_remaining =
-        first_byte_timeout.saturating_sub(now.saturating_duration_since(upstream_started_at));
-    if first_byte_remaining <= precommit_remaining {
-        DirectAnthropicPrefetchWait {
-            remaining: first_byte_remaining,
-            commit_on_timeout: false,
-        }
-    } else {
-        DirectAnthropicPrefetchWait {
-            remaining: precommit_remaining,
-            commit_on_timeout: true,
-        }
-    }
-}
-
-async fn stream_plan_uses_codex_agent_identity(state: &AppState, plan: &ExecutionPlan) -> bool {
-    state
-        .read_provider_transport_snapshot(&plan.provider_id, &plan.endpoint_id, &plan.key_id)
-        .await
-        .ok()
-        .flatten()
-        .as_ref()
-        .is_some_and(aether_provider_transport::is_codex_agent_identity_transport)
 }
 
 async fn next_direct_upstream_response_chunk(
@@ -1489,84 +952,6 @@ async fn next_direct_upstream_response_chunk(
             .map_err(|err| format_wreq_upstream_request_error(&err)),
         DirectUpstreamResponse::LocalTunnel(response) => response.next_chunk().await,
     }
-}
-
-async fn prefetch_direct_stream_error_body(
-    execution: &mut DirectUpstreamStreamExecution,
-) -> Option<String> {
-    let prefetch_started_at = Instant::now();
-    let mut inspected = Vec::with_capacity(MAX_ERROR_BODY_BYTES);
-    let mut fully_buffered = false;
-    while inspected.len() < MAX_ERROR_BODY_BYTES {
-        let remaining = OAUTH_ERROR_PREFETCH_MAX_WAIT.saturating_sub(prefetch_started_at.elapsed());
-        if remaining.is_zero() {
-            break;
-        }
-        let next_chunk = if execution.prefetched_body.is_empty() {
-            match tokio::time::timeout(
-                remaining,
-                await_direct_passthrough_first_item(
-                    next_direct_upstream_response_chunk(&mut execution.response),
-                    execution.started_at,
-                    execution.stream_first_byte_timeout,
-                ),
-            )
-            .await
-            {
-                Ok(Ok(item)) => item,
-                Ok(Err(_)) | Err(_) => break,
-            }
-        } else {
-            match tokio::time::timeout(
-                remaining,
-                next_direct_upstream_response_chunk(&mut execution.response),
-            )
-            .await
-            {
-                Ok(item) => item,
-                Err(_) => break,
-            }
-        };
-        let chunk = match next_chunk {
-            Ok(Some(chunk)) => chunk,
-            Ok(None) => {
-                fully_buffered = true;
-                break;
-            }
-            Err(error) => {
-                execution.prefetched_body.push_back(Err(error));
-                break;
-            }
-        };
-        if chunk.is_empty() {
-            continue;
-        }
-
-        let remaining = MAX_ERROR_BODY_BYTES.saturating_sub(inspected.len());
-        inspected.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
-        execution.prefetched_body.push_back(Ok(chunk));
-
-        let response_text = String::from_utf8_lossy(&inspected);
-        if aether_provider_transport::is_codex_agent_identity_invalid_task_response(
-            execution.status_code,
-            Some(response_text.as_ref()),
-        ) {
-            break;
-        }
-    }
-
-    if inspected.is_empty() {
-        return None;
-    }
-    if fully_buffered {
-        let (body_json, _) = decode_stream_error_body(&execution.headers, &inspected);
-        if let Some(body_json) = body_json {
-            if let Ok(response_text) = serde_json::to_string(&body_json) {
-                return Some(response_text);
-            }
-        }
-    }
-    Some(String::from_utf8_lossy(&inspected).into_owned())
 }
 
 fn should_use_direct_sse_passthrough(
@@ -1598,12 +983,7 @@ fn should_use_direct_sse_passthrough(
     if client_format_allows_proxy_generated_sse_control_blocks(plan) {
         return false;
     }
-    if maybe_build_provider_private_stream_normalizer(report_context).is_some() {
-        return false;
-    }
-    let normalized_stream_report_context =
-        normalize_provider_private_report_context(report_context);
-    if maybe_build_stream_response_rewriter(normalized_stream_report_context.as_ref()).is_some() {
+    if maybe_build_stream_response_rewriter(report_context.cloned().as_ref()).is_some() {
         return false;
     }
 
@@ -2283,13 +1663,6 @@ impl DirectPassthroughFinalizerCore {
         }
 
         let mut stream_terminal_summary = stream_terminal_summary;
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state,
-            &plan,
-            report_context.as_ref(),
-            &mut stream_terminal_summary,
-        )
-        .await;
         let requires_observed_terminal_event = stream_requires_observed_terminal_event(
             plan.provider_api_format.as_str(),
             stream_usage_report_context.as_ref(),
@@ -2382,9 +1755,6 @@ impl DirectPassthroughFinalizerCore {
                 LocalExecutionEffectContext {
                     plan: &plan,
                     report_context: usage_payload.report_context.as_ref(),
-                },
-                LocalExecutionEffect::PoolSuccessStream {
-                    payload: &usage_payload,
                 },
             )
             .await;
@@ -2787,12 +2157,7 @@ fn should_defer_stream_pending_for_direct_inline(
     if client_format_allows_proxy_generated_sse_control_blocks(plan) {
         return false;
     }
-    if maybe_build_provider_private_stream_normalizer(report_context).is_some() {
-        return false;
-    }
-    let normalized_stream_report_context =
-        normalize_provider_private_report_context(report_context);
-    if maybe_build_stream_response_rewriter(normalized_stream_report_context.as_ref()).is_some() {
+    if maybe_build_stream_response_rewriter(report_context.cloned().as_ref()).is_some() {
         return false;
     }
     true
@@ -2849,23 +2214,6 @@ async fn execute_stream_from_direct_passthrough(
         response_observation.response_headers_observed_at_unix_ms,
         &response_observation.request_order_id,
     );
-    spawn_local_oauth_success_effect(
-        state.clone(),
-        &plan,
-        report_context.as_ref(),
-        LocalOAuthSuccessEffect {
-            status_code,
-            request_started_at_unix_ms: Some(response_observation.request_started_at_unix_ms),
-            request_order_id: Some(&response_observation.request_order_id),
-        },
-    );
-    if status_code == 200 {
-        seed_kiro_simulated_cache_enabled(state, &plan, &mut report_context).await;
-        if kiro_simulated_cache_enabled_from_report_context(report_context.as_ref()) {
-            seed_kiro_report_context_input_tokens(&plan, &mut report_context);
-        }
-        seed_kiro_report_context_prompt_cache_usage(state, &plan, &mut report_context).await;
-    }
 
     let lifecycle_seed = build_lifecycle_usage_seed(&plan, report_context.as_ref());
     let max_stream_body_buffer_bytes = resolve_stream_body_buffer_limit(state).await;
@@ -2920,8 +2268,7 @@ async fn execute_stream_from_direct_passthrough(
     if passthrough_mode == DirectPassthroughMode::Inline {
         let direct_stream_finalize_kind =
             resolve_core_stream_direct_finalize_report_kind(plan_kind);
-        let normalized_stream_report_context =
-            normalize_provider_private_report_context(report_context.as_ref());
+        let normalized_stream_report_context = report_context.cloned();
         let stream_usage_report_context = normalized_stream_report_context.clone().or_else(|| {
             Some(serde_json::json!({
                 "provider_api_format": plan.provider_api_format.as_str(),
@@ -3008,8 +2355,7 @@ async fn execute_stream_from_direct_passthrough(
     let lifecycle_seed_for_report = lifecycle_seed;
     let direct_stream_finalize_kind_owned =
         resolve_core_stream_direct_finalize_report_kind(plan_kind);
-    let normalized_stream_report_context_owned =
-        normalize_provider_private_report_context(report_context_owned.as_ref());
+    let normalized_stream_report_context_owned = report_context_owned.cloned();
     let stream_started_at_for_report = stream_started_at;
     observe_gateway_stage_trace_ms(
         &mut stage_trace,
@@ -3462,13 +2808,6 @@ async fn execute_stream_from_direct_passthrough(
             return;
         }
 
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state_for_report,
-            &plan_for_report,
-            report_context_owned.as_ref(),
-            &mut stream_terminal_summary,
-        )
-        .await;
         let requires_observed_terminal_event = stream_requires_observed_terminal_event(
             plan_for_report.provider_api_format.as_str(),
             stream_usage_report_context.as_ref(),
@@ -3561,9 +2900,6 @@ async fn execute_stream_from_direct_passthrough(
                 LocalExecutionEffectContext {
                     plan: &plan_for_report,
                     report_context: usage_payload.report_context.as_ref(),
-                },
-                LocalExecutionEffect::PoolSuccessStream {
-                    payload: &usage_payload,
                 },
             )
             .await;
@@ -3821,298 +3157,6 @@ async fn execute_execution_runtime_stream_inner(
         "stream_provider_in_flight",
         provider_in_flight_started_at.elapsed().as_millis() as u64,
     );
-    match maybe_execute_grok_stream(&plan, report_context.as_ref()).await {
-        Ok(Some(grok_stream)) => {
-            return execute_stream_from_frame_stream_with_retry_scope(
-                state,
-                plan,
-                trace_id,
-                decision,
-                plan_kind,
-                report_kind,
-                grok_stream.report_context.or(report_context),
-                candidate_started_unix_secs,
-                stream_started_at,
-                stage_trace,
-                lifecycle_pending_recorded,
-                grok_stream.frame_stream,
-                false,
-                provider_pool_in_flight_guard.take(),
-                retry_scope_out.as_deref_mut(),
-                retry_fallback_out.as_deref_mut(),
-                None,
-            )
-            .await;
-        }
-        Ok(None) => {}
-        Err(err) => {
-            let transport_error_message = err.to_string();
-            info!(
-                event_name = "grok_execution_unavailable",
-                log_type = "ops",
-                trace_id = %trace_id,
-                request_id = %plan_request_id_for_log,
-                candidate_id = ?plan.candidate_id,
-                provider_name = provider_name.as_str(),
-                endpoint_id = %endpoint_id,
-                key_id = %key_id,
-                model_name = model_name.as_str(),
-                candidate_index = candidate_index.as_str(),
-                error = %err,
-                "gateway Grok stream execution unavailable"
-            );
-            let terminal_unix_secs = current_request_candidate_unix_ms();
-            record_local_request_candidate_status(
-                state,
-                &plan,
-                report_context.as_ref(),
-                SchedulerRequestCandidateStatusUpdate {
-                    status: RequestCandidateStatus::Failed,
-                    status_code: None,
-                    error_type: Some("grok_execution_unavailable".to_string()),
-                    error_message: Some(transport_error_message.clone()),
-                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
-                    started_at_unix_ms: Some(candidate_started_unix_secs),
-                    finished_at_unix_ms: Some(terminal_unix_secs),
-                },
-            )
-            .await;
-            if let Some(response) = maybe_build_stream_transport_error_stop_response(
-                state,
-                &plan,
-                report_context.as_ref(),
-                trace_id,
-                decision,
-                "grok_execution_unavailable",
-                transport_error_message.as_str(),
-                stream_elapsed_ms_since(stream_started_at),
-            )
-            .await?
-            {
-                return Ok(Some(response));
-            }
-            return Ok(None);
-        }
-    }
-    match maybe_execute_windsurf_stream(state, &plan, report_context.as_ref()).await {
-        Ok(Some(windsurf_stream)) => {
-            return execute_stream_from_frame_stream_with_retry_scope(
-                state,
-                plan,
-                trace_id,
-                decision,
-                plan_kind,
-                report_kind,
-                windsurf_stream.report_context.or(report_context),
-                candidate_started_unix_secs,
-                stream_started_at,
-                stage_trace,
-                lifecycle_pending_recorded,
-                windsurf_stream.frame_stream,
-                false,
-                provider_pool_in_flight_guard.take(),
-                retry_scope_out.as_deref_mut(),
-                retry_fallback_out.as_deref_mut(),
-                None,
-            )
-            .await;
-        }
-        Ok(None) => {}
-        Err(err) => {
-            let transport_error_message = err.to_string();
-            info!(
-                event_name = "windsurf_native_execution_unavailable",
-                log_type = "ops",
-                trace_id = %trace_id,
-                request_id = %plan_request_id_for_log,
-                candidate_id = ?plan.candidate_id,
-                provider_name = provider_name.as_str(),
-                endpoint_id = %endpoint_id,
-                key_id = %key_id,
-                model_name = model_name.as_str(),
-                candidate_index = candidate_index.as_str(),
-                error = %err,
-                "gateway native Windsurf stream execution unavailable"
-            );
-            let terminal_unix_secs = current_request_candidate_unix_ms();
-            record_local_request_candidate_status(
-                state,
-                &plan,
-                report_context.as_ref(),
-                SchedulerRequestCandidateStatusUpdate {
-                    status: RequestCandidateStatus::Failed,
-                    status_code: None,
-                    error_type: Some("windsurf_native_execution_unavailable".to_string()),
-                    error_message: Some(transport_error_message.clone()),
-                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
-                    started_at_unix_ms: Some(candidate_started_unix_secs),
-                    finished_at_unix_ms: Some(terminal_unix_secs),
-                },
-            )
-            .await;
-            if let Some(response) = maybe_build_stream_transport_error_stop_response(
-                state,
-                &plan,
-                report_context.as_ref(),
-                trace_id,
-                decision,
-                "windsurf_native_execution_unavailable",
-                transport_error_message.as_str(),
-                stream_elapsed_ms_since(stream_started_at),
-            )
-            .await?
-            {
-                return Ok(Some(response));
-            }
-            return Ok(None);
-        }
-    }
-    match maybe_execute_kiro_web_search_stream(state, &plan, report_context.as_ref()).await {
-        Ok(Some(kiro_web_search)) => {
-            return execute_stream_from_frame_stream_with_retry_scope(
-                state,
-                plan,
-                trace_id,
-                decision,
-                plan_kind,
-                report_kind,
-                kiro_web_search.report_context.or(report_context),
-                candidate_started_unix_secs,
-                stream_started_at,
-                stage_trace,
-                lifecycle_pending_recorded,
-                kiro_web_search.frame_stream,
-                false,
-                provider_pool_in_flight_guard.take(),
-                retry_scope_out.as_deref_mut(),
-                retry_fallback_out.as_deref_mut(),
-                None,
-            )
-            .await;
-        }
-        Ok(None) => {}
-        Err(err) => {
-            let transport_error_message = err.to_string();
-            info!(
-                event_name = "kiro_web_search_mcp_unavailable",
-                log_type = "ops",
-                trace_id = %trace_id,
-                request_id = %plan_request_id_for_log,
-                candidate_id = ?plan.candidate_id,
-                provider_name = provider_name.as_str(),
-                endpoint_id = %endpoint_id,
-                key_id = %key_id,
-                model_name = model_name.as_str(),
-                candidate_index = candidate_index.as_str(),
-                error = %err,
-                "gateway Kiro web_search MCP execution unavailable"
-            );
-            let terminal_unix_secs = current_request_candidate_unix_ms();
-            record_local_request_candidate_status(
-                state,
-                &plan,
-                report_context.as_ref(),
-                SchedulerRequestCandidateStatusUpdate {
-                    status: RequestCandidateStatus::Failed,
-                    status_code: None,
-                    error_type: Some("kiro_web_search_mcp_unavailable".to_string()),
-                    error_message: Some(transport_error_message.clone()),
-                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
-                    started_at_unix_ms: Some(candidate_started_unix_secs),
-                    finished_at_unix_ms: Some(terminal_unix_secs),
-                },
-            )
-            .await;
-            if let Some(response) = maybe_build_stream_transport_error_stop_response(
-                state,
-                &plan,
-                report_context.as_ref(),
-                trace_id,
-                decision,
-                "kiro_web_search_mcp_unavailable",
-                transport_error_message.as_str(),
-                stream_elapsed_ms_since(stream_started_at),
-            )
-            .await?
-            {
-                return Ok(Some(response));
-            }
-            return Ok(None);
-        }
-    }
-    match maybe_execute_chatgpt_web_image_stream(state, &plan, report_context.as_ref()).await {
-        Ok(Some(chatgpt_web_image)) => {
-            return execute_stream_from_frame_stream_with_retry_scope(
-                state,
-                plan,
-                trace_id,
-                decision,
-                plan_kind,
-                report_kind,
-                chatgpt_web_image.report_context.or(report_context),
-                candidate_started_unix_secs,
-                stream_started_at,
-                stage_trace,
-                lifecycle_pending_recorded,
-                chatgpt_web_image.frame_stream,
-                false,
-                provider_pool_in_flight_guard.take(),
-                retry_scope_out.as_deref_mut(),
-                retry_fallback_out.as_deref_mut(),
-                None,
-            )
-            .await;
-        }
-        Ok(None) => {}
-        Err(err) => {
-            let transport_error_message = err.to_string();
-            info!(
-                event_name = "chatgpt_web_image_execution_unavailable",
-                log_type = "ops",
-                trace_id = %trace_id,
-                request_id = %plan_request_id_for_log,
-                candidate_id = ?plan.candidate_id,
-                provider_name = provider_name.as_str(),
-                endpoint_id = %endpoint_id,
-                key_id = %key_id,
-                model_name = model_name.as_str(),
-                candidate_index = candidate_index.as_str(),
-                error = %err,
-                "gateway ChatGPT-Web image stream execution unavailable"
-            );
-            let terminal_unix_secs = current_request_candidate_unix_ms();
-            record_local_request_candidate_status(
-                state,
-                &plan,
-                report_context.as_ref(),
-                SchedulerRequestCandidateStatusUpdate {
-                    status: RequestCandidateStatus::Failed,
-                    status_code: None,
-                    error_type: Some("chatgpt_web_image_execution_unavailable".to_string()),
-                    error_message: Some(transport_error_message.clone()),
-                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
-                    started_at_unix_ms: Some(candidate_started_unix_secs),
-                    finished_at_unix_ms: Some(terminal_unix_secs),
-                },
-            )
-            .await;
-            if let Some(response) = maybe_build_stream_transport_error_stop_response(
-                state,
-                &plan,
-                report_context.as_ref(),
-                trace_id,
-                decision,
-                "chatgpt_web_image_execution_unavailable",
-                transport_error_message.as_str(),
-                stream_elapsed_ms_since(stream_started_at),
-            )
-            .await?
-            {
-                return Ok(Some(response));
-            }
-            return Ok(None);
-        }
-    }
     #[cfg(not(test))]
     {
         let upstream_headers_started_at = Instant::now();
@@ -5685,23 +4729,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         response_observation.response_headers_observed_at_unix_ms,
         &response_observation.request_order_id,
     );
-    spawn_local_oauth_success_effect(
-        state.clone(),
-        &plan,
-        report_context.as_ref(),
-        LocalOAuthSuccessEffect {
-            status_code,
-            request_started_at_unix_ms: Some(response_observation.request_started_at_unix_ms),
-            request_order_id: Some(&response_observation.request_order_id),
-        },
-    );
-    if status_code == 200 {
-        seed_kiro_simulated_cache_enabled(state, &plan, &mut report_context).await;
-        if kiro_simulated_cache_enabled_from_report_context(report_context.as_ref()) {
-            seed_kiro_report_context_input_tokens(&plan, &mut report_context);
-        }
-        seed_kiro_report_context_prompt_cache_usage(state, &plan, &mut report_context).await;
-    }
     let mut buffered_frames = VecDeque::new();
     let mut stream_terminal_summary: Option<ExecutionStreamTerminalSummary> = None;
     if status_code == 200 && should_probe_success_failover_before_stream(&headers) {
@@ -5840,32 +4867,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
                 status_code,
                 classification: failover_analysis.classification,
-            }),
-        )
-        .await;
-        apply_local_execution_effect(
-            state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: report_context.as_ref(),
-            },
-            LocalExecutionEffect::OauthInvalidation(LocalOAuthInvalidationEffect {
-                status_code,
-                response_text: error_response_text.as_deref(),
-            }),
-        )
-        .await;
-        apply_local_execution_effect(
-            state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: report_context.as_ref(),
-            },
-            LocalExecutionEffect::PoolError(LocalPoolErrorEffect {
-                status_code,
-                classification: failover_analysis.classification,
-                headers: &headers,
-                error_body: error_response_text.as_deref(),
             }),
         )
         .await;
@@ -6100,21 +5101,17 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     }
 
     let direct_stream_finalize_kind = resolve_core_stream_direct_finalize_report_kind(plan_kind);
-    let normalized_stream_report_context =
-        normalize_provider_private_report_context(report_context.as_ref());
+    let normalized_stream_report_context = report_context.cloned();
     let upstream_headers = headers.clone();
-    let mut private_stream_normalizer =
-        maybe_build_provider_private_stream_normalizer(report_context.as_ref());
     let mut local_stream_rewriter =
         maybe_build_stream_response_rewriter(normalized_stream_report_context.as_ref());
-    if private_stream_normalizer.is_some() || local_stream_rewriter.is_some() {
+    if local_stream_rewriter.is_some() {
         headers.remove("content-encoding");
         headers.remove("content-length");
         headers.insert("content-type".to_string(), "text/event-stream".to_string());
     }
     let upstream_content_type = upstream_headers.get("content-type").map(String::as_str);
-    let normalized_declared_stream_headers = private_stream_normalizer.is_none()
-        && local_stream_rewriter.is_none()
+    let normalized_declared_stream_headers = local_stream_rewriter.is_none()
         && should_normalize_declared_stream_response_headers(
             plan_kind,
             status_code,
@@ -6147,7 +5144,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         upstream_content_type,
         plan.provider_api_format.as_str(),
         plan.client_api_format.as_str(),
-        private_stream_normalizer.is_some(),
+        false,
         local_stream_rewriter.is_some(),
         prefetch_for_cyber_failover,
     );
@@ -6591,42 +5588,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                         }
                     }
 
-                    let normalized_chunk = if let Some(normalizer) =
-                        private_stream_normalizer.as_mut()
-                    {
-                        match normalizer.push_chunk(&chunk) {
-                            Ok(normalized_chunk) => normalized_chunk,
-                            Err(err) => {
-                                let failure = build_stream_failure_report(
-                                    "execution_runtime_stream_rewrite_error",
-                                    format!(
-                                        "failed to normalize execution runtime stream chunk: {err:?}"
-                                    ),
-                                    502,
-                                );
-                                return handle_prefetch_stream_failure(
-                                    state,
-                                    trace_id,
-                                    decision,
-                                    &plan,
-                                    report_context,
-                                    request_id,
-                                    candidate_id,
-                                    report_kind,
-                                    headers,
-                                    prefetched_usage_telemetry.clone(),
-                                    &provider_prefetched_body,
-                                    candidate_started_unix_secs,
-                                    stream_elapsed_ms_since(stream_started_at),
-                                    failure,
-                                    None,
-                                )
-                                .await;
-                            }
-                        }
-                    } else {
-                        chunk
-                    };
+                    let normalized_chunk = chunk;
                     let rewritten_chunk = if let Some(rewriter) = local_stream_rewriter.as_mut() {
                         match rewriter.push_chunk(&normalized_chunk) {
                             Ok(rewritten_chunk) => rewritten_chunk,
@@ -6760,7 +5722,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     } else {
         false
     };
-    drop(private_stream_normalizer);
     drop(local_stream_rewriter);
 
     let initial_usage_telemetry = prefetched_usage_telemetry.clone().or_else(|| {
@@ -6848,11 +5809,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         let mut buffered_body = Vec::new();
         let mut provider_body_truncated = false;
         let mut client_body_truncated = false;
-        let mut private_stream_normalizer = if sync_json_stream_bridge_active_for_report {
-            None
-        } else {
-            maybe_build_provider_private_stream_normalizer(report_context_owned.as_ref())
-        };
         let mut local_stream_rewriter = if sync_json_stream_bridge_active_for_report {
             None
         } else {
@@ -7019,37 +5975,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             })
         };
         if !provider_prefetched_body_for_report.is_empty() {
-            let normalized_prefetched_chunk = if let Some(normalizer) =
-                private_stream_normalizer.as_mut()
-            {
-                match normalizer.push_chunk(&provider_prefetched_body_for_report) {
-                    Ok(normalized_chunk) => Some(normalized_chunk),
-                    Err(err) => {
-                        warn!(
-                            event_name = "stream_execution_prefetch_normalize_restore_failed",
-                            log_type = "ops",
-                            trace_id = %trace_id_owned,
-                            request_id = %request_id_for_report_log,
-                            candidate_id = ?candidate_id_for_report.as_deref(),
-                            error = ?err,
-                            "gateway failed to restore private stream normalization state after prefetch"
-                        );
-                        terminal_failure = Some(build_stream_failure_report(
-                            "execution_runtime_stream_rewrite_error",
-                            format!(
-                                "failed to restore private stream normalization state after prefetch: {err:?}"
-                            ),
-                            502,
-                        ));
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-            let replay_chunk = normalized_prefetched_chunk
-                .as_deref()
-                .unwrap_or(provider_prefetched_body_for_report.as_slice());
+            let replay_chunk = provider_prefetched_body_for_report.as_slice();
             if let Some(error_body_json) = provider_error_inspection.observe(replay_chunk) {
                 provider_error_forwarded_to_client = !prefetched_body_for_report.is_empty();
                 let error_status_code = resolve_provider_stream_error_status_code(
@@ -7288,32 +6214,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                             max_stream_body_buffer_bytes,
                             &mut provider_body_truncated,
                         );
-                        let normalized_chunk = if let Some(normalizer) =
-                            private_stream_normalizer.as_mut()
-                        {
-                            match normalizer.push_chunk(&chunk) {
-                                Ok(normalized_chunk) => normalized_chunk,
-                                Err(err) => {
-                                    warn!(
-                                        event_name = "stream_execution_chunk_normalize_failed",
-                                        log_type = "ops",
-                                        trace_id = %trace_id_owned,
-                                        request_id = %request_id_for_report_log,
-                                        candidate_id = ?candidate_id_for_report.as_deref(),
-                                        error = ?err,
-                                        "gateway failed to normalize execution runtime stream chunk"
-                                    );
-                                    terminal_failure = Some(build_stream_failure_report(
-                                            "execution_runtime_stream_rewrite_error",
-                                            format!("failed to normalize execution runtime stream chunk: {err:?}"),
-                                            502,
-                                        ));
-                                    break;
-                                }
-                            }
-                        } else {
-                            chunk
-                        };
+                        let normalized_chunk = chunk;
                         let provider_private_error_body_json = provider_error_inspection
                             .observe(&normalized_chunk);
                         if let (Some(observer), Some(report_context)) = (
@@ -7511,135 +6412,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         // Buffered stream state is partial after a terminal failure; normal
         // finish paths may synthesize successful terminal events.
         let should_finish_stream_rewriters = terminal_failure.is_none();
-        if let Some(normalizer) = private_stream_normalizer
-            .as_mut()
-            .filter(|_| should_finish_stream_rewriters)
-        {
-            match normalizer.finish() {
-                Ok(normalized_chunk) if !normalized_chunk.is_empty() => {
-                    let provider_private_error_body_json = provider_error_inspection
-                        .observe(&normalized_chunk);
-                    if let (Some(observer), Some(report_context)) = (
-                        stream_usage_observer.as_mut(),
-                        stream_usage_report_context.as_ref(),
-                    ) {
-                        observe_stream_usage_bytes(
-                            observer,
-                            report_context,
-                            &mut stream_usage_observer_buffered,
-                            &normalized_chunk,
-                        );
-                    }
-                    if !downstream_dropped {
-                        let rewritten_chunk = if let Some(rewriter) = local_stream_rewriter.as_mut()
-                        {
-                            match rewriter.push_chunk(&normalized_chunk) {
-                                Ok(rewritten_chunk) => rewritten_chunk,
-                                Err(err) => {
-                                    warn!(
-                                        event_name = "stream_execution_normalized_flush_rewrite_failed",
-                                        log_type = "ops",
-                                        trace_id = %trace_id_owned,
-                                        request_id = %request_id_for_report_log,
-                                        candidate_id = ?candidate_id_for_report.as_deref(),
-                                        error = ?err,
-                                        "gateway failed to rewrite normalized private stream chunk during flush"
-                                    );
-                                    let failure = build_stream_failure_report(
-                                        "execution_runtime_stream_rewrite_flush_error",
-                                        format!("failed to rewrite normalized private stream chunk during flush: {err:?}"),
-                                        502,
-                                    );
-                                    terminal_failure.get_or_insert(failure);
-                                    Vec::new()
-                                }
-                            }
-                        } else {
-                            normalized_chunk
-                        };
-                        if provider_private_error_body_json.is_none() {
-                            if let Some(record) = local_stream_rewriter
-                                .as_mut()
-                                .and_then(|rewriter| rewriter.take_response_history_record())
-                            {
-                                crate::ai_serving::persist_response_history_record(
-                                    state_for_report.runtime_state(),
-                                    record,
-                                )
-                                .await;
-                            }
-                        }
-                        if !rewritten_chunk.is_empty() {
-                            append_stream_capture_bytes(
-                                &mut buffered_body,
-                                &rewritten_chunk,
-                                max_stream_body_buffer_bytes,
-                                &mut client_body_truncated,
-                            );
-                            let rewritten_chunk_len =
-                                u64::try_from(rewritten_chunk.len()).unwrap_or(u64::MAX);
-                            let rewritten_chunk = Bytes::from(rewritten_chunk);
-                            if tx.send(Ok(rewritten_chunk.clone())).await.is_err() {
-                                warn!(
-                                    event_name = "stream_execution_downstream_flush_disconnected",
-                                    log_type = "ops",
-                                    trace_id = %trace_id_owned,
-                                    request_id = %request_id_for_report_log,
-                                candidate_id = ?candidate_id_for_report.as_deref(),
-                                "gateway stream downstream dropped while flushing private stream normalization"
-                                );
-                                downstream_dropped = true;
-                            } else {
-                                client_visible_stream_completed |= client_stream_completion_tracker
-                                    .observe_chunk(rewritten_chunk.as_ref());
-                                client_stream_bytes
-                                    .fetch_add(rewritten_chunk_len, Ordering::Relaxed);
-                                last_client_chunk_elapsed_ms.store(
-                                    stream_started_at_for_report
-                                        .elapsed()
-                                        .as_millis()
-                                        .min(u128::from(u64::MAX))
-                                        as u64,
-                                    Ordering::Relaxed,
-                                );
-                            }
-                        }
-                        if let Some(error_body_json) = provider_private_error_body_json {
-                            let error_status_code = resolve_provider_stream_error_status_code(
-                                plan_for_report.provider_api_format.as_str(),
-                                status_code,
-                                &error_body_json,
-                            );
-                            terminal_failure.get_or_insert_with(|| {
-                                build_stream_failure_from_provider_error_body(
-                                    error_status_code,
-                                    &error_body_json,
-                                )
-                            });
-                        }
-                    }
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    warn!(
-                        event_name = "stream_execution_normalization_flush_failed",
-                        log_type = "ops",
-                        trace_id = %trace_id_owned,
-                        request_id = %request_id_for_report_log,
-                        candidate_id = ?candidate_id_for_report.as_deref(),
-                        error = ?err,
-                        "gateway failed to flush private stream normalization"
-                    );
-                    terminal_failure.get_or_insert_with(|| {
-                        build_stream_failure_report(
-                            "execution_runtime_stream_rewrite_flush_error",
-                            format!("failed to flush private stream normalization: {err:?}"),
-                            502,
-                        )
-                    });
-                }
-            }
-        }
         if !downstream_dropped && terminal_failure.is_none() {
             if let Some(rewriter) = local_stream_rewriter.as_mut() {
                 let finish_result = rewriter.finish();
@@ -7917,13 +6689,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             return;
         }
 
-        maybe_apply_kiro_prompt_cache_usage_to_stream_summary(
-            &state_for_report,
-            &plan_for_report,
-            report_context_owned.as_ref(),
-            &mut stream_terminal_summary,
-        )
-        .await;
         let requires_observed_terminal_event = stream_requires_observed_terminal_event(
             plan_for_report.provider_api_format.as_str(),
             stream_usage_report_context.as_ref(),
@@ -8017,9 +6782,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 LocalExecutionEffectContext {
                     plan: &plan_for_report,
                     report_context: usage_payload.report_context.as_ref(),
-                },
-                LocalExecutionEffect::PoolSuccessStream {
-                    payload: &usage_payload,
                 },
             )
             .await;
@@ -8134,7 +6896,10 @@ mod tests {
     };
     use std::time::{Duration, Instant};
 
-    use aether_ai_serving::{AiAttemptExecutionOutcome, AiAttemptRetryScope};
+    use aether_ai_serving::{
+AiAttemptExecutionOutcome,
+AiAttemptRetryScope,
+};
     use aether_contracts::{
         ExecutionError, ExecutionErrorKind, ExecutionPhase, ExecutionPlan,
         ExecutionStreamTerminalSummary, ExecutionTelemetry, ExecutionTimeouts, RequestBody,

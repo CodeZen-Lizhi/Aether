@@ -182,9 +182,11 @@ fn config_usize(value: &Value) -> Option<usize> {
 mod tests {
     use super::*;
     use aether_provider_transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
-    };
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+GatewayProviderTransportSnapshot,
+};
     use serde_json::{json, Value};
 
     fn sample_transport(

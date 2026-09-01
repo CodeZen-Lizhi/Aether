@@ -18,7 +18,6 @@ pub struct StoredMinimalCandidateSelectionRow {
     pub provider_id: String,
     pub provider_name: String,
     pub provider_type: String,
-    pub provider_priority: i32,
     pub provider_is_active: bool,
     pub endpoint_id: String,
     pub endpoint_api_format: String,
@@ -32,8 +31,6 @@ pub struct StoredMinimalCandidateSelectionRow {
     pub key_api_formats: Option<Vec<String>>,
     pub key_allowed_models: Option<Vec<String>>,
     pub key_capabilities: Option<serde_json::Value>,
-    pub key_internal_priority: i32,
-    pub key_global_priority_by_format: Option<serde_json::Value>,
     pub model_id: String,
     pub global_model_id: String,
     pub global_model_name: String,
@@ -44,41 +41,6 @@ pub struct StoredMinimalCandidateSelectionRow {
     pub model_supports_streaming: Option<bool>,
     pub model_is_active: bool,
     pub model_is_available: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum StoredPoolKeyCandidateOrder {
-    #[default]
-    InternalPriority,
-    Lru,
-    CacheAffinity,
-    SingleAccount,
-    LoadBalance {
-        seed: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct StoredPoolKeyCandidateRowsQuery {
-    pub api_format: String,
-    pub provider_id: String,
-    pub endpoint_id: String,
-    pub model_id: String,
-    pub selected_provider_model_name: String,
-    #[serde(default)]
-    pub order: StoredPoolKeyCandidateOrder,
-    pub offset: u32,
-    pub limit: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct StoredPoolKeyCandidateRowsByKeyIdsQuery {
-    pub api_format: String,
-    pub provider_id: String,
-    pub endpoint_id: String,
-    pub model_id: String,
-    pub selected_provider_model_name: String,
-    pub key_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -114,24 +76,12 @@ impl StoredMinimalCandidateSelectionRow {
 }
 
 /// Evaluates the API-format scope on a provider-model mapping.
-///
-/// Codex Live was introduced after existing Codex model associations had
-/// already stored their source-model scope as `openai:responses`. Preserve
-/// those associations for the same Codex provider without treating the two
-/// formats as globally interchangeable. Endpoint and key permissions remain
-/// independently scoped to `codex:live`.
 pub fn provider_model_mapping_api_format_covers(
-    provider_type: &str,
+    _provider_type: &str,
     mapping_api_format: &str,
     requested_api_format: &str,
 ) -> bool {
-    if aether_ai_formats::api_format_permission_covers(mapping_api_format, requested_api_format) {
-        return true;
-    }
-
-    provider_type.trim().eq_ignore_ascii_case("codex")
-        && aether_ai_formats::normalize_api_format_alias(requested_api_format) == "codex:live"
-        && aether_ai_formats::normalize_api_format_alias(mapping_api_format) == "openai:responses"
+    aether_ai_formats::api_format_permission_covers(mapping_api_format, requested_api_format)
 }
 
 fn api_format_permission_covers(allowed: &str, requested: &str) -> bool {
@@ -176,16 +126,6 @@ pub trait MinimalCandidateSelectionReadRepository: Send + Sync {
         &self,
         query: &StoredRequestedModelCandidateRowsQuery,
     ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, crate::DataLayerError>;
-
-    async fn list_pool_key_rows_for_group(
-        &self,
-        query: &StoredPoolKeyCandidateRowsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, crate::DataLayerError>;
-
-    async fn list_pool_key_rows_for_group_key_ids(
-        &self,
-        query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, crate::DataLayerError>;
 }
 
 pub trait MinimalCandidateSelectionRepository:
@@ -203,30 +143,22 @@ mod tests {
     use super::provider_model_mapping_api_format_covers;
 
     #[test]
-    fn legacy_responses_mapping_is_only_compatible_with_codex_live() {
+    fn mapping_scope_follows_api_format_permission_only() {
         assert!(provider_model_mapping_api_format_covers(
-            "codex",
+            "custom",
             "openai:responses",
-            "codex:live"
+            "openai:responses"
         ));
         assert!(provider_model_mapping_api_format_covers(
-            " CoDeX ",
-            "/v1/responses",
-            "codex:live"
+            "custom",
+            "openai:responses",
+            "/v1/responses"
         ));
-
-        for provider_type in ["openai", "custom", "chatgpt_web"] {
+        for mapping_api_format in ["openai:responses", "openai:chat", "claude:messages"] {
             assert!(!provider_model_mapping_api_format_covers(
-                provider_type,
-                "openai:responses",
+                "custom",
+                mapping_api_format,
                 "codex:live"
-            ));
-        }
-        for requested_api_format in ["openai:chat", "claude:messages", "openai:image"] {
-            assert!(!provider_model_mapping_api_format_covers(
-                "codex",
-                "openai:responses",
-                requested_api_format
             ));
         }
     }

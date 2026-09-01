@@ -37,9 +37,6 @@ use crate::repository::management_tokens::{
 use crate::repository::oauth_providers::{
     MysqlOAuthProviderRepository, OAuthProviderReadRepository, OAuthProviderWriteRepository,
 };
-use crate::repository::pool_scores::{
-    MysqlPoolMemberScoreRepository, PoolMemberScoreWriteRepository, PoolScoreReadRepository,
-};
 use crate::repository::provider_catalog::{
     MysqlProviderCatalogReadRepository, ProviderCatalogReadRepository,
     ProviderCatalogWriteRepository,
@@ -190,13 +187,6 @@ impl MysqlBackend {
         Arc::new(MysqlProviderCatalogReadRepository::new(self.pool_clone()))
     }
 
-    pub fn pool_score_read_repository(&self) -> Arc<dyn PoolScoreReadRepository> {
-        Arc::new(MysqlPoolMemberScoreRepository::new(self.pool_clone()))
-    }
-
-    pub fn pool_score_write_repository(&self) -> Arc<dyn PoolMemberScoreWriteRepository> {
-        Arc::new(MysqlPoolMemberScoreRepository::new(self.pool_clone()))
-    }
 
     pub fn routing_group_read_repository(&self) -> Arc<dyn RoutingGroupReadRepository> {
         Arc::new(MysqlRoutingGroupRepository::new(self.pool_clone()))

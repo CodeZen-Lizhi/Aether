@@ -5,7 +5,6 @@ members = [
     "crates/aether-admin",
     "crates/aether-admission-core",
     "crates/aether-ai/serving",
-    "crates/aether-pool-core",
     "crates/aether-provider/core",
     "crates/aether-provider/pool",
     "crates/aether-routing-core",
@@ -21,7 +20,6 @@ members = [
     "crates/aether-contracts",
     "crates/aether-data/runtime",
     "crates/aether-model-fetch",
-    "crates/aether-oauth",
     "crates/aether-provider/transport",
     "crates/aether-scheduler-core",
     "crates/aether-runtime/state",
@@ -58,7 +56,6 @@ aether-admin = { path = "crates/aether-admin" }
 aether-admission-core = { path = "crates/aether-admission-core" }
 aether-ai-formats = { path = "crates/aether-ai/formats" }
 aether-ai-serving = { path = "crates/aether-ai/serving" }
-aether-pool-core = { path = "crates/aether-pool-core" }
 aether-provider-core = { path = "crates/aether-provider/core" }
 aether-provider-pool = { path = "crates/aether-provider/pool" }
 aether-routing-core = { path = "crates/aether-routing-core" }
@@ -75,7 +72,6 @@ aether-crypto = { path = "crates/aether-crypto" }
 aether-contracts = { path = "crates/aether-contracts" }
 aether-data = { path = "crates/aether-data/runtime" }
 aether-model-fetch = { path = "crates/aether-model-fetch" }
-aether-oauth = { path = "crates/aether-oauth" }
 aether-provider-transport = { path = "crates/aether-provider/transport" }
 aether-scheduler-core = { path = "crates/aether-scheduler-core" }
 aether-runtime-state = { path = "crates/aether-runtime/state" }

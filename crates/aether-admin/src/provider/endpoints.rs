@@ -1,7 +1,6 @@
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
 };
-use aether_provider_transport::provider_types::fixed_provider_key_inherits_api_formats;
 use chrono::{TimeZone, Utc};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -82,34 +81,23 @@ fn configured_key_api_formats(key: &StoredProviderCatalogKey) -> Vec<String> {
 }
 
 pub fn endpoint_key_counts_by_format(
-    provider_type: &str,
+    _provider_type: &str,
     endpoints: &[StoredProviderCatalogEndpoint],
     keys: &[StoredProviderCatalogKey],
 ) -> (BTreeMap<String, usize>, BTreeMap<String, usize>) {
     let mut total = BTreeMap::new();
     let mut active = BTreeMap::new();
-    let (endpoint_api_formats, active_endpoint_api_formats) = endpoint_api_format_sets(endpoints);
+    let (endpoint_api_formats, _) = endpoint_api_format_sets(endpoints);
 
     for key in keys {
-        let inherits_api_formats = fixed_provider_key_inherits_api_formats(
-            provider_type,
-            &key.auth_type,
-            key.encrypted_auth_config.as_deref(),
-        );
         let has_unrestricted_api_format_scope = key
             .api_formats
             .as_ref()
             .is_none_or(serde_json::Value::is_null);
         let configured_api_formats = configured_key_api_formats(key);
 
-        let candidate_api_formats = if inherits_api_formats {
-            &active_endpoint_api_formats
-        } else {
-            &endpoint_api_formats
-        };
-        for api_format in candidate_api_formats.iter().filter(|api_format| {
-            inherits_api_formats
-                || has_unrestricted_api_format_scope
+        for api_format in endpoint_api_formats.iter().filter(|api_format| {
+            has_unrestricted_api_format_scope
                 || configured_api_formats.iter().any(|allowed| {
                     aether_ai_formats::api_format_permission_covers(allowed, api_format)
                 })
@@ -190,25 +178,6 @@ mod endpoint_key_count_tests {
         let (total, active) = endpoint_key_counts_by_format("custom", &[endpoint], &keys);
 
         assert_eq!(total.get("openai:chat"), Some(&2));
-        assert_eq!(active, total);
-    }
-
-    #[test]
-    fn inherited_endpoint_counts_only_include_active_formats() {
-        let responses_endpoint = sample_endpoint("responses", "openai:responses");
-        let mut search_endpoint = sample_endpoint("search", "openai:search");
-        search_endpoint.is_active = false;
-        let mut inherited_key = sample_key("codex-key", Some("legacy:mismatch"));
-        inherited_key.auth_type = "oauth".to_string();
-
-        let (total, active) = endpoint_key_counts_by_format(
-            "codex",
-            &[responses_endpoint, search_endpoint],
-            &[inherited_key],
-        );
-
-        assert_eq!(total.get("openai:responses"), Some(&1));
-        assert!(!total.contains_key("openai:search"));
         assert_eq!(active, total);
     }
 }

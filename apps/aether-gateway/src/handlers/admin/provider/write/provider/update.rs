@@ -5,7 +5,6 @@ use crate::handlers::admin::provider::shared::support::{
     PROVIDER_MAX_TRANSFER_COUNT_CONFIG_KEY, PROVIDER_MAX_TRANSFER_TIMEOUT_SECONDS_CONFIG_KEY,
 };
 use crate::handlers::admin::provider::write::normalize::normalize_chat_pii_redaction_config;
-use crate::handlers::admin::provider::write::normalize::normalize_pool_advanced_config;
 use crate::handlers::admin::provider::write::normalize::normalize_provider_type_input;
 use crate::handlers::admin::provider::write::normalize::set_responses_websocket_enabled;
 use crate::handlers::admin::provider::write::normalize::validate_responses_websocket_config;
@@ -157,27 +156,6 @@ pub(crate) async fn build_admin_update_provider_record(
         }
     }
 
-    if fields.contains("provider_priority") {
-        let Some(provider_priority) = payload.provider_priority else {
-            return Err(if fields.is_null("provider_priority") {
-                "provider_priority 不能为空".to_string()
-            } else {
-                "provider_priority 必须是整数".to_string()
-            });
-        };
-        if !(0..=10_000).contains(&provider_priority) {
-            return Err("provider_priority 必须在 0 到 10000 之间".to_string());
-        }
-        updated.provider_priority = provider_priority;
-    }
-
-    if fields.contains("keep_priority_on_conversion") {
-        let Some(keep_priority_on_conversion) = payload.keep_priority_on_conversion else {
-            return Err("keep_priority_on_conversion 必须是布尔值".to_string());
-        };
-        updated.keep_priority_on_conversion = keep_priority_on_conversion;
-    }
-
     if fields.contains("is_active") {
         let Some(is_active) = payload.is_active else {
             return Err("is_active 必须是布尔值".to_string());
@@ -246,31 +224,7 @@ pub(crate) async fn build_admin_update_provider_record(
         }
     }
 
-    if fields.contains("codex_fingerprint_convergence_enabled") {
-        let Some(enabled) = payload.codex_fingerprint_convergence_enabled else {
-            return Err("codex_fingerprint_convergence_enabled 必须是布尔值".to_string());
-        };
-        if target_provider_type != "codex" && enabled {
-            return Err(
-                "codex_fingerprint_convergence_enabled 仅适用于 provider_type=codex".to_string(),
-            );
-        }
-        if target_provider_type == "codex" {
-            let codex_config = config_map
-                .entry(crate::provider_transport::CODEX_FINGERPRINT_CONFIG_NAMESPACE.to_string())
-                .or_insert_with(|| json!({}));
-            let Some(codex_config) = codex_config.as_object_mut() else {
-                return Err("config.codex 必须是 JSON 对象".to_string());
-            };
-            codex_config.insert(
-                crate::provider_transport::CODEX_FINGERPRINT_ENABLED_CONFIG_KEY.to_string(),
-                json!(enabled),
-            );
-        }
-    }
-    if target_provider_type != "codex" {
-        remove_codex_fingerprint_config(&mut config_map);
-    }
+    remove_codex_fingerprint_config(&mut config_map);
 
     for (field_name, payload_value) in [
         (
@@ -296,31 +250,8 @@ pub(crate) async fn build_admin_update_provider_record(
         }
     }
 
-    if fields.contains("claude_code_advanced") {
-        if fields.is_null("claude_code_advanced") {
-            config_map.remove("claude_code_advanced");
-        } else {
-            if target_provider_type != "claude_code" {
-                return Err("claude_code_advanced 仅适用于 provider_type=claude_code".to_string());
-            }
-            let value =
-                normalize_json_object(payload.claude_code_advanced, "claude_code_advanced")?
-                    .ok_or_else(|| "claude_code_advanced 必须是 JSON 对象".to_string())?;
-            config_map.insert("claude_code_advanced".to_string(), value);
-        }
-    } else if target_provider_type != "claude_code" {
-        config_map.remove("claude_code_advanced");
-    }
-
-    if fields.contains("pool_advanced") {
-        if fields.is_null("pool_advanced") {
-            config_map.remove("pool_advanced");
-        } else {
-            let value = normalize_pool_advanced_config(payload.pool_advanced)?
-                .ok_or_else(|| "pool_advanced 必须是 JSON 对象".to_string())?;
-            config_map.insert("pool_advanced".to_string(), value);
-        }
-    }
+    config_map.remove("claude_code_advanced");
+    config_map.remove("pool_advanced");
 
     if fields.contains("failover_rules") {
         if fields.is_null("failover_rules") {

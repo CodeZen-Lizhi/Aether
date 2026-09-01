@@ -79,8 +79,6 @@ function makeProvider(
     id: 'provider-1',
     name: 'Provider One',
     provider_type: 'custom',
-    provider_priority: 100,
-    keep_priority_on_conversion: false,
     enable_format_conversion: true,
     max_transfer_count: 0,
     max_transfer_timeout_seconds: 0,
@@ -96,7 +94,6 @@ function makeProvider(
     unhealthy_endpoints: 0,
     api_formats: [],
     endpoint_health_details: [],
-    ops_configured: false,
     created_at: '2026-07-26T00:00:00Z',
     updated_at: '2026-07-26T00:00:00Z',
     ...overrides,
@@ -223,126 +220,5 @@ describe('ProviderFormDialog transfer limits', () => {
         max_transfer_timeout_seconds: 30,
       }),
     )
-  })
-})
-
-describe('ProviderFormDialog provider types', () => {
-  it('creates an experimental Claude Code provider from the add dialog', async () => {
-    mountDialog(null)
-    await settle()
-
-    const providerTypeSelect = [...document.body.querySelectorAll<HTMLSelectElement>('select')]
-      .find(select => select.querySelector('option[value="claude_code"]'))
-    const claudeCodeOption = providerTypeSelect?.querySelector<HTMLOptionElement>(
-      'option[value="claude_code"]',
-    )
-
-    expect(claudeCodeOption?.disabled).toBe(false)
-    expect(claudeCodeOption?.textContent?.trim()).toBe('Claude Code（实验性功能）')
-
-    await setInput('#name', 'Claude Code Provider')
-    if (!providerTypeSelect) throw new Error('Missing provider type select')
-    providerTypeSelect.value = 'claude_code'
-    providerTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    await nextTick()
-
-    clickButton('创建')
-    await settle()
-
-    expect(endpointMocks.createProvider).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Claude Code Provider',
-        provider_type: 'claude_code',
-      }),
-    )
-  })
-
-  it('shows fingerprint convergence only for Codex and submits the enabled setting', async () => {
-    mountDialog(null)
-    await settle()
-
-    expect(document.body.querySelector('[data-testid="codex-fingerprint-convergence-setting"]')).toBeNull()
-
-    const providerTypeSelect = [...document.body.querySelectorAll<HTMLSelectElement>('select')]
-      .find(select => select.querySelector('option[value="codex"]'))
-    if (!providerTypeSelect) throw new Error('Missing provider type select')
-
-    providerTypeSelect.value = 'codex'
-    providerTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    await nextTick()
-
-    const convergenceSwitch = document.body.querySelector<HTMLButtonElement>(
-      '#codex-fingerprint-convergence',
-    )
-    expect(convergenceSwitch).not.toBeNull()
-    expect(convergenceSwitch?.getAttribute('aria-checked')).toBe('false')
-
-    convergenceSwitch?.click()
-    await nextTick()
-    expect(convergenceSwitch?.getAttribute('aria-checked')).toBe('true')
-
-    await setInput('#name', 'Codex Provider')
-    clickButton('创建')
-    await settle()
-
-    expect(endpointMocks.createProvider).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Codex Provider',
-        provider_type: 'codex',
-        codex_fingerprint_convergence_enabled: true,
-      }),
-    )
-  })
-
-  it('loads and can disable fingerprint convergence for an existing Codex provider', async () => {
-    mountDialog(makeProvider({
-      provider_type: 'codex',
-      codex_fingerprint_convergence_enabled: true,
-    }))
-    await settle()
-
-    const convergenceSwitch = document.body.querySelector<HTMLButtonElement>(
-      '#codex-fingerprint-convergence',
-    )
-    expect(convergenceSwitch?.getAttribute('aria-checked')).toBe('true')
-
-    convergenceSwitch?.click()
-    clickButton('保存')
-    await settle()
-
-    expect(endpointMocks.updateProvider).toHaveBeenCalledWith(
-      'provider-1',
-      expect.objectContaining({
-        provider_type: 'codex',
-        codex_fingerprint_convergence_enabled: false,
-      }),
-    )
-  })
-
-  it('clears and does not submit the setting after switching away from Codex', async () => {
-    mountDialog(null)
-    await settle()
-
-    const providerTypeSelect = [...document.body.querySelectorAll<HTMLSelectElement>('select')]
-      .find(select => select.querySelector('option[value="codex"]'))
-    if (!providerTypeSelect) throw new Error('Missing provider type select')
-
-    providerTypeSelect.value = 'codex'
-    providerTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    await nextTick()
-    document.body.querySelector<HTMLButtonElement>('#codex-fingerprint-convergence')?.click()
-    await nextTick()
-
-    providerTypeSelect.value = 'custom'
-    providerTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    await nextTick()
-    expect(document.body.querySelector('[data-testid="codex-fingerprint-convergence-setting"]')).toBeNull()
-
-    await setInput('#name', 'Custom Provider')
-    clickButton('创建')
-    await settle()
-
-    const payload = endpointMocks.createProvider.mock.calls[0]?.[0]
-    expect(payload).not.toHaveProperty('codex_fingerprint_convergence_enabled')
   })
 })

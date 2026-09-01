@@ -3,9 +3,7 @@ use crate::handlers::public::normalize_admin_base_url;
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogProvider,
 };
-use aether_provider_transport::provider_types::{
-    FixedProviderEndpointTemplate, FixedProviderTemplate,
-};
+use aether_provider_transport::provider_types::{};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 

@@ -3,8 +3,6 @@ use std::collections::BTreeMap;
 use base64::Engine as _;
 use serde_json::{json, Map, Number, Value};
 
-use crate::formats::openai::responses::codex::CODEX_OPENAI_IMAGE_DEFAULT_MODEL;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpenAiImageOperation {
     Generate,
@@ -69,185 +67,8 @@ impl OpenAiImageNormalizeOptions {
     }
 }
 
-pub const CHATGPT_WEB_IMAGE_MAX_AREA: u64 = 1_500_000;
+pub const OPENAI_IMAGE_DEFAULT_MODEL: &str = "gpt-image-2";
 pub const OPENAI_IMAGE_MAX_GENERATION_COUNT: u64 = 10;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatGptWebImageRequestError {
-    pub status_code: u16,
-    pub error_type: &'static str,
-    pub code: &'static str,
-    pub message: String,
-}
-
-impl ChatGptWebImageRequestError {
-    fn invalid_request(message: impl Into<String>) -> Self {
-        Self {
-            status_code: 400,
-            error_type: "invalid_request_error",
-            code: "chatgpt_web_image_unsupported",
-            message: message.into(),
-        }
-    }
-
-    pub fn to_error_json(&self) -> Value {
-        json!({
-            "error": {
-                "message": self.message,
-                "type": self.error_type,
-                "code": self.code,
-                "param": Value::Null,
-            }
-        })
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-struct ChatGptWebRawImageFields {
-    size: Option<String>,
-    resolution: Option<String>,
-    size_tier: Option<String>,
-    ratio: Option<String>,
-    aspect_ratio: Option<String>,
-    web_model: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct ChatGptWebResolvedSize {
-    size: String,
-    ratio: String,
-    best_effort: bool,
-}
-
-pub fn build_chatgpt_web_image_request_body(
-    parts: &http::request::Parts,
-    body_json: &Value,
-    body_base64: Option<&str>,
-) -> Result<Value, ChatGptWebImageRequestError> {
-    let request = normalize_openai_image_request(parts, body_json, body_base64).ok_or_else(|| {
-        ChatGptWebImageRequestError::invalid_request(
-            "ChatGPT-Web image proxy only supports OpenAI image requests with prompt, n=1, supported image inputs, and supported output options",
-        )
-    })?;
-    if request.tool.contains_key("input_image_mask") {
-        return Err(ChatGptWebImageRequestError::invalid_request(
-            "ChatGPT-Web image proxy does not support mask inputs",
-        ));
-    }
-
-    let raw_fields = resolve_chatgpt_web_raw_image_fields(parts, body_json, body_base64)?;
-    let resolved_size = resolve_chatgpt_web_size(&raw_fields)?;
-    let prompt = request
-        .prompt
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(match request.operation {
-            OpenAiImageOperation::Generate | OpenAiImageOperation::Edit => {
-                "Generate a high quality image."
-            }
-        });
-    let prompt = chatgpt_web_prompt_with_ratio(prompt, resolved_size.ratio.as_str());
-    let mut image_urls = Vec::new();
-    for image in &request.images {
-        let Some(object) = image.as_object() else {
-            continue;
-        };
-        if object
-            .get("file_id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .is_some_and(|value| !value.is_empty())
-        {
-            return Err(ChatGptWebImageRequestError::invalid_request(
-                "ChatGPT-Web image proxy does not support file_id image inputs; use URL, data URL, or multipart file inputs",
-            ));
-        }
-        if let Some(image_url) = object
-            .get("image_url")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            image_urls.push(Value::String(image_url.to_string()));
-        }
-    }
-
-    let requested_model = request
-        .requested_model
-        .clone()
-        .unwrap_or_else(|| default_model_for_openai_image_operation(request.operation).to_string());
-    let mut body = Map::new();
-    body.insert(
-        "operation".to_string(),
-        Value::String(request.operation.as_str().to_string()),
-    );
-    body.insert("model".to_string(), Value::String(requested_model));
-    body.insert(
-        "web_model".to_string(),
-        Value::String(
-            raw_fields
-                .web_model
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or("gpt-5-5-thinking")
-                .to_string(),
-        ),
-    );
-    body.insert("prompt".to_string(), Value::String(prompt));
-    body.insert("size".to_string(), Value::String(resolved_size.size));
-    body.insert("ratio".to_string(), Value::String(resolved_size.ratio));
-    body.insert(
-        "size_best_effort".to_string(),
-        Value::Bool(resolved_size.best_effort),
-    );
-    body.insert("images".to_string(), Value::Array(image_urls));
-    body.insert("count".to_string(), Value::Number(Number::from(1)));
-    if let Some(user) = request.user.as_ref() {
-        body.insert("user".to_string(), Value::String(user.clone()));
-    }
-    if let Some(quality) = request
-        .tool
-        .get("quality")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        body.insert("quality".to_string(), Value::String(quality.to_string()));
-    }
-    if let Some(partial_images) = request.tool.get("partial_images").and_then(Value::as_u64) {
-        body.insert(
-            "partial_images".to_string(),
-            Value::Number(Number::from(partial_images)),
-        );
-    }
-    if let Some(output_format) = request
-        .summary_json
-        .get("output_format")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        body.insert(
-            "output_format".to_string(),
-            Value::String(output_format.to_string()),
-        );
-    }
-    if let Some(response_format) = request
-        .summary_json
-        .get("response_format")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        body.insert(
-            "response_format".to_string(),
-            Value::String(response_format.to_string()),
-        );
-    }
-    Ok(Value::Object(body))
-}
 
 pub fn is_openai_image_stream_request(
     parts: &http::request::Parts,
@@ -282,170 +103,6 @@ pub fn openai_image_operation_from_path(path: &str) -> Option<OpenAiImageOperati
     }
 }
 
-fn resolve_chatgpt_web_raw_image_fields(
-    parts: &http::request::Parts,
-    body_json: &Value,
-    body_base64: Option<&str>,
-) -> Result<ChatGptWebRawImageFields, ChatGptWebImageRequestError> {
-    if let Some(body_base64) = body_base64 {
-        let fields = parse_multipart_fields_from_base64(parts, body_base64).ok_or_else(|| {
-            ChatGptWebImageRequestError::invalid_request(
-                "ChatGPT-Web image proxy could not parse multipart image request",
-            )
-        })?;
-        return Ok(ChatGptWebRawImageFields {
-            size: find_multipart_text_field(&fields, "size"),
-            resolution: find_multipart_text_field(&fields, "resolution"),
-            size_tier: find_multipart_text_field(&fields, "size_tier"),
-            ratio: find_multipart_text_field(&fields, "ratio"),
-            aspect_ratio: find_multipart_text_field(&fields, "aspect_ratio"),
-            web_model: find_multipart_text_field(&fields, "web_model"),
-        });
-    }
-
-    let Some(object) = body_json.as_object() else {
-        return Ok(ChatGptWebRawImageFields::default());
-    };
-    Ok(ChatGptWebRawImageFields {
-        size: json_text_field(object, "size"),
-        resolution: json_text_field(object, "resolution"),
-        size_tier: json_text_field(object, "size_tier"),
-        ratio: json_text_field(object, "ratio"),
-        aspect_ratio: json_text_field(object, "aspect_ratio"),
-        web_model: json_text_field(object, "web_model"),
-    })
-}
-
-fn json_text_field(object: &Map<String, Value>, key: &str) -> Option<String> {
-    object
-        .get(key)
-        .and_then(|value| {
-            value
-                .as_str()
-                .map(ToOwned::to_owned)
-                .or_else(|| value.as_u64().map(|number| number.to_string()))
-                .or_else(|| value.as_i64().map(|number| number.to_string()))
-        })
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn resolve_chatgpt_web_size(
-    fields: &ChatGptWebRawImageFields,
-) -> Result<ChatGptWebResolvedSize, ChatGptWebImageRequestError> {
-    let tier = fields
-        .resolution
-        .as_deref()
-        .or(fields.size_tier.as_deref())
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if let Some(tier) = tier {
-        let normalized = tier.to_ascii_uppercase();
-        if normalized != "1K" && normalized != "1" {
-            return Err(unsupported_chatgpt_web_resolution_error());
-        }
-    }
-
-    let fallback_ratio = fields
-        .ratio
-        .as_deref()
-        .or(fields.aspect_ratio.as_deref())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("1:1");
-    let explicit_size = fields
-        .size
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let size = explicit_size
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| chatgpt_web_1k_size_for_ratio(fallback_ratio).to_string());
-    let (width, height) = parse_image_size_or_default(size.as_str());
-    if width.saturating_mul(height) > CHATGPT_WEB_IMAGE_MAX_AREA {
-        return Err(unsupported_chatgpt_web_resolution_error());
-    }
-    let ratio = chatgpt_web_ratio_from_size(size.as_str(), fallback_ratio).to_string();
-    let best_effort = explicit_size.is_some_and(|_| !chatgpt_web_is_exact_1k_size(size.as_str()));
-
-    Ok(ChatGptWebResolvedSize {
-        size,
-        ratio,
-        best_effort,
-    })
-}
-
-fn unsupported_chatgpt_web_resolution_error() -> ChatGptWebImageRequestError {
-    ChatGptWebImageRequestError::invalid_request(
-        "ChatGPT-Web image proxy does not support the requested resolution; use resolution=1K, size_tier=1K, or a size area <= 1,500,000 pixels",
-    )
-}
-
-fn chatgpt_web_1k_size_for_ratio(ratio: &str) -> &'static str {
-    match ratio.trim() {
-        "3:2" => "1216x832",
-        "2:3" => "832x1216",
-        "4:3" => "1152x864",
-        "3:4" => "864x1152",
-        "5:4" => "1120x896",
-        "4:5" => "896x1120",
-        "16:9" => "1344x768",
-        "9:16" => "768x1344",
-        "21:9" => "1536x640",
-        _ => "1024x1024",
-    }
-}
-
-fn chatgpt_web_ratio_from_size<'a>(size: &str, fallback: &'a str) -> &'a str {
-    match size.trim() {
-        "1024x1024" | "1248x1248" | "2480x2480" | "512x512" => "1:1",
-        "1216x832" | "1536x1024" | "3056x2032" => "3:2",
-        "832x1216" | "1024x1536" | "2032x3056" => "2:3",
-        "1152x864" | "1440x1088" | "2880x2160" => "4:3",
-        "864x1152" | "1088x1440" | "2160x2880" => "3:4",
-        "1120x896" | "1392x1120" | "2784x2224" => "5:4",
-        "896x1120" | "1120x1392" | "2224x2784" => "4:5",
-        "1344x768" | "1664x928" | "3312x1872" => "16:9",
-        "768x1344" | "928x1664" | "1872x3312" => "9:16",
-        "1536x640" | "1904x816" | "3808x1632" => "21:9",
-        _ => fallback.trim(),
-    }
-}
-
-fn chatgpt_web_is_exact_1k_size(size: &str) -> bool {
-    matches!(
-        size.trim(),
-        "1024x1024"
-            | "1216x832"
-            | "832x1216"
-            | "1152x864"
-            | "864x1152"
-            | "1120x896"
-            | "896x1120"
-            | "1344x768"
-            | "768x1344"
-            | "1536x640"
-    )
-}
-
-fn parse_image_size_or_default(size: &str) -> (u64, u64) {
-    let Some((width, height)) = size.trim().split_once('x') else {
-        return (1024, 1024);
-    };
-    let width = width.trim().parse::<u64>().ok().filter(|value| *value > 0);
-    let height = height.trim().parse::<u64>().ok().filter(|value| *value > 0);
-    (width.unwrap_or(1024), height.unwrap_or(1024))
-}
-
-fn chatgpt_web_prompt_with_ratio(prompt: &str, ratio: &str) -> String {
-    let prompt = prompt.trim();
-    let ratio = ratio.trim();
-    if ratio.is_empty() || ratio == "1:1" {
-        return prompt.to_string();
-    }
-    format!("{prompt}\n\nSet the image aspect ratio to {ratio}.")
-}
-
 pub fn resolve_requested_openai_image_model_for_request(
     parts: &http::request::Parts,
     body_json: &Value,
@@ -469,7 +126,7 @@ pub fn resolve_requested_openai_image_model_for_request(
 pub fn default_model_for_openai_image_operation(operation: OpenAiImageOperation) -> &'static str {
     match operation {
         OpenAiImageOperation::Generate | OpenAiImageOperation::Edit => {
-            CODEX_OPENAI_IMAGE_DEFAULT_MODEL
+            OPENAI_IMAGE_DEFAULT_MODEL
         }
     }
 }
@@ -552,24 +209,6 @@ pub fn build_openai_image_api_provider_request_body(
     project_openai_image_api_request_body(
         &body,
         model,
-        request.operation,
-        request.max_generation_count,
-    )
-}
-
-pub fn build_codex_openai_image_api_provider_request_body(
-    request: &NormalizedOpenAiImageRequest,
-    mapped_model: Option<&str>,
-    upstream_is_stream: bool,
-) -> Option<Value> {
-    let model = resolve_openai_image_api_provider_model(request, mapped_model);
-    let body = build_unprojected_openai_image_api_provider_request_body(
-        request,
-        model,
-        upstream_is_stream,
-    );
-    project_codex_openai_image_api_request_body_with_max_generation_count(
-        &body,
         request.operation,
         request.max_generation_count,
     )
@@ -1005,137 +644,11 @@ fn gpt_image_2_resolution_supported(size: &str) -> bool {
         && width.saturating_mul(height) <= 3_840 * 2_160
 }
 
-pub fn project_codex_openai_image_api_request_body(
-    body: &Value,
-    operation: OpenAiImageOperation,
-) -> Option<Value> {
-    project_codex_openai_image_api_request_body_with_max_generation_count(
-        body,
-        operation,
-        OPENAI_IMAGE_MAX_GENERATION_COUNT,
-    )
-}
-
-fn project_codex_openai_image_api_request_body_with_max_generation_count(
-    body: &Value,
-    operation: OpenAiImageOperation,
-    max_generation_count: u64,
-) -> Option<Value> {
-    let source_object = body.as_object()?;
-    let source_images = if operation == OpenAiImageOperation::Edit {
-        let images = collect_codex_openai_image_urls(source_object)?;
-        if images.is_empty() || images.len() > 5 {
-            return None;
-        }
-        images
-    } else {
-        Vec::new()
-    };
-    let model = body.get("model").and_then(Value::as_str)?;
-    let projected_body =
-        project_openai_image_api_request_body(body, model, operation, max_generation_count)?;
-    let object = projected_body.as_object()?;
-    if object.keys().any(|key| {
-        !matches!(
-            key.as_str(),
-            "model"
-                | "prompt"
-                | "background"
-                | "n"
-                | "quality"
-                | "size"
-                | "images"
-                | "response_format"
-                | "stream"
-        )
-    }) {
-        return None;
-    }
-
-    let model = non_empty_image_string(object.get("model"))?;
-    let prompt = non_empty_image_string(object.get("prompt"))?;
-    if object
-        .get("stream")
-        .is_some_and(|value| !value.is_boolean())
-    {
-        return None;
-    }
-    if object
-        .get("response_format")
-        .is_some_and(|value| value.as_str() != Some("b64_json"))
-    {
-        return None;
-    }
-
-    let mut projected = Map::new();
-    if operation == OpenAiImageOperation::Edit {
-        projected.insert("images".to_string(), Value::Array(source_images));
-    } else if object.contains_key("image") || object.contains_key("images") {
-        return None;
-    }
-    projected.insert("prompt".to_string(), Value::String(prompt.to_string()));
-    if let Some(background) =
-        optional_codex_image_enum(object.get("background"), &["transparent", "opaque", "auto"])?
-    {
-        projected.insert("background".to_string(), Value::String(background));
-    }
-    projected.insert("model".to_string(), Value::String(model.to_string()));
-    if let Some(n) = object.get("n") {
-        let n = n
-            .as_u64()
-            .filter(|value| (1..=OPENAI_IMAGE_MAX_GENERATION_COUNT).contains(value))?;
-        projected.insert("n".to_string(), Value::Number(Number::from(n)));
-    }
-    if let Some(quality) =
-        optional_codex_image_enum(object.get("quality"), &["low", "medium", "high", "auto"])?
-    {
-        projected.insert("quality".to_string(), Value::String(quality));
-    }
-    if let Some(size) = object.get("size") {
-        projected.insert(
-            "size".to_string(),
-            Value::String(non_empty_image_string(Some(size))?.to_string()),
-        );
-    }
-    Some(Value::Object(projected))
-}
-
 fn non_empty_image_string(value: Option<&Value>) -> Option<&str> {
     value?
         .as_str()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-}
-
-fn optional_codex_image_enum(value: Option<&Value>, allowed: &[&str]) -> Option<Option<String>> {
-    let Some(value) = value else {
-        return Some(None);
-    };
-    let value = non_empty_image_string(Some(value))?.to_ascii_lowercase();
-    allowed
-        .iter()
-        .any(|allowed| value == *allowed)
-        .then_some(Some(value))
-}
-
-fn collect_codex_openai_image_urls(object: &Map<String, Value>) -> Option<Vec<Value>> {
-    openai_image_api_inputs(object)?
-        .into_iter()
-        .map(|image| {
-            let image = image.as_object()?;
-            if image
-                .keys()
-                .any(|key| !matches!(key.as_str(), "type" | "image_url"))
-                || image
-                    .get("type")
-                    .is_some_and(|value| value.as_str() != Some("input_image"))
-            {
-                return None;
-            }
-            let image_url = non_empty_image_string(image.get("image_url"))?;
-            Some(json!({ "image_url": image_url }))
-        })
-        .collect()
 }
 
 fn normalize_openai_image_json_request(
@@ -1750,12 +1263,11 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_chatgpt_web_image_request_body, build_codex_openai_image_api_provider_request_body,
         build_openai_image_api_provider_request_body, build_openai_image_provider_request_body,
         is_openai_image_stream_request, normalize_openai_image_quality,
         normalize_openai_image_request, normalize_openai_image_request_with_options,
-        openai_image_operation_from_path, project_codex_openai_image_api_request_body,
-        project_openai_image_api_request_body, OpenAiImageNormalizeOptions, OpenAiImageOperation,
+        openai_image_operation_from_path, project_openai_image_api_request_body,
+        OpenAiImageNormalizeOptions, OpenAiImageOperation,
     };
     use crate::formats::openai::image::spec::{resolve_stream_spec, resolve_sync_spec};
 
@@ -1955,14 +1467,14 @@ mod tests {
         let request = normalize_openai_image_request_with_options(
             &parts,
             &json!({
-                "model": "grok-imagine-image",
+                "model": "custom-imagine-image",
                 "prompt": "generate image",
                 "n": 4
             }),
             None,
             OpenAiImageNormalizeOptions::with_max_generation_count(4),
         )
-        .expect("grok generation request should allow n up to four");
+        .expect("generation request should allow n up to four");
 
         let provider_request_body = build_openai_image_provider_request_body(&request);
         assert_eq!(provider_request_body["n"], json!(4));
@@ -2000,7 +1512,7 @@ mod tests {
         let request = normalize_openai_image_request_with_options(
             &parts,
             &json!({
-                "model": "grok-imagine-image-edit",
+                "model": "custom-imagine-image-edit",
                 "prompt": "edit image",
                 "n": 4,
                 "image": {
@@ -2013,187 +1525,6 @@ mod tests {
         )
         .expect("image edits should use the configured output count range");
         assert_eq!(request.image_count, Some(4));
-    }
-
-    #[test]
-    fn builds_codex_image_generation_with_the_typed_images_contract() {
-        let parts = request_parts("/v1/images/generations", Some("application/json"));
-        let request = normalize_openai_image_request(
-            &parts,
-            &json!({
-                "model": "gpt-image-2",
-                "prompt": "generate image",
-                "background": "auto",
-                "quality": "auto",
-                "size": "auto",
-                "stream": true,
-                "response_format": "b64_json"
-            }),
-            None,
-        )
-        .expect("generation request should normalize");
-
-        assert_eq!(
-            build_codex_openai_image_api_provider_request_body(
-                &request,
-                Some("gpt-image-2"),
-                false,
-            ),
-            Some(json!({
-                "prompt": "generate image",
-                "background": "auto",
-                "model": "gpt-image-2",
-                "quality": "auto",
-                "size": "auto"
-            }))
-        );
-    }
-
-    #[test]
-    fn builds_codex_image_edit_with_plural_image_urls() {
-        let parts = request_parts("/v1/images/edits", Some("application/json"));
-        let request = normalize_openai_image_request(
-            &parts,
-            &json!({
-                "model": "gpt-image-2",
-                "prompt": "add a red hat",
-                "images": [
-                    {"image_url": "data:image/png;base64,Zm9v"},
-                    {"image_url": "https://example.test/reference.png"}
-                ],
-                "background": "auto",
-                "quality": "auto",
-                "size": "auto"
-            }),
-            None,
-        )
-        .expect("edit request should normalize");
-
-        assert_eq!(
-            build_codex_openai_image_api_provider_request_body(&request, None, false),
-            Some(json!({
-                "images": [
-                    {"image_url": "data:image/png;base64,Zm9v"},
-                    {"image_url": "https://example.test/reference.png"}
-                ],
-                "prompt": "add a red hat",
-                "background": "auto",
-                "model": "gpt-image-2",
-                "quality": "auto",
-                "size": "auto"
-            }))
-        );
-    }
-
-    #[test]
-    fn rejects_fields_outside_the_codex_images_contract() {
-        let parts = request_parts("/v1/images/edits", Some("application/json"));
-        for unsupported in [
-            json!({"mask": "data:image/png;base64,bWFzaw=="}),
-            json!({"input_fidelity": "high"}),
-            json!({"output_format": "png"}),
-            json!({"partial_images": 1}),
-            json!({"response_format": "url"}),
-            json!({"user": "user-123"}),
-        ] {
-            let mut body = json!({
-                "model": "gpt-image-2",
-                "prompt": "edit image",
-                "image": {"image_url": "data:image/png;base64,aW1hZ2U="}
-            });
-            body.as_object_mut()
-                .expect("body object")
-                .extend(unsupported.as_object().expect("unsupported object").clone());
-            let request = normalize_openai_image_request(&parts, &body, None)
-                .expect("request should normalize before provider projection");
-            assert!(
-                build_codex_openai_image_api_provider_request_body(&request, None, false).is_none(),
-                "unsupported body should be rejected: {body}"
-            );
-        }
-    }
-
-    #[test]
-    fn codex_image_projection_rejects_invalid_source_image_parts() {
-        for body in [
-            json!({
-                "model": "gpt-image-2",
-                "prompt": "edit image",
-                "image": {
-                    "type": "wrong_type",
-                    "image_url": "https://example.test/input.png"
-                }
-            }),
-            json!({
-                "model": "gpt-image-2",
-                "prompt": "edit image",
-                "images": [{
-                    "type": "input_image",
-                    "image_url": "https://example.test/input.png",
-                    "detail": "high"
-                }]
-            }),
-            json!({
-                "model": "gpt-image-2",
-                "prompt": "edit image",
-                "images": [{"file_id": "file_123"}]
-            }),
-        ] {
-            assert!(
-                project_codex_openai_image_api_request_body(&body, OpenAiImageOperation::Edit,)
-                    .is_none(),
-                "invalid Codex image part should be rejected: {body}"
-            );
-        }
-    }
-
-    #[test]
-    fn codex_image_projection_accepts_untyped_plural_image_urls() {
-        let body = json!({
-            "model": "gpt-image-2",
-            "prompt": "edit image",
-            "images": [{
-                "image_url": "https://example.test/input.png"
-            }]
-        });
-
-        assert_eq!(
-            project_codex_openai_image_api_request_body(&body, OpenAiImageOperation::Edit),
-            Some(json!({
-                "images": [{
-                    "image_url": "https://example.test/input.png"
-                }],
-                "prompt": "edit image",
-                "model": "gpt-image-2"
-            }))
-        );
-    }
-
-    #[test]
-    fn codex_image_projection_enforces_the_openai_output_count_range() {
-        let valid = json!({
-            "model": "gpt-image-2",
-            "prompt": "generate image",
-            "n": 10
-        });
-        assert_eq!(
-            project_codex_openai_image_api_request_body(&valid, OpenAiImageOperation::Generate)
-                .and_then(|body| body.get("n").cloned()),
-            Some(json!(10))
-        );
-
-        for count in [0, 11] {
-            let body = json!({
-                "model": "gpt-image-2",
-                "prompt": "generate image",
-                "n": count
-            });
-            assert!(project_codex_openai_image_api_request_body(
-                &body,
-                OpenAiImageOperation::Generate
-            )
-            .is_none());
-        }
     }
 
     #[test]
@@ -2374,7 +1705,7 @@ mod tests {
         let request = normalize_openai_image_request_with_options(
             &parts,
             &json!({
-                "model": "grok-imagine-image-lite",
+                "model": "custom-imagine-image-lite",
                 "prompt": "draw a cat",
                 "n": 1,
                 "size": "1024x1024",
@@ -2501,157 +1832,5 @@ mod tests {
             json!([{"file_id": "file_123"}])
         );
         assert!(provider_request_body.get("image").is_none());
-    }
-
-    #[test]
-    fn chatgpt_web_accepts_1k_tier_and_1024_size() {
-        let parts = request_parts("/v1/images/generations", Some("application/json"));
-        let by_tier = build_chatgpt_web_image_request_body(
-            &parts,
-            &json!({
-                "model": "gpt-image-2",
-                "prompt": "draw",
-                "resolution": "1K",
-                "aspect_ratio": "16:9"
-            }),
-            None,
-        )
-        .expect("1K should pass");
-        assert_eq!(by_tier["size"], "1344x768");
-        assert_eq!(by_tier["ratio"], "16:9");
-        assert_eq!(by_tier["size_best_effort"], false);
-
-        let by_size = build_chatgpt_web_image_request_body(
-            &parts,
-            &json!({
-                "model": "gpt-image-2",
-                "prompt": "draw",
-                "size": "1024x1024"
-            }),
-            None,
-        )
-        .expect("1024x1024 should pass");
-        assert_eq!(by_size["size"], "1024x1024");
-    }
-
-    #[test]
-    fn chatgpt_web_preserves_quality_and_partial_images() {
-        let parts = request_parts("/v1/images/generations", Some("application/json"));
-        let body = build_chatgpt_web_image_request_body(
-            &parts,
-            &json!({
-                "model": "gpt-image-2",
-                "prompt": "draw",
-                "size": "1024x1024",
-                "quality": "high",
-                "partial_images": 2,
-                "output_format": "png"
-            }),
-            None,
-        )
-        .expect("request should pass");
-
-        assert_eq!(body["quality"], "high");
-        assert_eq!(body["partial_images"], 2);
-        assert_eq!(body["output_format"], "png");
-    }
-
-    #[test]
-    fn chatgpt_web_accepts_openai_image_edit_requests() {
-        let parts = request_parts("/v1/images/edits", Some("application/json"));
-        let body = build_chatgpt_web_image_request_body(
-            &parts,
-            &json!({
-                "model": "gpt-image-2",
-                "prompt": "make the sky brighter",
-                "image": {
-                    "b64_json": "aW1hZ2U=",
-                    "mime_type": "image/png"
-                },
-                "size": "1024x1024",
-                "quality": "high",
-                "response_format": "b64_json",
-                "output_format": "png",
-                "user": "user-123"
-            }),
-            None,
-        )
-        .expect("ChatGPT-Web edit request should pass");
-
-        assert_eq!(body["operation"], "edit");
-        assert_eq!(body["model"], "gpt-image-2");
-        assert_eq!(body["prompt"], "make the sky brighter");
-        assert_eq!(body["size"], "1024x1024");
-        assert_eq!(body["quality"], "high");
-        assert_eq!(body["response_format"], "b64_json");
-        assert_eq!(body["output_format"], "png");
-        assert_eq!(body["user"], "user-123");
-        assert_eq!(body["count"], 1);
-        assert_eq!(body["images"], json!(["data:image/png;base64,aW1hZ2U="]));
-    }
-
-    #[test]
-    fn chatgpt_web_rejects_oversized_resolution_or_size() {
-        let parts = request_parts("/v1/images/generations", Some("application/json"));
-
-        for body in [
-            json!({"prompt":"draw","resolution":"2K"}),
-            json!({"prompt":"draw","size_tier":"4K"}),
-            json!({"prompt":"draw","size":"2048x2048"}),
-        ] {
-            let err = build_chatgpt_web_image_request_body(&parts, &body, None)
-                .expect_err("oversized request should fail");
-            assert_eq!(err.status_code, 400);
-            assert_eq!(err.error_type, "invalid_request_error");
-            assert!(err.message.contains("ChatGPT-Web"));
-            assert!(err.message.contains("resolution"));
-        }
-    }
-
-    #[test]
-    fn chatgpt_web_accepts_smaller_size_as_best_effort() {
-        let parts = request_parts("/v1/images/generations", Some("application/json"));
-        let body = build_chatgpt_web_image_request_body(
-            &parts,
-            &json!({
-                "model": "gpt-image-2",
-                "prompt": "draw",
-                "size": "512x512"
-            }),
-            None,
-        )
-        .expect("smaller size should pass");
-
-        assert_eq!(body["size"], "512x512");
-        assert_eq!(body["ratio"], "1:1");
-        assert_eq!(body["size_best_effort"], true);
-    }
-
-    #[test]
-    fn chatgpt_web_rejects_file_id_and_mask_inputs() {
-        let edit_parts = request_parts("/v1/images/edits", Some("application/json"));
-
-        let file_id_err = build_chatgpt_web_image_request_body(
-            &edit_parts,
-            &json!({
-                "prompt": "edit",
-                "image": {"file_id": "file_123"}
-            }),
-            None,
-        )
-        .expect_err("file_id should not be supported");
-        assert!(file_id_err.message.contains("file_id"));
-
-        let mask_err = build_chatgpt_web_image_request_body(
-            &edit_parts,
-            &json!({
-                "prompt": "edit",
-                "image": "data:image/png;base64,aW1hZ2U=",
-                "mask": "data:image/png;base64,bWFzaw=="
-            }),
-            None,
-        )
-        .expect_err("mask should not be supported");
-        assert!(mask_err.message.contains("mask"));
     }
 }

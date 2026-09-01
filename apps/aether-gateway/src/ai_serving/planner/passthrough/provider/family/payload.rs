@@ -1,6 +1,10 @@
 use serde_json::json;
 
-use aether_ai_serving::{AdaptationMode, AiRequestGzipPolicy, OriginalRequestPayload};
+use aether_ai_serving::{
+AdaptationMode,
+AiRequestGzipPolicy,
+OriginalRequestPayload,
+};
 use aether_contracts::{ExecutionResponseBodyMode, EXECUTION_RESPONSE_BODY_MODE_HEADER};
 
 use crate::ai_serving::ai_local_execution_contract_for_formats;
@@ -14,8 +18,7 @@ use crate::ai_serving::planner::materialization_policy::{
     build_local_candidate_persistence_policy, LocalCandidatePersistencePolicyKind,
 };
 use crate::ai_serving::planner::report_context::{
-    build_local_execution_report_context, insert_native_client_envelope_name,
-    LocalExecutionReportContextParts,
+    build_local_execution_report_context, LocalExecutionReportContextParts,
 };
 use crate::ai_serving::planner::spec_metadata::local_same_format_provider_spec_metadata;
 use crate::ai_serving::planner::CandidateFailureDiagnostic;
@@ -135,27 +138,6 @@ pub(crate) async fn maybe_build_local_same_format_provider_decision_payload_for_
     {
         extra_fields.insert("proxy".to_string(), proxy_value);
     }
-    if resolved.is_kiro {
-        extra_fields.insert(
-            "envelope_name".to_string(),
-            json!(crate::ai_serving::transport::kiro::KIRO_ENVELOPE_NAME),
-        );
-    } else if resolved.is_antigravity {
-        extra_fields.insert(
-            "envelope_name".to_string(),
-            json!(super::super::ANTIGRAVITY_ENVELOPE_NAME),
-        );
-        insert_native_client_envelope_name(
-            &mut extra_fields,
-            super::super::ANTIGRAVITY_ENVELOPE_NAME,
-            parts.uri.path(),
-        );
-    } else if resolved.is_gemini_cli {
-        extra_fields.insert(
-            "envelope_name".to_string(),
-            json!(crate::ai_serving::transport::GEMINI_CLI_V1INTERNAL_ENVELOPE_NAME),
-        );
-    }
     if !resolved.compatibility_edits.is_empty() {
         if let Ok(value) = serde_json::to_value(&resolved.compatibility_edits) {
             extra_fields.insert("request_body_compatibility_edits".to_string(), value);
@@ -208,7 +190,7 @@ pub(crate) async fn maybe_build_local_same_format_provider_decision_payload_for_
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false),
                 upstream_is_stream: resolved.upstream_is_stream,
-                has_envelope: resolved.is_kiro || resolved.is_antigravity || resolved.is_gemini_cli,
+                has_envelope: false,
                 needs_conversion: matches!(
                     conversion_mode,
                     crate::ai_serving::ConversionMode::Bidirectional
@@ -224,9 +206,6 @@ pub(crate) async fn maybe_build_local_same_format_provider_decision_payload_for_
     );
     let super::request::LocalSameFormatProviderCandidatePayloadParts {
         transport,
-        is_antigravity: _,
-        is_gemini_cli: _,
-        is_kiro: _,
         auth_header,
         auth_value,
         provider_api_format,

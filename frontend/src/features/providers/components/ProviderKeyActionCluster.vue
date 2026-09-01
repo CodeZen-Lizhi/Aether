@@ -110,17 +110,6 @@
     </Button>
 
     <Button
-      v-if="providerType === 'antigravity'"
-      variant="ghost"
-      size="icon"
-      class="h-7 w-7"
-      :title="legacyT('配额详情')"
-      @click="$emit('openAntigravityQuota')"
-    >
-      <BarChart3 class="w-3.5 h-3.5" />
-    </Button>
-
-    <Button
       variant="ghost"
       size="icon"
       class="h-7 w-7"
@@ -148,7 +137,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  BarChart3,
   Edit,
   Globe,
   Power,
@@ -165,7 +153,6 @@ import ProxyNodeSelect from '@/features/providers/components/ProxyNodeSelect.vue
 
 const props = withDefaults(defineProps<{
   apiKey: EndpointAPIKey
-  providerType?: string | null
   recoverable?: boolean
   recoverTitle?: string
   circuitBreakerTitle?: string
@@ -177,7 +164,6 @@ const props = withDefaults(defineProps<{
   savingProxy?: boolean
   toggling?: boolean
 }>(), {
-  providerType: null,
   recoverable: false,
   recoverTitle: '',
   circuitBreakerTitle: '',
@@ -197,7 +183,6 @@ defineEmits<{
   (e: 'clearProxy'): void
   (e: 'setProxy', nodeId: string): void
   (e: 'edit'): void
-  (e: 'openAntigravityQuota'): void
   (e: 'toggleActive'): void
   (e: 'delete'): void
 }>()

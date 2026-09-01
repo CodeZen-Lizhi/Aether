@@ -1,5 +1,7 @@
 use aether_ai_serving::{
-    run_ai_candidate_preselection, AiCandidatePreselectionOutcome, AiCandidatePreselectionPort,
+run_ai_candidate_preselection,
+AiCandidatePreselectionOutcome,
+AiCandidatePreselectionPort,
 };
 use aether_data_contracts::repository::candidate_selection::StoredMinimalCandidateSelectionRow;
 use aether_routing_core::ResolvedRoutingPolicy;

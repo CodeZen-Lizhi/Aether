@@ -13,7 +13,7 @@ import { requestTraceApi, type RequestTrace } from '@/api/requestTrace'
 import { parseApiError } from '@/utils/errorParser'
 
 export interface StartTestParams {
-  mode: 'global' | 'direct' | 'pool'
+  mode: 'global' | 'direct'
   modelName: string
   displayLabel: string
   apiFormat?: string
@@ -43,7 +43,7 @@ export function useModelTest(options: UseModelTestOptions) {
   const LOCAL_FAILOVER_UNCONFIGURED_MESSAGE = 'Rust local provider-query failover simulation is not configured'
 
   const testing = ref(false)
-  const testMode = ref<'global' | 'direct' | 'pool'>('global')
+  const testMode = ref<'global' | 'direct'>('global')
   const testResult = ref<TestModelFailoverResponse | null>(null)
   const testTrace = ref<RequestTrace | null>(null)
   const requestId = ref<string | null>(null)

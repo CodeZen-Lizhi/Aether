@@ -24,15 +24,12 @@
         :api-format-filters="apiFormatFilters"
         :model-filters="modelFilters"
         :has-active-filters="hasActiveFilters"
-        :priority-mode-label="priorityModeConfig.label"
         :loading="loading"
         @update:search-query="searchQuery = $event"
         @update:filter-status="filterStatus = $event"
         @update:filter-api-format="filterApiFormat = $event"
         @update:filter-model="filterModel = $event"
         @reset-filters="resetFilters"
-        @open-priority-dialog="openPriorityDialog"
-        @batch-process="openProviderBatchDialog"
         @add-provider="openAddProviderDialog"
         @refresh="loadProviders"
       />
@@ -66,9 +63,6 @@
             <TableRow>
               <TableHead class="w-[18%] min-w-[140px]">
                 {{ legacyT('提供商信息') }}
-              </TableHead>
-              <TableHead class="w-[20%] min-w-[180px]">
-                {{ legacyT('余额监控') }}
               </TableHead>
               <SortableTableHead
                 class="w-[12%] min-w-[100px] text-center"
@@ -134,21 +128,10 @@
               :key="provider.id"
               :provider="provider"
               :editing-description-id="editingDescriptionId"
-              :is-balance-loading="isBalanceLoading"
-              :get-provider-balance="getProviderBalance"
-              :get-provider-balance-breakdown="getProviderBalanceBreakdown"
-              :get-provider-balance-error="getProviderBalanceError"
-              :get-provider-checkin="getProviderCheckin"
-              :get-provider-cookie-expired="getProviderCookieExpired"
-              :get-provider-balance-extra="getProviderBalanceExtra"
-              :format-balance-display="formatBalanceDisplay"
-              :format-reset-countdown="formatResetCountdown"
-              :get-quota-used-color-class="getQuotaUsedColorClass"
               @mousedown="handleMouseDown"
               @row-click="handleRowClick"
               @view-detail="openProviderDrawer"
               @edit-provider="openEditProviderDialog"
-              @open-ops-config="openOpsConfigDialog"
               @toggle-status="toggleProviderStatus"
               @delete-provider="handleDeleteProvider"
               @start-edit-description="startEditDescription"
@@ -169,16 +152,8 @@
           :key="provider.id"
           :provider="provider"
           :editing-description-id="editingDescriptionId"
-          :is-balance-loading="isBalanceLoading"
-          :get-provider-balance="getProviderBalance"
-          :get-provider-balance-error="getProviderBalanceError"
-          :get-provider-checkin="getProviderCheckin"
-          :get-provider-cookie-expired="getProviderCookieExpired"
-          :format-balance-display="formatBalanceDisplay"
-          :get-quota-used-color-class="getQuotaUsedColorClass"
           @view-detail="openProviderDrawer"
           @edit-provider="openEditProviderDialog"
-          @open-ops-config="openOpsConfigDialog"
           @toggle-status="toggleProviderStatus"
           @delete-provider="handleDeleteProvider"
           @start-edit-description="startEditDescription"
@@ -204,20 +179,8 @@
   <ProviderFormDialog
     v-model="providerDialogOpen"
     :provider="providerToEdit"
-    :max-priority="maxProviderPriority"
     @provider-created="handleProviderAdded"
     @provider-updated="handleProviderUpdated"
-  />
-
-  <ProviderBatchActionDialog
-    v-model="providerBatchDialogOpen"
-    :providers="displayedProviders"
-    @changed="handleProviderBatchChanged"
-  />
-
-  <PriorityManagementDialog
-    v-model="priorityDialogOpen"
-    @saved="handlePrioritySaved"
   />
 
   <ProviderDetailDrawer
@@ -231,12 +194,6 @@
     @refresh="handleDrawerRefresh"
   />
 
-  <ProviderAuthDialog
-    v-model:open="opsConfigDialogOpen"
-    :provider-id="opsConfigProviderId"
-    :provider-website="opsConfigProviderWebsite"
-    @saved="handleOpsConfigSaved"
-  />
 </template>
 
 <script setup lang="ts">
@@ -250,8 +207,7 @@ import TableHead from '@/components/ui/table-head.vue'
 import SortableTableHead from '@/components/ui/sortable-table-head.vue'
 import TableFilterMenu from '@/components/ui/table-filter-menu.vue'
 import Pagination from '@/components/ui/pagination.vue'
-import { ProviderFormDialog, PriorityManagementDialog, ProviderAuthDialog } from '@/features/providers/components'
-import ProviderBatchActionDialog from '@/features/providers/components/ProviderBatchActionDialog.vue'
+import { ProviderFormDialog } from '@/features/providers/components'
 import ProviderTableHeader from '@/features/providers/components/ProviderTableHeader.vue'
 import ProviderTableRow from '@/features/providers/components/ProviderTableRow.vue'
 import ProviderMobileCard from '@/features/providers/components/ProviderMobileCard.vue'
@@ -261,7 +217,6 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useRowClick } from '@/composables/useRowClick'
 import { useProviderFilters } from '@/features/providers/composables/useProviderFilters'
-import { useProviderBalance } from '@/features/providers/composables/useProviderBalance'
 import {
   getProvidersSummary,
   getProvider,
@@ -271,7 +226,6 @@ import {
   getGlobalModels,
   type ProviderWithEndpointsSummary,
 } from '@/api/endpoints'
-import { adminApi } from '@/api/admin'
 import { parseApiError } from '@/utils/errorParser'
 import { useI18n } from '@/i18n'
 
@@ -305,10 +259,7 @@ const loading = ref(false)
 const providers = ref<ProviderWithEndpointsSummary[]>([])
 let providersRequestId = 0
 const providerDialogOpen = ref(false)
-const providerBatchDialogOpen = ref(false)
 const providerToEdit = ref<ProviderWithEndpointsSummary | null>(null)
-const priorityDialogOpen = ref(false)
-const priorityMode = ref<'provider' | 'global_key'>('provider')
 const providerDrawerOpen = ref(false)
 const providerDrawerMounted = ref(false)
 const selectedProviderId = ref<string | null>(null)
@@ -323,7 +274,6 @@ const DELETE_POLL_INTERVAL_MS = 2000
 const DELETE_POLL_MAX_MS = 30 * 60 * 1000
 const DELETE_POLL_MAX_FAILURES = 3
 const PROVIDER_SUMMARY_CACHE_TTL_MS = 10 * 1000
-const PROVIDER_PRIORITY_MODE_CACHE_TTL_MS = 30 * 1000
 const PROVIDER_MODEL_FILTER_CACHE_TTL_MS = 10 * 1000
 
 async function pollProviderDeleteTask(providerId: string, taskId: string) {
@@ -380,7 +330,7 @@ const providerDeleteStageLabel = computed(() => {
     case 'cleaning_provider_refs':
       return legacyT('清理历史引用')
     case 'deleting_keys':
-      return legacyT('删除号池账号')
+      return legacyT('删除密钥')
     case 'deleting_endpoints':
       return legacyT('删除端点')
     case 'completed':
@@ -449,28 +399,6 @@ const {
   () => globalModels.value,
 )
 
-const {
-  loadArchitectureSchemas,
-  loadBalances,
-  getProviderBalance,
-  getProviderBalanceBreakdown,
-  getProviderBalanceError,
-  isBalanceLoading,
-  getProviderCheckin,
-  getProviderCookieExpired,
-  formatBalanceDisplay,
-  formatResetCountdown,
-  getProviderBalanceExtra,
-  getQuotaUsedColorClass,
-  startTick,
-  stopTick,
-} = useProviderBalance()
-
-// 扩展操作配置对话框
-const opsConfigDialogOpen = ref(false)
-const opsConfigProviderId = ref('')
-const opsConfigProviderWebsite = ref('')
-
 // 内联编辑备注
 const editingDescriptionId = ref<string | null>(null)
 
@@ -478,9 +406,6 @@ function sortProvidersByActiveAndPriority(items: ProviderWithEndpointsSummary[])
   return [...items].sort((a, b) => {
     if (a.is_active !== b.is_active) {
       return a.is_active ? -1 : 1
-    }
-    if (a.provider_priority !== b.provider_priority) {
-      return a.provider_priority - b.provider_priority
     }
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   })
@@ -517,36 +442,6 @@ async function saveDescription(_event: Event, provider: ProviderWithEndpointsSum
   }
 }
 
-// 优先级模式配置
-const priorityModeConfig = computed(() => {
-  return {
-    label: legacyT(priorityMode.value === 'global_key' ? '全局 Key 优先' : '提供商优先'),
-  }
-})
-
-// 当前已有提供商的最大优先级
-const maxProviderPriority = computed(() => {
-  if (providers.value.length === 0) return undefined
-  const priorities = providers.value
-    .map(p => p.provider_priority)
-    .filter(v => typeof v === 'number' && Number.isFinite(v))
-  return priorities.length > 0 ? Math.max(...priorities) : undefined
-})
-
-// 加载优先级模式
-async function loadPriorityMode(options: { cacheTtlMs?: number } = {}) {
-  try {
-    const response = await adminApi.getSystemConfig('provider_priority_mode', {
-      cacheTtlMs: options.cacheTtlMs ?? 0,
-    })
-    if (response.value) {
-      priorityMode.value = response.value as 'provider' | 'global_key'
-    }
-  } catch {
-    priorityMode.value = 'provider'
-  }
-}
-
 // 加载全局模型列表（用于模型筛选下拉）
 async function loadGlobalModelList(options: { cacheTtlMs?: number } = {}) {
   try {
@@ -577,8 +472,6 @@ async function loadProviders(options: { cacheTtlMs?: number } = {}) {
       return existing
     })
     total.value = response.total
-    // 异步加载配置了 ops 的 provider 的余额数据
-    loadBalances(providers.value)
   } catch (err: unknown) {
     if (requestId !== providersRequestId) return
     showLegacyError(err, '加载提供商列表失败')
@@ -624,19 +517,6 @@ function openAddProviderDialog() {
   providerDialogOpen.value = true
 }
 
-// 打开优先级管理对话框
-function openPriorityDialog() {
-  priorityDialogOpen.value = true
-}
-
-function openProviderBatchDialog() {
-  providerBatchDialogOpen.value = true
-}
-
-async function handleProviderBatchChanged() {
-  await loadProviders()
-}
-
 // 打开提供商详情抽屉
 function openProviderDrawer(providerId: string) {
   selectedProviderId.value = providerId
@@ -648,7 +528,6 @@ function mergeUpdatedProvider(updated: ProviderWithEndpointsSummary) {
   const index = providers.value.findIndex(p => p.id === updated.id)
   if (index !== -1) {
     Object.assign(providers.value[index], updated)
-    loadBalances([providers.value[index]], false)
   }
 }
 
@@ -673,19 +552,6 @@ async function openEditProviderDialog(provider: ProviderWithEndpointsSummary) {
   providerDialogOpen.value = true
 }
 
-// 打开扩展操作配置对话框
-function openOpsConfigDialog(provider: ProviderWithEndpointsSummary) {
-  opsConfigProviderId.value = provider.id
-  opsConfigProviderWebsite.value = provider.website || ''
-  opsConfigDialogOpen.value = true
-}
-
-// 扩展操作配置保存回调
-function handleOpsConfigSaved() {
-  opsConfigDialogOpen.value = false
-  void loadProviders()
-}
-
 // 处理提供商编辑完成
 function handleProviderUpdated(updated: ProviderWithEndpointsSummary) {
   mergeUpdatedProvider(updated)
@@ -695,12 +561,6 @@ function handleProviderUpdated(updated: ProviderWithEndpointsSummary) {
 async function handleDrawerRefresh() {
   if (!selectedProviderId.value) return
   await refreshProviderSnapshot(selectedProviderId.value)
-}
-
-// 优先级保存成功回调
-async function handlePrioritySaved() {
-  await loadProviders()
-  await loadPriorityMode()
 }
 
 // 处理提供商添加
@@ -779,18 +639,13 @@ function handleGlobalClick(event: MouseEvent) {
 
 onMounted(() => {
   void loadProviders({ cacheTtlMs: PROVIDER_SUMMARY_CACHE_TTL_MS })
-  void loadPriorityMode({ cacheTtlMs: PROVIDER_PRIORITY_MODE_CACHE_TTL_MS })
   void loadGlobalModelList({ cacheTtlMs: PROVIDER_MODEL_FILTER_CACHE_TTL_MS })
-  void loadArchitectureSchemas()
   document.addEventListener('click', handleGlobalClick, true)
-  // 每秒更新一次倒计时
-  startTick()
 })
 
 onUnmounted(() => {
   deletePollAbort?.abort()
   if (debounceTimer) clearTimeout(debounceTimer)
   document.removeEventListener('click', handleGlobalClick, true)
-  stopTick()
 })
 </script>

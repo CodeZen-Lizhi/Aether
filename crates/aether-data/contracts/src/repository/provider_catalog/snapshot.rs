@@ -46,9 +46,10 @@ impl ProviderCatalogSnapshot {
             .cloned()
             .collect::<Vec<_>>();
         providers.sort_by(|left, right| {
-            left.provider_priority
-                .cmp(&right.provider_priority)
-                .then(left.name.cmp(&right.name))
+            left.name
+                .cmp(&right.name)
+                .then(left.created_at_unix_ms.cmp(&right.created_at_unix_ms))
+                .then(left.id.cmp(&right.id))
         });
         providers
     }
@@ -212,18 +213,13 @@ fn compare_optional_u64_null_last(
 fn sort_key_page(items: &mut [StoredProviderCatalogKey], order: ProviderCatalogKeyListOrder) {
     items.sort_by(|left, right| match order {
         ProviderCatalogKeyListOrder::Name => left
-            .internal_priority
-            .cmp(&right.internal_priority)
-            .then(left.name.cmp(&right.name))
+            .name
+            .cmp(&right.name)
             .then(left.id.cmp(&right.id)),
         ProviderCatalogKeyListOrder::CreatedAt => left
-            .internal_priority
-            .cmp(&right.internal_priority)
-            .then(
-                left.created_at_unix_ms
-                    .unwrap_or_default()
-                    .cmp(&right.created_at_unix_ms.unwrap_or_default()),
-            )
+            .created_at_unix_ms
+            .unwrap_or_default()
+            .cmp(&right.created_at_unix_ms.unwrap_or_default())
             .then(left.id.cmp(&right.id)),
         ProviderCatalogKeyListOrder::CreatedAtAsc => {
             compare_optional_u64_null_last(left.created_at_unix_ms, right.created_at_unix_ms, false)

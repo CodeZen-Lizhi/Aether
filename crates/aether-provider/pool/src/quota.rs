@@ -10,7 +10,7 @@ pub fn provider_pool_key_account_quota_exhausted(
     key: &StoredProviderCatalogKey,
     provider_type: &str,
 ) -> bool {
-    let adapter = ProviderPoolService::with_builtin_adapters().adapter(provider_type);
+    let adapter = ProviderPoolService::new().adapter(provider_type);
     adapter.quota_exhausted(&ProviderPoolMemberInput {
         provider_type,
         key,
@@ -22,7 +22,7 @@ pub fn provider_pool_key_quota_hard_blocked(
     key: &StoredProviderCatalogKey,
     provider_type: &str,
 ) -> bool {
-    let adapter = ProviderPoolService::with_builtin_adapters().adapter(provider_type);
+    let adapter = ProviderPoolService::new().adapter(provider_type);
     adapter.quota_hard_blocked(&ProviderPoolMemberInput {
         provider_type,
         key,
@@ -62,7 +62,7 @@ pub fn provider_pool_quota_metadata_updated_at(
 
 pub fn provider_pool_quota_metadata_provider_type(metadata_update: &Value) -> Option<String> {
     let object = metadata_update.as_object()?;
-    let service = ProviderPoolService::with_builtin_adapters();
+    let service = ProviderPoolService::new();
     let known_provider_type = service
         .provider_types()
         .find(|provider_type| object.contains_key(*provider_type))
@@ -305,42 +305,5 @@ pub(crate) fn provider_pool_quota_snapshot_exhausted_decision(
     Some(exhausted)
 }
 
-pub(crate) fn provider_pool_quota_usage_ratio(key: &StoredProviderCatalogKey) -> Option<f64> {
-    key.status_snapshot
-        .as_ref()
-        .and_then(Value::as_object)
-        .and_then(|snapshot| snapshot.get("quota"))
-        .and_then(Value::as_object)
-        .and_then(|quota| provider_pool_json_f64(quota.get("usage_ratio")))
-}
 
-pub(crate) fn provider_pool_quota_reset_seconds(key: &StoredProviderCatalogKey) -> Option<f64> {
-    key.status_snapshot
-        .as_ref()
-        .and_then(Value::as_object)
-        .and_then(|snapshot| snapshot.get("quota"))
-        .and_then(Value::as_object)
-        .and_then(|quota| provider_pool_json_f64(quota.get("reset_seconds")))
-}
 
-pub(crate) fn provider_pool_account_blocked(key: &StoredProviderCatalogKey) -> bool {
-    key.oauth_invalid_reason.as_deref().is_some_and(|reason| {
-        let normalized = reason.trim().to_ascii_lowercase();
-        !normalized.is_empty()
-            && [
-                "banned",
-                "forbidden",
-                "blocked",
-                "suspend",
-                "deactivated",
-                "disabled",
-                "verification",
-                "workspace",
-                "受限",
-                "封",
-                "禁",
-            ]
-            .iter()
-            .any(|hint| normalized.contains(hint))
-    })
-}

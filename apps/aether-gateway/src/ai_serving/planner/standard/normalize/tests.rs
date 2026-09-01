@@ -1,6 +1,8 @@
 use aether_provider_transport::snapshot::{
-    GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-    GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+GatewayProviderTransportSnapshot,
 };
 use http::Request;
 use serde_json::{json, Value};

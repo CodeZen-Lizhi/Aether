@@ -1,8 +1,6 @@
 mod batch;
-mod codex_reset_credit;
 mod create;
 mod delete;
-mod oauth_invalid;
 mod reset_cycle_stats;
 mod update;
 
@@ -28,17 +26,7 @@ pub(super) async fn maybe_handle(
         return Ok(Some(response));
     }
     if let Some(response) =
-        oauth_invalid::maybe_handle(state, request_context, request_body).await?
-    {
-        return Ok(Some(response));
-    }
-    if let Some(response) =
         reset_cycle_stats::maybe_handle(state, request_context, request_body).await?
-    {
-        return Ok(Some(response));
-    }
-    if let Some(response) =
-        codex_reset_credit::maybe_handle(state, request_context, request_body).await?
     {
         return Ok(Some(response));
     }

@@ -4,8 +4,12 @@ mod sub2api;
 
 use crate::handlers::admin::request::AdminAppState;
 use aether_admin::provider::ops::{
-    admin_provider_ops_verify_failure, build_headers, get_architecture, normalize_architecture_id,
-    parse_verify_payload, ProviderOpsVerifyMode,
+admin_provider_ops_verify_failure,
+build_headers,
+get_architecture,
+normalize_architecture_id,
+parse_verify_payload,
+ProviderOpsVerifyMode,
 };
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogProvider;
 

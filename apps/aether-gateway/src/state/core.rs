@@ -37,8 +37,8 @@ use super::super::async_task::{
 };
 use super::super::cache::{
     AuthApiKeyLastUsedCache, AuthContextCache, AuthSnapshotCache, DashboardResponseCache,
-    DirectPlanBypassCache, JsonValueCache, SchedulerAffinityCache, SchedulerAffinitySnapshotEntry,
-    SchedulerAffinityTarget, SystemConfigCache, SystemConfigInflightRegistration, ValueCache,
+    JsonValueCache, SchedulerAffinityCache, SchedulerAffinitySnapshotEntry, SchedulerAffinityTarget,
+    SystemConfigCache, SystemConfigInflightRegistration, ValueCache,
 };
 use super::super::data::{GatewayDataConfig, GatewayDataState};
 use super::super::fallback_metrics;
@@ -52,15 +52,10 @@ use super::super::router::RequestAdmissionError;
 use super::super::{control::GatewayControlDecision, error::GatewayError};
 use super::super::{provider_transport, usage};
 
-use crate::maintenance::spawn_account_self_check_worker;
 use crate::maintenance::spawn_db_maintenance_worker;
-use crate::maintenance::spawn_fixed_provider_reconciliation_task;
 use crate::maintenance::spawn_gemini_file_mapping_cleanup_worker;
-use crate::maintenance::spawn_oauth_token_refresh_worker;
 use crate::maintenance::spawn_pending_cleanup_worker;
 use crate::maintenance::spawn_pool_monitor_worker;
-use crate::maintenance::spawn_pool_quota_probe_worker;
-use crate::maintenance::spawn_pool_score_rebuild_worker;
 use crate::maintenance::spawn_provider_checkin_worker;
 use crate::maintenance::spawn_provider_quota_alert_worker;
 use crate::maintenance::spawn_proxy_node_metrics_cleanup_worker;
@@ -78,16 +73,8 @@ const SYSTEM_CONFIG_CACHE_TTL: Duration = Duration::from_secs(30);
 // five minutes of total age. Direct database edits that bypass AppState
 // invalidation can therefore take at most this bounded interval to appear.
 const SYSTEM_CONFIG_CACHE_MAX_STALENESS: Duration = Duration::from_secs(5 * 60);
-const SCHEDULER_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &[
-    "enable_format_conversion",
-    "keep_priority_on_conversion",
-    "provider_priority_mode",
-    "scheduling_mode",
-];
-const AUTH_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &[
-    crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY,
-    crate::constants::ANTIGRAVITY_BEARER_BRIDGE_CONFIG_KEY,
-];
+const SCHEDULER_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &["enable_format_conversion"];
+const AUTH_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &[crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY];
 const FRONTDOOR_RPM_AFFECTING_SYSTEM_CONFIG_KEYS: &[&str] = &["rate_limit_per_minute"];
 const METRIC_SNAPSHOT_REFRESH_TIMEOUT: Duration = Duration::from_secs(4);
 const METRIC_SNAPSHOT_PREWARM_TIMEOUT: Duration = Duration::from_secs(12);
@@ -347,8 +334,6 @@ impl AppState {
             user_groups_for_user_cache: Arc::new(ValueCache::default()),
             routing_group_selection_cache: Arc::new(ValueCache::default()),
             auth_api_key_last_used_cache: Arc::new(AuthApiKeyLastUsedCache::default()),
-            oauth_refresh: Arc::new(provider_transport::LocalOAuthRefreshCoordinator::new()),
-            direct_plan_bypass_cache: Arc::new(DirectPlanBypassCache::default()),
             scheduler_affinity_cache: Arc::new(SchedulerAffinityCache::default()),
             scheduler_affinity_epoch: Arc::new(AtomicU64::new(0)),
             dashboard_response_cache: Arc::new(DashboardResponseCache::default()),
@@ -2035,13 +2020,6 @@ impl AppState {
             record_boot(crate::task_runtime::TASK_KEY_USAGE_QUEUE_WORKER);
         }
 
-        if let Some(handle) = spawn_fixed_provider_reconciliation_task(background_state.clone()) {
-            // This is a bounded startup reconciliation, not a long-running worker. Dropping a
-            // Tokio JoinHandle detaches it; supervising it as a worker would incorrectly count
-            // its successful completion as an unexpected background-task exit.
-            std::mem::drop(handle);
-        }
-
         let mut supervise_worker =
             |task_key: &'static str, handle: Option<tokio::task::JoinHandle<()>>| {
                 if let Some(handle) = handle {
@@ -2082,18 +2060,6 @@ impl AppState {
             spawn_pool_monitor_worker(background_state.clone()),
         );
         supervise_worker(
-            crate::task_runtime::TASK_KEY_ACCOUNT_SELF_CHECK,
-            spawn_account_self_check_worker(background_state.clone()),
-        );
-        supervise_worker(
-            crate::task_runtime::TASK_KEY_POOL_SCORE_REBUILD,
-            spawn_pool_score_rebuild_worker(background_state.clone()),
-        );
-        supervise_worker(
-            crate::task_runtime::TASK_KEY_POOL_QUOTA_PROBE,
-            spawn_pool_quota_probe_worker(background_state.clone()),
-        );
-        supervise_worker(
             crate::task_runtime::TASK_KEY_STATS_HOURLY_AGG,
             spawn_stats_hourly_aggregation_worker(background_state.clone()),
         );
@@ -2120,10 +2086,6 @@ impl AppState {
         supervise_worker(
             crate::task_runtime::TASK_KEY_PROVIDER_QUOTA_ALERT,
             spawn_provider_quota_alert_worker(background_state.clone()),
-        );
-        supervise_worker(
-            crate::task_runtime::TASK_KEY_OAUTH_TOKEN_REFRESH,
-            spawn_oauth_token_refresh_worker(background_state.clone()),
         );
         supervise_worker(
             crate::task_runtime::TASK_KEY_REQUEST_CANDIDATE_CLEANUP,

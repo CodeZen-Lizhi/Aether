@@ -71,9 +71,11 @@ fn openai_chat_gemini_cli_client_stream_requires_upstream_streaming(
 mod tests {
     use super::openai_chat_upstream_is_stream_for_candidate;
     use aether_provider_transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
-    };
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+GatewayProviderTransportSnapshot,
+};
     use serde_json::{json, Value};
 
     fn sample_transport(

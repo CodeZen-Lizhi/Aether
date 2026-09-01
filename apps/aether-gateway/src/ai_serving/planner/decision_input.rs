@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use aether_ai_serving::{run_ai_authenticated_decision_input, AiAuthenticatedDecisionInputPort};
+use aether_ai_serving::{
+run_ai_authenticated_decision_input,
+AiAuthenticatedDecisionInputPort,
+};
 use aether_routing_core::{
     rank_vector_for_candidate, CandidateKind, ResolvedRoutingPolicy, RoutingCandidateFacts,
-    RoutingCandidateTrace, RoutingDecisionTrace, RoutingPoolExpansionTrace, RoutingRulePhase,
+    RoutingCandidateTrace, RoutingDecisionTrace, RoutingRulePhase,
 };
 use aether_scheduler_core::ClientSessionAffinity;
 use async_trait::async_trait;
@@ -16,7 +19,6 @@ use crate::ai_serving::planner::common::extract_standard_requested_model;
 use crate::ai_serving::{
     ClientSurface, ExecutionRuntimeAuthContext, GatewayAuthApiKeySnapshot,
     GatewayCredentialCarrier, GatewayProviderTransportSnapshot, PlannerAppState,
-    CODEX_RESPONSES_LITE_HEADER,
 };
 use crate::cache::CacheLoadObserver;
 use crate::client_session_affinity::client_session_affinity_from_api_request;
@@ -137,42 +139,13 @@ pub(crate) fn apply_provider_request_routing_policy_to_decision_with_websocket_m
         .or(decision.mapped_model.as_deref())
         .or(decision.model_name.as_deref())
         .unwrap_or(input.requested_model.as_str());
-    let model_capabilities = transport.and_then(|transport| {
-        crate::ai_serving::codex_model_capabilities_for_transport(
-            transport,
-            provider_api_format.as_str(),
-            terminal_provider_model,
-            input.requested_model.as_str(),
-        )
-    });
-    crate::ai_serving::apply_codex_openai_responses_lite_header_for_request_body_with_capabilities(
-        &mut decision.provider_request_headers,
-        decision.provider_request_body.as_ref(),
-        provider_type.as_str(),
-        provider_api_format.as_str(),
-        terminal_provider_model,
-        input.requested_model.as_str(),
-        model_capabilities.as_ref(),
-    );
+    let _ = terminal_provider_model;
 
     let Some(context) = input.routing_context.as_ref() else {
         // Cache identity headers are projected only at the terminal boundary. Any non-empty
         // session headers already present here are explicit client or header-rule inputs and stay
         // authoritative.
-        if let Some(provider_request_body) = decision.provider_request_body.as_ref() {
-            crate::ai_serving::apply_codex_openai_responses_identity_headers(
-                &mut decision.provider_request_headers,
-                provider_request_body,
-                provider_type.as_str(),
-                provider_api_format.as_str(),
-            );
-        }
-        apply_codex_oauth_fingerprint_convergence_to_decision(
-            input,
-            decision,
-            transport,
-            provider_api_format.as_str(),
-        );
+        let _ = provider_type.as_str();
         return Ok(());
     };
     let provider_body_rules = decision
@@ -191,16 +164,7 @@ pub(crate) fn apply_provider_request_routing_policy_to_decision_with_websocket_m
         .unwrap_or(serde_json::Value::Null);
     let mut provider_headers = btree_headers_to_header_map(&decision.provider_request_headers)?;
     let mut protected_codex_header_names = vec![CODEX_ACCOUNT_ID_HEADER, CODEX_FEDRAMP_HEADER];
-    if provider_type.eq_ignore_ascii_case("codex")
-        && crate::ai_serving::is_openai_responses_family_format(provider_api_format.as_str())
-    {
-        protected_codex_header_names.extend([
-            "x-client-request-id",
-            "accept",
-            "content-encoding",
-            CODEX_RESPONSES_LITE_HEADER,
-        ]);
-    }
+    protected_codex_header_names.extend(["x-client-request-id", "accept", "content-encoding"]);
     let protected_codex_headers = protected_codex_header_names
         .into_iter()
         .map(|name| (name, provider_headers.get(name).cloned()))
@@ -222,20 +186,6 @@ pub(crate) fn apply_provider_request_routing_policy_to_decision_with_websocket_m
     })?;
     ensure_report_context_routing_trace(input, decision, &policy);
     if policy.mutation_plan.is_empty() {
-        if let Some(provider_request_body) = decision.provider_request_body.as_ref() {
-            crate::ai_serving::apply_codex_openai_responses_identity_headers(
-                &mut decision.provider_request_headers,
-                provider_request_body,
-                provider_type.as_str(),
-                provider_api_format.as_str(),
-            );
-        }
-        apply_codex_oauth_fingerprint_convergence_to_decision(
-            input,
-            decision,
-            transport,
-            provider_api_format.as_str(),
-        );
         return Ok(());
     }
     if original_provider_request_body.is_none() && !policy.mutation_plan.body_patch.is_empty() {
@@ -265,14 +215,6 @@ pub(crate) fn apply_provider_request_routing_policy_to_decision_with_websocket_m
             .or(decision.model_name.as_deref())
             .unwrap_or(input.requested_model.as_str())
             .to_string();
-        let model_capabilities = transport.and_then(|transport| {
-            crate::ai_serving::codex_model_capabilities_for_transport(
-                transport,
-                provider_api_format.as_str(),
-                provider_model.as_str(),
-                input.requested_model.as_str(),
-            )
-        });
         {
             let finalization = crate::ai_serving::OpenAiProviderRequestFinalization {
                 source_api_format: context.client_api_format.as_str(),
@@ -295,17 +237,15 @@ pub(crate) fn apply_provider_request_routing_policy_to_decision_with_websocket_m
                 })
                 .unwrap_or_default();
             if websocket_continuation {
-                crate::ai_serving::finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy_for_websocket_continuation(
+                crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy_for_websocket_continuation(
                     &mut provider_request_body,
                     finalization,
-                    model_capabilities.as_ref(),
                     reasoning_replay_policy,
                 )
             } else {
-                crate::ai_serving::finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy(
+                crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy(
                     &mut provider_request_body,
                     finalization,
-                    model_capabilities.as_ref(),
                     reasoning_replay_policy,
                 )
             }
@@ -322,67 +262,15 @@ pub(crate) fn apply_provider_request_routing_policy_to_decision_with_websocket_m
         .or(decision.model_name.as_deref())
         .unwrap_or(input.requested_model.as_str());
     let mut provider_request_headers = header_map_to_btree_headers(&provider_headers);
-    let model_capabilities = transport.and_then(|transport| {
-        crate::ai_serving::codex_model_capabilities_for_transport(
-            transport,
-            provider_api_format.as_str(),
-            provider_model,
-            input.requested_model.as_str(),
-        )
-    });
-    crate::ai_serving::apply_codex_openai_responses_identity_headers(
-        &mut provider_request_headers,
-        &provider_request_body,
-        provider_type.as_str(),
-        provider_api_format.as_str(),
-    );
-    crate::ai_serving::apply_codex_openai_responses_lite_header_for_request_body_with_capabilities(
-        &mut provider_request_headers,
-        Some(&provider_request_body),
-        provider_type.as_str(),
-        provider_api_format.as_str(),
-        provider_model,
-        input.requested_model.as_str(),
-        model_capabilities.as_ref(),
-    );
-    crate::ai_serving::apply_codex_openai_compact_terminal_headers(
-        &mut provider_request_headers,
-        provider_type.as_str(),
-        provider_api_format.as_str(),
-    );
+    let _ = provider_model;
+    let _ = provider_type.as_str();
     provider_headers = btree_headers_to_header_map(&provider_request_headers)?;
     decision.provider_request_headers = header_map_to_btree_headers(&provider_headers);
     if original_provider_request_body.is_some() {
         decision.provider_request_body = Some(provider_request_body);
     }
-    apply_codex_oauth_fingerprint_convergence_to_decision(
-        input,
-        decision,
-        transport,
-        provider_api_format.as_str(),
-    );
     update_report_context_provider_request_mutation(decision, &policy);
     Ok(())
-}
-
-fn apply_codex_oauth_fingerprint_convergence_to_decision(
-    input: &LocalRequestedModelDecisionInput,
-    decision: &mut AiExecutionDecision,
-    transport: Option<&GatewayProviderTransportSnapshot>,
-    provider_api_format: &str,
-) {
-    let (Some(transport), Some(provider_request_body)) =
-        (transport, decision.provider_request_body.as_mut())
-    else {
-        return;
-    };
-    crate::ai_serving::transport::apply_codex_oauth_fingerprint_convergence(
-        transport,
-        provider_api_format,
-        input.original_client_session_id.as_deref(),
-        &mut decision.provider_request_headers,
-        provider_request_body,
-    );
 }
 
 struct GatewayAuthenticatedDecisionInputPort<'a> {
@@ -1012,26 +900,14 @@ fn ensure_report_context_routing_trace(
         .clone()
         .unwrap_or_else(|| build_routing_trace_seed(policy, client_api_format));
 
-    let candidate_group_id = object
+    let _ = object
         .get("candidate_group_id")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
-    let pool_key_index = object
-        .get("pool_key_index")
-        .and_then(Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok());
-    let is_pool_expansion = candidate_group_id.is_some() && pool_key_index.is_some();
-    let candidate_kind = if is_pool_expansion {
-        CandidateKind::PoolGroup
-    } else {
-        CandidateKind::Provider
-    };
-    let provider_id = candidate_group_id
-        .clone()
-        .or_else(|| decision.provider_id.clone())
-        .unwrap_or_default();
+    let candidate_kind = CandidateKind::Provider;
+    let provider_id = decision.provider_id.clone().unwrap_or_default();
     let endpoint_id = decision.endpoint_id.clone().unwrap_or_default();
     let model_id = object
         .get("model_id")
@@ -1040,7 +916,7 @@ fn ensure_report_context_routing_trace(
         .or_else(|| decision.mapped_model.clone())
         .or_else(|| decision.model_name.clone())
         .unwrap_or_else(|| input.requested_model.clone());
-    let key_id = decision.key_id.clone().filter(|_| !is_pool_expansion);
+    let key_id = decision.key_id.clone();
     let provider_priority = object
         .get("provider_priority")
         .and_then(Value::as_i64)
@@ -1076,18 +952,6 @@ fn ensure_report_context_routing_trace(
             .and_then(|value| u32::try_from(value).ok()),
     });
 
-    if is_pool_expansion {
-        if let (Some(pool_group_id), Some(key_id)) = (candidate_group_id, decision.key_id.clone()) {
-            trace.pool_expansion.push(RoutingPoolExpansionTrace {
-                pool_group_id,
-                key_id,
-                pool_ranking_vector: Vec::new(),
-                pool_skip_reason: None,
-                selected_order: pool_key_index,
-            });
-        }
-    }
-
     object.insert("routing_trace".to_string(), serde_json::json!(trace));
 }
 
@@ -1102,9 +966,10 @@ mod tests {
         RoutingGroupWriteRepository,
     };
     use aether_provider_transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider,
-    };
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+};
 
     #[test]
     fn original_client_session_id_accepts_live_header_as_fallback() {
@@ -1442,123 +1307,11 @@ mod tests {
         }
     }
 
-    fn sample_codex_transport_with_card() -> GatewayProviderTransportSnapshot {
-        let card = json!({
-            "id": "gpt-future-agent",
-            "slug": "gpt-future-agent",
-            "use_responses_lite": true,
-            "supports_reasoning_summary_parameter": true,
-            "default_reasoning_level": "low",
-            "default_reasoning_summary": "none",
-            "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]
-        });
-        GatewayProviderTransportSnapshot {
-            provider: GatewayProviderTransportProvider {
-                id: "provider-codex".to_string(),
-                name: "Codex".to_string(),
-                provider_type: "codex".to_string(),
-                website: None,
-                is_active: true,
-                keep_priority_on_conversion: false,
-                enable_format_conversion: true,
-                concurrent_limit: None,
-                max_retries: None,
-                proxy: None,
-                request_timeout_secs: None,
-                stream_first_byte_timeout_secs: None,
-                config: None,
-            },
-            endpoint: GatewayProviderTransportEndpoint {
-                id: "endpoint-codex".to_string(),
-                provider_id: "provider-codex".to_string(),
-                api_format: "openai:responses:compact".to_string(),
-                api_family: Some("openai".to_string()),
-                endpoint_kind: Some("compact".to_string()),
-                is_active: true,
-                base_url: "https://chatgpt.com/backend-api/codex".to_string(),
-                header_rules: None,
-                body_rules: None,
-                max_retries: None,
-                custom_path: None,
-                config: None,
-                format_acceptance_config: None,
-                proxy: None,
-            },
-            key: GatewayProviderTransportKey {
-                id: "key-codex".to_string(),
-                provider_id: "provider-codex".to_string(),
-                name: "Codex key".to_string(),
-                auth_type: "oauth".to_string(),
-                is_active: true,
-                api_formats: Some(vec!["openai:responses:compact".to_string()]),
-                auth_type_by_format: None,
-                allow_auth_channel_mismatch_formats: None,
-                allowed_models: Some(vec!["gpt-future-agent".to_string()]),
-                capabilities: None,
-                rate_multipliers: None,
-                global_priority_by_format: None,
-                expires_at_unix_secs: None,
-                proxy: None,
-                fingerprint: None,
-                upstream_metadata: Some(crate::ai_serving::build_codex_model_catalog_metadata(&[
-                    card,
-                ])),
-                decrypted_api_key: "access-token".to_string(),
-                decrypted_auth_config: None,
-            },
-        }
-    }
 
-    fn sample_codex_fingerprint_transport() -> GatewayProviderTransportSnapshot {
-        let mut transport = sample_codex_transport_with_card();
-        transport.provider.config = Some(json!({
-            "codex": {"fingerprint_convergence_enabled": true}
-        }));
-        transport.endpoint.api_format = "openai:responses".to_string();
-        transport.endpoint.endpoint_kind = Some("responses".to_string());
-        transport.key.api_formats = Some(vec!["openai:responses".to_string()]);
-        transport.key.decrypted_auth_config =
-            Some(json!({"account_id": "account-codex-1"}).to_string());
-        transport
-    }
 
-    fn sample_codex_fingerprint_decision() -> AiExecutionDecision {
-        let prompt_cache_key = "172c39e6-c0a0-5a70-8b63-e0f8e0d185a3";
-        let mut decision = sample_decision();
-        decision.provider_type = Some("codex".to_string());
-        decision.provider_api_format = Some("openai:responses".to_string());
-        decision.client_api_format = Some("openai:responses".to_string());
-        decision.provider_request_headers.extend([
-            ("session-id".to_string(), "spoofed-session".to_string()),
-            ("thread-id".to_string(), "spoofed-thread".to_string()),
-            (
-                "x-codex-turn-metadata".to_string(),
-                json!({
-                    "installation_id": "spoofed-installation",
-                    "session_id": "spoofed-session",
-                    "thread_source": "cli"
-                })
-                .to_string(),
-            ),
-        ]);
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-5",
-            "input": [],
-            "metadata": {},
-            "prompt_cache_key": prompt_cache_key,
-            "client_metadata": {
-                "session_id": "spoofed-session",
-                "thread_id": "spoofed-thread",
-                "caller": "sdk",
-                "x-codex-turn-metadata": json!({
-                    "installation_id": "spoofed-installation",
-                    "session_id": "spoofed-session",
-                    "sandbox": "workspace-write"
-                }).to_string()
-            }
-        }));
-        decision
-    }
+
+
+
 
     fn set_provider_request_rules(
         input: &mut LocalRequestedModelDecisionInput,
@@ -1738,123 +1491,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn codex_fingerprint_convergence_runs_at_every_provider_routing_success_exit() {
-        let transport = sample_codex_fingerprint_transport();
-        let mut no_context = sample_decision_input();
-        no_context.routing_context = None;
-        let mut empty_mutation = sample_decision_input();
-        empty_mutation
-            .routing_context
-            .as_mut()
-            .expect("routing context")
-            .group_config_json = json!({
-            "allowed_models": ["gpt-5"],
-            "rules": []
-        });
-        let mut with_mutation = sample_decision_input();
-        for input in [&mut no_context, &mut empty_mutation, &mut with_mutation] {
-            input.original_client_session_id = Some("client-session-1".to_string());
-        }
 
-        let mut stable_identity = None;
-        let mut turn_ids = std::collections::BTreeSet::new();
-        for (exit_name, input) in [
-            ("no_context", no_context),
-            ("empty_mutation", empty_mutation),
-            ("with_mutation", with_mutation),
-        ] {
-            let mut decision = sample_codex_fingerprint_decision();
-
-            apply_provider_request_routing_policy_to_decision(
-                &input,
-                &mut decision,
-                Some(&transport),
-            )
-            .unwrap_or_else(|error| panic!("{exit_name} should converge: {error:?}"));
-
-            let session_id = decision.provider_request_headers["session-id"].clone();
-            let thread_id = decision.provider_request_headers["thread-id"].clone();
-            let installation_id =
-                decision.provider_request_headers["x-codex-installation-id"].clone();
-            let window_id = decision.provider_request_headers["x-codex-window-id"].clone();
-            assert_eq!(decision.provider_request_headers["session_id"], session_id);
-            assert_eq!(
-                decision.provider_request_headers["x-client-request-id"],
-                thread_id
-            );
-            assert_eq!(window_id, format!("{thread_id}:0"));
-            assert_eq!(
-                uuid::Uuid::parse_str(&session_id)
-                    .expect("session UUID")
-                    .get_version_num(),
-                4
-            );
-            assert_eq!(
-                uuid::Uuid::parse_str(&thread_id)
-                    .expect("thread UUID")
-                    .get_version_num(),
-                4
-            );
-
-            let body = decision
-                .provider_request_body
-                .as_ref()
-                .expect("request body");
-            assert_eq!(
-                body["prompt_cache_key"],
-                "172c39e6-c0a0-5a70-8b63-e0f8e0d185a3"
-            );
-            assert_eq!(body["client_metadata"]["session_id"], session_id);
-            assert_eq!(body["client_metadata"]["thread_id"], thread_id);
-            assert_eq!(body["client_metadata"]["caller"], "sdk");
-            assert_eq!(
-                body["client_metadata"]["x-codex-installation-id"],
-                installation_id
-            );
-            assert_eq!(body["client_metadata"]["x-codex-window-id"], window_id);
-
-            let header_metadata: Value =
-                serde_json::from_str(&decision.provider_request_headers["x-codex-turn-metadata"])
-                    .expect("header turn metadata");
-            let body_metadata: Value = serde_json::from_str(
-                body["client_metadata"]["x-codex-turn-metadata"]
-                    .as_str()
-                    .expect("embedded turn metadata"),
-            )
-            .expect("embedded turn metadata JSON");
-            assert_eq!(header_metadata["thread_source"], "cli");
-            assert_eq!(body_metadata["sandbox"], "workspace-write");
-            assert_eq!(
-                header_metadata["turn_id"],
-                body["client_metadata"]["turn_id"]
-            );
-            assert_eq!(body_metadata["turn_id"], body["client_metadata"]["turn_id"]);
-            assert_eq!(
-                header_metadata["turn_started_at_unix_ms"],
-                body_metadata["turn_started_at_unix_ms"]
-            );
-            let turn_id = body["client_metadata"]["turn_id"]
-                .as_str()
-                .expect("turn ID")
-                .to_string();
-            assert_eq!(
-                uuid::Uuid::parse_str(&turn_id)
-                    .expect("turn UUID")
-                    .get_version_num(),
-                7
-            );
-            turn_ids.insert(turn_id);
-
-            let identity = (installation_id, session_id, thread_id);
-            if let Some(expected) = stable_identity.as_ref() {
-                assert_eq!(&identity, expected, "identity changed at {exit_name}");
-            } else {
-                stable_identity = Some(identity);
-            }
-        }
-        assert_eq!(turn_ids.len(), 3, "each request needs a fresh turn ID");
-    }
 
     #[test]
     fn provider_request_routing_policy_cannot_restore_credentials_or_aether_internal_headers() {
@@ -1909,279 +1546,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn codex_prompt_cache_identity_headers_are_terminal_after_routing_mutations() {
-        let mut input = sample_decision_input();
-        input
-            .routing_context
-            .as_mut()
-            .expect("routing context")
-            .client_api_format = "openai:responses".to_string();
-        set_provider_request_rules(
-            &mut input,
-            &["gpt-5"],
-            json!([{
-                "type": "patch_headers",
-                "patch": [
-                    {"op": "remove", "name": "session-id"},
-                    {"op": "remove", "name": "thread-id"}
-                ]
-            }]),
-        );
-        let identity = "172c39e6-c0a0-5a70-8b63-e0f8e0d185a3";
-        let mut decision = sample_decision();
-        decision.provider_type = Some("codex".to_string());
-        decision.provider_api_format = Some("openai:responses".to_string());
-        decision.client_api_format = Some("openai:responses".to_string());
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-5",
-            "input": [],
-            "prompt_cache_key": identity,
-            "client_metadata": {
-                "session_id": identity,
-                "thread_id": identity
-            }
-        }));
-        assert!(!decision.provider_request_headers.contains_key("session-id"));
-        assert!(!decision.provider_request_headers.contains_key("thread-id"));
 
-        apply_provider_request_routing_policy_to_decision(&input, &mut decision, None)
-            .expect("terminal Codex identity contract should be restored");
 
-        assert_eq!(
-            decision
-                .provider_request_headers
-                .get("session-id")
-                .map(String::as_str),
-            Some(identity)
-        );
-        assert_eq!(
-            decision
-                .provider_request_headers
-                .get("thread-id")
-                .map(String::as_str),
-            Some(identity)
-        );
-    }
 
-    #[test]
-    fn codex_prompt_cache_identity_headers_fail_closed_after_body_identity_removal() {
-        let mut input = sample_decision_input();
-        input
-            .routing_context
-            .as_mut()
-            .expect("routing context")
-            .client_api_format = "openai:responses".to_string();
-        set_provider_request_rules(
-            &mut input,
-            &["gpt-5"],
-            json!([{
-                "type": "json_patch_body",
-                "patch": [
-                    {"op": "remove", "path": "/prompt_cache_key"},
-                    {"op": "remove", "path": "/client_metadata"}
-                ]
-            }]),
-        );
-        let identity = "172c39e6-c0a0-5a70-8b63-e0f8e0d185a3";
-        let mut decision = sample_decision();
-        decision.provider_type = Some("codex".to_string());
-        decision.provider_api_format = Some("openai:responses".to_string());
-        decision.client_api_format = Some("openai:responses".to_string());
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-5",
-            "input": [],
-            "prompt_cache_key": identity,
-            "client_metadata": {
-                "session_id": identity,
-                "thread_id": identity
-            }
-        }));
-        assert!(!decision.provider_request_headers.contains_key("session-id"));
-        assert!(!decision.provider_request_headers.contains_key("thread-id"));
 
-        apply_provider_request_routing_policy_to_decision(&input, &mut decision, None)
-            .expect("terminal Codex identity contract should fail closed");
 
-        let body = decision.provider_request_body.as_ref().expect("body");
-        assert!(body.get("prompt_cache_key").is_none());
-        assert!(body.get("client_metadata").is_none());
-        assert!(!decision.provider_request_headers.contains_key("session-id"));
-        assert!(!decision.provider_request_headers.contains_key("thread-id"));
-    }
 
-    #[test]
-    fn codex_compact_contract_is_terminal_after_routing_mutations() {
-        let mut input = sample_decision_input();
-        input
-            .routing_context
-            .as_mut()
-            .expect("routing context")
-            .client_api_format = "openai:responses:compact".to_string();
-        set_provider_request_rules(
-            &mut input,
-            &["gpt-5"],
-            json!([
-                {
-                    "type": "json_patch_body",
-                    "patch": [
-                        {"op": "add", "path": "/store", "value": true},
-                        {"op": "add", "path": "/top_logprobs", "value": 5},
-                        {"op": "add", "path": "/custom_extension", "value": true},
-                        {"op": "replace", "path": "/input", "value": "routed compact input"},
-                        {"op": "replace", "path": "/tools", "value": [{
-                            "type": "function",
-                            "name": "lookup",
-                            "cache_control": {"type": "ephemeral"}
-                        }]}
-                    ]
-                },
-                {
-                    "type": "patch_headers",
-                    "patch": [
-                        {"op": "set", "name": "chatgpt-account-id", "value": "spoofed"},
-                        {"op": "set", "name": "x-openai-fedramp", "value": "false"},
-                        {"op": "set", "name": "x-client-request-id", "value": "spoofed"},
-                        {"op": "set", "name": "accept", "value": "text/event-stream"},
-                        {"op": "set", "name": "content-encoding", "value": "zstd"}
-                    ]
-                }
-            ]),
-        );
-        let mut decision = sample_decision();
-        decision.provider_type = Some("codex".to_string());
-        decision.provider_api_format = Some("openai:responses:compact".to_string());
-        decision.client_api_format = Some("openai:responses:compact".to_string());
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-5",
-            "input": [],
-            "tools": [{"type": "function", "name": "lookup"}]
-        }));
-        decision
-            .provider_request_headers
-            .insert(CODEX_ACCOUNT_ID_HEADER.to_string(), "account-1".to_string());
-        decision
-            .provider_request_headers
-            .insert(CODEX_FEDRAMP_HEADER.to_string(), "true".to_string());
 
-        apply_provider_request_routing_policy_to_decision(&input, &mut decision, None)
-            .expect("terminal contract should accept the projected request");
-
-        let body = decision.provider_request_body.as_ref().expect("body");
-        assert_eq!(body["parallel_tool_calls"], false);
-        assert_eq!(body["input"][0]["type"], "message");
-        assert_eq!(
-            body["input"][0]["content"][0]["text"],
-            "routed compact input"
-        );
-        assert!(body["tools"][0].get("cache_control").is_none());
-        for field in ["store", "top_logprobs", "custom_extension"] {
-            assert!(
-                body.get(field).is_none(),
-                "unexpected Compact field: {field}"
-            );
-        }
-        assert_eq!(
-            decision
-                .provider_request_headers
-                .get(CODEX_ACCOUNT_ID_HEADER),
-            Some(&"account-1".to_string())
-        );
-        assert_eq!(
-            decision.provider_request_headers.get(CODEX_FEDRAMP_HEADER),
-            Some(&"true".to_string())
-        );
-        for header in ["x-client-request-id", "accept", "content-encoding"] {
-            assert!(
-                !decision.provider_request_headers.contains_key(header),
-                "unexpected Compact header: {header}"
-            );
-        }
-    }
-
-    #[test]
-    fn codex_responses_lite_contract_is_terminal_after_routing_mutations() {
-        let mut input = sample_decision_input();
-        input.requested_model = "gpt-future-agent".to_string();
-        input
-            .routing_context
-            .as_mut()
-            .expect("routing context")
-            .client_api_format = "openai:responses:compact".to_string();
-        set_provider_request_rules(
-            &mut input,
-            &["gpt-future-agent"],
-            json!([
-                {
-                    "type": "json_patch_body",
-                    "patch": [
-                        {"op": "replace", "path": "/input", "value": "routed compact input"},
-                        {"op": "add", "path": "/instructions", "value": "Routed instructions"},
-                        {"op": "replace", "path": "/tools", "value": [{
-                            "type": "function",
-                            "name": "lookup",
-                            "parameters": {},
-                            "cache_control": {"type": "ephemeral"}
-                        }]},
-                        {"op": "add", "path": "/parallel_tool_calls", "value": true},
-                        {"op": "add", "path": "/reasoning", "value": {
-                            "effort": "high",
-                            "context": "current_turn"
-                        }}
-                    ]
-                },
-                {
-                    "type": "patch_headers",
-                    "patch": [{
-                        "op": "set",
-                        "name": "x-openai-internal-codex-responses-lite",
-                        "value": "false"
-                    }]
-                }
-            ]),
-        );
-        let mut decision = sample_decision();
-        decision.provider_type = Some("codex".to_string());
-        decision.provider_api_format = Some("openai:responses:compact".to_string());
-        decision.client_api_format = Some("openai:responses:compact".to_string());
-        decision.mapped_model = Some("gpt-future-agent".to_string());
-        decision.provider_request_body = Some(json!({
-            "model": "gpt-future-agent",
-            "input": [],
-            "tools": []
-        }));
-        let transport = sample_codex_transport_with_card();
-
-        apply_provider_request_routing_policy_to_decision(&input, &mut decision, Some(&transport))
-            .expect("terminal Lite contract should accept the projected request");
-
-        let body = decision.provider_request_body.as_ref().expect("body");
-        assert_eq!(body["input"][0]["type"], "additional_tools");
-        assert_eq!(body["input"][0]["tools"][0]["name"], "lookup");
-        assert!(body["input"][0]["tools"][0].get("cache_control").is_none());
-        assert_eq!(body["input"][1]["role"], "developer");
-        assert_eq!(
-            body["input"][1]["content"][0]["text"],
-            "Routed instructions"
-        );
-        assert_eq!(body["input"][2]["role"], "user");
-        assert_eq!(
-            body["input"][2]["content"][0]["text"],
-            "routed compact input"
-        );
-        assert!(body.get("tools").is_none());
-        assert!(body.get("instructions").is_none());
-        assert_eq!(body["parallel_tool_calls"], false);
-        assert_eq!(body["reasoning"]["effort"], "high");
-        assert_eq!(body["reasoning"]["context"], "all_turns");
-        assert_eq!(
-            decision
-                .provider_request_headers
-                .get(CODEX_RESPONSES_LITE_HEADER)
-                .map(String::as_str),
-            Some("true")
-        );
-    }
 
     #[test]
     fn provider_request_routing_policy_rejects_body_patch_without_json_body() {
@@ -2247,41 +1618,5 @@ mod tests {
         );
     }
 
-    #[test]
-    fn provider_request_routing_trace_records_pool_expansion_candidate() {
-        let input = sample_decision_input();
-        let mut decision = sample_decision();
-        decision.report_context = Some(json!({
-            "candidate_index": 2,
-            "retry_index": 2,
-            "model_id": "model-1",
-            "candidate_group_id": "pool-group-1",
-            "pool_key_index": 1,
-            "provider_priority": 7,
-            "priority_slot": 3
-        }));
 
-        apply_provider_request_routing_policy_to_decision(&input, &mut decision, None)
-            .expect("provider routing mutation should seed pool trace");
-
-        let routing_trace = &decision.report_context.as_ref().unwrap()["routing_trace"];
-        assert_eq!(
-            routing_trace["global_candidates"][0]["candidate_kind"],
-            json!("pool_group")
-        );
-        assert_eq!(
-            routing_trace["global_candidates"][0]["provider_id"],
-            json!("pool-group-1")
-        );
-        assert_eq!(routing_trace["global_candidates"][0]["key_id"], Value::Null);
-        assert_eq!(
-            routing_trace["pool_expansion"][0]["pool_group_id"],
-            json!("pool-group-1")
-        );
-        assert_eq!(routing_trace["pool_expansion"][0]["key_id"], json!("key-1"));
-        assert_eq!(
-            routing_trace["pool_expansion"][0]["selected_order"],
-            json!(1)
-        );
-    }
 }

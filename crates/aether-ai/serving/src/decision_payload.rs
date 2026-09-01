@@ -260,7 +260,7 @@ mod tests {
     fn decision_response_records_outgoing_tls_fingerprint_without_dropping_incoming() {
         let mut parts = sample_parts();
         parts.transport_profile = Some(ResolvedTransportProfile {
-            profile_id: "claude_code_nodejs".to_string(),
+            profile_id: "nodejs_fingerprint".to_string(),
             backend: TRANSPORT_BACKEND_REQWEST_RUSTLS.to_string(),
             http_mode: TRANSPORT_HTTP_MODE_AUTO.to_string(),
             pool_scope: TRANSPORT_POOL_SCOPE_KEY.to_string(),
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(tls_fingerprint["incoming"]["ja3"], "incoming-ja3");
         assert_eq!(
             tls_fingerprint["outgoing"]["profile_id"],
-            "claude_code_nodejs"
+            "nodejs_fingerprint"
         );
         assert_eq!(
             tls_fingerprint["outgoing"]["backend"],

@@ -3,9 +3,13 @@ use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::{query_param_bool, query_param_value, unix_secs_to_rfc3339};
 use crate::GatewayError;
 use aether_admin::observability::usage::{
-    admin_usage_bad_request_response, admin_usage_data_unavailable_response,
-    admin_usage_parse_recent_hours, admin_usage_parse_timeline_limit, admin_usage_point_sort_key,
-    admin_usage_proportional_limits, ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
+admin_usage_bad_request_response,
+admin_usage_data_unavailable_response,
+admin_usage_parse_recent_hours,
+admin_usage_parse_timeline_limit,
+admin_usage_point_sort_key,
+admin_usage_proportional_limits,
+ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
 };
 use aether_data_contracts::repository::usage::UsageCacheAffinityIntervalGroupBy;
 use axum::{

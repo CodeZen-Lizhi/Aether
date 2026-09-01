@@ -37,9 +37,6 @@ use crate::repository::management_tokens::{
 use crate::repository::oauth_providers::{
     OAuthProviderReadRepository, OAuthProviderWriteRepository, SqliteOAuthProviderRepository,
 };
-use crate::repository::pool_scores::{
-    PoolMemberScoreWriteRepository, PoolScoreReadRepository, SqlitePoolMemberScoreRepository,
-};
 use crate::repository::provider_catalog::{
     ProviderCatalogReadRepository, ProviderCatalogWriteRepository,
     SqliteProviderCatalogReadRepository,
@@ -203,13 +200,6 @@ impl SqliteBackend {
         Arc::new(SqliteProviderCatalogReadRepository::new(self.pool_clone()))
     }
 
-    pub fn pool_score_read_repository(&self) -> Arc<dyn PoolScoreReadRepository> {
-        Arc::new(SqlitePoolMemberScoreRepository::new(self.pool_clone()))
-    }
-
-    pub fn pool_score_write_repository(&self) -> Arc<dyn PoolMemberScoreWriteRepository> {
-        Arc::new(SqlitePoolMemberScoreRepository::new(self.pool_clone()))
-    }
 
     pub fn routing_group_read_repository(&self) -> Arc<dyn RoutingGroupReadRepository> {
         Arc::new(SqliteRoutingGroupRepository::new(self.pool_clone()))

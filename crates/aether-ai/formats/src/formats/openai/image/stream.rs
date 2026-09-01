@@ -5,13 +5,14 @@ use base64::Engine as _;
 use serde_json::{Map, Value};
 
 use crate::contracts::OPENAI_IMAGE_SYNC_FINALIZE_REPORT_KIND;
-use crate::formats::openai::responses::codex::CODEX_OPENAI_IMAGE_DEFAULT_OUTPUT_FORMAT;
 use crate::formats::shared::sse::{encode_done_sse, encode_json_sse};
 use crate::formats::shared::stream_core::common::{
     build_openai_chat_chunk, build_openai_chat_finish_chunk,
     build_openai_chat_usage_chunk_with_cache,
 };
 use crate::formats::shared::AiSurfaceFinalizeError;
+
+const DEFAULT_IMAGE_OUTPUT_FORMAT: &str = "png";
 
 #[derive(Default)]
 pub struct OpenAiImageStreamState {
@@ -1225,7 +1226,7 @@ pub fn maybe_build_openai_image_sync_finalize_product(
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or(CODEX_OPENAI_IMAGE_DEFAULT_OUTPUT_FORMAT);
+        .unwrap_or(DEFAULT_IMAGE_OUTPUT_FORMAT);
     let body_bytes = base64::engine::general_purpose::STANDARD.decode(body_base64)?;
     let text = std::str::from_utf8(&body_bytes)
         .map_err(|err| AiSurfaceFinalizeError::new(err.to_string()))?;

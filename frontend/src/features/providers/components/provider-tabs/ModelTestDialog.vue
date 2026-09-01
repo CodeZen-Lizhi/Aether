@@ -831,7 +831,7 @@ type TestKeyOption = MultiSelectOption
 const props = defineProps<{
   open: boolean
   result: TestModelFailoverResponse | null
-  mode?: 'global' | 'direct' | 'pool'
+  mode?: 'global' | 'direct'
   providerType?: string | null
   selectingModelName?: string | null
   requestedModelName?: string | null
@@ -1128,45 +1128,33 @@ const normalizedProviderType = computed(() => (
   || ''
 ).toLowerCase())
 
-const testScenario = computed<'pool' | 'custom' | 'direct' | 'provider'>(() => {
-  if (props.mode === 'pool') return 'pool'
+const testScenario = computed<'custom' | 'direct' | 'provider'>(() => {
   if (normalizedProviderType.value === 'custom') return 'custom'
   if (props.mode === 'direct') return 'direct'
   return 'provider'
 })
 
 const candidateNoun = computed(() => {
-  if (testScenario.value === 'pool') return '账号'
   if (testScenario.value === 'custom') return 'Key'
   return '候选'
 })
 
 const liveEntityLabel = computed(() => {
-  if (testScenario.value === 'pool') return '当前账号'
   if (testScenario.value === 'custom') return '当前 Key'
   return '当前候选'
 })
 
 const resultEntityLabel = computed(() => {
-  if (testScenario.value === 'pool') return '命中账号'
   if (testScenario.value === 'custom') return '命中 Key'
   return '命中候选'
 })
 
 function buildSummaryItems(summary: SummaryView): SummaryBadgeItem[] {
-  const totalLabel = testScenario.value === 'pool'
-    ? '候选账号'
-    : testScenario.value === 'custom'
-      ? '候选 Key'
-      : '候选'
-  const successLabel = testScenario.value === 'pool'
-    ? '命中账号'
-    : testScenario.value === 'custom'
-      ? '命中 Key'
-      : '成功'
-  const failedLabel = testScenario.value === 'pool' ? '失败切换' : '失败'
-  const skippedLabel = testScenario.value === 'pool' ? '调度跳过' : '跳过'
-  const unusedLabel = testScenario.value === 'pool' ? '成功后未执行' : '未执行'
+  const totalLabel = testScenario.value === 'custom' ? '候选 Key' : '候选'
+  const successLabel = testScenario.value === 'custom' ? '命中 Key' : '成功'
+  const failedLabel = '失败'
+  const skippedLabel = '跳过'
+  const unusedLabel = '未执行'
 
   return [
     { key: 'total', label: totalLabel, value: summary.total_candidates, variant: 'secondary' },
@@ -1212,7 +1200,6 @@ const liveAccountMeta = computed(() => {
   if (!candidate) return ''
   const parts: string[] = []
   if (candidate.key_auth_type) parts.push(formatAuthType(candidate.key_auth_type))
-  if (candidate.key_oauth_plan_type) parts.push(candidate.key_oauth_plan_type)
   if (candidate.key_preview && candidate.key_preview !== candidate.key_account_label) parts.push(candidate.key_preview)
   return parts.join(' · ')
 })
@@ -1380,12 +1367,7 @@ function maskKey(key: string): string {
 function formatAuthType(authType: string): string {
   const lowered = authType.toLowerCase()
   if (lowered === 'api_key') return 'API Key'
-  if (lowered === 'service_account') return 'Service Account'
-  if (lowered === 'oauth') return 'OAuth'
-  if (lowered === 'codex') return 'Codex OAuth'
-  if (lowered === 'antigravity') return 'Antigravity OAuth'
-  if (lowered === 'kiro') return 'Kiro OAuth'
-  if (lowered === 'grok') return 'Grok OAuth'
+  if (lowered === 'bearer') return 'Bearer Token'
   return authType
 }
 

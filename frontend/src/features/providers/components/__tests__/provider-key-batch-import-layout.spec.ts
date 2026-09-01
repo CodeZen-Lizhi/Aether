@@ -7,10 +7,9 @@ function readSource(path: string): string {
 }
 
 describe('provider key batch import UI contract', () => {
-  it('shows the entry only for custom providers', () => {
+  it('shows the entry in the provider drawer', () => {
     const source = readSource('src/features/providers/components/ProviderDetailDrawer.vue')
 
-    expect(source).toContain("provider.provider_type === 'custom'")
     expect(source).toContain('<ProviderKeyBatchImportDialog')
     expect(source).toContain('keyBatchImportDialogOpen')
   })
@@ -23,8 +22,8 @@ describe('provider key batch import UI contract', () => {
     expect(source).toContain('ProviderKeyImportSettingsFields')
     expect(source).toContain('REVIEW_PAGE_SIZE')
     expect(source).toContain('item.customized')
-    expect(source).toContain('api_formats: item.apiFormats')
-    expect(source).toContain('batchImportPoolKeys')
+    expect(source).toContain('api_formats: item.customized ? item.apiFormats : selectedApiFormats.value')
+    expect(source).toContain('addProviderKey')
     expect(source).not.toContain('MAX_BATCH_IMPORT_KEYS')
 
     const fieldsSource = readSource('src/features/providers/components/ProviderKeyImportSettingsFields.vue')

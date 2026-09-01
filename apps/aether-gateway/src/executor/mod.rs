@@ -2,7 +2,6 @@ pub(crate) mod candidate_loop;
 mod orchestration;
 mod outcome;
 mod plan_fallback;
-mod policy;
 mod remote;
 mod stream_path;
 mod sync_path;
@@ -26,11 +25,6 @@ pub(crate) use outcome::{
 };
 pub(crate) use plan_fallback::{
     maybe_execute_stream_via_plan_fallback, maybe_execute_sync_via_plan_fallback,
-};
-pub(crate) use policy::{
-    build_direct_plan_bypass_cache_key, mark_direct_plan_bypass,
-    should_bypass_execution_runtime_decision, should_bypass_execution_runtime_plan,
-    should_skip_direct_plan,
 };
 pub(crate) use remote::{
     maybe_execute_stream_via_remote_decision, maybe_execute_sync_via_remote_decision,

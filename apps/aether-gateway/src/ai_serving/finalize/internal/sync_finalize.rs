@@ -4,7 +4,6 @@ use crate::{usage::GatewaySyncReportRequest, GatewayError};
 
 pub(crate) use crate::ai_serving::finalize::common::{
     build_local_success_outcome, build_local_success_outcome_with_conversion_report,
-    local_finalize_allows_envelope, unwrap_local_finalize_response_value,
     LocalCoreSyncFinalizeOutcome,
 };
 pub(crate) use crate::ai_serving::finalize::standard::{
@@ -32,18 +31,9 @@ pub(crate) fn maybe_build_local_core_sync_finalize_response(
         return Ok(Some(outcome));
     }
 
-    let Some(normalized_payload) =
-        crate::ai_serving::adaptation::private_envelope::maybe_normalize_provider_private_sync_report_payload(payload)?
-    else {
-        return Ok(None);
-    };
-    let payload = &normalized_payload;
     let Some(report_context) = payload.report_context.as_ref() else {
         return Ok(None);
     };
-    if !local_finalize_allows_envelope(report_context) {
-        return Ok(None);
-    }
     let Some(product) = maybe_build_standard_sync_finalize_product_from_normalized_payload(
         payload.report_kind.as_str(),
         payload.status_code,
@@ -57,27 +47,16 @@ pub(crate) fn maybe_build_local_core_sync_finalize_response(
     };
 
     match product {
-        StandardSyncFinalizeNormalizedProduct::SuccessBody(body_json) => {
-            let Some(body_json) = unwrap_local_finalize_response_value(body_json, report_context)
-            else {
-                return Ok(None);
-            };
-            Ok(Some(build_local_success_outcome(
-                trace_id, decision, payload, body_json,
-            )?))
-        }
+        StandardSyncFinalizeNormalizedProduct::SuccessBody(body_json) => Ok(Some(
+            build_local_success_outcome(trace_id, decision, payload, body_json)?,
+        )),
         StandardSyncFinalizeNormalizedProduct::CrossFormat(product) => {
-            let Some(provider_body_json) =
-                unwrap_local_finalize_response_value(product.provider_body_json, report_context)
-            else {
-                return Ok(None);
-            };
             Ok(Some(build_local_success_outcome_with_conversion_report(
                 trace_id,
                 decision,
                 payload,
                 product.client_body_json,
-                provider_body_json,
+                product.provider_body_json,
             )?))
         }
     }

@@ -1936,7 +1936,7 @@ mod tests {
     }
 
     #[test]
-    fn rewrites_same_format_claude_capture_to_sanitize_read_tool_input() {
+    fn rewrites_same_format_claude_capture_to_client_stream() {
         let captured_body = concat!(
             "event: message_start\n",
             "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_read_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"gpt-5.5\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n",
@@ -1957,7 +1957,6 @@ mod tests {
             "provider_api_format": "claude:messages",
             "client_api_format": "claude:messages",
             "needs_conversion": false,
-            "anthropic_compatibility_profile": "claude_code_legacy",
         });
         let outcome = maybe_bridge_standard_sync_json_to_stream(
             &json!({
@@ -1980,8 +1979,6 @@ mod tests {
         assert!(output.contains("\"limit\":2000"));
         assert!(output.contains("\"type\":\"server_tool_use\""));
         assert!(output.contains("\"name\":\"web_search\""));
-        assert!(!output.contains("\"pages\":\"\""));
-        assert!(!output.contains("\\\"pages\\\":\\\"\\\""));
     }
 
     #[test]

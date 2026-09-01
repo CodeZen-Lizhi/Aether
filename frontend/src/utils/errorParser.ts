@@ -39,7 +39,6 @@ const fieldNameMap: Record<string, string> = {
   'display_name': '显示名称',
   'description': '描述',
   'website': '网站',
-  'provider_priority': '提供商优先级',
   'billing_type': '计费类型',
   'monthly_quota_usd': '月度配额',
   'quota_reset_day': '配额重置日',

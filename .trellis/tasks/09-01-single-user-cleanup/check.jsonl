@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/09-01-single-user-cleanup/deletion-checklist.md", "reason": "逐项核对删除是否完整、保留项是否误删"}
+{"file": ".trellis/tasks/09-01-single-user-cleanup/design.md", "reason": "验收时核对硬依赖未破坏（users 表 JOIN、me 保留子集等）"}

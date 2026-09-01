@@ -48,10 +48,7 @@ use crate::provider_transport::kiro::{
 use crate::usage::GatewaySyncReportRequest;
 use crate::{AppState, GatewayError};
 use aether_admin::provider::pool as admin_provider_pool_pure;
-use aether_ai_serving::{
-    run_ai_pool_scheduler, AiPoolCandidateFacts, AiPoolCandidateInput, AiPoolCatalogKeyContext,
-    AiPoolRuntimeState, AiPoolSchedulingConfig, AiPoolSchedulingPreset,
-};
+use aether_ai_serving::{};
 use aether_contracts::{ExecutionPlan, RequestBody};
 use aether_data_contracts::repository::candidate_selection::{
     StoredMinimalCandidateSelectionRow, StoredProviderModelMapping,

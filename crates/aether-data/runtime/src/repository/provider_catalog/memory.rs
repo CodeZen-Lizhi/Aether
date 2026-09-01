@@ -417,19 +417,12 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
     async fn create_provider(
         &self,
         provider: &StoredProviderCatalogProvider,
-        shift_existing_priorities_from: Option<i32>,
+        _shift_existing_priorities_from: Option<i32>,
     ) -> Result<StoredProviderCatalogProvider, DataLayerError> {
         let mut index = self
             .index
             .write()
             .expect("provider catalog repository lock");
-        if let Some(target_priority) = shift_existing_priorities_from {
-            for existing in index.providers.values_mut() {
-                if existing.provider_priority >= target_priority {
-                    existing.provider_priority += 1;
-                }
-            }
-        }
         index
             .providers
             .insert(provider.id.clone(), provider.clone());
@@ -1549,14 +1542,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lists_active_providers_in_priority_order() {
+    async fn lists_active_providers_in_name_order() {
         let repository = InMemoryProviderCatalogReadRepository::seed(
             vec![
-                sample_provider("provider-2").with_routing_fields(20),
-                sample_provider("provider-1").with_routing_fields(10),
+                sample_provider("provider-2"),
+                sample_provider("provider-1"),
                 sample_provider("provider-3")
-                    .with_routing_fields(5)
-                    .with_transport_fields(false, false, false, None, None, None, None, None, None),
+                    .with_transport_fields(false, false, None, None, None, None, None, None),
             ],
             vec![],
             vec![],
@@ -1585,7 +1577,6 @@ mod tests {
                     None,
                     "ciphertext-placeholder".to_string(),
                     Some("ciphertext-auth-1".to_string()),
-                    None,
                     None,
                     None,
                     None,
@@ -1628,7 +1619,6 @@ mod tests {
                 None,
                 "ciphertext-placeholder".to_string(),
                 Some("ciphertext-auth-1".to_string()),
-                None,
                 None,
                 None,
                 None,
@@ -1706,7 +1696,6 @@ mod tests {
                     None,
                     "ciphertext-api-1".to_string(),
                     Some("ciphertext-auth-1".to_string()),
-                    None,
                     None,
                     None,
                     None,
@@ -1880,7 +1869,6 @@ mod tests {
                         None,
                         None,
                         None,
-                        None,
                     )
                     .expect("key transport should build")],
             )
@@ -1996,7 +1984,6 @@ mod tests {
                     None,
                     None,
                     None,
-                    None,
                 )
                 .expect("key transport should build")],
         );
@@ -2080,7 +2067,6 @@ mod tests {
                 None,
                 "ciphertext-api-1".to_string(),
                 Some("ciphertext-auth-1".to_string()),
-                None,
                 None,
                 None,
                 None,
@@ -2211,13 +2197,10 @@ mod tests {
     async fn paginates_provider_keys_with_search_and_active_filter() {
         let mut alpha = sample_key("key-1", "provider-1");
         alpha.name = "alpha".to_string();
-        alpha.internal_priority = 20;
         let mut beta = sample_key("key-2", "provider-1");
         beta.name = "beta".to_string();
-        beta.internal_priority = 10;
         let mut gamma = sample_key("key-3", "provider-1");
         gamma.name = "gamma".to_string();
-        gamma.internal_priority = 30;
         gamma.is_active = false;
         let repository = InMemoryProviderCatalogReadRepository::seed(
             vec![sample_provider("provider-1"), sample_provider("provider-2")],
@@ -2244,7 +2227,7 @@ mod tests {
                 .iter()
                 .map(|item| item.name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["beta", "alpha"]
+            vec!["alpha", "beta"]
         );
     }
 
@@ -2252,11 +2235,9 @@ mod tests {
     async fn paginates_provider_keys_by_created_at_when_requested() {
         let mut early = sample_key("key-1", "provider-1");
         early.name = "zeta".to_string();
-        early.internal_priority = 10;
         early.created_at_unix_ms = Some(10);
         let mut late = sample_key("key-2", "provider-1");
         late.name = "alpha".to_string();
-        late.internal_priority = 10;
         late.created_at_unix_ms = Some(20);
         let repository = InMemoryProviderCatalogReadRepository::seed(
             vec![sample_provider("provider-1")],
@@ -2287,7 +2268,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paginates_provider_keys_by_pool_sort_fields() {
+    async fn paginates_provider_keys_by_created_at_and_last_used() {
         let mut old = sample_key("key-1", "provider-1");
         old.name = "old".to_string();
         old.created_at_unix_ms = Some(10);
@@ -2462,7 +2443,6 @@ mod tests {
         );
         let mut updated = sample_key("key-1", "provider-1");
         updated.name = "updated".to_string();
-        updated.internal_priority = 7;
 
         let stored = repository
             .update_key(&updated)
@@ -2470,13 +2450,11 @@ mod tests {
             .expect("key should update");
 
         assert_eq!(stored.name, "updated");
-        assert_eq!(stored.internal_priority, 7);
         let reloaded = repository
             .list_keys_by_ids(&["key-1".to_string()])
             .await
             .expect("keys should read");
         assert_eq!(reloaded[0].name, "updated");
-        assert_eq!(reloaded[0].internal_priority, 7);
     }
 
     #[tokio::test]
@@ -2964,7 +2942,6 @@ mod tests {
                 None,
                 "api-old".to_string(),
                 Some("auth-old".to_string()),
-                None,
                 None,
                 None,
                 None,

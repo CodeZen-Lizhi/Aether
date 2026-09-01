@@ -47,7 +47,7 @@ async fn build_admin_provider_key_items_payload(
         .into_iter()
         .map(|key| {
             let api_formats =
-                provider_key_effective_api_formats(&key, &provider.provider_type, &endpoints);
+                provider_key_effective_api_formats(&key);
             state.build_admin_provider_key_response(
                 &key,
                 &provider.provider_type,

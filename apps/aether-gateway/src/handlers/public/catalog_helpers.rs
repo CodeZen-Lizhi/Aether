@@ -489,7 +489,7 @@ pub(crate) async fn build_api_format_health_monitor_payload(
                 .get(&key.provider_id)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
-            for api_format in provider_key_effective_api_formats(&key, provider_type, endpoints) {
+            for api_format in provider_key_effective_api_formats(&key) {
                 if provider_ids_by_format
                     .get(&api_format)
                     .is_some_and(|provider_ids| provider_ids.contains(key.provider_id.as_str()))

@@ -141,14 +141,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
             .cloned()
             .unwrap_or_default();
         let capability_names = enabled_key_capability_short_names(key.capabilities.as_ref());
-        let api_formats = provider_key_effective_api_formats(
-            &key,
-            provider_type,
-            endpoints_by_provider
-                .get(&key.provider_id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]),
-        );
+        let api_formats = provider_key_effective_api_formats(&key);
         if api_formats.is_empty() {
             continue;
         }

@@ -271,8 +271,6 @@ pub fn build_admin_monitoring_trace_request_candidate_payload_with_key_accounts(
         "provider_id": candidate.provider_id,
         "provider_name": item.provider_name,
         "provider_website": item.provider_website,
-        "provider_priority": item.provider_priority,
-        "provider_keep_priority_on_conversion": item.provider_keep_priority_on_conversion,
         "provider_enable_format_conversion": item.provider_enable_format_conversion,
         "endpoint_id": candidate.endpoint_id,
         "endpoint_name": item.endpoint_api_format,
@@ -285,8 +283,6 @@ pub fn build_admin_monitoring_trace_request_candidate_payload_with_key_accounts(
         "key_preview": serde_json::Value::Null,
         "key_auth_type": item.provider_key_auth_type,
         "key_api_formats": item.provider_key_api_formats,
-        "key_internal_priority": item.provider_key_internal_priority,
-        "key_global_priority_by_format": item.provider_key_global_priority_by_format,
         "key_oauth_plan_type": key_account.and_then(|item| item.oauth_plan_type.clone()),
         "key_capabilities": item.provider_key_capabilities,
         "required_capabilities": candidate.required_capabilities,
@@ -558,7 +554,7 @@ fn admin_monitoring_decode_connect_json_error_body(
     }
 
     let body_bytes = BASE64_STANDARD.decode(body_base64).ok()?;
-    aether_ai_formats::api::extract_provider_private_stream_error_body(None, &body_bytes)
+    aether_ai_formats::api::extract_stream_terminal_error_body(&body_bytes)
 }
 
 fn admin_monitoring_headers_indicate_connect_json(headers: Option<&Value>) -> bool {

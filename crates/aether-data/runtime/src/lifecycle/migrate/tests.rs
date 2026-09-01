@@ -697,10 +697,6 @@ fn empty_database_snapshot_sql_includes_usage_body_blobs_and_audit_admin_role() 
     assert!(EMPTY_DATABASE_SNAPSHOT_SQL.contains("idx_entitlement_usage_entitlement_date"));
     assert!(EMPTY_DATABASE_SNAPSHOT_SQL.contains("idx_provider_api_keys_provider_default_sort"));
     assert!(EMPTY_DATABASE_SNAPSHOT_SQL.contains("idx_provider_api_keys_provider_name_id"));
-    assert!(
-        EMPTY_DATABASE_SNAPSHOT_SQL.contains("idx_provider_api_keys_provider_active_priority_id")
-    );
-    assert!(EMPTY_DATABASE_SNAPSHOT_SQL.contains("pool_member_scores_scheduler_account_rank_idx"));
     assert!(EMPTY_DATABASE_SNAPSHOT_SQL.contains("idx_video_tasks_due_poll"));
     assert!(EMPTY_DATABASE_SNAPSHOT_SQL.contains("idx_usage_created_id_desc"));
     assert!(EMPTY_DATABASE_SNAPSHOT_SQL.contains("idx_request_candidates_endpoint_status_created"));

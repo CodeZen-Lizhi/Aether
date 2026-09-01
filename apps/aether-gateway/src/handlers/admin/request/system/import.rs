@@ -1,7 +1,5 @@
 use super::{AdminAppState, ADMIN_SYSTEM_DATA_EXPORT_VERSION};
-use crate::ai_serving::build_provider_key_pool_score_upsert;
 use crate::api::ai::admin_endpoint_signature_parts;
-use crate::handlers::admin::admin_provider_pool_config;
 use crate::handlers::admin::model::ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY;
 use crate::handlers::admin::provider::endpoints_admin::payloads::AdminProviderEndpointUpdatePatch;
 use crate::handlers::admin::provider::oauth::provisioning::ensure_codex_credential_generation_rotated;
@@ -24,18 +22,25 @@ use crate::GatewayError;
 use aether_admin::provider::endpoints as admin_provider_endpoints_pure;
 use aether_admin::provider::models_write as admin_provider_models_write_pure;
 use aether_admin::system::{
-    normalize_admin_system_config_key, parse_admin_system_config_array,
-    parse_admin_system_config_import_request, parse_admin_system_config_nested_array,
-    parse_admin_system_config_optional_object, AdminImportMergeMode,
-    AdminSystemConfigEndpoint as ImportedEndpoint, AdminSystemConfigEntry as ImportedSystemConfig,
-    AdminSystemConfigGlobalModel as ImportedGlobalModel, AdminSystemConfigImportCounter,
-    AdminSystemConfigImportStats, AdminSystemConfigLdap as ImportedLdapConfig,
-    AdminSystemConfigOAuthProvider as ImportedOAuthProvider,
-    AdminSystemConfigProvider as ImportedProvider,
-    AdminSystemConfigProviderKey as ImportedProviderKey,
-    AdminSystemConfigProviderModel as ImportedProviderModel,
-    AdminSystemConfigProxyNode as ImportedProxyNode,
-    ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS, ADMIN_SYSTEM_USERS_SUPPORTED_VERSIONS,
+normalize_admin_system_config_key,
+parse_admin_system_config_array,
+parse_admin_system_config_import_request,
+parse_admin_system_config_nested_array,
+parse_admin_system_config_optional_object,
+AdminImportMergeMode,
+AdminSystemConfigEndpoint as ImportedEndpoint,
+AdminSystemConfigEntry as ImportedSystemConfig,
+AdminSystemConfigGlobalModel as ImportedGlobalModel,
+AdminSystemConfigImportCounter,
+AdminSystemConfigImportStats,
+AdminSystemConfigLdap as ImportedLdapConfig,
+AdminSystemConfigOAuthProvider as ImportedOAuthProvider,
+AdminSystemConfigProvider as ImportedProvider,
+AdminSystemConfigProviderKey as ImportedProviderKey,
+AdminSystemConfigProviderModel as ImportedProviderModel,
+AdminSystemConfigProxyNode as ImportedProxyNode,
+ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS,
+ADMIN_SYSTEM_USERS_SUPPORTED_VERSIONS,
 };
 use aether_data::repository::auth_modules::StoredLdapModuleConfig;
 use aether_data::repository::oauth_providers::{
@@ -49,7 +54,6 @@ use aether_data_contracts::repository::global_models::{
     AdminGlobalModelListQuery, AdminProviderModelListQuery, CreateAdminGlobalModelRecord,
     UpdateAdminGlobalModelRecord, UpsertAdminProviderModelRecord,
 };
-use aether_data_contracts::repository::pool_scores::PoolMemberScoreUpsertMode;
 use axum::{body::Bytes, http};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -529,48 +533,6 @@ fn imported_oauth_expiry_after_import(
     } else {
         current
     }
-}
-
-async fn seed_imported_oauth_pool_score(
-    state: &AdminAppState<'_>,
-    provider_id: &str,
-    key: &aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey,
-    now_unix_secs: u64,
-) -> Result<(), GatewayError> {
-    let provider_id = provider_id.to_string();
-    let provider = state
-        .read_provider_catalog_providers_by_ids(std::slice::from_ref(&provider_id))
-        .await?
-        .pop();
-    let Some(provider) = provider else {
-        return Ok(());
-    };
-    let Some(pool_config) = admin_provider_pool_config(&provider) else {
-        return Ok(());
-    };
-    if !key.is_active || key.provider_id != provider.id {
-        return Ok(());
-    }
-
-    let upsert = build_provider_key_pool_score_upsert(
-        key,
-        provider.provider_type.as_str(),
-        None,
-        now_unix_secs,
-        pool_config.score_rules,
-    );
-    state
-        .app()
-        .data
-        .upsert_pool_member_score_with_mode(upsert, PoolMemberScoreUpsertMode::OAuthRecovery)
-        .await
-        .map_err(|error| {
-            GatewayError::Internal(format!(
-                "failed to recover OAuth pool score for key '{}': {error}",
-                key.id
-            ))
-        })?;
-    Ok(())
 }
 
 fn build_import_provider_model_record(
@@ -1895,13 +1857,6 @@ impl<'a> AdminAppState<'a> {
                                     .app()
                                     .invalidate_local_oauth_refresh_entry(&updated.id)
                                     .await;
-                                seed_imported_oauth_pool_score(
-                                    self,
-                                    &provider.id,
-                                    &persisted,
-                                    now_unix_secs,
-                                )
-                                .await?;
                             }
                             existing_keys[existing_index] = persisted;
                             stats.keys.updated += 1;
@@ -1920,7 +1875,7 @@ impl<'a> AdminAppState<'a> {
                     self.build_admin_create_provider_key_record(&provider, payload)
                         .await
                 );
-                let oauth_credentials_supplied = if auth_type == "oauth" {
+                if auth_type == "oauth" {
                     invalid!(apply_imported_oauth_key_credentials(
                         self,
                         &provider.provider_type,
@@ -1928,15 +1883,9 @@ impl<'a> AdminAppState<'a> {
                         &raw_key,
                         normalized_auth_config.as_ref(),
                         &mut record,
-                    ))
-                } else {
-                    false
-                };
+                    ));
+                }
                 record.is_active = imported_key.is_active;
-                record.global_priority_by_format = invalid!(normalize_json_object(
-                    imported_key.global_priority_by_format.clone(),
-                    "global_priority_by_format",
-                ));
                 record.proxy = remap_import_proxy(imported_key.proxy.clone(), &node_id_map);
                 record.fingerprint = invalid!(normalize_json_object(
                     imported_key.fingerprint.clone(),
@@ -1947,10 +1896,6 @@ impl<'a> AdminAppState<'a> {
                         "创建 Provider '{provider_name}' 的 Key 失败"
                     ))));
                 };
-                if oauth_credentials_supplied {
-                    seed_imported_oauth_pool_score(self, &provider.id, &created, now_unix_secs)
-                        .await?;
-                }
                 existing_keys.push(created);
                 stats.keys.created += 1;
             }
@@ -3393,7 +3338,6 @@ enum WalletOwner<'a> {
 mod tests {
     use std::sync::Arc;
 
-    use aether_data::repository::pool_scores::SqlitePoolMemberScoreRepository;
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data_contracts::repository::provider_catalog::{
         StoredProviderCatalogKey, StoredProviderCatalogProvider,
@@ -3406,7 +3350,6 @@ mod tests {
         imported_optional_i32, imported_optional_u64, imported_rfc3339_to_unix_secs,
         imported_string_list_from_value, normalize_import_endpoint_format,
         normalize_import_key_formats, normalize_import_key_raw_payload,
-        seed_imported_oauth_pool_score,
         validate_imported_system_users_export_version, ImportedProviderKey,
     };
     use crate::admin_api::AdminAppState;
@@ -3498,8 +3441,6 @@ mod tests {
             api_formats: Some(vec!["claude:cli".to_string(), "openai:compact".to_string()]),
             supported_endpoints: None,
             rate_multipliers: None,
-            internal_priority: None,
-            global_priority_by_format: None,
             auth_type_by_format: None,
             allow_auth_channel_mismatch_formats: None,
             rpm_limit: None,
@@ -3634,64 +3575,6 @@ mod tests {
             Some(4_102_444_800),
             "an explicit auth_config owns the replacement expiry"
         );
-    }
-
-    #[tokio::test]
-    async fn oauth_pool_score_persistence_failure_is_propagated() {
-        let mut provider = StoredProviderCatalogProvider::new(
-            "provider-1".to_string(),
-            "Provider One".to_string(),
-            None,
-            "codex".to_string(),
-        )
-        .expect("provider should build");
-        provider.config = Some(json!({"pool_advanced": {}}));
-        let key = StoredProviderCatalogKey::new(
-            "key-1".to_string(),
-            provider.id.clone(),
-            "OAuth Key".to_string(),
-            "oauth".to_string(),
-            None,
-            true,
-        )
-        .expect("key should build");
-        let provider_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-            vec![provider],
-            Vec::new(),
-            vec![key.clone()],
-        ));
-        let no_writer_app = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(
-                GatewayDataState::with_provider_catalog_repository_for_tests(Arc::clone(
-                    &provider_repository,
-                )),
-            );
-        seed_imported_oauth_pool_score(&AdminAppState::new(&no_writer_app), "provider-1", &key, 99)
-            .await
-            .expect("a disabled score writer remains an allowed no-op");
-
-        let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("sqlite pool should connect");
-        let score_repository = Arc::new(SqlitePoolMemberScoreRepository::new(pool.clone()));
-        pool.close().await;
-        let app = AppState::new()
-            .expect("app state should build")
-            .with_data_state_for_tests(
-                GatewayDataState::with_provider_catalog_repository_for_tests(provider_repository)
-                    .with_pool_score_repository_for_tests(score_repository),
-            );
-
-        let error =
-            seed_imported_oauth_pool_score(&AdminAppState::new(&app), "provider-1", &key, 100)
-                .await
-                .expect_err("closed pool must fail OAuth score recovery");
-        assert!(error
-            .into_message()
-            .contains("failed to recover OAuth pool score for key 'key-1'"));
     }
 
     #[test]

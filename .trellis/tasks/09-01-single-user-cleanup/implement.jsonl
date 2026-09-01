@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/09-01-single-user-cleanup/deletion-checklist.md", "reason": "逐文件删除清单，实施的核心依据"}
+{"file": ".trellis/tasks/09-01-single-user-cleanup/design.md", "reason": "技术设计：目标架构、路由与鉴权改造、保留边界"}
+{"file": ".trellis/tasks/09-01-single-user-cleanup/research/frontend-inventory.md", "reason": "前端用户侧盘点证据（行号）"}
+{"file": ".trellis/tasks/09-01-single-user-cleanup/research/backend-inventory.md", "reason": "后端用户侧与角色系统盘点证据（行号）"}

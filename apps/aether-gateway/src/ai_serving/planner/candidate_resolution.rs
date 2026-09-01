@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use aether_ai_serving::{
-    run_ai_candidate_resolution, AiCandidateResolutionMode, AiCandidateResolutionPort,
-    AiCandidateResolutionRequest,
+run_ai_candidate_resolution,
+AiCandidateResolutionMode,
+AiCandidateResolutionPort,
+AiCandidateResolutionRequest,
 };
 use aether_routing_core::ResolvedRoutingPolicy;
 use async_trait::async_trait;
@@ -39,7 +41,6 @@ pub(crate) struct EligibleLocalExecutionCandidate {
 pub(crate) enum LocalExecutionCandidateKind {
     #[default]
     SingleKey,
-    PoolGroup,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,9 +112,6 @@ impl AiCandidateResolutionPort for GatewayLocalCandidateResolutionPort<'_> {
         {
             return Some(skip_reason);
         }
-        if provider_transport_uses_pool(transport) {
-            return pool_group_common_transport_skip_reason(candidate, transport);
-        }
         if let Some(skip_reason) =
             candidate_auth_channel_skip_reason(transport, self.request_auth_channel)
         {
@@ -158,13 +156,8 @@ impl AiCandidateResolutionPort for GatewayLocalCandidateResolutionPort<'_> {
         transport: Self::Transport,
     ) -> Self::Eligible {
         let provider_api_format = transport.endpoint.api_format.trim().to_ascii_lowercase();
-        let kind = if provider_transport_uses_pool(&transport) {
-            LocalExecutionCandidateKind::PoolGroup
-        } else {
-            LocalExecutionCandidateKind::SingleKey
-        };
         EligibleLocalExecutionCandidate {
-            kind,
+            kind: LocalExecutionCandidateKind::SingleKey,
             candidate,
             transport,
             provider_api_format,
@@ -197,12 +190,6 @@ impl AiCandidateResolutionPort for GatewayLocalCandidateResolutionPort<'_> {
         Ok(ranked)
     }
 
-    async fn apply_pool_scheduler(
-        &self,
-        candidates: Vec<Self::Eligible>,
-    ) -> Result<(Vec<Self::Eligible>, Vec<Self::Skipped>), Self::Error> {
-        Ok((candidates, Vec::new()))
-    }
 }
 
 pub(crate) async fn resolve_and_rank_local_execution_candidates(
@@ -398,54 +385,6 @@ fn candidate_transport_policy_facts(
     }
 }
 
-fn provider_transport_uses_pool(transport: &GatewayProviderTransportSnapshot) -> bool {
-    crate::handlers::shared::provider_pool::admin_provider_pool_config_from_config_value(
-        transport.provider.config.as_ref(),
-    )
-    .is_some()
-}
-
-fn routing_policy_candidate_skip_reason(
-    routing_policy: Option<&ResolvedRoutingPolicy>,
-    candidate: &SchedulerMinimalCandidateSelectionCandidate,
-    transport: &GatewayProviderTransportSnapshot,
-) -> Option<&'static str> {
-    let policy = routing_policy?;
-    if !policy
-        .ranking_overlay
-        .provider_allowed(candidate.provider_id.as_str())
-    {
-        return Some("routing_profile_disallowed_provider");
-    }
-    if !provider_transport_uses_pool(transport)
-        && !policy
-            .ranking_overlay
-            .key_allowed(candidate.key_id.as_str())
-    {
-        return Some("routing_profile_disallowed_key");
-    }
-    None
-}
-
-fn pool_group_common_transport_skip_reason(
-    candidate: &SchedulerMinimalCandidateSelectionCandidate,
-    transport: &GatewayProviderTransportSnapshot,
-) -> Option<&'static str> {
-    if !transport.provider.is_active {
-        return Some("provider_inactive");
-    }
-    if !transport.endpoint.is_active {
-        return Some("endpoint_inactive");
-    }
-    if !crate::ai_serving::api_format_alias_matches(
-        candidate.endpoint_api_format.as_str(),
-        transport.endpoint.api_format.trim(),
-    ) {
-        return Some("endpoint_api_format_changed");
-    }
-    None
-}
-
 pub(crate) fn candidate_auth_channel_skip_reason(
     transport: &GatewayProviderTransportSnapshot,
     request_auth_channel: Option<&str>,
@@ -471,11 +410,9 @@ fn resolve_transport_request_auth_channel(
     transport: &GatewayProviderTransportSnapshot,
 ) -> Option<&'static str> {
     let auth_type = resolve_transport_auth_type_for_endpoint_format(transport);
-    let provider_policy = provider_runtime_policy(&transport.provider.provider_type);
     match auth_type.as_str() {
         "api_key" => Some("api_key"),
         "bearer" => Some("bearer_like"),
-        "oauth" if provider_policy.oauth_is_bearer_like => Some("bearer_like"),
         _ => None,
     }
 }
@@ -560,12 +497,13 @@ pub(crate) async fn read_candidate_transport_snapshot_arc(
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_auth_channel_skip_reason, pool_group_common_transport_skip_reason};
+    use super::candidate_auth_channel_skip_reason;
     use crate::ai_serving::GatewayProviderTransportSnapshot;
     use aether_provider_transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider,
-    };
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+};
     use aether_scheduler_core::SchedulerMinimalCandidateSelectionCandidate;
     use serde_json::json;
 
@@ -577,7 +515,6 @@ mod tests {
                 provider_type: "custom".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -614,7 +551,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -630,14 +566,11 @@ mod tests {
             provider_id: "provider-1".to_string(),
             provider_name: "provider".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             endpoint_id: "endpoint-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
             key_id: "key-1".to_string(),
             key_name: "key".to_string(),
             key_auth_type: "bearer".to_string(),
-            key_internal_priority: 10,
-            key_global_priority_for_format: None,
             key_capabilities: None,
             model_id: "model-1".to_string(),
             global_model_id: "global-model-1".to_string(),
@@ -674,43 +607,6 @@ mod tests {
         assert_eq!(
             candidate_auth_channel_skip_reason(&transport, Some("api_key")),
             Some("auth_channel_mismatch")
-        );
-    }
-
-    #[test]
-    fn auth_channel_gate_treats_cli_oauth_provider_as_bearer_like() {
-        let mut transport = sample_transport("oauth");
-        transport.provider.provider_type = "claude_code".to_string();
-        assert_eq!(
-            candidate_auth_channel_skip_reason(&transport, Some("bearer_like")),
-            None
-        );
-        assert_eq!(
-            candidate_auth_channel_skip_reason(&transport, Some("api_key")),
-            None
-        );
-    }
-
-    #[test]
-    fn auth_channel_gate_allows_kiro_provider_mismatch_by_default() {
-        let mut transport = sample_transport("oauth");
-        transport.provider.provider_type = "kiro".to_string();
-        assert_eq!(
-            candidate_auth_channel_skip_reason(&transport, Some("api_key")),
-            None
-        );
-    }
-
-    #[test]
-    fn pool_group_common_gate_ignores_representative_key_model_policy() {
-        let candidate = sample_candidate();
-        let mut transport = sample_transport("bearer");
-        transport.key.allowed_models = Some(vec!["different-model".to_string()]);
-        transport.key.api_formats = Some(vec!["different:format".to_string()]);
-
-        assert_eq!(
-            pool_group_common_transport_skip_reason(&candidate, &transport),
-            None
         );
     }
 }

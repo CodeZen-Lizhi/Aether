@@ -5,10 +5,9 @@ use crate::snapshot::GatewayProviderTransportSnapshot;
 
 /// Provider-side compatibility applied to otherwise same-format Anthropic requests.
 ///
-/// Native Anthropic endpoints should remain transparent. The legacy Claude Code
-/// profile is opt-in, except for the existing `claude_code` provider type where it
-/// remains the backwards-compatible default. Endpoint config takes precedence over
-/// provider config. The canonical field is `anthropic.compatibility_profile`;
+/// Native Anthropic endpoints remain transparent. The legacy Claude Code profile
+/// is opt-in via endpoint or provider config. Endpoint config takes precedence
+/// over provider config. The canonical field is `anthropic.compatibility_profile`;
 /// explicitly Anthropic-namespaced legacy spellings remain accepted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -93,16 +92,7 @@ pub fn resolve_anthropic_compatibility_profile(
         }
     }
 
-    if transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("claude_code")
-    {
-        AnthropicCompatibilityProfile::ClaudeCodeLegacy
-    } else {
-        AnthropicCompatibilityProfile::NativeTransparent
-    }
+    AnthropicCompatibilityProfile::NativeTransparent
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,7 +194,6 @@ mod tests {
                 provider_type: provider_type.to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -241,7 +230,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -303,18 +291,8 @@ mod tests {
     }
 
     #[test]
-    fn claude_code_keeps_legacy_compatibility_by_default() {
-        let transport = sample_transport("claude_code");
-
-        assert_eq!(
-            resolve_anthropic_compatibility_profile(&transport, "claude:messages"),
-            AnthropicCompatibilityProfile::ClaudeCodeLegacy
-        );
-    }
-
-    #[test]
     fn endpoint_profile_overrides_provider_and_legacy_defaults() {
-        let mut transport = sample_transport("claude_code");
+        let mut transport = sample_transport("custom");
         transport.provider.config = Some(json!({
             "anthropic": {"compatibility_profile": "claude_code_legacy"}
         }));
@@ -347,7 +325,7 @@ mod tests {
 
     #[test]
     fn anthropic_profile_is_ignored_for_non_anthropic_formats() {
-        let mut transport = sample_transport("claude_code");
+        let mut transport = sample_transport("custom");
         transport.endpoint.config = Some(json!({
             "anthropic": {"compatibility_profile": "claude_code_legacy"}
         }));
@@ -360,7 +338,7 @@ mod tests {
 
     #[test]
     fn invalid_explicit_profile_fails_closed_instead_of_using_legacy_default() {
-        let mut transport = sample_transport("claude_code");
+        let mut transport = sample_transport("custom");
         transport.endpoint.config = Some(json!({
             "anthropic_compatibility": {"profile": "native_transparnt"}
         }));

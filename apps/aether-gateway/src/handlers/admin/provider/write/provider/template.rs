@@ -7,9 +7,7 @@ use crate::GatewayError;
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogProvider,
 };
-use aether_provider_transport::provider_types::{
-    fixed_provider_template, FixedProviderEndpointTemplate, FixedProviderTemplate,
-};
+use aether_provider_transport::provider_types::{};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 

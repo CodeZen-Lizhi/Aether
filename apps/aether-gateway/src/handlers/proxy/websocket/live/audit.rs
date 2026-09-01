@@ -7,7 +7,10 @@
 
 use std::time::{Duration, Instant};
 
-use aether_ai_serving::{AiStreamAttempt, AiSyncAttempt};
+use aether_ai_serving::{
+AiStreamAttempt,
+AiSyncAttempt,
+};
 use aether_contracts::ExecutionPlan;
 use aether_data_contracts::repository::usage::{
     UsageBodyCaptureState, LIVE_SESSION_METADATA_KEY, USAGE_AVAILABLE_METADATA_KEY,

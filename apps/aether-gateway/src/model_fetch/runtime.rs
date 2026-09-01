@@ -7,9 +7,8 @@ use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogKey, StoredProviderCatalogProvider,
 };
 use aether_model_fetch::{
-    apply_model_filters, fetch_models_from_transports_for_client_version, json_string_list,
-    model_catalog_upstream_metadata, model_fetch_interval_minutes,
-    model_fetch_startup_delay_seconds, model_fetch_startup_enabled, preset_models_for_provider,
+    apply_model_filters, fetch_models_from_transports, json_string_list,
+    model_fetch_interval_minutes, model_fetch_startup_delay_seconds, model_fetch_startup_enabled,
     selected_models_fetch_endpoints, sync_provider_model_whitelist_associations,
     upstream_metadata_namespace_updates, ModelFetchAssociationStore, ModelFetchRunSummary,
 };
@@ -241,41 +240,6 @@ async fn fetch_and_persist_key_models(
 ) -> Result<KeyFetchDisposition, GatewayError> {
     let now_unix_secs = now_unix_secs();
     if target.endpoints.is_empty() {
-        if let Some(models) = preset_models_for_provider(&target.provider.provider_type) {
-            let fetched_model_ids = models
-                .iter()
-                .filter_map(|model| model.get("id"))
-                .filter_map(Value::as_str)
-                .map(ToOwned::to_owned)
-                .collect::<Vec<_>>();
-            let filtered_models = apply_model_filters(
-                &fetched_model_ids,
-                json_string_list(target.key.locked_models.as_ref()),
-                json_string_list(target.key.model_include_patterns.as_ref()),
-                json_string_list(target.key.model_exclude_patterns.as_ref()),
-            );
-            let upstream_metadata =
-                model_catalog_upstream_metadata(&target.provider.provider_type, &models);
-            persist_key_fetch_success(
-                state,
-                &target.key,
-                now_unix_secs,
-                &filtered_models,
-                upstream_metadata.as_ref(),
-            )
-            .await?;
-            state
-                .write_upstream_models_cache(&target.provider.id, &target.key.id, &models)
-                .await;
-            sync_provider_model_whitelist_associations(
-                state,
-                &target.provider.id,
-                &filtered_models,
-            )
-            .await
-            .map_err(GatewayError::Internal)?;
-            return Ok(KeyFetchDisposition::Succeeded);
-        }
         persist_key_fetch_failure(
             state,
             &target.key,
@@ -315,26 +279,9 @@ async fn fetch_and_persist_key_models(
         return Ok(KeyFetchDisposition::Skipped);
     }
 
-    let codex_client_version = if target
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("codex")
-    {
-        state
-            .read_recent_codex_catalog_client_version(&target.provider.id, &target.key.id)
-            .await
-    } else {
-        None
-    };
-    let result = match fetch_models_from_transports_for_client_version(
-        state,
-        &transports,
-        codex_client_version.as_deref(),
-    )
-    .await
-    {
-        Ok(result) => result,
+    let result =
+        match fetch_models_from_transports(state, &transports).await {
+            Ok(result) => result,
         Err(err) => {
             persist_key_fetch_failure(state, &target.key, now_unix_secs, err.clone()).await?;
             warn!(
@@ -468,12 +415,13 @@ mod tests {
     use std::collections::{HashMap, VecDeque};
     use std::sync::{Arc, Mutex};
 
-    use crate::provider_transport::LocalResolvedOAuthRequestAuth;
     use crate::GatewayError;
     use aether_provider_transport::snapshot::{
-        GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
-        GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
-    };
+GatewayProviderTransportEndpoint,
+GatewayProviderTransportKey,
+GatewayProviderTransportProvider,
+GatewayProviderTransportSnapshot,
+};
 
     #[derive(Clone, Default)]
     struct TestState {
@@ -520,19 +468,6 @@ mod tests {
 
     #[async_trait]
     impl ModelFetchTransportRuntime for TestState {
-        async fn resolve_local_oauth_request_auth(
-            &self,
-            transport: &GatewayProviderTransportSnapshot,
-        ) -> Result<Option<LocalResolvedOAuthRequestAuth>, String> {
-            if transport.key.auth_type.trim().eq_ignore_ascii_case("oauth") {
-                return Ok(Some(LocalResolvedOAuthRequestAuth::Header {
-                    name: "authorization".to_string(),
-                    value: "Bearer oauth-token".to_string(),
-                }));
-            }
-            Ok(None)
-        }
-
         async fn resolve_model_fetch_proxy(
             &self,
             _transport: &GatewayProviderTransportSnapshot,
@@ -754,7 +689,7 @@ mod tests {
             provider_type.to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, false, None, None, None, None, None, None)
+        .with_transport_fields(true, false, None, None, None, None, None, None)
     }
 
     fn sample_endpoint(
@@ -808,7 +743,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )
         .expect("key transport should build");
         key.auto_fetch_models = true;
@@ -831,7 +765,6 @@ mod tests {
                 provider_type: provider_type.to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -868,7 +801,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -917,284 +849,6 @@ mod tests {
         assert_eq!(plan.endpoint_id, "endpoint-openai-chat");
         assert_eq!(plan.key_id, "key-openai-chat");
         assert_eq!(plan.model_name.as_deref(), Some("models"));
-    }
-
-    #[tokio::test]
-    async fn model_fetch_uses_preset_models_without_endpoint() {
-        let provider = sample_provider("provider-codex", "codex");
-        let mut key = sample_key(
-            "key-codex",
-            "provider-codex",
-            "api_key",
-            &["openai:responses"],
-        );
-        key.upstream_metadata = Some(json!({
-            "codex": {
-                "quota_by_model": {
-                    "gpt-5.6-sol": {"remaining_fraction": 0.75}
-                }
-            }
-        }));
-        let state = TestState::new(vec![provider], vec![], vec![key], HashMap::new(), vec![]);
-
-        let summary = perform_model_fetch_once_with_state(&state)
-            .await
-            .expect("fetch should succeed");
-
-        assert_eq!(summary.attempted, 1);
-        assert_eq!(summary.succeeded, 1);
-        let updated = state.key("key-codex");
-        let allowed_models = updated
-            .allowed_models
-            .as_ref()
-            .and_then(|value| value.as_array().cloned())
-            .expect("allowed_models should be set");
-        assert!(allowed_models.iter().any(|model| model == "gpt-5.4"));
-        let upstream_metadata = updated
-            .upstream_metadata
-            .as_ref()
-            .expect("Codex model catalog should be persisted");
-        assert_eq!(
-            upstream_metadata["codex"]["quota_by_model"]["gpt-5.6-sol"]["remaining_fraction"],
-            0.75
-        );
-        assert_eq!(
-            upstream_metadata["codex_models"]["cards"]["gpt-5.6-sol"]["multi_agent_version"],
-            "v2"
-        );
-        let capabilities = crate::ai_serving::resolve_codex_responses_model_capabilities(
-            "gpt-5.6-sol",
-            "gpt-5.6-sol",
-            Some(upstream_metadata),
-        );
-        assert!(capabilities.use_responses_lite);
-        assert_eq!(
-            capabilities.default_reasoning_effort.as_deref(),
-            Some("low")
-        );
-        assert!(capabilities
-            .supported_reasoning_efforts
-            .iter()
-            .any(|effort| effort == "ultra"));
-        let metadata_updates = state
-            .upstream_metadata_updates
-            .lock()
-            .expect("metadata updates mutex");
-        assert_eq!(metadata_updates.len(), 1);
-        assert_eq!(metadata_updates[0].0, "key-codex");
-        assert_eq!(metadata_updates[0].1, "codex_models");
-        assert_eq!(
-            metadata_updates[0].2["cards"]["gpt-5.6-sol"]["multi_agent_version"],
-            "v2"
-        );
-        assert!(state
-            .cached_models
-            .lock()
-            .expect("cache mutex")
-            .contains_key(&("provider-codex".to_string(), "key-codex".to_string())));
-    }
-
-    #[tokio::test]
-    async fn model_fetch_merges_antigravity_metadata_and_preserves_reset_time() {
-        let provider = sample_provider("provider-antigravity", "antigravity");
-        let endpoint = sample_endpoint(
-            "endpoint-antigravity",
-            "provider-antigravity",
-            "gemini:generate_content",
-        );
-        let mut key = sample_key(
-            "key-antigravity",
-            "provider-antigravity",
-            "oauth",
-            &["gemini:generate_content"],
-        );
-        key.upstream_metadata = Some(json!({
-            "antigravity": {
-                "quota_by_model": {
-                    "gemini-2.5-pro": {
-                        "reset_time": "2026-04-12T00:00:00Z"
-                    }
-                }
-            }
-        }));
-        let transport = sample_transport(
-            "antigravity",
-            "provider-antigravity",
-            "endpoint-antigravity",
-            "key-antigravity",
-            "gemini:generate_content",
-            "oauth",
-            Some(r#"{"project_id":"project-1","client_version":"1.2.3","session_id":"sess-1"}"#),
-        );
-        let state = TestState::new(
-            vec![provider],
-            vec![endpoint],
-            vec![key],
-            HashMap::from([(
-                (
-                    "provider-antigravity".to_string(),
-                    "endpoint-antigravity".to_string(),
-                    "key-antigravity".to_string(),
-                ),
-                transport,
-            )]),
-            vec![execution_result(json!({
-                "models": {
-                    "gemini-2.5-pro": {
-                        "displayName": "Gemini 2.5 Pro",
-                        "quotaInfo": {
-                            "remainingFraction": 0.25
-                        }
-                    }
-                }
-            }))],
-        );
-
-        let summary = perform_model_fetch_once_with_state(&state)
-            .await
-            .expect("fetch should succeed");
-
-        assert_eq!(summary.succeeded, 1);
-        let updated = state.key("key-antigravity");
-        assert_eq!(updated.allowed_models, Some(json!(["gemini-2.5-pro"])));
-        assert_eq!(
-            updated
-                .upstream_metadata
-                .as_ref()
-                .and_then(|value| value.get("antigravity"))
-                .and_then(|value| value.get("quota_by_model"))
-                .and_then(|value| value.get("gemini-2.5-pro"))
-                .and_then(|value| value.get("reset_time")),
-            Some(&json!("2026-04-12T00:00:00Z"))
-        );
-    }
-
-    #[tokio::test]
-    async fn model_fetch_fetches_windsurf_model_configs_and_persists_allowed_models() {
-        let provider = sample_provider("provider-windsurf", "windsurf");
-        let endpoint = StoredProviderCatalogEndpoint::new(
-            "endpoint-windsurf-chat".to_string(),
-            "provider-windsurf".to_string(),
-            "openai:chat".to_string(),
-            None,
-            None,
-            true,
-        )
-        .expect("endpoint should build")
-        .with_transport_fields(
-            "https://server.codeium.com".to_string(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("endpoint transport should build");
-        let key = sample_key(
-            "key-windsurf",
-            "provider-windsurf",
-            "api_key",
-            &["openai:chat"],
-        );
-        let mut transport = sample_transport(
-            "windsurf",
-            "provider-windsurf",
-            "endpoint-windsurf-chat",
-            "key-windsurf",
-            "openai:chat",
-            "api_key",
-            Some(r#"{"provider_type":"windsurf"}"#),
-        );
-        transport.endpoint.base_url = "https://server.codeium.com".to_string();
-        transport.key.decrypted_api_key = "devin-session-token$abc".to_string();
-        let state = TestState::new(
-            vec![provider],
-            vec![endpoint],
-            vec![key],
-            HashMap::from([(
-                (
-                    "provider-windsurf".to_string(),
-                    "endpoint-windsurf-chat".to_string(),
-                    "key-windsurf".to_string(),
-                ),
-                transport,
-            )]),
-            vec![execution_result(json!({
-                "clientModelConfigs": [
-                    {
-                        "modelUid": "claude-sonnet-4-6",
-                        "label": "Claude Sonnet 4.6",
-                        "provider": "anthropic",
-                        "supportsImages": true,
-                        "creditMultiplier": 4
-                    },
-                    {
-                        "modelUid": "gpt-5.4",
-                        "label": "GPT-5.4",
-                        "provider": "openai"
-                    }
-                ],
-                "defaultOverrideModelConfig": {
-                    "modelUid": "claude-sonnet-4-6"
-                }
-            }))],
-        );
-
-        let summary = perform_model_fetch_once_with_state(&state)
-            .await
-            .expect("fetch should succeed");
-
-        assert_eq!(summary.succeeded, 1);
-        let plans = state.executed_plans.lock().expect("executed plans mutex");
-        assert_eq!(plans.len(), 1);
-        assert_eq!(
-            plans[0].url,
-            "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetCascadeModelConfigs"
-        );
-        assert_eq!(plans[0].method, "POST");
-        assert_eq!(plans[0].provider_api_format, "windsurf:model_configs");
-        assert_eq!(
-            plans[0]
-                .body
-                .json_body
-                .as_ref()
-                .and_then(|body| body.get("metadata"))
-                .and_then(|metadata| metadata.get("apiKey")),
-            Some(&json!("devin-session-token$abc"))
-        );
-        drop(plans);
-
-        let updated = state.key("key-windsurf");
-        assert_eq!(
-            updated.allowed_models,
-            Some(json!(["claude-sonnet-4-6", "gpt-5.4"]))
-        );
-        assert_eq!(
-            updated
-                .upstream_metadata
-                .as_ref()
-                .and_then(|value| value.get("windsurf"))
-                .and_then(|value| value.get("allowed_models_count")),
-            Some(&json!(2))
-        );
-        assert_eq!(
-            updated
-                .upstream_metadata
-                .as_ref()
-                .and_then(|value| value.get("windsurf"))
-                .and_then(|value| value.get("default_model_uid")),
-            Some(&json!("claude-sonnet-4-6"))
-        );
-        let cached = state.cached_models.lock().expect("cache mutex");
-        let cached_models = cached
-            .get(&("provider-windsurf".to_string(), "key-windsurf".to_string()))
-            .expect("cached models should be written");
-        assert_eq!(
-            cached_models[0]["api_formats"],
-            json!(["openai:chat", "openai:responses", "claude:messages"])
-        );
     }
 
     #[tokio::test]

@@ -39,9 +39,6 @@ use crate::repository::management_tokens::{
 use crate::repository::oauth_providers::{
     OAuthProviderReadRepository, OAuthProviderWriteRepository, SqlxOAuthProviderRepository,
 };
-use crate::repository::pool_scores::{
-    PoolMemberScoreWriteRepository, PoolScoreReadRepository, PostgresPoolMemberScoreRepository,
-};
 use crate::repository::provider_catalog::{
     ProviderCatalogReadRepository, ProviderCatalogWriteRepository,
     SqlxProviderCatalogReadRepository,
@@ -201,13 +198,6 @@ impl PostgresBackend {
         Arc::new(SqlxProviderCatalogReadRepository::new(self.pool_clone()))
     }
 
-    pub fn pool_score_read_repository(&self) -> Arc<dyn PoolScoreReadRepository> {
-        Arc::new(PostgresPoolMemberScoreRepository::new(self.pool_clone()))
-    }
-
-    pub fn pool_score_write_repository(&self) -> Arc<dyn PoolMemberScoreWriteRepository> {
-        Arc::new(PostgresPoolMemberScoreRepository::new(self.pool_clone()))
-    }
 
     pub fn routing_group_read_repository(&self) -> Arc<dyn RoutingGroupReadRepository> {
         Arc::new(PostgresRoutingGroupRepository::new(self.pool_clone()))

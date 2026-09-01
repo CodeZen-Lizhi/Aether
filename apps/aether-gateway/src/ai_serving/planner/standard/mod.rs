@@ -7,17 +7,12 @@ use crate::ai_serving::GatewayControlDecision;
 use crate::{AiExecutionDecision, AppState, GatewayError};
 
 mod claude;
-mod codex;
 mod deepseek;
 mod family;
 mod gemini;
 mod normalize;
 mod openai;
 
-pub(crate) use self::codex::{
-    apply_codex_openai_responses_special_body_edits, apply_codex_openai_special_headers,
-    codex_model_capabilities_for_transport,
-};
 pub(crate) use self::deepseek::{
     apply_deepseek_tool_call_thinking_compat, is_deepseek_provider,
     openai_responses_reasoning_replay_policy,
@@ -29,11 +24,9 @@ pub(crate) use self::family::{
 pub(crate) use self::normalize::{
     build_cross_format_openai_chat_request_body, build_cross_format_openai_chat_upstream_url,
     build_cross_format_openai_responses_request_body,
-    build_cross_format_openai_responses_request_body_with_codex_model_capabilities,
     build_cross_format_openai_responses_upstream_url, build_local_openai_chat_request_body,
     build_local_openai_chat_upstream_url, build_local_openai_responses_request_body,
-    build_local_openai_responses_request_body_with_codex_model_capabilities,
-    build_local_openai_responses_request_body_with_codex_model_capabilities_for_websocket_continuation,
+    build_local_openai_responses_request_body_for_websocket_continuation,
     build_local_openai_responses_upstream_url, validate_final_openai_provider_request,
 };
 pub(crate) use self::openai::{
@@ -71,8 +64,10 @@ pub(crate) use crate::ai_serving::{
     normalize_openai_responses_request_to_openai_chat_request, parse_openai_tool_result_content,
 };
 pub(crate) use aether_ai_serving::{
-    openai_provider_request_contract_failure_extra_data, request_body_build_failure_extra_data,
-    request_conversion_failure_extra_data, same_format_provider_request_body_failure_extra_data,
+openai_provider_request_contract_failure_extra_data,
+request_body_build_failure_extra_data,
+request_conversion_failure_extra_data,
+same_format_provider_request_body_failure_extra_data,
 };
 
 pub(crate) fn build_standard_upstream_url(
@@ -290,40 +285,6 @@ mod tests {
             "Need OpenAI Responses output"
         );
         assert_eq!(converted["stream"], true);
-    }
-
-    #[test]
-    fn strips_metadata_for_codex_openai_responses_requests() {
-        let request = json!({
-            "model": "claude-sonnet-4-5",
-            "metadata": {"trace_id": "abc"},
-            "messages": [{
-                "role": "user",
-                "content": [{"type": "text", "text": "Need OpenAI Responses output"}]
-            }],
-            "max_tokens": 64
-        });
-
-        let converted = build_standard_request_body(
-            &request,
-            "claude:messages",
-            "gpt-5.4",
-            "codex",
-            "openai:responses",
-            "/v1/messages",
-            false,
-            None,
-            None,
-        )
-        .expect("claude cli should convert to codex request");
-
-        assert!(converted.get("metadata").is_none());
-        assert_eq!(converted["store"], false);
-        assert!(converted.get("instructions").is_none());
-        assert_eq!(converted["include"], json!(["reasoning.encrypted_content"]));
-        assert_eq!(converted["parallel_tool_calls"], true);
-        assert_eq!(converted["reasoning"]["effort"], "medium");
-        assert_eq!(converted["reasoning"]["summary"], "auto");
     }
 
     #[test]

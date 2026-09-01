@@ -1,43 +1,20 @@
 use std::collections::BTreeMap;
 
 use aether_contracts::{ExecutionPlan, ExecutionResult, ProxySnapshot, RequestBody};
-use aether_provider_transport::antigravity::{
-    build_antigravity_static_client_headers, build_antigravity_static_identity_headers,
-    resolve_local_antigravity_request_auth, AntigravityRequestAuthSupport,
-    ANTIGRAVITY_REQUEST_USER_AGENT,
-};
 use aether_provider_transport::auth::{
     ensure_upstream_auth_header, resolve_local_gemini_auth, resolve_local_openai_bearer_auth,
     resolve_local_standard_auth,
 };
-use aether_provider_transport::kiro::{
-    build_kiro_list_available_models_url, build_list_available_models_headers,
-    resolve_local_kiro_request_auth,
-};
-use aether_provider_transport::vertex::resolve_local_vertex_api_key_query_auth;
-use aether_provider_transport::windsurf::resolve_windsurf_cascade_auth;
 use aether_provider_transport::{
     apply_local_header_rules, resolve_transport_execution_timeouts, resolve_transport_profile,
-    GatewayProviderTransportSnapshot, LocalResolvedOAuthRequestAuth,
+    GatewayProviderTransportSnapshot,
 };
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::{
-    build_models_fetch_url_for_client_version, deepseek_anthropic_models_fetch_uses_openai_auth,
-};
+use crate::{build_models_fetch_url, deepseek_anthropic_models_fetch_uses_openai_auth};
 
-const CLAUDE_CLI_USER_AGENT: &str = "claude-code/1.0.1";
-const GEMINI_CLI_USER_AGENT: &str = "GeminiCLI/0.1.5 (Windows; AMD64)";
 const CLAUDE_VERSION_HEADER: &str = "2023-06-01";
-const ANTIGRAVITY_FETCH_PROVIDER_API_FORMAT: &str = "antigravity:fetch_available_models";
-const ANTIGRAVITY_LOAD_CODE_ASSIST_PROVIDER_API_FORMAT: &str = "antigravity:load_code_assist";
-const GEMINI_CLI_LOAD_CODE_ASSIST_PROVIDER_API_FORMAT: &str = "gemini_cli:load_code_assist";
-const KIRO_LIST_AVAILABLE_MODELS_PROVIDER_API_FORMAT: &str = "kiro:list_available_models";
-const WINDSURF_MODEL_CONFIGS_PROVIDER_API_FORMAT: &str = "windsurf:model_configs";
-const WINDSURF_MODEL_CONFIGS_PATH: &str =
-    "/exa.api_server_pb.ApiServerService/GetCascadeModelConfigs";
-const WINDSURF_IDE_VERSION: &str = "1.9600.41";
 
 const BROWSER_FINGERPRINT_HEADERS: &[(&str, &str)] = &[
     (
@@ -57,11 +34,6 @@ const BROWSER_FINGERPRINT_HEADERS: &[(&str, &str)] = &[
 
 #[async_trait]
 pub trait ModelFetchTransportRuntime: Send + Sync {
-    async fn resolve_local_oauth_request_auth(
-        &self,
-        transport: &GatewayProviderTransportSnapshot,
-    ) -> Result<Option<LocalResolvedOAuthRequestAuth>, String>;
-
     async fn resolve_model_fetch_proxy(
         &self,
         transport: &GatewayProviderTransportSnapshot,
@@ -77,21 +49,7 @@ pub async fn build_models_fetch_execution_plan(
     runtime: &(impl ModelFetchTransportRuntime + ?Sized),
     transport: &GatewayProviderTransportSnapshot,
 ) -> Result<ExecutionPlan, String> {
-    build_models_fetch_execution_plan_for_client_version(runtime, transport, None).await
-}
-
-pub async fn build_models_fetch_execution_plan_for_client_version(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-    codex_client_version: Option<&str>,
-) -> Result<ExecutionPlan, String> {
-    build_standard_models_fetch_execution_plan_for_client_version(
-        runtime,
-        transport,
-        None,
-        codex_client_version,
-    )
-    .await
+    build_standard_models_fetch_execution_plan(runtime, transport, None).await
 }
 
 struct ModelFetchExecutionPlanRequest {
@@ -110,47 +68,22 @@ pub async fn build_standard_models_fetch_execution_plan(
     transport: &GatewayProviderTransportSnapshot,
     after_id: Option<&str>,
 ) -> Result<ExecutionPlan, String> {
-    build_standard_models_fetch_execution_plan_for_client_version(
-        runtime, transport, after_id, None,
-    )
-    .await
-}
-
-pub async fn build_standard_models_fetch_execution_plan_for_client_version(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-    after_id: Option<&str>,
-    codex_client_version: Option<&str>,
-) -> Result<ExecutionPlan, String> {
     let api_format = transport.endpoint.api_format.trim().to_ascii_lowercase();
     let provider_api_format = api_format.clone();
-    let provider_type = transport.provider.provider_type.trim().to_ascii_lowercase();
-    let is_codex_openai_models_fetch =
-        provider_type == "codex" && api_format.starts_with("openai:");
     let is_deepseek_anthropic_models_fetch = api_format.starts_with("claude:")
         && deepseek_anthropic_models_fetch_uses_openai_auth(&transport.endpoint.base_url);
-    let mut headers =
-        standard_models_fetch_headers(&api_format, &provider_type, codex_client_version);
-    if is_codex_openai_models_fetch {
-        headers.insert("accept".to_string(), "application/json".to_string());
-    }
+    let mut headers = standard_models_fetch_headers(&api_format);
     if is_deepseek_anthropic_models_fetch {
         headers.remove("anthropic-version");
         headers.insert("accept".to_string(), "application/json".to_string());
     }
     let mut protected_headers = Vec::<String>::new();
-    if is_codex_openai_models_fetch {
-        protected_headers.push("user-agent".to_string());
-        protected_headers.push("originator".to_string());
-    }
 
     if api_format.starts_with("openai:") || api_format.starts_with("claude:") {
         let resolved_auth = if is_deepseek_anthropic_models_fetch {
-            resolve_oauth_header_auth(runtime, transport)
-                .await?
-                .or_else(|| resolve_local_openai_bearer_auth(transport))
+            resolve_local_openai_bearer_auth(transport)
         } else {
-            resolve_standard_header_auth(runtime, transport).await?
+            resolve_standard_header_auth(transport)
         };
         let (auth_header_name, auth_header_value) = resolved_auth.ok_or_else(|| {
             "Rust models fetch auth resolution is not supported for this key".to_string()
@@ -161,34 +94,13 @@ pub async fn build_standard_models_fetch_execution_plan_for_client_version(
             &auth_header_name,
             &auth_header_value,
         );
-        if is_codex_openai_models_fetch {
-            let auth_identity = aether_ai_formats::parse_codex_auth_identity(
-                transport.key.decrypted_auth_config.as_deref(),
-            );
-            if let Some(account_id) = auth_identity.account_id {
-                insert_non_empty_auth_header(
-                    &mut headers,
-                    &mut protected_headers,
-                    "chatgpt-account-id",
-                    &account_id,
-                );
-            }
-            if auth_identity.is_fedramp {
-                insert_non_empty_auth_header(
-                    &mut headers,
-                    &mut protected_headers,
-                    "x-openai-fedramp",
-                    "true",
-                );
-            }
-        }
         headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
         ensure_upstream_auth_header(&mut headers, &auth_header_name, &auth_header_value);
     } else {
         headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
     }
 
-    let upstream_url = build_standard_models_fetch_url(transport, after_id, codex_client_version)?;
+    let upstream_url = build_standard_models_fetch_url(transport, after_id)?;
     build_execution_plan(
         runtime,
         transport,
@@ -204,287 +116,6 @@ pub async fn build_standard_models_fetch_execution_plan_for_client_version(
             },
             client_api_format: provider_api_format.clone(),
             provider_api_format,
-            model_name: Some("models".to_string()),
-        },
-    )
-    .await
-}
-
-pub async fn build_antigravity_fetch_available_models_plan(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-    base_url: &str,
-    project_id: &str,
-) -> Result<ExecutionPlan, String> {
-    let authorization = resolve_oauth_header_auth(runtime, transport)
-        .await?
-        .ok_or_else(|| "Antigravity fetch requires OAuth authorization header".to_string())?;
-    let identity_auth = match resolve_local_antigravity_request_auth(transport) {
-        AntigravityRequestAuthSupport::Supported(auth) => auth,
-        AntigravityRequestAuthSupport::Unsupported(reason) => {
-            return Err(format!(
-                "Antigravity fetch auth resolution is not supported: {reason:?}"
-            ))
-        }
-    };
-
-    let mut headers = build_antigravity_static_identity_headers(&identity_auth);
-    headers.insert(authorization.0.clone(), authorization.1.clone());
-    headers.insert("content-type".to_string(), "application/json".to_string());
-    headers.insert("accept".to_string(), "application/json".to_string());
-    headers
-        .entry("user-agent".to_string())
-        .or_insert_with(|| ANTIGRAVITY_REQUEST_USER_AGENT.to_string());
-    let protected_headers = vec![authorization.0];
-    headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
-
-    let url = format!(
-        "{}{}",
-        base_url.trim_end_matches('/'),
-        "/v1internal:fetchAvailableModels"
-    );
-    build_execution_plan(
-        runtime,
-        transport,
-        ModelFetchExecutionPlanRequest {
-            method: "POST".to_string(),
-            url,
-            headers,
-            content_type: Some("application/json".to_string()),
-            body: RequestBody::from_json(json!({ "project": project_id })),
-            client_api_format: "gemini:generate_content".to_string(),
-            provider_api_format: ANTIGRAVITY_FETCH_PROVIDER_API_FORMAT.to_string(),
-            model_name: Some("fetchAvailableModels".to_string()),
-        },
-    )
-    .await
-}
-
-pub async fn build_antigravity_load_code_assist_plan(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-) -> Result<ExecutionPlan, String> {
-    let authorization = resolve_oauth_header_auth(runtime, transport)
-        .await?
-        .ok_or_else(|| {
-            "Antigravity loadCodeAssist requires OAuth authorization header".to_string()
-        })?;
-
-    let mut headers = build_antigravity_static_client_headers(None, None);
-    headers.insert(authorization.0.clone(), authorization.1.clone());
-    headers.insert("content-type".to_string(), "application/json".to_string());
-    headers.insert("accept".to_string(), "application/json".to_string());
-    headers
-        .entry("user-agent".to_string())
-        .or_insert_with(|| ANTIGRAVITY_REQUEST_USER_AGENT.to_string());
-    let protected_headers = vec![authorization.0];
-    headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
-
-    build_execution_plan(
-        runtime,
-        transport,
-        ModelFetchExecutionPlanRequest {
-            method: "POST".to_string(),
-            url: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist".to_string(),
-            headers,
-            content_type: Some("application/json".to_string()),
-            body: RequestBody::from_json(json!({
-                "metadata": {
-                    "ideType": "ANTIGRAVITY",
-                    "platform": "PLATFORM_UNSPECIFIED",
-                    "pluginType": "GEMINI",
-                }
-            })),
-            client_api_format: "gemini:generate_content".to_string(),
-            provider_api_format: ANTIGRAVITY_LOAD_CODE_ASSIST_PROVIDER_API_FORMAT.to_string(),
-            model_name: Some("loadCodeAssist".to_string()),
-        },
-    )
-    .await
-}
-
-pub async fn build_gemini_cli_load_code_assist_plan(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-) -> Result<ExecutionPlan, String> {
-    let authorization = resolve_bearer_or_oauth_header_auth(runtime, transport)
-        .await?
-        .filter(|(_, value)| !value.trim().is_empty())
-        .ok_or_else(|| "GeminiCLI loadCodeAssist requires bearer or OAuth auth".to_string())?;
-
-    let mut headers = BTreeMap::from([
-        ("user-agent".to_string(), GEMINI_CLI_USER_AGENT.to_string()),
-        ("accept-encoding".to_string(), "identity".to_string()),
-        ("content-type".to_string(), "application/json".to_string()),
-    ]);
-    let mut protected_headers = Vec::new();
-    insert_non_empty_auth_header(
-        &mut headers,
-        &mut protected_headers,
-        &authorization.0,
-        &authorization.1,
-    );
-    headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
-
-    build_execution_plan(
-        runtime,
-        transport,
-        ModelFetchExecutionPlanRequest {
-            method: "POST".to_string(),
-            url: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist".to_string(),
-            headers,
-            content_type: Some("application/json".to_string()),
-            body: RequestBody::from_json(json!({
-                "metadata": {
-                    "ideType": "ANTIGRAVITY",
-                    "platform": "PLATFORM_UNSPECIFIED",
-                    "pluginType": "GEMINI",
-                }
-            })),
-            client_api_format: "gemini:generate_content".to_string(),
-            provider_api_format: GEMINI_CLI_LOAD_CODE_ASSIST_PROVIDER_API_FORMAT.to_string(),
-            model_name: Some("loadCodeAssist".to_string()),
-        },
-    )
-    .await
-}
-
-pub async fn build_kiro_list_available_models_plan(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-) -> Result<ExecutionPlan, String> {
-    let kiro_auth = match runtime.resolve_local_oauth_request_auth(transport).await? {
-        Some(LocalResolvedOAuthRequestAuth::Kiro(auth)) => Some(auth),
-        _ => resolve_local_kiro_request_auth(transport),
-    }
-    .ok_or_else(|| "Kiro models fetch requires Kiro request auth".to_string())?;
-    let url = build_kiro_list_available_models_url(
-        &transport.endpoint.base_url,
-        Some(kiro_auth.auth_config.effective_api_region()),
-    )
-    .ok_or_else(|| "Kiro models fetch URL is unavailable".to_string())?;
-
-    let mut headers =
-        build_list_available_models_headers(&kiro_auth.auth_config, &kiro_auth.machine_id);
-    let mut protected_headers = Vec::new();
-    insert_non_empty_auth_header(
-        &mut headers,
-        &mut protected_headers,
-        kiro_auth.name,
-        &kiro_auth.value,
-    );
-    protected_headers.extend(["host".to_string(), "x-amz-user-agent".to_string()]);
-    headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
-    ensure_upstream_auth_header(&mut headers, kiro_auth.name, &kiro_auth.value);
-
-    build_execution_plan(
-        runtime,
-        transport,
-        ModelFetchExecutionPlanRequest {
-            method: "GET".to_string(),
-            url,
-            headers,
-            content_type: None,
-            body: RequestBody {
-                json_body: None,
-                body_bytes_b64: None,
-                body_ref: None,
-            },
-            client_api_format: "claude:messages".to_string(),
-            provider_api_format: KIRO_LIST_AVAILABLE_MODELS_PROVIDER_API_FORMAT.to_string(),
-            model_name: Some("ListAvailableModels".to_string()),
-        },
-    )
-    .await
-}
-
-pub async fn build_windsurf_model_configs_execution_plan(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-) -> Result<ExecutionPlan, String> {
-    let (_, auth_value) = resolve_windsurf_cascade_auth(transport)
-        .or_else(|| resolve_local_openai_bearer_auth(transport))
-        .ok_or_else(|| "Windsurf models fetch requires apiKey/sessionToken".to_string())?;
-    let api_key = auth_secret_from_header_value(&auth_value);
-    if api_key.is_empty() {
-        return Err("Windsurf models fetch requires apiKey/sessionToken".to_string());
-    }
-
-    let headers = BTreeMap::from([
-        ("content-type".to_string(), "application/json".to_string()),
-        ("accept".to_string(), "application/json".to_string()),
-        ("connect-protocol-version".to_string(), "1".to_string()),
-        (
-            "user-agent".to_string(),
-            format!("windsurf/{WINDSURF_IDE_VERSION}"),
-        ),
-    ]);
-    let headers = apply_fetch_header_rules(transport, headers, &[])?;
-    let url = format!(
-        "{}{}",
-        transport.endpoint.base_url.trim_end_matches('/'),
-        WINDSURF_MODEL_CONFIGS_PATH
-    );
-
-    build_execution_plan(
-        runtime,
-        transport,
-        ModelFetchExecutionPlanRequest {
-            method: "POST".to_string(),
-            url,
-            headers,
-            content_type: Some("application/json".to_string()),
-            body: RequestBody::from_json(json!({
-                "metadata": {
-                    "apiKey": api_key,
-                    "ideName": "windsurf",
-                    "ideVersion": WINDSURF_IDE_VERSION,
-                    "extensionName": "windsurf",
-                    "extensionVersion": WINDSURF_IDE_VERSION,
-                    "locale": "en",
-                }
-            })),
-            client_api_format: "openai:chat".to_string(),
-            provider_api_format: WINDSURF_MODEL_CONFIGS_PROVIDER_API_FORMAT.to_string(),
-            model_name: Some("GetCascadeModelConfigs".to_string()),
-        },
-    )
-    .await
-}
-
-pub async fn build_vertex_models_fetch_execution_plan(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-    url: &str,
-    api_format: &str,
-    auth_header: Option<(String, String)>,
-) -> Result<ExecutionPlan, String> {
-    let mut headers =
-        standard_models_fetch_headers(api_format, &transport.provider.provider_type, None);
-    let mut protected_headers = Vec::<String>::new();
-    if let Some((name, value)) = auth_header {
-        insert_non_empty_auth_header(&mut headers, &mut protected_headers, &name, &value);
-        headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
-        ensure_upstream_auth_header(&mut headers, &name, &value);
-    } else {
-        headers = apply_fetch_header_rules(transport, headers, &protected_headers)?;
-    }
-
-    build_execution_plan(
-        runtime,
-        transport,
-        ModelFetchExecutionPlanRequest {
-            method: "GET".to_string(),
-            url: url.trim().to_string(),
-            headers,
-            content_type: None,
-            body: RequestBody {
-                json_body: None,
-                body_bytes_b64: None,
-                body_ref: None,
-            },
-            client_api_format: api_format.to_string(),
-            provider_api_format: api_format.to_string(),
             model_name: Some("models".to_string()),
         },
     )
@@ -536,66 +167,17 @@ async fn build_execution_plan(
     })
 }
 
-async fn resolve_standard_header_auth(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
+fn resolve_standard_header_auth(
     transport: &GatewayProviderTransportSnapshot,
-) -> Result<Option<(String, String)>, String> {
-    if transport.key.auth_type.trim().eq_ignore_ascii_case("oauth")
-        || transport.key.auth_type.trim().eq_ignore_ascii_case("kiro")
-    {
-        return resolve_oauth_header_auth(runtime, transport).await;
-    }
-
+) -> Option<(String, String)> {
     let api_format = transport.endpoint.api_format.trim().to_ascii_lowercase();
     if api_format.starts_with("openai:") {
-        return Ok(resolve_local_openai_bearer_auth(transport));
+        return resolve_local_openai_bearer_auth(transport);
     }
     if api_format.starts_with("claude:") {
-        return Ok(resolve_local_standard_auth(transport));
+        return resolve_local_standard_auth(transport);
     }
-    Ok(None)
-}
-
-async fn resolve_oauth_header_auth(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-) -> Result<Option<(String, String)>, String> {
-    match runtime.resolve_local_oauth_request_auth(transport).await {
-        Ok(Some(LocalResolvedOAuthRequestAuth::Header { name, value })) => Ok(Some((name, value))),
-        Ok(Some(LocalResolvedOAuthRequestAuth::Kiro(_))) => Ok(None),
-        Ok(None) => Ok(None),
-        Err(err) => Err(err),
-    }
-}
-
-async fn resolve_bearer_or_oauth_header_auth(
-    runtime: &(impl ModelFetchTransportRuntime + ?Sized),
-    transport: &GatewayProviderTransportSnapshot,
-) -> Result<Option<(String, String)>, String> {
-    if let Some(auth) = resolve_oauth_header_auth(runtime, transport).await? {
-        return Ok(Some(auth));
-    }
-
-    if let Some((name, value)) = resolve_local_openai_bearer_auth(transport) {
-        return Ok(Some((name, value)));
-    }
-
-    if transport
-        .key
-        .auth_type
-        .trim()
-        .eq_ignore_ascii_case("bearer")
-    {
-        let secret = transport.key.decrypted_api_key.trim();
-        if !secret.is_empty() {
-            return Ok(Some((
-                "authorization".to_string(),
-                format!("Bearer {secret}"),
-            )));
-        }
-    }
-
-    Ok(None)
+    None
 }
 
 fn apply_fetch_header_rules(
@@ -619,57 +201,17 @@ fn apply_fetch_header_rules(
     Ok(headers)
 }
 
-fn standard_models_fetch_headers(
-    api_format: &str,
-    provider_type: &str,
-    codex_client_version: Option<&str>,
-) -> BTreeMap<String, String> {
+fn standard_models_fetch_headers(api_format: &str) -> BTreeMap<String, String> {
     let api_format = aether_ai_formats::normalize_api_format_alias(api_format);
-    let provider_type = provider_type.trim().to_ascii_lowercase();
-    if provider_type == "codex" && api_format.starts_with("openai:") {
-        let client_version = codex_client_version
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or(aether_ai_formats::CODEX_CLIENT_VERSION);
-        return BTreeMap::from([
-            (
-                "user-agent".to_string(),
-                format!(
-                    "{}/{client_version}",
-                    aether_ai_formats::CODEX_CLIENT_ORIGINATOR
-                ),
-            ),
-            (
-                "originator".to_string(),
-                aether_ai_formats::CODEX_CLIENT_ORIGINATOR.to_string(),
-            ),
-        ]);
-    }
     match api_format.as_str() {
-        "openai:responses" | "openai:responses:compact" => BTreeMap::from([(
-            "user-agent".to_string(),
-            aether_ai_formats::CODEX_CLIENT_USER_AGENT.to_string(),
+        "claude:messages" => BTreeMap::from([(
+            "anthropic-version".to_string(),
+            CLAUDE_VERSION_HEADER.to_string(),
         )]),
-        "claude:messages" => {
-            let mut headers = BTreeMap::from([(
-                "anthropic-version".to_string(),
-                CLAUDE_VERSION_HEADER.to_string(),
-            )]);
-            if matches!(provider_type.as_str(), "claude_code" | "kiro") {
-                headers.insert("user-agent".to_string(), CLAUDE_CLI_USER_AGENT.to_string());
-            }
-            headers
-        }
-        "gemini:generate_content" => {
-            let mut headers = BROWSER_FINGERPRINT_HEADERS
-                .iter()
-                .map(|(key, value)| (key.to_string(), value.to_string()))
-                .collect::<BTreeMap<_, _>>();
-            if provider_type == "gemini_cli" {
-                headers.insert("user-agent".to_string(), GEMINI_CLI_USER_AGENT.to_string());
-            }
-            headers
-        }
+        "gemini:generate_content" => BROWSER_FINGERPRINT_HEADERS
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect(),
         _ => BTreeMap::new(),
     }
 }
@@ -677,16 +219,12 @@ fn standard_models_fetch_headers(
 fn build_standard_models_fetch_url(
     transport: &GatewayProviderTransportSnapshot,
     after_id: Option<&str>,
-    codex_client_version: Option<&str>,
 ) -> Result<String, String> {
     let api_format = transport.endpoint.api_format.trim().to_ascii_lowercase();
     if api_format.starts_with("gemini:") {
-        let secret = resolve_local_vertex_api_key_query_auth(transport)
-            .map(|auth| auth.value)
-            .or_else(|| {
-                resolve_local_gemini_auth(transport).and_then(|(name, value)| {
-                    name.eq_ignore_ascii_case("x-goog-api-key").then_some(value)
-                })
+        let secret = resolve_local_gemini_auth(transport)
+            .and_then(|(name, value)| {
+                name.eq_ignore_ascii_case("x-goog-api-key").then_some(value)
             })
             .or_else(|| {
                 let secret = transport.key.decrypted_api_key.trim();
@@ -694,23 +232,17 @@ fn build_standard_models_fetch_url(
             })
             .ok_or_else(|| "Gemini models fetch requires an API key".to_string())?;
 
-        let (url, _) = build_models_fetch_url_for_client_version(
-            &transport.provider.provider_type,
+        let (url, _) = build_models_fetch_url(
             &transport.endpoint.api_format,
             &transport.endpoint.base_url,
-            codex_client_version,
         )
         .ok_or_else(|| "Rust models fetch does not support this provider format yet".to_string())?;
         return Ok(append_query_param(url, "key", &secret));
     }
 
-    let (mut url, _) = build_models_fetch_url_for_client_version(
-        &transport.provider.provider_type,
-        &transport.endpoint.api_format,
-        &transport.endpoint.base_url,
-        codex_client_version,
-    )
-    .ok_or_else(|| "Rust models fetch does not support this provider format yet".to_string())?;
+    let (mut url, _) =
+        build_models_fetch_url(&transport.endpoint.api_format, &transport.endpoint.base_url)
+            .ok_or_else(|| "Rust models fetch does not support this provider format yet".to_string())?;
 
     if api_format.starts_with("claude:")
         && !deepseek_anthropic_models_fetch_uses_openai_auth(&transport.endpoint.base_url)
@@ -752,16 +284,6 @@ fn insert_non_empty_auth_header(
     headers.insert(name.to_string(), value.to_string());
 }
 
-fn auth_secret_from_header_value(auth_value: &str) -> String {
-    auth_value
-        .trim()
-        .strip_prefix("Bearer ")
-        .or_else(|| auth_value.trim().strip_prefix("bearer "))
-        .unwrap_or_else(|| auth_value.trim())
-        .trim()
-        .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use aether_contracts::{ExecutionPlan, ExecutionResult, ProxySnapshot};
@@ -770,31 +292,18 @@ mod tests {
         GatewayProviderTransportProvider, GatewayProviderTransportSnapshot,
     };
     use async_trait::async_trait;
-    use serde_json::json;
 
     use super::{
-        build_antigravity_fetch_available_models_plan, build_antigravity_load_code_assist_plan,
-        build_gemini_cli_load_code_assist_plan, build_kiro_list_available_models_plan,
-        build_models_fetch_execution_plan, build_models_fetch_execution_plan_for_client_version,
-        build_standard_models_fetch_execution_plan, build_vertex_models_fetch_execution_plan,
-        ModelFetchTransportRuntime, ANTIGRAVITY_REQUEST_USER_AGENT,
+        build_models_fetch_execution_plan, build_standard_models_fetch_execution_plan,
+        ModelFetchTransportRuntime,
     };
 
     struct TestRuntime {
-        oauth_auth: Option<aether_provider_transport::LocalResolvedOAuthRequestAuth>,
         proxy: Option<ProxySnapshot>,
     }
 
     #[async_trait]
     impl ModelFetchTransportRuntime for TestRuntime {
-        async fn resolve_local_oauth_request_auth(
-            &self,
-            _transport: &GatewayProviderTransportSnapshot,
-        ) -> Result<Option<aether_provider_transport::LocalResolvedOAuthRequestAuth>, String>
-        {
-            Ok(self.oauth_auth.clone())
-        }
-
         async fn resolve_model_fetch_proxy(
             &self,
             _transport: &GatewayProviderTransportSnapshot,
@@ -810,19 +319,14 @@ mod tests {
         }
     }
 
-    fn sample_transport(
-        provider_type: &str,
-        api_format: &str,
-        auth_type: &str,
-    ) -> GatewayProviderTransportSnapshot {
+    fn sample_transport(api_format: &str, auth_type: &str) -> GatewayProviderTransportSnapshot {
         GatewayProviderTransportSnapshot {
             provider: GatewayProviderTransportProvider {
                 id: "provider-1".to_string(),
                 name: "Provider One".to_string(),
-                provider_type: provider_type.to_string(),
+                provider_type: "custom".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -856,55 +360,23 @@ mod tests {
                 api_formats: Some(vec![api_format.to_string()]),
                 auth_type_by_format: None,
                 allow_auth_channel_mismatch_formats: None,
-
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
                 upstream_metadata: None,
                 decrypted_api_key: "secret".to_string(),
-                decrypted_auth_config: Some(
-                    r#"{"project_id":"project-1","client_version":"1.2.3","session_id":"sess-1"}"#
-                        .to_string(),
-                ),
+                decrypted_auth_config: None,
             },
         }
     }
 
     #[tokio::test]
-    async fn builds_openai_responses_models_fetch_plan_with_codex_user_agent() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("openai", "openai:responses", "api_key");
-        transport.key.decrypted_auth_config = None;
-        let plan = build_models_fetch_execution_plan(&runtime, &transport)
-            .await
-            .expect("plan");
-
-        assert_eq!(plan.url, "https://example.com/models");
-        assert_eq!(
-            plan.headers.get("user-agent").map(String::as_str),
-            Some(aether_ai_formats::CODEX_CLIENT_USER_AGENT)
-        );
-        assert_eq!(
-            plan.headers.get("authorization").map(String::as_str),
-            Some("Bearer secret")
-        );
-    }
-
-    #[tokio::test]
-    async fn builds_openai_responses_compact_models_fetch_plan_with_bearer_authorization() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("openai", "openai:responses:compact", "api_key");
-        transport.key.decrypted_auth_config = None;
+    async fn builds_openai_models_fetch_plan_with_bearer_authorization() {
+        let runtime = TestRuntime { proxy: None };
+        let transport = sample_transport("openai:chat", "api_key");
         let plan = build_models_fetch_execution_plan(&runtime, &transport)
             .await
             .expect("plan");
@@ -918,13 +390,9 @@ mod tests {
 
     #[tokio::test]
     async fn builds_bigmodel_coding_models_fetch_plan() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("openai", "openai:chat", "api_key");
+        let runtime = TestRuntime { proxy: None };
+        let mut transport = sample_transport("openai:chat", "api_key");
         transport.endpoint.base_url = "https://open.bigmodel.cn/api/coding/paas/v4".to_string();
-        transport.key.decrypted_auth_config = None;
         let plan = build_models_fetch_execution_plan(&runtime, &transport)
             .await
             .expect("plan");
@@ -940,139 +408,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn builds_unversioned_api_root_models_fetch_plan() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("openai", "openai:chat", "api_key");
-        transport.endpoint.base_url = "https://proxy.example.com/api".to_string();
-        transport.key.decrypted_auth_config = None;
-        let plan = build_models_fetch_execution_plan(&runtime, &transport)
-            .await
-            .expect("plan");
-
-        assert_eq!(plan.url, "https://proxy.example.com/api/models");
-        assert_eq!(
-            plan.headers.get("authorization").map(String::as_str),
-            Some("Bearer secret")
-        );
-    }
-
-    #[tokio::test]
-    async fn builds_codex_models_fetch_plan_with_auth_identity_headers() {
-        let runtime = TestRuntime {
-            oauth_auth: Some(
-                aether_provider_transport::LocalResolvedOAuthRequestAuth::Header {
-                    name: "authorization".to_string(),
-                    value: "Bearer access-token".to_string(),
-                },
-            ),
-            proxy: None,
-        };
-        let mut transport = sample_transport("codex", "openai:chat", "oauth");
-        transport.endpoint.base_url = "https://chatgpt.com/backend-api/codex".to_string();
-        transport.endpoint.header_rules = Some(json!([
-            {"action": "set", "key": "authorization", "value": "Bearer spoofed-token"},
-            {"action": "set", "key": "chatgpt-account-id", "value": "spoofed-account"},
-            {"action": "set", "key": "x-openai-fedramp", "value": "false"}
-        ]));
-        transport.key.decrypted_auth_config =
-            Some(r#"{"account_id":"account-1","chatgpt_account_is_fedramp":true}"#.to_string());
-
-        let plan = build_models_fetch_execution_plan(&runtime, &transport)
-            .await
-            .expect("plan");
-
-        assert_eq!(
-            plan.url,
-            "https://chatgpt.com/backend-api/codex/models?client_version=0.144.1"
-        );
-        assert_eq!(
-            plan.headers.get("authorization").map(String::as_str),
-            Some("Bearer access-token")
-        );
-        assert_eq!(
-            plan.headers.get("chatgpt-account-id").map(String::as_str),
-            Some("account-1")
-        );
-        assert_eq!(
-            plan.headers.get("x-openai-fedramp").map(String::as_str),
-            Some("true")
-        );
-        assert_eq!(
-            plan.headers.get("accept").map(String::as_str),
-            Some("application/json")
-        );
-        assert_eq!(
-            plan.headers.get("originator").map(String::as_str),
-            Some("codex_cli_rs")
-        );
-        assert_eq!(
-            plan.headers.get("user-agent").map(String::as_str),
-            Some(aether_ai_formats::CODEX_CLIENT_USER_AGENT)
-        );
-        assert!(!plan.headers.contains_key("version"));
-    }
-
-    #[tokio::test]
-    async fn builds_codex_models_fetch_plan_with_explicit_client_version() {
-        let runtime = TestRuntime {
-            oauth_auth: Some(
-                aether_provider_transport::LocalResolvedOAuthRequestAuth::Header {
-                    name: "authorization".to_string(),
-                    value: "Bearer access-token".to_string(),
-                },
-            ),
-            proxy: None,
-        };
-        let mut transport = sample_transport("codex", "openai:responses", "oauth");
-        transport.endpoint.base_url = "https://chatgpt.com/backend-api/codex".to_string();
-        transport.endpoint.header_rules = Some(json!([
-            {"action": "set", "key": "user-agent", "value": "custom-codex-client/0.1.0"},
-            {"action": "drop", "key": "originator"}
-        ]));
-        transport.key.decrypted_auth_config =
-            Some(r#"{"account_id":"account-1","chatgpt_account_is_fedramp":true}"#.to_string());
-
-        let plan = build_models_fetch_execution_plan_for_client_version(
-            &runtime,
-            &transport,
-            Some("0.145.2"),
-        )
-        .await
-        .expect("plan");
-
-        assert_eq!(
-            plan.url,
-            "https://chatgpt.com/backend-api/codex/models?client_version=0.145.2"
-        );
-        assert_eq!(
-            plan.headers.get("user-agent").map(String::as_str),
-            Some("codex_cli_rs/0.145.2")
-        );
-        assert_eq!(
-            plan.headers.get("originator").map(String::as_str),
-            Some("codex_cli_rs")
-        );
-        assert_eq!(
-            plan.headers.get("chatgpt-account-id").map(String::as_str),
-            Some("account-1")
-        );
-        assert_eq!(
-            plan.headers.get("x-openai-fedramp").map(String::as_str),
-            Some("true")
-        );
-    }
-
-    #[tokio::test]
     async fn builds_claude_models_fetch_plan_with_pagination() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("custom", "claude:messages", "api_key");
-        transport.key.decrypted_auth_config = None;
+        let runtime = TestRuntime { proxy: None };
+        let transport = sample_transport("claude:messages", "api_key");
         let plan =
             build_standard_models_fetch_execution_plan(&runtime, &transport, Some("cursor-1"))
                 .await
@@ -1094,13 +432,9 @@ mod tests {
 
     #[tokio::test]
     async fn builds_deepseek_anthropic_models_fetch_plan_with_openai_models_endpoint() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("custom", "claude:messages", "api_key");
+        let runtime = TestRuntime { proxy: None };
+        let mut transport = sample_transport("claude:messages", "api_key");
         transport.endpoint.base_url = "https://api.deepseek.com/anthropic".to_string();
-        transport.key.decrypted_auth_config = None;
         let plan = build_models_fetch_execution_plan(&runtime, &transport)
             .await
             .expect("plan");
@@ -1116,12 +450,8 @@ mod tests {
 
     #[tokio::test]
     async fn builds_gemini_models_fetch_plan_with_browser_headers_and_query_auth() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("custom", "gemini:generate_content", "api_key");
-        transport.key.decrypted_auth_config = None;
+        let runtime = TestRuntime { proxy: None };
+        let transport = sample_transport("gemini:generate_content", "api_key");
         let plan = build_models_fetch_execution_plan(&runtime, &transport)
             .await
             .expect("plan");
@@ -1132,199 +462,5 @@ mod tests {
             plan.headers.get("accept-language").map(String::as_str),
             Some("zh-CN")
         );
-    }
-
-    #[tokio::test]
-    async fn builds_antigravity_fetch_available_models_plan() {
-        let runtime = TestRuntime {
-            oauth_auth: Some(
-                aether_provider_transport::LocalResolvedOAuthRequestAuth::Header {
-                    name: "authorization".to_string(),
-                    value: "Bearer oauth-token".to_string(),
-                },
-            ),
-            proxy: None,
-        };
-        let transport = sample_transport("antigravity", "gemini:generate_content", "oauth");
-        let plan = build_antigravity_fetch_available_models_plan(
-            &runtime,
-            &transport,
-            "https://daily-cloudcode-pa.sandbox.googleapis.com",
-            "project-1",
-        )
-        .await
-        .expect("plan");
-
-        assert_eq!(plan.method, "POST");
-        assert_eq!(
-            plan.url,
-            "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels"
-        );
-        assert_eq!(
-            plan.provider_api_format,
-            "antigravity:fetch_available_models"
-        );
-        assert_eq!(
-            plan.body
-                .json_body
-                .as_ref()
-                .and_then(|value| value.get("project")),
-            Some(&json!("project-1"))
-        );
-        assert_eq!(
-            plan.headers.get("user-agent").map(String::as_str),
-            Some(ANTIGRAVITY_REQUEST_USER_AGENT)
-        );
-        assert_eq!(
-            plan.headers.get("x-client-name").map(String::as_str),
-            Some("antigravity")
-        );
-        assert_eq!(
-            plan.headers.get("x-goog-api-client").map(String::as_str),
-            Some("gl-node/18.18.2 fire/0.8.6 grpc/1.10.x")
-        );
-        assert_eq!(
-            plan.headers.get("x-client-version").map(String::as_str),
-            Some("1.2.3")
-        );
-        assert_eq!(
-            plan.headers.get("x-vscode-sessionid").map(String::as_str),
-            Some("sess-1")
-        );
-    }
-
-    #[tokio::test]
-    async fn builds_antigravity_load_code_assist_plan_with_cli_headers() {
-        let runtime = TestRuntime {
-            oauth_auth: Some(
-                aether_provider_transport::LocalResolvedOAuthRequestAuth::Header {
-                    name: "authorization".to_string(),
-                    value: "Bearer oauth-token".to_string(),
-                },
-            ),
-            proxy: None,
-        };
-        let transport = sample_transport("antigravity", "gemini:generate_content", "oauth");
-        let plan = build_antigravity_load_code_assist_plan(&runtime, &transport)
-            .await
-            .expect("plan");
-
-        assert_eq!(plan.method, "POST");
-        assert_eq!(
-            plan.url,
-            "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
-        );
-        assert_eq!(
-            plan.headers.get("authorization").map(String::as_str),
-            Some("Bearer oauth-token")
-        );
-        assert_eq!(
-            plan.headers.get("user-agent").map(String::as_str),
-            Some(ANTIGRAVITY_REQUEST_USER_AGENT)
-        );
-        assert_eq!(
-            plan.headers.get("x-client-name").map(String::as_str),
-            Some("antigravity")
-        );
-        assert_eq!(
-            plan.headers.get("x-goog-api-client").map(String::as_str),
-            Some("gl-node/18.18.2 fire/0.8.6 grpc/1.10.x")
-        );
-    }
-
-    #[tokio::test]
-    async fn builds_gemini_cli_load_code_assist_plan() {
-        let runtime = TestRuntime {
-            oauth_auth: Some(
-                aether_provider_transport::LocalResolvedOAuthRequestAuth::Header {
-                    name: "authorization".to_string(),
-                    value: "Bearer oauth-token".to_string(),
-                },
-            ),
-            proxy: None,
-        };
-        let transport = sample_transport("gemini_cli", "gemini:generate_content", "oauth");
-        let plan = build_gemini_cli_load_code_assist_plan(&runtime, &transport)
-            .await
-            .expect("plan");
-
-        assert_eq!(plan.method, "POST");
-        assert_eq!(
-            plan.url,
-            "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
-        );
-        assert_eq!(
-            plan.headers.get("user-agent").map(String::as_str),
-            Some("GeminiCLI/0.1.5 (Windows; AMD64)")
-        );
-    }
-
-    #[tokio::test]
-    async fn builds_kiro_list_available_models_plan() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("kiro", "claude:messages", "oauth");
-        transport.endpoint.base_url = "https://q.{region}.amazonaws.com".to_string();
-        transport.key.decrypted_api_key = "__placeholder__".to_string();
-        transport.key.decrypted_auth_config = Some(
-            r#"{
-                "access_token":"cached-token",
-                "expires_at":4102444800,
-                "api_region":"us-west-2",
-                "machine_id":"123e4567-e89b-12d3-a456-426614174000",
-                "kiro_version":"0.12.155"
-            }"#
-            .to_string(),
-        );
-
-        let plan = build_kiro_list_available_models_plan(&runtime, &transport)
-            .await
-            .expect("plan");
-
-        assert_eq!(plan.method, "GET");
-        assert_eq!(
-            plan.url,
-            "https://q.us-west-2.amazonaws.com/ListAvailableModels?origin=AI_EDITOR"
-        );
-        assert_eq!(plan.provider_api_format, "kiro:list_available_models");
-        assert_eq!(
-            plan.headers.get("authorization").map(String::as_str),
-            Some("Bearer cached-token")
-        );
-        assert_eq!(
-            plan.headers.get("host").map(String::as_str),
-            Some("q.us-west-2.amazonaws.com")
-        );
-        assert!(plan
-            .headers
-            .get("x-amz-user-agent")
-            .is_some_and(|value| value.starts_with("aws-sdk-js/1.0.0 KiroIDE-0.12.155-")));
-    }
-
-    #[tokio::test]
-    async fn builds_vertex_models_fetch_plan_with_auth_override() {
-        let runtime = TestRuntime {
-            oauth_auth: None,
-            proxy: None,
-        };
-        let mut transport = sample_transport("vertex_ai", "claude:messages", "api_key");
-        transport.key.decrypted_auth_config = None;
-        let plan = build_vertex_models_fetch_execution_plan(
-            &runtime,
-            &transport,
-            "https://aiplatform.googleapis.com/v1/publishers/google/models?key=secret",
-            "gemini:generate_content",
-            None,
-        )
-        .await
-        .expect("plan");
-
-        assert_eq!(
-            plan.url,
-            "https://aiplatform.googleapis.com/v1/publishers/google/models?key=secret"
-        );
-        assert!(plan.headers.contains_key("sec-ch-ua"));
     }
 }

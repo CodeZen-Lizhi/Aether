@@ -527,7 +527,7 @@ LIMIT 1
         let mut builder = QueryBuilder::<Sqlite>::new(LIST_PUBLIC_CATALOG_MODELS_PREFIX);
         apply_public_catalog_model_filters(&mut builder, query.provider_id.as_deref(), None);
         builder
-            .push(" ORDER BY p.provider_priority ASC, p.name ASC, COALESCE(gm.name, m.provider_model_name) ASC, m.id ASC LIMIT ")
+            .push(" ORDER BY p.created_at ASC, p.id ASC, p.name ASC, COALESCE(gm.name, m.provider_model_name) ASC, m.id ASC LIMIT ")
             .push_bind(query.limit as i64)
             .push(" OFFSET ")
             .push_bind(query.offset as i64);
@@ -546,7 +546,7 @@ LIMIT 1
             Some(query.search.as_str()),
         );
         builder
-            .push(" ORDER BY p.provider_priority ASC, p.name ASC, COALESCE(gm.name, m.provider_model_name) ASC, m.id ASC LIMIT ")
+            .push(" ORDER BY p.created_at ASC, p.id ASC, p.name ASC, COALESCE(gm.name, m.provider_model_name) ASC, m.id ASC LIMIT ")
             .push_bind(query.limit as i64);
         let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
         rows.iter().map(map_public_catalog_model_row).collect()
@@ -1418,10 +1418,10 @@ INSERT INTO models (
         sqlx::query(
             r#"
 INSERT INTO providers (
-  id, name, provider_type, is_active, provider_priority, created_at, updated_at
+  id, name, provider_type, is_active, created_at, updated_at
 ) VALUES
-  ('provider-2', 'Inactive Provider', 'custom', 0, 1, 1, 1),
-  ('provider-3', 'Alpha Provider', 'custom', 1, 20, 1, 1)
+  ('provider-2', 'Inactive Provider', 'custom', 0, 1, 1),
+  ('provider-3', 'Alpha Provider', 'custom', 1, 1, 1)
 "#,
         )
         .execute(pool)
@@ -1473,9 +1473,9 @@ INSERT INTO models (
         sqlx::query(
             r#"
 INSERT INTO providers (
-  id, name, provider_type, is_active, provider_priority, created_at, updated_at
+  id, name, provider_type, is_active, created_at, updated_at
 ) VALUES (
-  'provider-1', 'Zulu Provider', 'custom', 1, 10, 1, 1
+  'provider-1', 'Zulu Provider', 'custom', 1, 1, 1
 )
 "#,
         )

@@ -422,8 +422,6 @@ impl GatewayDataState {
                 request_candidate_writer: None,
                 provider_catalog_reader: None,
                 provider_catalog_writer: None,
-                pool_score_reader: None,
-                pool_score_writer: None,
                 provider_quota_reader: None,
                 provider_quota_writer: None,
                 routing_group_reader: None,
@@ -492,8 +490,6 @@ impl GatewayDataState {
             ) as Arc<dyn ProviderCatalogReadRepository>
         });
         let provider_catalog_writer = backends.write().provider_catalog();
-        let pool_score_reader = backends.read().pool_scores();
-        let pool_score_writer = backends.write().pool_scores();
         let provider_quota_reader = backends.read().provider_quotas();
         let provider_quota_writer = backends.write().provider_quotas();
         let routing_group_reader = backends.read().routing_groups().map(|repository| {
@@ -539,8 +535,6 @@ impl GatewayDataState {
             request_candidate_writer,
             provider_catalog_reader,
             provider_catalog_writer,
-            pool_score_reader,
-            pool_score_writer,
             provider_quota_reader,
             provider_quota_writer,
             routing_group_reader,
@@ -715,14 +709,6 @@ impl GatewayDataState {
 
     pub(crate) fn has_provider_catalog_writer(&self) -> bool {
         self.provider_catalog_writer.is_some()
-    }
-
-    pub(crate) fn has_pool_score_reader(&self) -> bool {
-        self.pool_score_reader.is_some()
-    }
-
-    pub(crate) fn has_pool_score_writer(&self) -> bool {
-        self.pool_score_writer.is_some()
     }
 
     pub(crate) fn has_proxy_node_reader(&self) -> bool {

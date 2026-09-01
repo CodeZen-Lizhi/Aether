@@ -1,7 +1,7 @@
 use aether_data::DataLayerError;
 use aether_data_contracts::repository::candidate_selection::{
     StoredApiFormatCandidateRowsQuery, StoredMinimalCandidateSelectionRow,
-    StoredPoolKeyCandidateRowsQuery, StoredRequestedModelCandidateRowsQuery,
+    StoredRequestedModelCandidateRowsQuery,
 };
 use aether_scheduler_core::{
     auth_constraints_allow_api_format, collect_global_model_names_for_required_capability,
@@ -51,11 +51,6 @@ pub(crate) trait MinimalCandidateSelectionRowSource {
             .take(query.limit as usize)
             .collect())
     }
-
-    async fn read_pool_key_candidate_rows_for_group(
-        &self,
-        query: &StoredPoolKeyCandidateRowsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError>;
 }
 
 pub(crate) const REQUESTED_MODEL_CANDIDATE_PAGE_SIZE: u32 = 256;
@@ -444,7 +439,7 @@ mod tests {
     };
     use aether_data::DataLayerError;
     use aether_data_contracts::repository::candidate_selection::{
-        StoredPoolKeyCandidateRowsQuery, StoredRequestedModelCandidateRowsQuery,
+        StoredRequestedModelCandidateRowsQuery,
     };
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -509,13 +504,6 @@ mod tests {
             self.fallback_calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.fallback_rows.clone())
         }
-
-        async fn read_pool_key_candidate_rows_for_group(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
     }
 
     fn sample_row(global_model_name: &str) -> StoredMinimalCandidateSelectionRow {
@@ -523,7 +511,6 @@ mod tests {
             provider_id: "provider-1".to_string(),
             provider_name: "provider".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-1".to_string(),
             endpoint_api_format: "openai:chat".to_string(),
@@ -537,8 +524,6 @@ mod tests {
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 10,
-            key_global_priority_by_format: None,
             model_id: "model-1".to_string(),
             global_model_id: "global-model-1".to_string(),
             global_model_name: global_model_name.to_string(),

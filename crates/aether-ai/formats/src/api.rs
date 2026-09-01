@@ -9,8 +9,7 @@ pub use crate::contracts::{
     CLAUDE_CLI_STREAM_SUCCESS_REPORT_KIND, CLAUDE_CLI_SYNC_ERROR_REPORT_KIND,
     CLAUDE_CLI_SYNC_FINALIZE_REPORT_KIND, CLAUDE_CLI_SYNC_PLAN_KIND,
     CLAUDE_CLI_SYNC_SUCCESS_REPORT_KIND, CLAUDE_COUNT_TOKENS_SYNC_PLAN_KIND,
-    CLAUDE_COUNT_TOKENS_SYNC_SUCCESS_REPORT_KIND, CODEX_LIVE_STREAM_PLAN_KIND,
-    EXECUTION_RUNTIME_STREAM_ACTION, EXECUTION_RUNTIME_STREAM_DECISION_ACTION,
+    CLAUDE_COUNT_TOKENS_SYNC_SUCCESS_REPORT_KIND, EXECUTION_RUNTIME_STREAM_ACTION, EXECUTION_RUNTIME_STREAM_DECISION_ACTION,
     EXECUTION_RUNTIME_SYNC_ACTION, EXECUTION_RUNTIME_SYNC_DECISION_ACTION,
     GEMINI_CHAT_STREAM_PLAN_KIND, GEMINI_CHAT_STREAM_SUCCESS_REPORT_KIND,
     GEMINI_CHAT_SYNC_ERROR_REPORT_KIND, GEMINI_CHAT_SYNC_FINALIZE_REPORT_KIND,
@@ -71,9 +70,8 @@ pub use crate::formats::openai::{
     },
     request_contract::{
         finalize_openai_provider_request,
-        finalize_openai_provider_request_with_codex_model_capabilities,
-        finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy,
-        finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy_for_websocket_continuation,
+        finalize_openai_provider_request_with_reasoning_replay_policy,
+        finalize_openai_provider_request_with_reasoning_replay_policy_for_websocket_continuation,
         validate_openai_provider_request_contract, OpenAiProviderRequestContractViolation,
         OpenAiProviderRequestFinalization,
     },
@@ -119,7 +117,7 @@ pub use crate::formats::shared::passthrough::{
 };
 pub use crate::formats::shared::request::{
     endpoint_config_forces_upstream_stream_policy, enforce_request_body_stream_field,
-    forbid_upstream_streaming_for_provider, force_upstream_streaming_for_provider,
+    forbid_upstream_streaming_for_provider,
     parse_direct_request_body, resolve_upstream_is_stream_for_provider,
     resolve_upstream_is_stream_from_endpoint_config,
 };
@@ -181,24 +179,6 @@ pub use crate::formats::{
     openai::{
         embedding::spec::resolve_sync_spec as resolve_openai_embedding_sync_spec,
         responses::{
-            codex::{
-                apply_codex_openai_compact_terminal_headers,
-                apply_codex_openai_responses_chat_body_edits,
-                apply_codex_openai_responses_identity_headers,
-                apply_codex_openai_responses_lite_header_for_request_body_with_capabilities,
-                apply_codex_openai_responses_lite_header_with_capabilities,
-                apply_codex_openai_responses_special_body_edits,
-                apply_codex_openai_responses_special_body_edits_with_source_model_and_capabilities,
-                apply_codex_openai_responses_websocket_continuation_body_edits_with_source_model_and_capabilities,
-                apply_codex_openai_special_headers,
-                apply_openai_responses_compact_special_body_edits,
-                build_codex_model_catalog_metadata, parse_codex_auth_identity,
-                project_codex_catalog_model_card, resolve_codex_responses_model_capabilities,
-                CodexAuthIdentity, CodexResponsesModelCapabilities,
-                CODEX_OPENAI_IMAGE_DEFAULT_MODEL, CODEX_OPENAI_IMAGE_DEFAULT_OUTPUT_FORMAT,
-                CODEX_OPENAI_IMAGE_DEFAULT_VARIATION_MODEL,
-                CODEX_OPENAI_IMAGE_DEFAULT_VARIATION_PROMPT, CODEX_OPENAI_IMAGE_INTERNAL_MODEL,
-            },
             history::{
                 hydrate_response_history, record_converted_response_history,
                 response_history_is_loaded, response_history_storage_key, ResponseHistoryRecord,
@@ -237,16 +217,13 @@ pub use crate::formats::{
     },
     openai::image::{
         request::{
-            build_chatgpt_web_image_request_body,
-            build_codex_openai_image_api_provider_request_body,
             build_openai_image_api_provider_request_body, build_openai_image_provider_request_body,
             default_model_for_openai_image_operation, is_openai_image_stream_request,
             normalize_openai_image_quality, normalize_openai_image_request,
             normalize_openai_image_request_with_options, openai_image_operation_from_path,
-            project_codex_openai_image_api_request_body, project_openai_image_api_request_body,
-            resolve_requested_openai_image_model_for_request, ChatGptWebImageRequestError,
-            NormalizedOpenAiImageRequest, OpenAiImageNormalizeOptions, OpenAiImageOperation,
-            OpenAiImageResponseFormat,
+            project_openai_image_api_request_body,
+            resolve_requested_openai_image_model_for_request, NormalizedOpenAiImageRequest,
+            OpenAiImageNormalizeOptions, OpenAiImageOperation, OpenAiImageResponseFormat,
         },
         spec::{
             resolve_stream_spec as resolve_local_image_stream_spec,
@@ -257,27 +234,6 @@ pub use crate::formats::{
         resolve_sync_spec as resolve_local_video_sync_spec, LocalVideoCreateFamily,
         LocalVideoCreateSpec,
     },
-};
-pub use crate::provider_compat::kiro_stream::{
-    build_kiro_final_message_sse_events, build_kiro_initial_sse_events,
-    build_kiro_stream_error_sse_events, calculate_kiro_context_input_tokens,
-    encode_kiro_sse_events, estimate_kiro_tokens, find_kiro_real_thinking_end_tag,
-    find_kiro_real_thinking_end_tag_at_buffer_end, find_kiro_real_thinking_start_tag, kiro_crc32,
-    KiroToClaudeCliStreamState, KIRO_MAX_THINKING_BUFFER,
-};
-pub use crate::provider_compat::private_envelope::{
-    extract_provider_private_stream_error_body, maybe_build_provider_private_stream_normalizer,
-    normalize_provider_private_report_context, normalize_provider_private_response_value,
-    provider_private_response_allows_sync_finalize, stream_body_contains_error_event,
-    transform_provider_private_stream_line, ProviderPrivateStreamNormalizer,
-};
-pub use crate::provider_compat::surfaces::{
-    provider_adaptation_allows_sync_finalize_envelope, provider_adaptation_anchor_api_format,
-    provider_adaptation_descriptor_for_envelope, provider_adaptation_descriptor_for_provider_type,
-    provider_adaptation_requires_eventstream_accept,
-    provider_adaptation_should_unwrap_stream_envelope, ProviderAdaptationDescriptor,
-    ProviderAdaptationSurface, ANTIGRAVITY_V1INTERNAL_ENVELOPE_NAME,
-    GEMINI_CLI_V1INTERNAL_ENVELOPE_NAME, KIRO_ENVELOPE_NAME,
 };
 pub use aether_ai_formats::formats::conversion::request::{
     convert_openai_chat_request_to_claude_request, convert_openai_chat_request_to_gemini_request,

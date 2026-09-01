@@ -3,7 +3,10 @@ use crate::handlers::admin::provider::shared::paths::{
 };
 use crate::handlers::admin::request::AdminRequestContext;
 use crate::GatewayError;
-use aether_admin::provider::ops::{get_architecture, list_architectures};
+use aether_admin::provider::ops::{
+get_architecture,
+list_architectures,
+};
 use axum::{
     body::Body,
     http,

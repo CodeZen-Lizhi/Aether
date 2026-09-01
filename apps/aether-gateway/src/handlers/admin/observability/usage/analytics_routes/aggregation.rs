@@ -5,9 +5,11 @@ use crate::handlers::admin::shared::query_param_value;
 use crate::GatewayError;
 use aether_admin::observability::stats::round_to;
 use aether_admin::observability::usage::{
-    admin_usage_bad_request_response, admin_usage_data_unavailable_response,
-    admin_usage_parse_aggregation_limit, admin_usage_token_cache_hit_rate,
-    ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
+admin_usage_bad_request_response,
+admin_usage_data_unavailable_response,
+admin_usage_parse_aggregation_limit,
+admin_usage_token_cache_hit_rate,
+ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
 };
 use aether_data_contracts::repository::usage::{
     StoredUsageAuditAggregation, UsageAuditAggregationGroupBy, UsageAuditAggregationQuery,

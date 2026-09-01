@@ -5,7 +5,6 @@ use crate::handlers::admin::provider::shared::support::{
     PROVIDER_MAX_TRANSFER_COUNT_CONFIG_KEY, PROVIDER_MAX_TRANSFER_TIMEOUT_SECONDS_CONFIG_KEY,
 };
 use crate::handlers::admin::provider::write::normalize::normalize_chat_pii_redaction_config;
-use crate::handlers::admin::provider::write::normalize::normalize_pool_advanced_config;
 use crate::handlers::admin::provider::write::normalize::normalize_provider_type_input;
 use crate::handlers::admin::provider::write::normalize::set_responses_websocket_enabled;
 use crate::handlers::admin::provider::write::normalize::validate_responses_websocket_config;
@@ -74,31 +73,6 @@ pub(crate) async fn build_admin_create_provider_record(
         .as_deref()
         .map(|value| parse_optional_rfc3339_unix_secs(value, "quota_expires_at"))
         .transpose()?;
-    let provider_priority = match payload.provider_priority {
-        Some(value) if (0..=10_000).contains(&value) => value,
-        Some(_) => return Err("provider_priority 必须在 0 到 10000 之间".to_string()),
-        None => {
-            let current_min_priority = existing_providers
-                .iter()
-                .map(|provider| provider.provider_priority)
-                .min();
-            match current_min_priority {
-                Some(value) if value <= 0 => 0,
-                Some(value) => value - 1,
-                None => 100,
-            }
-        }
-    };
-    let shift_existing_priorities_from = match payload.provider_priority {
-        Some(_) => Some(provider_priority),
-        None => existing_providers
-            .iter()
-            .map(|provider| provider.provider_priority)
-            .min()
-            .filter(|value| *value <= 0)
-            .map(|_| 0),
-    };
-
     let is_active = payload.is_active.unwrap_or(true);
     let concurrent_limit = match payload.concurrent_limit {
         Some(value) if value >= 0 => Some(value),
@@ -139,41 +113,9 @@ pub(crate) async fn build_admin_create_provider_record(
             config_map.insert(field_name.to_string(), json!(value));
         }
     }
-    if let Some(value) = normalize_pool_advanced_config(payload.pool_advanced)? {
-        config_map.insert("pool_advanced".to_string(), value);
-    }
-    if let Some(enabled) = payload.codex_fingerprint_convergence_enabled {
-        if provider_type != "codex" && enabled {
-            return Err(
-                "codex_fingerprint_convergence_enabled 仅适用于 provider_type=codex".to_string(),
-            );
-        }
-        if provider_type == "codex" {
-            let codex_config = config_map
-                .entry(crate::provider_transport::CODEX_FINGERPRINT_CONFIG_NAMESPACE.to_string())
-                .or_insert_with(|| json!({}));
-            let Some(codex_config) = codex_config.as_object_mut() else {
-                return Err("config.codex 必须是 JSON 对象".to_string());
-            };
-            codex_config.insert(
-                crate::provider_transport::CODEX_FINGERPRINT_ENABLED_CONFIG_KEY.to_string(),
-                json!(enabled),
-            );
-        }
-    }
-    if provider_type != "codex" {
-        remove_codex_fingerprint_config(&mut config_map);
-    }
+    remove_codex_fingerprint_config(&mut config_map);
     if let Some(value) = normalize_json_object(payload.failover_rules, "failover_rules")? {
         config_map.insert("failover_rules".to_string(), value);
-    }
-    if let Some(value) =
-        normalize_json_object(payload.claude_code_advanced, "claude_code_advanced")?
-    {
-        if provider_type != "claude_code" {
-            return Err("claude_code_advanced 仅适用于 provider_type=claude_code".to_string());
-        }
-        config_map.insert("claude_code_advanced".to_string(), value);
     }
     if config_map.contains_key("chat_pii_redaction") {
         let value = normalize_chat_pii_redaction_config(config_map.remove("chat_pii_redaction"))?;
@@ -216,11 +158,9 @@ pub(crate) async fn build_admin_create_provider_record(
         quota_last_reset_at_unix_secs,
         quota_expires_at_unix_secs,
     )
-    .with_routing_fields(provider_priority)
     .with_transport_fields(
         is_active,
-        payload.keep_priority_on_conversion.unwrap_or(false),
-        state.provider_type_enables_format_conversion_by_default(&provider_type),
+        false,
         concurrent_limit,
         max_retries,
         proxy,
@@ -230,7 +170,7 @@ pub(crate) async fn build_admin_create_provider_record(
     )
     .with_timestamps(Some(now_unix_secs), Some(now_unix_secs));
 
-    Ok((record, shift_existing_priorities_from))
+    Ok((record, None))
 }
 
 fn remove_codex_fingerprint_config(config_map: &mut serde_json::Map<String, serde_json::Value>) {

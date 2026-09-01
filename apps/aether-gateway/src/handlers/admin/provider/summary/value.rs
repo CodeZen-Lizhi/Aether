@@ -71,7 +71,7 @@ pub(crate) fn build_admin_provider_summary_value(
     }
     for key in keys {
         for api_format in
-            provider_key_effective_api_formats(key, &provider.provider_type, endpoints)
+            provider_key_effective_api_formats(key)
         {
             if let Some(endpoint_id) = format_to_endpoint_id.get(&api_format) {
                 keys_by_endpoint

@@ -187,9 +187,7 @@ pub struct StoredProviderCatalogProvider {
     pub quota_reset_day: Option<u64>,
     pub quota_last_reset_at_unix_secs: Option<u64>,
     pub quota_expires_at_unix_secs: Option<u64>,
-    pub provider_priority: i32,
     pub is_active: bool,
-    pub keep_priority_on_conversion: bool,
     pub enable_format_conversion: bool,
     pub concurrent_limit: Option<i32>,
     pub max_retries: Option<i32>,
@@ -231,9 +229,7 @@ impl StoredProviderCatalogProvider {
             quota_reset_day: None,
             quota_last_reset_at_unix_secs: None,
             quota_expires_at_unix_secs: None,
-            provider_priority: 0,
             is_active: true,
-            keep_priority_on_conversion: false,
             enable_format_conversion: false,
             concurrent_limit: None,
             max_retries: None,
@@ -250,7 +246,6 @@ impl StoredProviderCatalogProvider {
     pub fn with_transport_fields(
         mut self,
         is_active: bool,
-        keep_priority_on_conversion: bool,
         enable_format_conversion: bool,
         concurrent_limit: Option<i32>,
         max_retries: Option<i32>,
@@ -260,7 +255,6 @@ impl StoredProviderCatalogProvider {
         config: Option<serde_json::Value>,
     ) -> Self {
         self.is_active = is_active;
-        self.keep_priority_on_conversion = keep_priority_on_conversion;
         self.enable_format_conversion = enable_format_conversion;
         self.concurrent_limit = concurrent_limit;
         self.max_retries = max_retries;
@@ -292,11 +286,6 @@ impl StoredProviderCatalogProvider {
         self.quota_reset_day = quota_reset_day;
         self.quota_last_reset_at_unix_secs = quota_last_reset_at_unix_secs;
         self.quota_expires_at_unix_secs = quota_expires_at_unix_secs;
-        self
-    }
-
-    pub fn with_routing_fields(mut self, provider_priority: i32) -> Self {
-        self.provider_priority = provider_priority;
         self
     }
 
@@ -427,9 +416,7 @@ pub struct StoredProviderCatalogKey {
     pub encrypted_api_key: Option<String>,
     pub encrypted_auth_config: Option<String>,
     pub note: Option<String>,
-    pub internal_priority: i32,
     pub rate_multipliers: Option<serde_json::Value>,
-    pub global_priority_by_format: Option<serde_json::Value>,
     pub allowed_models: Option<serde_json::Value>,
     pub expires_at_unix_secs: Option<u64>,
     pub cache_ttl_minutes: i32,
@@ -511,9 +498,7 @@ impl StoredProviderCatalogKey {
             encrypted_api_key: None,
             encrypted_auth_config: None,
             note: None,
-            internal_priority: 50,
             rate_multipliers: None,
-            global_priority_by_format: None,
             allowed_models: None,
             expires_at_unix_secs: None,
             cache_ttl_minutes: 5,
@@ -562,7 +547,6 @@ impl StoredProviderCatalogKey {
         encrypted_api_key: impl Into<Option<String>>,
         encrypted_auth_config: Option<String>,
         rate_multipliers: Option<serde_json::Value>,
-        global_priority_by_format: Option<serde_json::Value>,
         allowed_models: Option<serde_json::Value>,
         expires_at_unix_secs: Option<u64>,
         proxy: Option<serde_json::Value>,
@@ -582,7 +566,6 @@ impl StoredProviderCatalogKey {
         self.encrypted_api_key = encrypted_api_key;
         self.encrypted_auth_config = encrypted_auth_config;
         self.rate_multipliers = rate_multipliers;
-        self.global_priority_by_format = global_priority_by_format;
         self.allowed_models = allowed_models;
         self.expires_at_unix_secs = expires_at_unix_secs;
         self.proxy = proxy;
@@ -1060,7 +1043,6 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
             )
             .expect("null api key should be accepted");
 
@@ -1073,7 +1055,6 @@ mod tests {
             .with_transport_fields(
                 None,
                 Some("   ".to_string()),
-                None,
                 None,
                 None,
                 None,

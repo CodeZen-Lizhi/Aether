@@ -17,8 +17,6 @@ pub(crate) fn build_same_format_provider_request_body(
     request_headers: Option<&http::HeaderMap>,
     upstream_is_stream: bool,
     force_body_stream_field: bool,
-    kiro_auth: Option<&crate::ai_serving::transport::kiro::KiroRequestAuth>,
-    is_claude_code: bool,
     enable_model_directives: bool,
 ) -> Option<Value> {
     build_same_format_provider_request_body_impl(SameFormatProviderRequestBodyInput {
@@ -32,8 +30,6 @@ pub(crate) fn build_same_format_provider_request_body(
         request_headers,
         upstream_is_stream,
         force_body_stream_field,
-        kiro_auth_config: kiro_auth.map(|auth| &auth.auth_config),
-        is_claude_code,
         enable_model_directives,
     })
 }
@@ -47,8 +43,6 @@ pub(crate) fn build_same_format_provider_request_body_with_compatibility_report(
     request_headers: Option<&http::HeaderMap>,
     upstream_is_stream: bool,
     force_body_stream_field: bool,
-    kiro_auth: Option<&crate::ai_serving::transport::kiro::KiroRequestAuth>,
-    is_claude_code: bool,
     enable_model_directives: bool,
     reasoning_replay_policy: crate::ai_serving::OpenAiResponsesReasoningReplayPolicy,
 ) -> Option<SameFormatProviderRequestBodyOutput> {
@@ -64,8 +58,6 @@ pub(crate) fn build_same_format_provider_request_body_with_compatibility_report(
             request_headers,
             upstream_is_stream,
             force_body_stream_field,
-            kiro_auth_config: kiro_auth.map(|auth| &auth.auth_config),
-            is_claude_code,
             enable_model_directives,
         },
         reasoning_replay_policy,

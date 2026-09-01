@@ -1,4 +1,3 @@
-use aether_contracts::{ExecutionPlan, RequestBody};
 use axum::http::Request;
 use base64::Engine as _;
 use serde_json::json;
@@ -18,9 +17,6 @@ use crate::execution_runtime::submission::{
 use crate::execution_runtime::{
     resolve_local_sync_error_background_report_kind,
     resolve_local_sync_success_background_report_kind,
-};
-use crate::executor::{
-    should_bypass_execution_runtime_decision, should_bypass_execution_runtime_plan,
 };
 use crate::usage::GatewaySyncReportRequest;
 
@@ -785,41 +781,4 @@ fn openai_responses_stream_plan_injects_auth_header_when_exact_headers_omit_it()
             .map(String::as_str),
         Some("text/event-stream")
     );
-}
-
-#[test]
-fn bypasses_execution_runtime_for_codex_backendapi_variant() {
-    let mut payload = missing_exact_provider_request_payload("openai_responses_stream");
-    payload.provider_api_format = Some("openai:responses".to_string());
-    payload.client_api_format = Some("openai:responses".to_string());
-    payload.upstream_url = Some("https://chatgpt.com/backendapi/codex/responses".to_string());
-
-    assert!(should_bypass_execution_runtime_decision(&payload));
-}
-
-#[test]
-fn bypasses_execution_runtime_for_codex_plan_variant() {
-    let plan = ExecutionPlan {
-        request_id: "req-123".to_string(),
-        candidate_id: None,
-        provider_name: Some("codex".to_string()),
-        provider_id: "provider-123".to_string(),
-        endpoint_id: "endpoint-123".to_string(),
-        key_id: "key-123".to_string(),
-        method: "POST".to_string(),
-        url: "https://chatgpt.com/backendapi/codex/responses".to_string(),
-        headers: Default::default(),
-        content_type: Some("application/json".to_string()),
-        content_encoding: None,
-        body: RequestBody::from_json(json!({"model":"gpt-5.4"})),
-        stream: true,
-        client_api_format: "openai:responses".to_string(),
-        provider_api_format: "openai:responses".to_string(),
-        model_name: Some("gpt-5.4".to_string()),
-        proxy: None,
-        transport_profile: None,
-        timeouts: None,
-    };
-
-    assert!(should_bypass_execution_runtime_plan(&plan));
 }

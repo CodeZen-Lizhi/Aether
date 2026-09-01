@@ -6,7 +6,6 @@ use crate::auth::{
     build_claude_passthrough_headers, build_complete_passthrough_headers_with_auth,
     build_openai_passthrough_headers, build_passthrough_headers, ensure_upstream_auth_header,
 };
-use crate::claude_code::build_claude_code_passthrough_headers;
 use crate::headers::force_identity_accept_encoding;
 use crate::rules::{
     apply_local_body_rules, apply_local_body_rules_with_request_headers,
@@ -14,7 +13,6 @@ use crate::rules::{
 };
 use crate::snapshot::GatewayProviderTransportSnapshot;
 use crate::url::{build_openai_chat_url, build_openai_responses_url};
-use crate::vertex::uses_vertex_api_key_query_auth;
 
 #[derive(Debug, Clone, Copy)]
 pub struct StandardProviderRequestHeadersInput<'a> {
@@ -223,25 +221,7 @@ pub fn apply_standard_provider_request_body_rules_with_request_headers(
 pub fn build_standard_provider_request_headers(
     input: StandardProviderRequestHeadersInput<'_>,
 ) -> Option<StandardProviderRequestHeaders> {
-    let uses_vertex_query_auth =
-        uses_vertex_api_key_query_auth(input.transport, input.provider_api_format);
-    let is_claude_code_messages = input
-        .transport
-        .provider
-        .provider_type
-        .trim()
-        .eq_ignore_ascii_case("claude_code")
-        && aether_ai_formats::normalize_api_format_alias(input.provider_api_format)
-            == "claude:messages";
-    let mut headers = if is_claude_code_messages {
-        build_claude_code_passthrough_headers(
-            input.headers,
-            input.auth_header,
-            input.auth_value,
-            input.extra_headers,
-            input.upstream_is_stream,
-        )
-    } else if input.same_format {
+    let mut headers = if input.same_format {
         build_complete_passthrough_headers_with_auth(
             input.headers,
             input.auth_header,
@@ -271,11 +251,7 @@ pub fn build_standard_provider_request_headers(
         &mut headers,
         input.transport.key.decrypted_auth_config.as_deref(),
     );
-    let protected_headers = if uses_vertex_query_auth {
-        &["content-type"][..]
-    } else {
-        &[input.auth_header, "content-type"][..]
-    };
+    let protected_headers = &[input.auth_header, "content-type"][..];
     if !apply_local_header_rules_with_request_headers(
         &mut headers,
         input.header_rules,
@@ -287,13 +263,7 @@ pub fn build_standard_provider_request_headers(
         return None;
     }
 
-    let (auth_header, auth_value) = if uses_vertex_query_auth {
-        headers.remove("x-goog-api-key");
-        (String::new(), String::new())
-    } else {
-        ensure_upstream_auth_header(&mut headers, input.auth_header, input.auth_value);
-        (input.auth_header.to_string(), input.auth_value.to_string())
-    };
+    ensure_upstream_auth_header(&mut headers, input.auth_header, input.auth_value);
     if input.upstream_is_stream {
         headers
             .entry("accept".to_string())
@@ -303,8 +273,8 @@ pub fn build_standard_provider_request_headers(
 
     Some(StandardProviderRequestHeaders {
         headers,
-        auth_header,
-        auth_value,
+        auth_header: input.auth_header.to_string(),
+        auth_value: input.auth_value.to_string(),
     })
 }
 
@@ -332,10 +302,9 @@ mod tests {
             provider: GatewayProviderTransportProvider {
                 id: "provider-1".to_string(),
                 name: "Provider".to_string(),
-                provider_type: "openai".to_string(),
+                provider_type: "custom".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: true,
                 concurrent_limit: None,
                 max_retries: None,
@@ -372,7 +341,6 @@ mod tests {
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -487,41 +455,6 @@ mod tests {
         assert_eq!(
             resolved.headers.get("anthropic-version"),
             Some(&"2023-06-01".to_string())
-        );
-    }
-
-    #[test]
-    fn builds_claude_code_identity_headers_for_cross_format_messages() {
-        let mut transport = sample_transport("claude:messages");
-        transport.provider.provider_type = "claude_code".to_string();
-        let resolved =
-            build_standard_provider_request_headers(StandardProviderRequestHeadersInput {
-                transport: &transport,
-                provider_api_format: "claude:messages",
-                same_format: false,
-                headers: &HeaderMap::new(),
-                auth_header: "authorization",
-                auth_value: "Bearer oauth-token",
-                extra_headers: &BTreeMap::new(),
-                header_rules: None,
-                provider_request_body: &json!({"model":"claude-opus-4-6"}),
-                original_request_body: &json!({"model":"gpt-source"}),
-                upstream_is_stream: true,
-            })
-            .expect("Claude Code headers should build");
-
-        assert_eq!(resolved.headers.get("x-app"), Some(&"cli".to_string()));
-        assert!(resolved
-            .headers
-            .get("user-agent")
-            .is_some_and(|value| value.starts_with("claude-cli/")));
-        assert!(resolved
-            .headers
-            .get("anthropic-beta")
-            .is_some_and(|value| value.contains("claude-code-20250219")));
-        assert_eq!(
-            resolved.headers.get("authorization"),
-            Some(&"Bearer oauth-token".to_string())
         );
     }
 

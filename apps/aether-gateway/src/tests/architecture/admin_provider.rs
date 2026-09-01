@@ -428,7 +428,10 @@ fn admin_provider_ops_architecture_registry_uses_pure_owner() {
     let architectures =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/provider/ops/architectures.rs");
     for pattern in [
-        "use aether_admin::provider::ops::{get_architecture, list_architectures};",
+        "use aether_admin::provider::ops::{
+get_architecture,
+list_architectures,
+};",
         "list_architectures(false)",
         "get_architecture(architecture_id)",
     ] {

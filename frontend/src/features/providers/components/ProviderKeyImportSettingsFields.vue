@@ -34,16 +34,6 @@
         </Select>
       </div>
       <div class="space-y-1.5">
-        <Label class="text-xs">优先级</Label>
-        <Input
-          :model-value="settings.internal_priority"
-          type="number"
-          min="0"
-          class="h-10"
-          @update:model-value="updateSetting('internal_priority', parseNumberInput($event, { min: 0 }) ?? 50)"
-        />
-      </div>
-      <div class="space-y-1.5">
         <Label class="text-xs">RPM 限制</Label>
         <Input
           :model-value="settings.rpm_limit ?? ''"
@@ -136,28 +126,33 @@ import {
   SelectValue,
   Switch,
 } from '@/components/ui'
-import type { PoolKeySettingsPatch } from '@/api/endpoints/pool'
 import { formatApiFormat } from '@/api/endpoints/types/api-format'
 import { parseNullableNumberInput, parseNumberInput } from '@/utils/form'
 import ProxyNodeSelect from './ProxyNodeSelect.vue'
 
 type AuthType = 'api_key' | 'bearer'
-type ImportSettings = Required<Pick<PoolKeySettingsPatch,
-  'internal_priority' | 'rpm_limit' | 'concurrent_limit' | 'cache_ttl_minutes'
-  | 'max_probe_interval_minutes' | 'is_active' | 'note' | 'proxy_node_id'
->>
+
+export interface KeyImportSettings {
+  rpm_limit: number | null
+  concurrent_limit: number | null
+  cache_ttl_minutes: number
+  max_probe_interval_minutes: number
+  is_active: boolean
+  note: string
+  proxy_node_id: string
+}
 
 const props = defineProps<{
   authType: AuthType
   apiFormats: string[]
-  settings: ImportSettings
+  settings: KeyImportSettings
   availableApiFormats: string[]
 }>()
 
 const emit = defineEmits<{
   'update:authType': [value: AuthType]
   'update:apiFormats': [value: string[]]
-  'update:settings': [value: ImportSettings]
+  'update:settings': [value: KeyImportSettings]
 }>()
 
 const authTypeModel = computed<AuthType>({
@@ -172,9 +167,9 @@ function toggleApiFormat(format: string, checked: boolean): void {
   emit('update:apiFormats', props.availableApiFormats.filter(item => selected.has(item)))
 }
 
-function updateSetting<Key extends keyof ImportSettings>(
+function updateSetting<Key extends keyof KeyImportSettings>(
   key: Key,
-  value: ImportSettings[Key],
+  value: KeyImportSettings[Key],
 ): void {
   emit('update:settings', { ...props.settings, [key]: value })
 }

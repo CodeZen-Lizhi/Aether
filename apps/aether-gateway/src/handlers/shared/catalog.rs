@@ -1,8 +1,6 @@
 use crate::handlers::shared::{json_string_list, unix_secs_to_rfc3339};
 use crate::provider_key_auth::{
-    provider_key_auth_config_is_agent_identity, provider_key_auth_config_uses_header_authorization,
-    provider_key_auth_semantics, provider_key_can_export_oauth, provider_key_can_refresh_oauth,
-    provider_key_configured_api_formats, provider_key_inherits_provider_api_formats,
+    provider_key_auth_semantics, provider_key_configured_api_formats,
 };
 use crate::AppState;
 use aether_admin::provider::quota as admin_provider_quota_pure;
@@ -11,9 +9,6 @@ use aether_admin::provider::status as admin_provider_status_pure;
 use aether_crypto::DEVELOPMENT_ENCRYPTION_KEY;
 use aether_crypto::{decrypt_python_fernet_ciphertext, encrypt_python_fernet_plaintext};
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
-use aether_provider_pool::{
-    grok_pool_tier_from_quota_bucket, grok_supported_quota_windows_for_tier,
-};
 use aether_scheduler_core::provider_key_circuit_payload_is_active_open_at;
 use serde_json::{json, Map, Value};
 use std::borrow::Cow;
@@ -26,12 +21,10 @@ const OAUTH_REQUEST_FAILED_PREFIX: &str = "[REQUEST_FAILED] ";
 
 pub(crate) fn provider_catalog_key_supports_format(
     key: &StoredProviderCatalogKey,
-    provider_type: &str,
+    _provider_type: &str,
     api_format: &str,
 ) -> bool {
-    if provider_key_inherits_provider_api_formats(key, provider_type) {
-        return true;
-    }
+    let _ = key;
     let formats = provider_key_configured_api_formats(key);
     if formats.is_empty() {
         return true;
@@ -133,15 +126,6 @@ pub(crate) fn take_secret_suffix(value: &str, suffix_chars: usize) -> &str {
 pub(crate) fn masked_catalog_api_key(state: &AppState, key: &StoredProviderCatalogKey) -> String {
     match key.auth_type.trim() {
         "service_account" | "vertex_ai" => "[Service Account]".to_string(),
-        "oauth" => {
-            if provider_key_auth_config_uses_header_authorization(
-                parse_catalog_auth_config_json(state, key).as_ref(),
-            ) {
-                "[OAuth Header]".to_string()
-            } else {
-                "[OAuth Token]".to_string()
-            }
-        }
         _ => {
             let Some(ciphertext) = key
                 .encrypted_api_key
@@ -171,14 +155,9 @@ pub(crate) fn masked_catalog_api_key(state: &AppState, key: &StoredProviderCatal
 pub(crate) fn masked_catalog_api_key_for_provider(
     state: &AppState,
     key: &StoredProviderCatalogKey,
-    provider_type: &str,
+    _provider_type: &str,
 ) -> String {
-    let auth_config = parse_catalog_auth_config_json(state, key);
-    if provider_key_auth_config_is_agent_identity(provider_type, auth_config.as_ref()) {
-        "[Agent Identity]".to_string()
-    } else {
-        masked_catalog_api_key(state, key)
-    }
+    masked_catalog_api_key(state, key)
 }
 
 pub(crate) fn parse_catalog_auth_config_json(
@@ -268,138 +247,6 @@ fn tagged_oauth_invalid_reason(reason: Option<&str>, prefix: &str) -> Option<Str
 
 fn oauth_access_token_expired(expires_at_unix_secs: Option<u64>, now_unix_secs: u64) -> bool {
     expires_at_unix_secs.is_none_or(|expires_at| expires_at == 0 || expires_at <= now_unix_secs)
-}
-
-fn build_provider_key_oauth_status_snapshot(key: &StoredProviderCatalogKey) -> Value {
-    if !key.auth_type.trim().eq_ignore_ascii_case("oauth") {
-        return default_oauth_status_snapshot_value();
-    }
-
-    let now_unix_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0);
-    let expires_at_unix_secs = key.expires_at_unix_secs;
-    let invalid_at_unix_secs = key.oauth_invalid_at_unix_secs;
-    let invalid_reason = trimmed_oauth_invalid_reason(key.oauth_invalid_reason.as_deref());
-
-    if let Some(reason) =
-        tagged_oauth_invalid_reason(invalid_reason.as_deref(), OAUTH_EXPIRED_PREFIX)
-    {
-        let (code, label) =
-            admin_provider_status_pure::oauth_token_snapshot_status_parts(reason.as_str());
-        return json!({
-            "code": code,
-            "label": label,
-            "reason": reason,
-            "expires_at": expires_at_unix_secs,
-            "invalid_at": invalid_at_unix_secs,
-            "source": "oauth_invalid",
-            "requires_reauth": code == "invalid",
-            "expiring_soon": false,
-        });
-    }
-    if let Some(reason) =
-        tagged_oauth_invalid_reason(invalid_reason.as_deref(), OAUTH_REFRESH_FAILED_PREFIX)
-    {
-        let access_token_expired = oauth_access_token_expired(expires_at_unix_secs, now_unix_secs);
-        return json!({
-            "code": if access_token_expired { "invalid" } else { "reauth_required" },
-            "label": if access_token_expired { "已失效" } else { "续期失败" },
-            "reason": reason,
-            "expires_at": expires_at_unix_secs,
-            "invalid_at": invalid_at_unix_secs,
-            "source": "oauth_refresh",
-            "requires_reauth": true,
-            "usable_until_expiry": !access_token_expired,
-            "expiring_soon": false,
-        });
-    }
-    if let Some(reason) =
-        tagged_oauth_invalid_reason(invalid_reason.as_deref(), OAUTH_REQUEST_FAILED_PREFIX)
-    {
-        if admin_provider_quota_pure::codex_looks_like_token_invalidated(Some(&reason)) {
-            return json!({
-                "code": "invalid",
-                "label": "已失效",
-                "reason": reason,
-                "expires_at": expires_at_unix_secs,
-                "invalid_at": invalid_at_unix_secs,
-                "source": "oauth_invalid",
-                "requires_reauth": true,
-                "expiring_soon": false,
-            });
-        }
-        return json!({
-            "code": "check_failed",
-            "label": "检查失败",
-            "reason": reason,
-            "expires_at": expires_at_unix_secs,
-            "invalid_at": Value::Null,
-            "source": "oauth_request",
-            "requires_reauth": false,
-            "expiring_soon": false,
-        });
-    }
-    if invalid_reason
-        .as_deref()
-        .is_some_and(|reason| !reason.starts_with(OAUTH_ACCOUNT_BLOCK_PREFIX))
-        || invalid_at_unix_secs.is_some()
-    {
-        return json!({
-            "code": "invalid",
-            "label": "已失效",
-            "reason": invalid_reason,
-            "expires_at": expires_at_unix_secs,
-            "invalid_at": invalid_at_unix_secs,
-            "source": "oauth_invalid",
-            "requires_reauth": true,
-            "expiring_soon": false,
-        });
-    }
-
-    let Some(expires_at_unix_secs) = expires_at_unix_secs else {
-        return default_oauth_status_snapshot_value();
-    };
-    if expires_at_unix_secs <= now_unix_secs {
-        return json!({
-            "code": "expired",
-            "label": "已过期",
-            "reason": "Access Token 已过期，等待自动续期",
-            "expires_at": expires_at_unix_secs,
-            "invalid_at": Value::Null,
-            "source": "expires_at",
-            "requires_reauth": false,
-            "expiring_soon": false,
-        });
-    }
-
-    let expiring_soon = expires_at_unix_secs.saturating_sub(now_unix_secs) < 24 * 60 * 60;
-    json!({
-        "code": if expiring_soon { "expiring" } else { "valid" },
-        "label": if expiring_soon { "即将过期" } else { "有效" },
-        "reason": Value::Null,
-        "expires_at": expires_at_unix_secs,
-        "invalid_at": Value::Null,
-        "source": "expires_at",
-        "requires_reauth": false,
-        "expiring_soon": expiring_soon,
-    })
-}
-
-pub(crate) fn sync_provider_key_oauth_status_snapshot(
-    status_snapshot: Option<&Value>,
-    key: &StoredProviderCatalogKey,
-) -> Option<Value> {
-    let mut snapshot = provider_key_status_snapshot_object(status_snapshot)
-        .or_else(|| default_provider_key_status_snapshot().as_object().cloned())
-        .unwrap_or_default();
-    snapshot.insert(
-        "oauth".to_string(),
-        build_provider_key_oauth_status_snapshot(key),
-    );
-    Some(Value::Object(snapshot))
 }
 
 fn build_provider_key_account_status_snapshot(
@@ -2270,7 +2117,10 @@ pub(crate) fn provider_key_status_snapshot_payload(
         .unwrap_or_default();
     snapshot.insert(
         "oauth".to_string(),
-        build_provider_key_oauth_status_snapshot(key),
+        default_provider_key_status_snapshot()
+            .get("oauth")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
     );
     snapshot.insert(
         "account".to_string(),
@@ -2377,94 +2227,6 @@ fn provider_key_health_summary_with_circuit_predicate(
     )
 }
 
-fn normalize_catalog_oauth_plan_type(value: &str, provider_type: &str) -> Option<String> {
-    let mut normalized = value.trim().to_string();
-    if normalized.is_empty() {
-        return None;
-    }
-
-    let provider_type = provider_type.trim().to_ascii_lowercase();
-    if !provider_type.is_empty() && normalized.to_ascii_lowercase().starts_with(&provider_type) {
-        normalized = normalized[provider_type.len()..]
-            .trim_matches(|ch: char| [' ', ':', '-', '_'].contains(&ch))
-            .to_string();
-    }
-
-    let normalized = normalized.trim().to_ascii_lowercase();
-    if normalized.is_empty() {
-        None
-    } else {
-        Some(normalized)
-    }
-}
-
-fn catalog_oauth_plan_type_from_source(
-    source: &serde_json::Map<String, serde_json::Value>,
-    provider_type: &str,
-    fields: &[&str],
-) -> Option<String> {
-    for field in fields {
-        let Some(value) = source.get(*field).and_then(serde_json::Value::as_str) else {
-            continue;
-        };
-        if let Some(normalized) = normalize_catalog_oauth_plan_type(value, provider_type) {
-            return Some(normalized);
-        }
-    }
-    None
-}
-
-fn derive_catalog_oauth_plan_type(
-    key: &StoredProviderCatalogKey,
-    provider_type: &str,
-    auth_config: Option<&serde_json::Map<String, serde_json::Value>>,
-) -> Option<String> {
-    if !provider_key_auth_semantics(key, provider_type).oauth_managed() {
-        return None;
-    }
-
-    let provider_type_key = provider_type.trim().to_ascii_lowercase();
-    if let Some(upstream_metadata) = key
-        .upstream_metadata
-        .as_ref()
-        .and_then(serde_json::Value::as_object)
-    {
-        let provider_bucket = if provider_type_key.is_empty() {
-            None
-        } else {
-            upstream_metadata
-                .get(&provider_type_key)
-                .and_then(serde_json::Value::as_object)
-        };
-        for source in provider_bucket
-            .into_iter()
-            .chain(std::iter::once(upstream_metadata))
-        {
-            if let Some(plan_type) = catalog_oauth_plan_type_from_source(
-                source,
-                provider_type,
-                &[
-                    "plan_type",
-                    "tier",
-                    "subscription_title",
-                    "subscription_plan",
-                    "plan",
-                ],
-            ) {
-                return Some(plan_type);
-            }
-        }
-    }
-
-    auth_config.and_then(|source| {
-        catalog_oauth_plan_type_from_source(
-            source,
-            provider_type,
-            &["plan_type", "tier", "plan", "subscription_plan"],
-        )
-    })
-}
-
 pub(crate) fn build_admin_provider_key_response(
     state: &AppState,
     key: &StoredProviderCatalogKey,
@@ -2486,29 +2248,8 @@ pub(crate) fn build_admin_provider_key_response(
     } else {
         0.0
     };
-    let auth_semantics = provider_key_auth_semantics(key, provider_type);
+    let auth_semantics = provider_key_auth_semantics(key);
     let auth_config = parse_catalog_auth_config_json(state, key);
-    let oauth_organizations = if auth_semantics.can_show_oauth_metadata() {
-        auth_config
-            .as_ref()
-            .and_then(|config| config.get("organizations"))
-            .and_then(serde_json::Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let oauth_temporary = auth_semantics.can_show_oauth_metadata()
-        && auth_config
-            .as_ref()
-            .and_then(|config| config.get("access_token_import_temporary"))
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-    let oauth_header_auth = auth_semantics.oauth_managed()
-        && provider_key_auth_config_uses_header_authorization(auth_config.as_ref());
-    let agent_identity =
-        provider_key_auth_config_is_agent_identity(provider_type, auth_config.as_ref());
-    let oauth_plan_type = derive_catalog_oauth_plan_type(key, provider_type, auth_config.as_ref());
     let (
         health_score,
         consecutive_failures,
@@ -2565,42 +2306,8 @@ pub(crate) fn build_admin_provider_key_response(
         "runtime_auth_kind".to_string(),
         json!(auth_semantics.runtime_auth_kind().as_str()),
     );
-    payload.insert(
-        "oauth_managed".to_string(),
-        json!(auth_semantics.oauth_managed()),
-    );
-    payload.insert("agent_identity".to_string(), json!(agent_identity));
-    payload.insert(
-        "can_refresh_oauth".to_string(),
-        json!(provider_key_can_refresh_oauth(
-            auth_semantics,
-            provider_type,
-            auth_config.as_ref()
-        )),
-    );
-    payload.insert(
-        "can_export_oauth".to_string(),
-        json!(provider_key_can_export_oauth(
-            auth_semantics,
-            provider_type,
-            auth_config.as_ref()
-        )),
-    );
-    payload.insert(
-        "can_edit_oauth".to_string(),
-        json!(auth_semantics.can_edit_oauth()),
-    );
-    payload.insert("oauth_header_auth".to_string(), json!(oauth_header_auth));
     payload.insert("name".to_string(), json!(key.name));
     payload.insert("rate_multipliers".to_string(), json!(key.rate_multipliers));
-    payload.insert(
-        "internal_priority".to_string(),
-        json!(key.internal_priority),
-    );
-    payload.insert(
-        "global_priority_by_format".to_string(),
-        json!(key.global_priority_by_format),
-    );
     payload.insert("rpm_limit".to_string(), json!(key.rpm_limit));
     payload.insert("concurrent_limit".to_string(), json!(key.concurrent_limit));
     payload.insert(
@@ -2613,81 +2320,22 @@ pub(crate) fn build_admin_provider_key_response(
         ),
     );
     payload.insert("capabilities".to_string(), json!(key.capabilities));
-    payload.insert(
-        "oauth_expires_at".to_string(),
-        json!(auth_semantics
-            .can_show_oauth_metadata()
-            .then_some(key.expires_at_unix_secs)
-            .flatten()),
-    );
-    payload.insert(
-        "oauth_email".to_string(),
-        if auth_semantics.can_show_oauth_metadata() {
-            auth_config
-                .as_ref()
-                .and_then(|config| config.get("email"))
-                .cloned()
-                .unwrap_or(serde_json::Value::Null)
-        } else {
-            serde_json::Value::Null
-        },
-    );
-    payload.insert("oauth_plan_type".to_string(), json!(oauth_plan_type));
-    payload.insert(
-        "oauth_account_id".to_string(),
-        if auth_semantics.can_show_oauth_metadata() {
-            auth_config
-                .as_ref()
-                .and_then(|config| config.get("account_id"))
-                .cloned()
-                .unwrap_or(serde_json::Value::Null)
-        } else {
-            serde_json::Value::Null
-        },
-    );
-    payload.insert(
-        "oauth_account_name".to_string(),
-        if auth_semantics.can_show_oauth_metadata() {
-            auth_config
-                .as_ref()
-                .and_then(|config| config.get("account_name"))
-                .cloned()
-                .unwrap_or(serde_json::Value::Null)
-        } else {
-            serde_json::Value::Null
-        },
-    );
+    payload.insert("oauth_expires_at".to_string(), json!(None::<u64>));
+    payload.insert("oauth_email".to_string(), serde_json::Value::Null);
+    payload.insert("oauth_plan_type".to_string(), serde_json::Value::Null);
+    payload.insert("oauth_account_id".to_string(), serde_json::Value::Null);
+    payload.insert("oauth_account_name".to_string(), serde_json::Value::Null);
     payload.insert(
         "oauth_account_user_id".to_string(),
-        if auth_semantics.can_show_oauth_metadata() {
-            auth_config
-                .as_ref()
-                .and_then(|config| config.get("account_user_id"))
-                .cloned()
-                .unwrap_or(serde_json::Value::Null)
-        } else {
-            serde_json::Value::Null
-        },
+        serde_json::Value::Null,
     );
     payload.insert(
         "oauth_organizations".to_string(),
-        serde_json::Value::Array(oauth_organizations),
+        serde_json::Value::Array(Vec::new()),
     );
-    payload.insert("oauth_temporary".to_string(), json!(oauth_temporary));
-    payload.insert(
-        "oauth_invalid_at".to_string(),
-        json!(auth_semantics
-            .can_show_oauth_metadata()
-            .then_some(key.oauth_invalid_at_unix_secs)
-            .flatten()),
-    );
-    payload.insert(
-        "oauth_invalid_reason".to_string(),
-        json!(auth_semantics
-            .can_show_oauth_metadata()
-            .then_some(key.oauth_invalid_reason.clone())
-            .flatten()),
-    );
+    payload.insert("oauth_temporary".to_string(), json!(false));
+    payload.insert("oauth_invalid_at".to_string(), json!(None::<u64>));
+    payload.insert("oauth_invalid_reason".to_string(), serde_json::Value::Null);
     payload.insert(
         "status_snapshot".to_string(),
         provider_key_status_snapshot_payload(key, provider_type),

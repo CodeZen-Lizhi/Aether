@@ -156,18 +156,7 @@ pub(crate) async fn maybe_build_pinned_stream_local_same_format_provider_decisio
             )
             .await?
         {
-            if pinned_candidate.is_some_and(|(provider_id, endpoint_id, key_id)| {
-                payload.provider_id.as_deref() != Some(provider_id)
-                    || payload.endpoint_id.as_deref() != Some(endpoint_id)
-                    || payload.key_id.as_deref() != Some(key_id)
-            }) {
-                crate::orchestration::release_pool_key_lease_from_report_context(
-                    state,
-                    payload.report_context.as_ref(),
-                )
-                .await;
-                continue;
-            }
+            let _ = (&state, &payload);
             return Ok(Some(payload));
         }
     }

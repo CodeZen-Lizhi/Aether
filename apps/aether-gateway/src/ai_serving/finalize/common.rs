@@ -4,10 +4,6 @@ use axum::body::Body;
 use axum::http::Response;
 use serde_json::Value;
 
-pub(crate) use crate::ai_serving::api::{
-    normalize_provider_private_response_value as unwrap_local_finalize_response_value,
-    provider_private_response_allows_sync_finalize as local_finalize_allows_envelope,
-};
 use crate::ai_serving::{
     build_generated_tool_call_id,
     build_local_success_background_report as build_local_success_background_report_impl,

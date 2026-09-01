@@ -6,8 +6,10 @@ use super::support::{
 use crate::handlers::admin::request::AdminAppState;
 use crate::GatewayError;
 use aether_admin::system::{
-    AdminSystemConfigEndpoint, AdminSystemConfigProvider, AdminSystemConfigProviderKey,
-    AdminSystemConfigProviderModel,
+AdminSystemConfigEndpoint,
+AdminSystemConfigProvider,
+AdminSystemConfigProviderKey,
+AdminSystemConfigProviderModel,
 };
 use aether_data_contracts::repository::global_models::AdminProviderModelListQuery;
 use std::collections::BTreeMap;

@@ -1,15 +1,11 @@
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
 };
-use aether_pool_core::{PoolMemberSignals, PoolSchedulingPreset};
 use serde_json::{Map, Value};
 
 use crate::capability::{ProviderPoolCapabilities, ProviderPoolCapability};
-use crate::plan::{derive_plan_tier, normalize_provider_plan_tier};
-use crate::quota::{
-    provider_pool_account_blocked, provider_pool_quota_reset_seconds,
-    provider_pool_quota_snapshot_exhausted_decision, provider_pool_quota_usage_ratio,
-};
+use crate::plan::normalize_provider_plan_tier;
+use crate::quota::provider_pool_quota_snapshot_exhausted_decision;
 
 #[derive(Debug, Clone)]
 pub struct ProviderPoolMemberInput<'a> {
@@ -23,10 +19,6 @@ pub trait ProviderPoolAdapter: Send + Sync {
 
     fn capabilities(&self) -> ProviderPoolCapabilities {
         ProviderPoolCapabilities::default()
-    }
-
-    fn default_scheduling_presets(&self) -> Vec<PoolSchedulingPreset> {
-        Vec::new()
     }
 
     fn supports_quota_refresh(&self) -> bool {
@@ -55,18 +47,6 @@ pub trait ProviderPoolAdapter: Send + Sync {
 
     fn normalize_plan_tier(&self, value: &str) -> Option<String> {
         normalize_provider_plan_tier(value, self.provider_type())
-    }
-
-    fn member_signals(&self, input: &ProviderPoolMemberInput<'_>) -> PoolMemberSignals {
-        PoolMemberSignals {
-            plan_tier: derive_plan_tier(input.provider_type, input.key, input.auth_config),
-            quota_usage_ratio: provider_pool_quota_usage_ratio(input.key),
-            quota_reset_seconds: provider_pool_quota_reset_seconds(input.key),
-            account_blocked: provider_pool_account_blocked(input.key),
-            quota_exhausted: self.quota_exhausted(input),
-            quota_hard_blocked: self.quota_hard_blocked(input),
-            ..PoolMemberSignals::default()
-        }
     }
 
     fn quota_exhausted(&self, input: &ProviderPoolMemberInput<'_>) -> bool {
@@ -101,12 +81,3 @@ where
         })
 }
 
-pub(crate) fn provider_pool_endpoint_format_matches(
-    endpoint: &StoredProviderCatalogEndpoint,
-    expected: &str,
-) -> bool {
-    endpoint
-        .api_format
-        .trim()
-        .eq_ignore_ascii_case(expected.trim())
-}
