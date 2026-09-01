@@ -2,9 +2,10 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.app
+      dockerfile: Dockerfile.app.local
+      args:
+        AETHER_BUILD_VERSION: slim-personal
     image: aether-personal:local
-    container_name: aether-app
     user: "0:0"
     env_file:
       - ${AETHER_ENV_FILE:-.env}
