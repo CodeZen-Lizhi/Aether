@@ -2,22 +2,14 @@ use crate::handlers::public::support::build_unhandled_public_support_response;
 use axum::{body::Body, http, response::Response};
 
 use super::{
-    handle_auth_me, handle_users_me_api_key_capabilities_put, handle_users_me_api_key_create,
-    handle_users_me_api_key_delete, handle_users_me_api_key_detail_get, handle_users_me_api_key_patch,
-    handle_users_me_api_key_providers_put, handle_users_me_api_key_update,
-    handle_users_me_api_keys_get, handle_users_me_available_models,
-    handle_users_me_client_config_get, handle_users_me_delete_other_sessions,
-    handle_users_me_delete_session, handle_users_me_detail_put,
-    handle_users_me_model_capabilities_get, handle_users_me_model_capabilities_put,
-    handle_users_me_password_patch, handle_users_me_preferences_get,
-    handle_users_me_preferences_put, handle_users_me_providers_get, handle_users_me_sessions_get,
-    handle_users_me_update_session, handle_users_me_usage_active_get, handle_users_me_usage_get,
-    handle_users_me_usage_heatmap_get, handle_users_me_usage_interval_timeline_get,
-    users_me_api_key_capabilities_path_matches, users_me_api_key_detail_path_matches,
-    users_me_api_key_providers_path_matches, users_me_session_detail_path_matches, AppState,
-    GatewayPublicRequestContext,
+    handle_auth_me, handle_users_me_delete_other_sessions, handle_users_me_delete_session,
+    handle_users_me_detail_put, handle_users_me_password_patch, handle_users_me_preferences_get,
+    handle_users_me_preferences_put, handle_users_me_sessions_get, handle_users_me_update_session,
+    users_me_session_detail_path_matches, AppState, GatewayPublicRequestContext,
 };
 
+// 单用户版：users/me 只保留管理员自助能力（资料/密码/会话/偏好）。
+// 其余历史用户侧端点（api-keys/usage/catalog/model-capabilities 等）已下线。
 pub(crate) async fn maybe_build_local_users_me_response(
     state: &AppState,
     request_context: &GatewayPublicRequestContext,
@@ -59,107 +51,8 @@ pub(crate) async fn maybe_build_local_users_me_response(
                 handle_users_me_update_session(state, request_context, headers, request_body).await,
             )
         }
-        Some("api_keys_list") if request_context.request_path == "/api/users/me/api-keys" => {
-            Some(handle_users_me_api_keys_get(state, request_context, headers).await)
-        }
-        Some("api_keys_create") if request_context.request_path == "/api/users/me/api-keys" => {
-            Some(
-                handle_users_me_api_key_create(state, request_context, headers, request_body).await,
-            )
-        }
-        Some("api_key_detail")
-            if users_me_api_key_detail_path_matches(&request_context.request_path) =>
-        {
-            Some(handle_users_me_api_key_detail_get(state, request_context, headers).await)
-        }
-        Some("api_key_update")
-            if users_me_api_key_detail_path_matches(&request_context.request_path) =>
-        {
-            Some(
-                handle_users_me_api_key_update(state, request_context, headers, request_body).await,
-            )
-        }
-        Some("api_key_patch")
-            if users_me_api_key_detail_path_matches(&request_context.request_path) =>
-        {
-            Some(handle_users_me_api_key_patch(state, request_context, headers, request_body).await)
-        }
-        Some("api_key_delete")
-            if users_me_api_key_detail_path_matches(&request_context.request_path) =>
-        {
-            Some(handle_users_me_api_key_delete(state, request_context, headers).await)
-        }
-        Some("api_key_providers_update")
-            if users_me_api_key_providers_path_matches(&request_context.request_path) =>
-        {
-            Some(
-                handle_users_me_api_key_providers_put(
-                    state,
-                    request_context,
-                    headers,
-                    request_body,
-                )
-                .await,
-            )
-        }
-        Some("api_key_capabilities_update")
-            if users_me_api_key_capabilities_path_matches(&request_context.request_path) =>
-        {
-            Some(
-                handle_users_me_api_key_capabilities_put(
-                    state,
-                    request_context,
-                    headers,
-                    request_body,
-                )
-                .await,
-            )
-        }
-        Some("usage") if request_context.request_path == "/api/users/me/usage" => {
-            Some(handle_users_me_usage_get(state, request_context, headers).await)
-        }
-        Some("usage_active") if request_context.request_path == "/api/users/me/usage/active" => {
-            Some(handle_users_me_usage_active_get(state, request_context, headers).await)
-        }
-        Some("usage_interval_timeline")
-            if request_context.request_path == "/api/users/me/usage/interval-timeline" =>
-        {
-            Some(handle_users_me_usage_interval_timeline_get(state, request_context, headers).await)
-        }
-        Some("usage_heatmap") if request_context.request_path == "/api/users/me/usage/heatmap" => {
-            Some(handle_users_me_usage_heatmap_get(state, request_context, headers).await)
-        }
-        Some("providers") if request_context.request_path == "/api/users/me/providers" => {
-            Some(handle_users_me_providers_get(state, request_context, headers).await)
-        }
         Some("preferences") if request_context.request_path == "/api/users/me/preferences" => {
             Some(handle_users_me_preferences_get(state, request_context, headers).await)
-        }
-        Some("available_models")
-            if request_context.request_path == "/api/users/me/available-models" =>
-        {
-            Some(handle_users_me_available_models(state, request_context, headers).await)
-        }
-        Some("client_config") if request_context.request_path == "/api/users/me/client-config" => {
-            Some(handle_users_me_client_config_get(state, request_context, headers).await)
-        }
-        Some("model_capabilities")
-            if request_context.request_path == "/api/users/me/model-capabilities" =>
-        {
-            Some(handle_users_me_model_capabilities_get(state, request_context, headers).await)
-        }
-        Some("model_capabilities_update")
-            if request_context.request_path == "/api/users/me/model-capabilities" =>
-        {
-            Some(
-                handle_users_me_model_capabilities_put(
-                    state,
-                    request_context,
-                    headers,
-                    request_body,
-                )
-                .await,
-            )
         }
         Some("preferences_update")
             if request_context.request_path == "/api/users/me/preferences" =>

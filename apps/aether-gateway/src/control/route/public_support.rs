@@ -160,64 +160,15 @@ pub(super) fn classify_public_support_route(
     } else if method == http::Method::GET
         && matches!(
             normalized_path,
-            "/api/monitoring/my-audit-logs" | "/api/monitoring/rate-limit-status"
-        )
-    {
-        let route_kind = match normalized_path {
-            "/api/monitoring/my-audit-logs" => "audit_logs",
-            "/api/monitoring/rate-limit-status" => "rate_limit_status",
-            _ => "audit_logs",
-        };
-        Some(classified(
-            "public_support",
-            "monitoring_user",
-            route_kind,
-            "user:monitoring",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/ccswitch/usage" | "/api/ccswitch/usage/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "ccswitch",
-            "usage",
-            "aether:ccswitch_usage",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
             "/api/users/me"
                 | "/api/users/me/sessions"
-                | "/api/users/me/api-keys"
-                | "/api/users/me/usage"
-                | "/api/users/me/usage/active"
-                | "/api/users/me/usage/interval-timeline"
-                | "/api/users/me/usage/heatmap"
-                | "/api/users/me/providers"
-                | "/api/users/me/available-models"
-                | "/api/users/me/client-config"
                 | "/api/users/me/preferences"
-                | "/api/users/me/model-capabilities"
         )
     {
         let route_kind = match normalized_path {
             "/api/users/me" => "detail",
             "/api/users/me/sessions" => "sessions",
-            "/api/users/me/api-keys" => "api_keys_list",
-            "/api/users/me/usage" => "usage",
-            "/api/users/me/usage/active" => "usage_active",
-            "/api/users/me/usage/interval-timeline" => "usage_interval_timeline",
-            "/api/users/me/usage/heatmap" => "usage_heatmap",
-            "/api/users/me/providers" => "providers",
-            "/api/users/me/available-models" => "available_models",
-            "/api/users/me/client-config" => "client_config",
             "/api/users/me/preferences" => "preferences",
-            "/api/users/me/model-capabilities" => "model_capabilities",
             _ => "detail",
         };
         Some(classified(
@@ -227,29 +178,15 @@ pub(super) fn classify_public_support_route(
             "user:self",
             false,
         ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/me/management-tokens" | "/api/me/management-tokens/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "users_me",
-            "management_tokens_list",
-            "user:self",
-            false,
-        ))
     } else if method == http::Method::PUT
         && matches!(
             normalized_path,
-            "/api/users/me" | "/api/users/me/preferences" | "/api/users/me/model-capabilities"
+            "/api/users/me" | "/api/users/me/preferences"
         )
     {
         let route_kind = match normalized_path {
             "/api/users/me" => "update_detail",
             "/api/users/me/preferences" => "preferences_update",
-            "/api/users/me/model-capabilities" => "model_capabilities_update",
             _ => "update_detail",
         };
         Some(classified(
@@ -259,60 +196,11 @@ pub(super) fn classify_public_support_route(
             "user:self",
             false,
         ))
-    } else if method == http::Method::POST
-        && matches!(
-            normalized_path,
-            "/api/me/management-tokens" | "/api/me/management-tokens/"
-        )
-    {
-        Some(classified(
-            "public_support",
-            "users_me",
-            "management_tokens_create",
-            "user:self",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && has_single_nested_suffix_after_prefix(
-            normalized_path,
-            "/api/users/me/api-keys/",
-            "install-sessions",
-        )
-    {
-        Some(classified(
-            "public_support",
-            "users_me",
-            "api_key_install_session_create",
-            "user:self",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && normalized_path.starts_with("/api/me/management-tokens/")
-        && normalized_path.ends_with("/regenerate")
-    {
-        Some(classified(
-            "public_support",
-            "users_me",
-            "management_token_regenerate",
-            "user:self",
-            false,
-        ))
     } else if method == http::Method::PATCH && normalized_path == "/api/users/me/password" {
         Some(classified(
             "public_support",
             "users_me",
             "password",
-            "user:self",
-            false,
-        ))
-    } else if method == http::Method::PATCH
-        && normalized_path.starts_with("/api/me/management-tokens/")
-        && normalized_path.ends_with("/status")
-    {
-        Some(classified(
-            "public_support",
-            "users_me",
-            "management_token_toggle",
             "user:self",
             false,
         ))
@@ -339,96 +227,11 @@ pub(super) fn classify_public_support_route(
             "user:self",
             false,
         ))
-    } else if matches!(method, &http::Method::GET | &http::Method::POST)
-        && normalized_path == "/api/users/me/api-keys"
-    {
-        let route_kind = if method == http::Method::GET {
-            "api_keys_list"
-        } else {
-            "api_keys_create"
-        };
-        Some(classified(
-            "public_support",
-            "users_me",
-            route_kind,
-            "user:self",
-            false,
-        ))
-    } else if method == http::Method::PUT
-        && (has_single_nested_suffix_after_prefix(
-            normalized_path,
-            "/api/users/me/api-keys/",
-            "providers",
-        ) || has_single_nested_suffix_after_prefix(
-            normalized_path,
-            "/api/users/me/api-keys/",
-            "capabilities",
-        ))
-    {
-        let route_kind = if normalized_path.ends_with("/providers") {
-            "api_key_providers_update"
-        } else {
-            "api_key_capabilities_update"
-        };
-        Some(classified(
-            "public_support",
-            "users_me",
-            route_kind,
-            "user:self",
-            false,
-        ))
-    } else if matches!(
-        method,
-        &http::Method::GET | &http::Method::PUT | &http::Method::PATCH | &http::Method::DELETE
-    ) && has_single_segment_after_prefix(normalized_path, "/api/users/me/api-keys/")
-    {
-        let route_kind = match *method {
-            http::Method::GET => "api_key_detail",
-            http::Method::PUT => "api_key_update",
-            http::Method::PATCH => "api_key_patch",
-            http::Method::DELETE => "api_key_delete",
-            _ => "api_key_detail",
-        };
-        Some(classified(
-            "public_support",
-            "users_me",
-            route_kind,
-            "user:self",
-            false,
-        ))
-    } else if matches!(
-        method,
-        &http::Method::GET | &http::Method::PUT | &http::Method::DELETE
-    ) && has_single_segment_after_prefix(normalized_path, "/api/me/management-tokens/")
-    {
-        let route_kind = match *method {
-            http::Method::GET => "management_token_detail",
-            http::Method::PUT => "management_token_update",
-            http::Method::DELETE => "management_token_delete",
-            _ => "management_token_detail",
-        };
-        Some(classified(
-            "public_support",
-            "users_me",
-            route_kind,
-            "user:self",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/capabilities" | "/api/capabilities/user-configurable"
-        )
-    {
-        let route_kind = match normalized_path {
-            "/api/capabilities" => "list",
-            "/api/capabilities/user-configurable" => "user_configurable",
-            _ => "list",
-        };
+    } else if method == http::Method::GET && normalized_path == "/api/capabilities" {
         Some(classified(
             "public_support",
             "capabilities",
-            route_kind,
+            "list",
             "public:capabilities",
             false,
         ))
@@ -467,18 +270,6 @@ pub(super) fn classify_public_support_route(
             "system_catalog",
             "provider_detail",
             "public:system_catalog",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && (has_single_segment_after_prefix(normalized_path, "/install/")
-            || has_single_segment_after_prefix(normalized_path, "/install-tunnel/")
-            || has_single_segment_after_prefix(normalized_path, "/i/"))
-    {
-        Some(classified(
-            "public_support",
-            "install",
-            "script",
-            "public:install",
             false,
         ))
     } else if method == http::Method::GET && normalized_path == "/test-connection" {

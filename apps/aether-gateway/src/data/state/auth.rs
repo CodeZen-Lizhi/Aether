@@ -823,38 +823,6 @@ impl GatewayDataState {
         repository.delete_local_auth_user(user_id).await
     }
 
-    pub(crate) async fn register_local_auth_user(
-        &self,
-        email: Option<String>,
-        email_verified: bool,
-        username: String,
-        password_hash: String,
-        initial_gift_usd: f64,
-        unlimited: bool,
-    ) -> Result<Option<(StoredUserAuthRecord, StoredWalletSnapshot)>, DataLayerError> {
-        let Some(user) = self
-            .create_local_auth_user(email, email_verified, username, password_hash)
-            .await?
-        else {
-            return Ok(None);
-        };
-
-        match self
-            .initialize_auth_user_wallet(&user.id, initial_gift_usd, unlimited)
-            .await
-        {
-            Ok(Some(wallet)) => Ok(Some((user, wallet))),
-            Ok(None) => {
-                let _ = self.delete_local_auth_user(&user.id).await;
-                Ok(None)
-            }
-            Err(err) => {
-                let _ = self.delete_local_auth_user(&user.id).await;
-                Err(err)
-            }
-        }
-    }
-
     pub(crate) async fn touch_user_session(
         &self,
         user_id: &str,

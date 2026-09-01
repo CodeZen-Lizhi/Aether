@@ -43,15 +43,6 @@ pub(crate) fn base_url_from_request(
     format!("{proto}://{host}")
 }
 
-#[path = "user_me_api_keys.rs"]
-mod user_me_api_keys;
-use user_me_api_keys::*;
-#[path = "user_me_usage.rs"]
-mod user_me_usage;
-use user_me_usage::*;
-#[path = "user_me_catalog.rs"]
-mod user_me_catalog;
-use user_me_catalog::*;
 #[path = "user_me_preferences.rs"]
 mod user_me_preferences;
 use user_me_preferences::*;
