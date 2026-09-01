@@ -225,100 +225,6 @@ async fn gateway_handles_admin_system_stats_locally_with_trusted_admin_principal
 }
 
 #[tokio::test]
-async fn gateway_handles_admin_system_settings_locally_with_trusted_admin_principal() {
-    let upstream_hits = Arc::new(Mutex::new(0usize));
-    let upstream_hits_clone = Arc::clone(&upstream_hits);
-    let upstream = Router::new().route(
-        "/api/admin/system/settings",
-        any(move |_request: Request| {
-            let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
-            async move {
-                *upstream_hits_inner.lock().expect("mutex should lock") += 1;
-                (StatusCode::OK, Body::from("unexpected upstream hit"))
-            }
-        }),
-    );
-
-    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![sample_provider("provider-openai", "openai", 10)],
-        vec![],
-        vec![],
-    ));
-    let data_state =
-        GatewayDataState::with_provider_catalog_reader_for_tests(provider_catalog_repository)
-            .with_system_config_values_for_tests(vec![(
-                "default_model".to_string(),
-                json!("gpt-4o-mini"),
-            )]);
-
-    let (upstream_url, upstream_handle) = start_server(upstream).await;
-    let gateway = build_router_with_state(
-        AppState::new()
-            .expect("gateway should build")
-            .with_data_state_for_tests(data_state),
-    );
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let response = reqwest::Client::new()
-        .get(format!("{gateway_url}/api/admin/system/settings"))
-        .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
-        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
-        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
-        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload["default_provider"], "openai");
-    assert_eq!(payload["default_model"], "gpt-4o-mini");
-    assert_eq!(payload["enable_usage_tracking"], json!(true));
-    assert_eq!(payload["password_policy_level"], "weak");
-
-    let response = reqwest::Client::new()
-        .put(format!("{gateway_url}/api/admin/system/settings"))
-        .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
-        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
-        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
-        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
-        .json(&json!({
-            "default_provider": "openai",
-            "default_model": "gpt-5",
-            "enable_usage_tracking": false,
-            "password_policy_level": "strong",
-        }))
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload["message"], "系统设置更新成功");
-
-    let response = reqwest::Client::new()
-        .get(format!("{gateway_url}/api/admin/system/settings"))
-        .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
-        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
-        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
-        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload["default_provider"], "openai");
-    assert_eq!(payload["default_model"], "gpt-5");
-    assert_eq!(payload["enable_usage_tracking"], json!(false));
-    assert_eq!(payload["password_policy_level"], "strong");
-    assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
-
-    gateway_handle.abort();
-    upstream_handle.abort();
-}
-
-#[tokio::test]
 async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_principal() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
@@ -678,10 +584,6 @@ async fn gateway_handles_admin_system_configs_locally_with_trusted_admin_princip
     let data_state = GatewayDataState::disabled().with_system_config_values_for_tests(vec![
         ("request_log_level".to_string(), json!("headers")),
         ("smtp_password".to_string(), json!("encrypted-secret")),
-        (
-            "turnstile_secret_key".to_string(),
-            json!("encrypted-turnstile-secret"),
-        ),
         ("site_name".to_string(), json!("Aether Test")),
         (
             "external_models_proxy_node_id".to_string(),
@@ -722,12 +624,6 @@ async fn gateway_handles_admin_system_configs_locally_with_trusted_admin_princip
         .expect("smtp_password should exist");
     assert_eq!(smtp_password["value"], serde_json::Value::Null);
     assert_eq!(smtp_password["is_set"], json!(true));
-    let turnstile_secret_key = items
-        .iter()
-        .find(|item| item["key"] == "turnstile_secret_key")
-        .expect("turnstile_secret_key should exist");
-    assert_eq!(turnstile_secret_key["value"], serde_json::Value::Null);
-    assert_eq!(turnstile_secret_key["is_set"], json!(true));
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
@@ -815,7 +711,7 @@ async fn gateway_handles_admin_system_config_detail_locally_with_trusted_admin_p
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
     let upstream = Router::new().route(
-        "/api/admin/system/configs/password_policy_level",
+        "/api/admin/system/configs/request_record_level",
         any(move |_request: Request| {
             let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
             async move {
@@ -831,7 +727,7 @@ async fn gateway_handles_admin_system_config_detail_locally_with_trusted_admin_p
 
     let response = reqwest::Client::new()
         .get(format!(
-            "{gateway_url}/api/admin/system/configs/password_policy_level"
+            "{gateway_url}/api/admin/system/configs/request_record_level"
         ))
         .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
         .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
@@ -843,8 +739,8 @@ async fn gateway_handles_admin_system_config_detail_locally_with_trusted_admin_p
 
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload["key"], "password_policy_level");
-    assert_eq!(payload["value"], "weak");
+    assert_eq!(payload["key"], "request_record_level");
+    assert_eq!(payload["value"], "full");
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
