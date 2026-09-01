@@ -61,7 +61,7 @@ use self::execution_failures::{
     submit_midstream_stream_failure, StreamFailureReport,
 };
 use crate::ai_serving::api::{
-    extract_provider_private_stream_error_body, maybe_bridge_standard_sync_json_to_stream,
+    extract_stream_terminal_error_body, maybe_bridge_standard_sync_json_to_stream,
     maybe_build_provider_private_stream_normalizer, maybe_build_stream_response_rewriter,
     normalize_provider_private_report_context, StreamingStandardTerminalObserver,
     CLAUDE_CHAT_STREAM_PLAN_KIND, CLAUDE_CLI_STREAM_PLAN_KIND, GEMINI_CHAT_STREAM_PLAN_KIND,
@@ -179,17 +179,16 @@ struct ProviderStreamErrorInspection {
 }
 
 impl ProviderStreamErrorInspection {
-    fn observe(&mut self, report_context: Option<&Value>, chunk: &[u8]) -> Option<Value> {
+    fn observe(&mut self, chunk: &[u8]) -> Option<Value> {
         if chunk.is_empty() {
             return None;
         }
-        if let Some(error_body) = extract_provider_private_stream_error_body(report_context, chunk)
-        {
+        if let Some(error_body) = extract_stream_terminal_error_body(chunk) {
             return Some(error_body);
         }
 
         self.append_rolling(chunk);
-        let error_body = extract_provider_private_stream_error_body(report_context, &self.buffered);
+        let error_body = extract_stream_terminal_error_body(&self.buffered);
         if error_body.is_none() {
             self.trim_completed_sse_events();
         }
@@ -1937,7 +1936,7 @@ impl DirectPassthroughFinalizer {
         }
         if let Some(error_body_json) = core
             .provider_error_inspection
-            .observe(core.stream_usage_report_context.as_ref(), chunk.as_ref())
+            .observe(chunk.as_ref())
         {
             let error_status_code = resolve_provider_stream_error_status_code(
                 core.plan.provider_api_format.as_str(),
@@ -3248,10 +3247,8 @@ async fn execute_stream_from_direct_passthrough(
                     provider_chunk.as_ref(),
                 );
             }
-            let provider_private_error_body_json = provider_error_inspection.observe(
-                stream_usage_report_context.as_ref(),
-                provider_chunk.as_ref(),
-            );
+            let provider_private_error_body_json =
+                provider_error_inspection.observe(provider_chunk.as_ref());
             if let Some(error_body_json) = provider_private_error_body_json {
                 provider_error_forwarded_to_client = sent_client_chunk;
                 let error_status_code = resolve_provider_stream_error_status_code(
@@ -5761,10 +5758,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
 
     if !(200..300).contains(&status_code) {
         let provider_error_body = collect_error_body(&mut lines).await?;
-        let private_error_body_json = extract_provider_private_stream_error_body(
-            report_context.as_ref(),
-            &provider_error_body,
-        );
+        let private_error_body_json = extract_stream_terminal_error_body(&provider_error_body);
         let provider_private_error_decoded = private_error_body_json.is_some();
         let synthetic_body_json = (!provider_private_error_decoded
             && should_synthesize_non_success_stream_error_body(status_code, &provider_error_body))
@@ -6439,10 +6433,9 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                         };
 
                     if !anthropic_commit_ready {
-                        if let Some(error_body_json) = extract_provider_private_stream_error_body(
-                            report_context.as_ref(),
-                            &prefetched_inspection_body,
-                        ) {
+                        if let Some(error_body_json) =
+                            extract_stream_terminal_error_body(&prefetched_inspection_body)
+                        {
                             let error_status_code = resolve_provider_stream_error_status_code(
                                 plan.provider_api_format.as_str(),
                                 status_code,
@@ -7057,9 +7050,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             let replay_chunk = normalized_prefetched_chunk
                 .as_deref()
                 .unwrap_or(provider_prefetched_body_for_report.as_slice());
-            if let Some(error_body_json) = provider_error_inspection
-                .observe(stream_usage_report_context.as_ref(), replay_chunk)
-            {
+            if let Some(error_body_json) = provider_error_inspection.observe(replay_chunk) {
                 provider_error_forwarded_to_client = !prefetched_body_for_report.is_empty();
                 let error_status_code = resolve_provider_stream_error_status_code(
                     plan_for_report.provider_api_format.as_str(),
@@ -7324,7 +7315,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                             chunk
                         };
                         let provider_private_error_body_json = provider_error_inspection
-                            .observe(stream_usage_report_context.as_ref(), &normalized_chunk);
+                            .observe(&normalized_chunk);
                         if let (Some(observer), Some(report_context)) = (
                             stream_usage_observer.as_mut(),
                             stream_usage_report_context.as_ref(),
@@ -7527,7 +7518,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             match normalizer.finish() {
                 Ok(normalized_chunk) if !normalized_chunk.is_empty() => {
                     let provider_private_error_body_json = provider_error_inspection
-                        .observe(stream_usage_report_context.as_ref(), &normalized_chunk);
+                        .observe(&normalized_chunk);
                     if let (Some(observer), Some(report_context)) = (
                         stream_usage_observer.as_mut(),
                         stream_usage_report_context.as_ref(),
@@ -10414,8 +10405,8 @@ mod tests {
         for split in 1..body.len() {
             let mut inspection = ProviderStreamErrorInspection::default();
             let detected = inspection
-                .observe(None, &body[..split])
-                .or_else(|| inspection.observe(None, &body[split..]))
+                .observe(&body[..split])
+                .or_else(|| inspection.observe(&body[split..]))
                 .unwrap_or_else(|| panic!("response.failed was missed at byte split {split}"));
 
             assert_eq!(
@@ -10433,7 +10424,7 @@ mod tests {
         let mut inspection = ProviderStreamErrorInspection::default();
         let mut detected = None;
         for byte in body.chunks(1) {
-            if let Some(error_body) = inspection.observe(None, byte) {
+            if let Some(error_body) = inspection.observe(byte) {
                 detected = Some(error_body);
                 break;
             }

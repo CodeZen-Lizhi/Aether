@@ -30,7 +30,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{debug, warn};
 
 use crate::ai_serving::api::{
-    build_core_error_body_for_client_format, extract_provider_private_stream_error_body,
+    build_core_error_body_for_client_format, extract_stream_terminal_error_body,
     implicit_sync_finalize_report_kind, maybe_build_sync_finalize_outcome, LocalCoreSyncErrorKind,
     LocalCoreSyncFinalizeOutcome,
 };
@@ -2576,9 +2576,7 @@ async fn execute_execution_runtime_sync_impl(
         let (mut result_error_type, mut result_error_message) =
             execution_error_details(result.error.as_ref(), body_json.as_ref());
         if result.status_code < 400 && body_json.is_none() {
-            if let Some(error_body_json) =
-                extract_provider_private_stream_error_body(report_context.as_ref(), &body_bytes)
-            {
+            if let Some(error_body_json) = extract_stream_terminal_error_body(&body_bytes) {
                 result.status_code =
                     resolve_local_sync_error_status_code(result.status_code, &error_body_json);
                 let (private_error_type, private_error_message) =
