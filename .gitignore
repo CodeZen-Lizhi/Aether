@@ -249,3 +249,4 @@ analysis/
 new-api/
 apps/aether-tunnel/aether-tunnel.toml
 .playwright-cli/
+data/
