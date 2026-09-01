@@ -595,7 +595,7 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
             }
             #[allow(deprecated)]
             SchedulerSchedulingMode::LoadBalance => false,
-            SchedulerSchedulingMode::Economy => false,
+            SchedulerSchedulingMode::CostBased => false,
         }
     }
 
@@ -766,7 +766,7 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
 
     async fn split_priority_conversion_page(
         &self,
-        candidate_api_format: &str,
+        _candidate_api_format: &str,
         outcome: AiCandidatePreselectionOutcome<
             SchedulerMinimalCandidateSelectionCandidate,
             SkippedLocalExecutionCandidate,
@@ -781,62 +781,19 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
             SkippedLocalExecutionCandidate,
         >,
     ) {
-        let mut promoted = AiCandidatePreselectionOutcome {
+        // 跨格式保持优先级的机制已随供应商侧优先级一并裁剪：跨格式候选
+        // 一律降级进 deferred，promoted 恒空。
+        let deferred = AiCandidatePreselectionOutcome {
+            candidates: outcome.candidates,
+            skipped_candidates: outcome.skipped_candidates,
+        };
+        let promoted = AiCandidatePreselectionOutcome {
             candidates: Vec::new(),
             skipped_candidates: Vec::new(),
         };
-        let mut deferred = AiCandidatePreselectionOutcome {
-            candidates: Vec::new(),
-            skipped_candidates: Vec::new(),
-        };
-
-        for candidate in outcome.candidates {
-            if self
-                .cross_format_candidate_keeps_priority(&candidate, candidate_api_format)
-                .await
-            {
-                promoted.candidates.push(candidate);
-            } else {
-                deferred.candidates.push(candidate);
-            }
-        }
-
-        for skipped_candidate in outcome.skipped_candidates {
-            if self
-                .cross_format_candidate_keeps_priority(
-                    &skipped_candidate.candidate,
-                    candidate_api_format,
-                )
-                .await
-            {
-                promoted.skipped_candidates.push(skipped_candidate);
-            } else {
-                deferred.skipped_candidates.push(skipped_candidate);
-            }
-        }
-
         (promoted, deferred)
     }
 
-    async fn cross_format_candidate_keeps_priority(
-        &self,
-        candidate: &SchedulerMinimalCandidateSelectionCandidate,
-        candidate_api_format: &str,
-    ) -> bool {
-        if matches_client_api_format(
-            self.use_api_format_alias_match,
-            candidate_api_format,
-            &self.client_api_format,
-        ) {
-            return false;
-        }
-        super::candidate_transport_ranking_facts::candidate_keeps_priority_on_conversion(
-            self.state,
-            candidate,
-            self.ordering_config,
-        )
-        .await
-    }
 
     fn defer_page(
         &mut self,

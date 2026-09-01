@@ -162,18 +162,18 @@ async fn gateway_handles_public_catalog_providers_without_proxying_upstream() {
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     let providers = payload.as_array().expect("providers should be an array");
     assert_eq!(providers.len(), 2);
-    assert_eq!(providers[0]["id"], "provider-openai");
+    assert_eq!(providers[0]["id"], "provider-claude");
     assert!(providers[0].get("name").is_none());
     assert!(providers[0].get("description").is_none());
     assert!(providers[0].get("website").is_none());
-    assert_eq!(providers[0]["provider_priority"], 10);
-    assert_eq!(providers[0]["endpoints_count"], 1);
-    assert_eq!(providers[0]["active_endpoints_count"], 1);
+    assert!(providers[0]["provider_priority"].is_null());
+    assert_eq!(providers[0]["endpoints_count"], 2);
+    assert_eq!(providers[0]["active_endpoints_count"], 2);
     assert_eq!(providers[0]["models_count"], 0);
     assert_eq!(providers[0]["active_models_count"], 0);
-    assert_eq!(providers[1]["id"], "provider-claude");
-    assert_eq!(providers[1]["endpoints_count"], 2);
-    assert_eq!(providers[1]["active_endpoints_count"], 2);
+    assert_eq!(providers[1]["id"], "provider-openai");
+    assert_eq!(providers[1]["endpoints_count"], 1);
+    assert_eq!(providers[1]["active_endpoints_count"], 1);
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
@@ -909,7 +909,7 @@ async fn gateway_handles_public_providers_without_proxying_upstream() {
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert!(payload["providers"][0].get("name").is_none());
-    assert_eq!(payload["providers"][0]["provider_priority"], 10);
+    assert!(payload["providers"][0]["provider_priority"].is_null());
     assert!(payload["providers"][1].get("name").is_none());
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
@@ -959,7 +959,7 @@ async fn gateway_handles_public_provider_detail_without_proxying_upstream() {
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["id"], "provider-1");
     assert!(payload.get("name").is_none());
-    assert_eq!(payload["provider_priority"], 10);
+    assert!(payload["provider_priority"].is_null());
 
     let response = reqwest::Client::new()
         .get(format!("{gateway_url}/v1/providers/openai"))

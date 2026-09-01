@@ -681,7 +681,7 @@ fn maybe_build_standard_same_format_sync_body(
         return None;
     }
 
-    let mut body_json = body_json.clone();
+    let body_json = body_json.clone();
 
     Some(client_body_with_report_context_model(
         body_json,
@@ -738,7 +738,7 @@ fn maybe_build_standard_same_format_stream_sync_body(
     let body_bytes = base64::engine::general_purpose::STANDARD.decode(body_base64)?;
     let provider_stream_event_api_format =
         provider_stream_event_api_format_for_report_context(report_context, &provider_api_format);
-    let Some(mut body) = try_aggregate_standard_chat_stream_sync_response(
+    let Some(body) = try_aggregate_standard_chat_stream_sync_response(
         &body_bytes,
         &provider_stream_event_api_format,
     )?

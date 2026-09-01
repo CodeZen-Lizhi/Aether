@@ -77,6 +77,6 @@ fn scheduler_ranking_mode(mode: SchedulerSchedulingMode) -> SchedulerRankingMode
         SchedulerSchedulingMode::CacheAffinity => SchedulerRankingMode::CacheAffinity,
         #[allow(deprecated)]
         SchedulerSchedulingMode::LoadBalance => SchedulerRankingMode::LoadBalance,
-        SchedulerSchedulingMode::Economy => SchedulerRankingMode::Economy,
+        SchedulerSchedulingMode::CostBased => SchedulerRankingMode::CostBased,
     }
 }

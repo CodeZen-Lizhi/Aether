@@ -244,7 +244,7 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
         vec![
             sample_provider(&provider_id, "openai", 10).with_transport_fields(
                 true,
-                false,
+                true,
                 Some(8),
                 Some(3),
                 Some(json!({"node_id": "node-1"})),
@@ -1023,47 +1023,6 @@ async fn gateway_validates_chat_pii_redaction_system_config_locally_with_trusted
         .await
         .expect("json body should parse");
     assert_eq!(prefix_default_payload["value"], json!("AETHER"));
-    assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
-
-    gateway_handle.abort();
-    upstream_handle.abort();
-}
-
-#[tokio::test]
-async fn gateway_handles_admin_system_provider_priority_mode_locally_with_bearer_admin_session() {
-    let upstream_hits = Arc::new(Mutex::new(0usize));
-    let upstream_hits_clone = Arc::clone(&upstream_hits);
-    let upstream = Router::new().route(
-        "/api/admin/system/configs/provider_priority_mode",
-        any(move |_request: Request| {
-            let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
-            async move {
-                *upstream_hits_inner.lock().expect("mutex should lock") += 1;
-                (StatusCode::OK, Body::from("unexpected upstream hit"))
-            }
-        }),
-    );
-
-    let (upstream_url, upstream_handle) = start_server(upstream).await;
-    let state = AppState::new().expect("gateway should build");
-    let access_token = issue_test_admin_access_token(&state, "device-admin-config").await;
-    let gateway = build_router_with_state(state);
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let response = reqwest::Client::new()
-        .get(format!(
-            "{gateway_url}/api/admin/system/configs/provider_priority_mode"
-        ))
-        .header("authorization", format!("Bearer {access_token}"))
-        .header("x-client-device-id", "device-admin-config")
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload["key"], "provider_priority_mode");
-    assert_eq!(payload["value"], "provider");
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();

@@ -143,7 +143,7 @@ async fn gateway_handles_admin_provider_query_models_fetches_upstream_for_select
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![StoredProviderCatalogEndpoint::new(
@@ -269,7 +269,7 @@ async fn gateway_handles_admin_provider_query_models_with_openai_responses_endpo
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![StoredProviderCatalogEndpoint::new(
@@ -386,7 +386,7 @@ async fn gateway_handles_admin_provider_query_models_respecting_key_api_formats_
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![
@@ -543,7 +543,7 @@ async fn gateway_handles_admin_provider_query_models_aggregating_active_keys_imp
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![StoredProviderCatalogEndpoint::new(
@@ -691,7 +691,7 @@ async fn gateway_handles_admin_provider_query_test_model_locally_with_trusted_ad
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -926,7 +926,7 @@ async fn gateway_handles_admin_provider_query_doubao_text_embedding_model_test_i
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-doubao", "Doubao", 10);
-    provider.provider_type = "doubao".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -1048,7 +1048,7 @@ async fn gateway_handles_admin_provider_query_gemini_embedding_model_test_impl()
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-gemini", "Gemini", 10);
-    provider.provider_type = "gemini".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -1166,7 +1166,7 @@ async fn gateway_handles_admin_provider_query_vertex_gemini_embedding_model_test
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-vertex-ai", "Vertex AI", 10);
-    provider.provider_type = "vertex_ai".to_string();
+    provider.provider_type = "custom".to_string();
     let mut key = sample_key(
         "key-vertex-gemini-embedding",
         "provider-vertex-ai",
@@ -1305,7 +1305,7 @@ async fn gateway_handles_admin_provider_query_jina_embedding_model_test_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-jina-embedding", "Jina", 10);
-    provider.provider_type = "jina".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -1427,7 +1427,7 @@ async fn gateway_handles_admin_provider_query_openai_rerank_model_test_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai-rerank", "OpenAI Rerank", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -1555,7 +1555,7 @@ async fn gateway_handles_admin_provider_query_rerank_model_test_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-jina", "Jina", 10);
-    provider.provider_type = "jina".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -1920,7 +1920,7 @@ async fn gateway_streams_codex_openai_responses_upstream_for_admin_pool_model_te
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-codex", "Codex", 10);
-    provider.provider_type = "codex".to_string();
+    provider.provider_type = "custom".to_string();
     let mut endpoint = sample_endpoint(
         "endpoint-codex-responses",
         "provider-codex",
@@ -2072,7 +2072,7 @@ async fn gateway_handles_admin_provider_query_test_model_failover_locally_with_t
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -2221,7 +2221,7 @@ async fn gateway_handles_non_kiro_multi_model_failover_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -2401,7 +2401,7 @@ async fn gateway_handles_openai_responses_test_model_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "codex".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -2533,7 +2533,7 @@ async fn gateway_handles_openai_image_test_model_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "codex".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -2620,7 +2620,7 @@ async fn gateway_prefers_supported_non_kiro_endpoint_when_api_format_is_omitted_
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![
@@ -2725,7 +2725,7 @@ async fn gateway_prefers_transport_supported_non_kiro_endpoint_when_api_format_i
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let mut unsupported_endpoint = sample_endpoint(
         "endpoint-openai-chat-unsupported",
         "provider-openai",
@@ -2822,7 +2822,7 @@ async fn gateway_prefers_supported_non_kiro_endpoint_with_compatible_key_when_ap
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![
@@ -2924,7 +2924,7 @@ async fn gateway_uses_compatible_cli_endpoint_when_api_format_is_omitted_impl() 
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![
@@ -3027,7 +3027,7 @@ async fn gateway_uses_runnable_cli_endpoint_after_chat_preference_when_api_forma
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let mut unsupported_chat_endpoint = sample_endpoint(
         "endpoint-openai-chat-unsupported",
         "provider-openai",
@@ -3133,7 +3133,7 @@ async fn gateway_handles_openai_responses_test_model_failover_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3234,7 +3234,7 @@ async fn gateway_handles_claude_cli_test_model_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-claude", "Claude", 10);
-    provider.provider_type = "anthropic".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3329,7 +3329,7 @@ async fn gateway_uses_compatible_claude_cli_endpoint_when_api_format_is_omitted_
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-claude", "Claude", 10);
-    provider.provider_type = "anthropic".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3425,7 +3425,7 @@ async fn gateway_handles_claude_cli_test_model_failover_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-claude", "Claude", 10);
-    provider.provider_type = "anthropic".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3521,7 +3521,7 @@ async fn gateway_handles_gemini_cli_test_model_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-gemini", "Gemini", 10);
-    provider.provider_type = "google".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3608,7 +3608,7 @@ async fn gateway_uses_compatible_gemini_cli_endpoint_when_api_format_is_omitted_
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-gemini", "Gemini", 10);
-    provider.provider_type = "google".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3696,7 +3696,7 @@ async fn gateway_handles_gemini_cli_test_model_failover_locally_impl() {
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-gemini", "Gemini", 10);
-    provider.provider_type = "google".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3793,7 +3793,7 @@ async fn gateway_handles_admin_provider_query_test_model_failover_with_single_mo
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -3905,7 +3905,7 @@ async fn gateway_retries_non_kiro_failover_after_http_error_without_message_impl
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -4024,7 +4024,7 @@ async fn gateway_retries_non_kiro_failover_after_success_status_without_body_imp
 
     let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
     let mut provider = sample_provider("provider-openai", "OpenAI", 10);
-    provider.provider_type = "openai".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(

@@ -217,19 +217,6 @@ impl AiSurfaceStreamRewriter<'_> {
     }
 }
 
-fn rewrite_model_directive_stream_record(
-    report_context: &Value,
-    record: Vec<u8>,
-) -> Result<Vec<u8>, AiSurfaceFinalizeError> {
-    let mut output = Vec::new();
-    for line in record.split_inclusive(|byte| *byte == b'\n') {
-        output.extend(rewrite_model_directive_stream_line(
-            report_context,
-            line.to_vec(),
-        )?);
-    }
-    Ok(output)
-}
 
 fn rewrite_model_directive_stream_line(
     report_context: &Value,
@@ -340,24 +327,6 @@ fn rewrite_stream_payload_model_from_context(report_context: &Value, value: &mut
     rewrite_stream_payload_model(value, &display_model)
 }
 
-fn transform_standard_bytes(
-    standard: &mut StreamingStandardFormatMatrix,
-    report_context: &Value,
-    bytes: Vec<u8>,
-) -> Result<Vec<u8>, AiSurfaceFinalizeError> {
-    if bytes.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut output = Vec::new();
-    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
-        output.extend(transform_standard_line(
-            standard,
-            report_context,
-            line.to_vec(),
-        )?);
-    }
-    Ok(output)
-}
 
 fn transform_standard_line(
     standard: &mut StreamingStandardFormatMatrix,

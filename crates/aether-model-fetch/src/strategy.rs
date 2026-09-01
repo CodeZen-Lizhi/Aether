@@ -1,7 +1,7 @@
-use aether_contracts::{ExecutionPlan, ExecutionResult};
+use aether_contracts::ExecutionResult;
 use aether_provider_transport::GatewayProviderTransportSnapshot;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::logic::{aggregate_models_for_cache, extract_error_message, parse_models_response_page};
 use crate::transport::{build_standard_models_fetch_execution_plan, ModelFetchTransportRuntime};

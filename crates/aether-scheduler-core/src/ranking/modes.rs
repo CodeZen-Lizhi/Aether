@@ -20,18 +20,18 @@ pub(super) fn compare_rankable_candidates(
         SchedulerRankingMode::FixedOrder => compare_fixed_order(left, right, context),
         SchedulerRankingMode::CacheAffinity => compare_cache_affinity(left, right, context),
         SchedulerRankingMode::LoadBalance => compare_load_balance_base(left, right, context),
-        SchedulerRankingMode::Economy => compare_economy(left, right, context),
+        SchedulerRankingMode::CostBased => compare_cost_based(left, right, context),
     }
 }
 
-/// R10 Economy: cheapest-key-first within the requested model.
+/// R10 cost-based (成本优先): cheapest-key-first within the requested model.
 ///
 /// Affinity still outranks cost (prompt-cache stickiness beats a cheaper key),
 /// cross-format demotion and format preference keep their existing roles, and
 /// the multiplier itself replaces the priority slot. Equal multipliers fall
 /// back to the priority slot, then health, then the dynamic signals, then the
 /// seeded hash — mirroring the CacheAffinity tail for deterministic behavior.
-fn compare_economy(
+fn compare_cost_based(
     left: &SchedulerRankableCandidate,
     right: &SchedulerRankableCandidate,
     context: SchedulerRankingContext,
@@ -64,7 +64,6 @@ fn compare_fixed_order(
         .then_with(|| compare_demoted_format_preference(left, right))
         .then_with(|| compare_candidate_priority_slot(left, right, context.priority_mode))
         .then_with(|| compare_format_preference(left, right))
-        .then_with(|| compare_seeded_candidate_hash(left, right, context.load_balance_seed, "tie"))
         .then_with(|| compare_candidate_identity_for_ranking(left, right))
         .then(left.original_index.cmp(&right.original_index))
 }

@@ -88,7 +88,7 @@ fn sample_codex_models_candidate_row(
         global_model_name,
         10,
     );
-    row.provider_type = "codex".to_string();
+    row.provider_type = "custom".to_string();
     row.key_auth_type = "oauth".to_string();
     row.model_provider_model_name = source_model_name.to_string();
     row.model_provider_model_mappings = Some(vec![

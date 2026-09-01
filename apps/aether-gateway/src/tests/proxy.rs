@@ -176,7 +176,7 @@ fn sample_key(key_id: &str, provider_id: &str, node_id: &str) -> StoredProviderC
         "plain-upstream-key".to_string(),
         None,
         None,
-        Some(json!({"openai:chat": 1})),
+        None,
         None,
         Some(json!({
             "enabled": true,
@@ -203,7 +203,7 @@ fn sample_codex_key(key_id: &str, provider_id: &str, node_id: &str) -> StoredPro
         "plain-upstream-key".to_string(),
         None,
         None,
-        Some(json!({"openai:responses": 1})),
+        None,
         None,
         Some(json!({
             "enabled": true,

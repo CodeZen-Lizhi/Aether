@@ -1,5 +1,5 @@
 export type RoutingPriorityMode = 'provider' | 'global_key'
-export type RoutingSchedulingMode = 'fixed_order' | 'cache_affinity' | 'load_balance' | 'economy'
+export type RoutingSchedulingMode = 'fixed_order' | 'cache_affinity' | 'load_balance' | 'cost_based'
 export type RoutingRulePhase = 'client_request' | 'provider_request'
 export type RoutingSortingScope = 'unified' | 'per_model'
 

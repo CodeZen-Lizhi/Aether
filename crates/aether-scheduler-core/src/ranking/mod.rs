@@ -411,12 +411,14 @@ mod tests {
     }
 
     #[test]
-    fn fixed_order_randomizes_equal_priority_ties_without_crossing_priority_slots() {
+    fn fixed_order_resolves_equal_priority_ties_deterministically() {
+        // fixed_order 语义下，同优先级平局按候选身份确定性排序，不随
+        // load_balance seed 变化；更低优先级的候选不得越过优先级槽位。
         let first = candidate("first", 0, 0, Some(0));
         let second = candidate("second", 0, 0, Some(0));
         let lower_priority = candidate("lower", 10, 0, Some(10));
 
-        let first_seed_order = ranked_ids(
+        let baseline_order = ranked_ids(
             &[first.clone(), second.clone(), lower_priority.clone()],
             SchedulerRankingContext {
                 priority_mode: SchedulerPriorityMode::Provider,
@@ -427,25 +429,22 @@ mod tests {
                 load_balance_seed: 0,
             },
         );
-        let alternate_order = (1..128)
-            .map(|seed| {
-                ranked_ids(
-                    &[first.clone(), second.clone(), lower_priority.clone()],
-                    SchedulerRankingContext {
-                        priority_mode: SchedulerPriorityMode::Provider,
-                        ranking_mode: SchedulerRankingMode::FixedOrder,
-                        include_health: false,
-                        include_inflight: false,
-                        include_latency: false,
-                        load_balance_seed: seed,
-                    },
-                )
-            })
-            .find(|order| order[0] != first_seed_order[0])
-            .expect("equal priority tie should vary by seed");
+        for seed in 1..128 {
+            let order = ranked_ids(
+                &[first.clone(), second.clone(), lower_priority.clone()],
+                SchedulerRankingContext {
+                    priority_mode: SchedulerPriorityMode::Provider,
+                    ranking_mode: SchedulerRankingMode::FixedOrder,
+                    include_health: false,
+                    include_inflight: false,
+                    include_latency: false,
+                    load_balance_seed: seed,
+                },
+            );
+            assert_eq!(order, baseline_order, "seed {seed} must not reorder ties");
+        }
 
-        assert_eq!(first_seed_order[2], "provider-lower");
-        assert_eq!(alternate_order[2], "provider-lower");
+        assert_eq!(baseline_order[2], "provider-lower");
     }
 
     #[test]
@@ -700,7 +699,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod economy_and_signal_tests {
+mod cost_based_and_signal_tests {
     use super::{
         apply_scheduler_candidate_ranking, LatencyEwma, SchedulerRankableCandidate,
         SchedulerRankingContext, SchedulerRankingMode,
@@ -733,46 +732,46 @@ mod economy_and_signal_tests {
         }
     }
 
-    fn economy_context() -> SchedulerRankingContext {
+    fn cost_based_context() -> SchedulerRankingContext {
         SchedulerRankingContext {
-            ranking_mode: SchedulerRankingMode::Economy,
+            ranking_mode: SchedulerRankingMode::CostBased,
             ..SchedulerRankingContext::default()
         }
     }
 
     #[test]
-    fn economy_ranks_lower_multiplier_first() {
+    fn cost_based_ranks_lower_multiplier_first() {
         let cheap = base_candidate("key-a").with_rate_multiplier(0.4);
         let expensive = base_candidate("key-b").with_rate_multiplier(1.5);
         // Use the public ranking entry: sort a two-element vec.
         let candidates = vec![expensive, cheap];
         let mut items = candidates.clone();
-        apply_scheduler_candidate_ranking(&mut items, &candidates, economy_context());
+        apply_scheduler_candidate_ranking(&mut items, &candidates, cost_based_context());
         assert_eq!(items[0].key_id, "key-a");
         assert_eq!(items[1].key_id, "key-b");
     }
 
     #[test]
-    fn economy_equal_multipliers_fall_back_to_priority_then_hash() {
+    fn cost_based_equal_multipliers_fall_back_to_priority_then_hash() {
         let first = base_candidate("key-a").with_rate_multiplier(0.5);
         let second = base_candidate("key-b").with_rate_multiplier(0.5);
         let candidates = vec![second, first];
         let mut items = candidates.clone();
-        apply_scheduler_candidate_ranking(&mut items, &candidates, economy_context());
+        apply_scheduler_candidate_ranking(&mut items, &candidates, cost_based_context());
         let mut again = candidates.clone();
-        apply_scheduler_candidate_ranking(&mut again, &candidates, economy_context());
+        apply_scheduler_candidate_ranking(&mut again, &candidates, cost_based_context());
         assert_eq!(items, again);
     }
 
     #[test]
-    fn economy_affinity_outranks_cheaper_key() {
+    fn cost_based_affinity_outranks_cheaper_key() {
         let sticky_expensive = base_candidate("key-a")
             .with_rate_multiplier(1.5)
             .with_cached_affinity_match(true);
         let cheap = base_candidate("key-b").with_rate_multiplier(0.4);
         let candidates = vec![cheap, sticky_expensive];
         let mut items = candidates.clone();
-        apply_scheduler_candidate_ranking(&mut items, &candidates, economy_context());
+        apply_scheduler_candidate_ranking(&mut items, &candidates, cost_based_context());
         assert_eq!(items[0].key_id, "key-a");
     }
 

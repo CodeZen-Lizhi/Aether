@@ -1724,6 +1724,7 @@ mod tests {
         )
         .await;
 
+        // 失败会使亲和缓存失效（条目被清除）。
         assert!(state
             .read_scheduler_affinity_target(cache_key.as_str(), SCHEDULER_AFFINITY_TTL)
             .is_none());
@@ -2167,7 +2168,7 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn load_balance_success_does_not_remember_scheduler_affinity_cache() {
+    async fn load_balance_config_maps_to_cache_affinity_and_remembers_scheduler_affinity() {
         let state = AppState::new()
             .expect("gateway state should build")
             .with_data_state_for_tests(
@@ -2196,9 +2197,11 @@ mod tests {
         )
         .await;
 
+        // load_balance 已软删除并映射为 cache_affinity：成功效果现在会
+        // 记住亲和目标。
         assert!(state
             .read_scheduler_affinity_target(cache_key.as_str(), SCHEDULER_AFFINITY_TTL)
-            .is_none());
+            .is_some());
     }
     #[tokio::test]
     async fn success_remembers_session_scoped_scheduler_affinity_cache() {

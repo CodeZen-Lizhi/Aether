@@ -659,7 +659,7 @@ async fn gateway_waits_for_api_key_concurrency_slot_then_executes_openai_respons
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
+        .with_transport_fields(true, true, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -1038,7 +1038,7 @@ async fn gateway_executes_openai_responses_sync_after_api_key_concurrency_wait_b
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
+        .with_transport_fields(true, true, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -1696,7 +1696,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cl
             "gemini_cli".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
+        .with_transport_fields(true, true, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2089,7 +2089,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_sy
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
+        .with_transport_fields(true, true, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2461,7 +2461,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_ch
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
+        .with_transport_fields(true, true, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
@@ -2836,7 +2836,7 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_ch
             "custom".to_string(),
         )
         .expect("provider should build")
-        .with_transport_fields(true, false, None, Some(2), None, Some(20.0), None, None)
+        .with_transport_fields(true, true, None, Some(2), None, Some(20.0), None, None)
     }
 
     fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {

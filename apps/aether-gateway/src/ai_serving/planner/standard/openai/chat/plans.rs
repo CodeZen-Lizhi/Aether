@@ -143,18 +143,4 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn openai_chat_policy_resolver_preserves_provider_hard_streaming() {
-        let codex = sample_transport(
-            "codex",
-            "openai:responses",
-            Some(json!({"upstream_stream_policy": "force_non_stream"})),
-        );
-
-        assert!(openai_chat_upstream_is_stream_for_candidate(
-            &codex,
-            "openai:responses",
-            false,
-        ));
-    }
 }

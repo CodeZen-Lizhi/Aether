@@ -17,6 +17,7 @@ fn admin_external_usage_is_confined_to_admin_api() {
             .to_string_lossy()
             .replace('\\', "/");
         if relative == "apps/aether-gateway/src/admin_api.rs"
+            || relative == "apps/aether-gateway/src/handlers/shared/usage_stats.rs"
             || relative.starts_with("apps/aether-gateway/src/handlers/admin/")
             || relative.starts_with("apps/aether-gateway/src/tests/")
         {
@@ -149,12 +150,7 @@ fn admin_shared_does_not_own_provider_support() {
 
     let provider_support =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/provider/shared/support.rs");
-    for pattern in [
-        "pub(crate) struct AdminProviderPoolConfig",
-        "pub(crate) struct AdminProviderPoolRuntimeState",
-        "pub(crate) const ADMIN_PROVIDER_POOL_SCAN_BATCH",
-        "pub(crate) const ADMIN_PROVIDER_OAUTH_DATA_UNAVAILABLE_DETAIL",
-    ] {
+    for pattern in ["pub(crate) const ADMIN_PROVIDER_OAUTH_DATA_UNAVAILABLE_DETAIL"] {
         assert!(
             provider_support.contains(pattern),
             "provider/shared/support.rs should own {pattern}"
@@ -181,11 +177,7 @@ fn admin_shared_does_not_own_provider_support() {
 
     let provider_paths_mod =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/provider/shared/paths/mod.rs");
-    for pattern in [
-        "pub(crate) use self::crud::{",
-        "pub(crate) use self::oauth::{",
-        "pub(crate) use self::ops::{",
-    ] {
+    for pattern in ["pub(crate) use self::crud::{", "pub(crate) use self::ops::{"] {
         assert!(
             provider_paths_mod.contains(pattern),
             "provider/shared/paths/mod.rs should re-export split path owners through {pattern}"
@@ -197,14 +189,6 @@ fn admin_shared_does_not_own_provider_support() {
     assert!(
         provider_crud_paths.contains("pub(crate) fn admin_provider_id_for_manage_path"),
         "provider/shared/paths/crud.rs should own admin_provider_id_for_manage_path"
-    );
-
-    let provider_oauth_paths = read_workspace_file(
-        "apps/aether-gateway/src/handlers/admin/provider/shared/paths/oauth.rs",
-    );
-    assert!(
-        provider_oauth_paths.contains("pub(crate) fn admin_provider_oauth_start_key_id"),
-        "provider/shared/paths/oauth.rs should own admin_provider_oauth_start_key_id"
     );
 
     let provider_ops_paths =
@@ -439,8 +423,7 @@ fn admin_handlers_expose_real_subdomains_without_facade() {
         "AdminRouteResponse",
         "AdminRouteResult",
         "pub(crate) use self::routes::maybe_build_local_admin_response;",
-        "pub(crate) use self::provider::{",
-        "maybe_build_local_admin_provider_oauth_response",
+        "pub(crate) use self::provider::maybe_build_local_admin_providers_response;",
         "maybe_build_local_admin_providers_response",
     ] {
         assert!(
@@ -459,7 +442,6 @@ fn admin_handlers_expose_real_subdomains_without_facade() {
 fn ai_serving_external_consumers_use_single_api_facade() {
     let ai_serving_mod = read_workspace_file("apps/aether-gateway/src/ai_serving/mod.rs");
     for pattern in [
-        "mod adaptation;",
         "mod finalize;",
         "mod planner;",
         "pub(crate) mod transport;",
@@ -568,9 +550,6 @@ fn gateway_ai_serving_api_module_delegates_pure_ownership_to_format_crate() {
     let format_crate_api = read_workspace_file("crates/aether-ai/formats/src/api.rs");
     for pattern in [
         "pub use crate::contracts::{",
-        "pub use crate::provider_compat::kiro_stream::{",
-        "pub use crate::provider_compat::private_envelope::{",
-        "pub use crate::provider_compat::surfaces::{",
         "pub use crate::formats::shared::request::{",
         "pub use crate::formats::shared::routing::{",
         "pub use crate::formats::shared::response::{",

@@ -19,7 +19,6 @@ pub(super) type CandidateTransportIdentity = (String, String, String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct CandidateTransportRankingFacts {
     pub(super) tunnel_bucket: SchedulerTunnelAffinityBucket,
-    pub(super) keep_priority_on_conversion: bool,
 }
 
 #[derive(Debug, Default)]
@@ -70,16 +69,6 @@ pub(super) async fn resolve_cached_transport_ranking_facts(
     facts
 }
 
-pub(super) async fn candidate_keeps_priority_on_conversion(
-    state: PlannerAppState<'_>,
-    candidate: &SchedulerMinimalCandidateSelectionCandidate,
-    ordering_config: SchedulerOrderingConfig,
-) -> bool {
-    let mut cache = CandidateTransportRankingFactsCache::default();
-    resolve_candidate_transport_ranking_facts(state, &mut cache, candidate, ordering_config)
-        .await
-        .keep_priority_on_conversion
-}
 
 async fn resolve_candidate_transport_ranking_facts(
     state: PlannerAppState<'_>,
@@ -90,7 +79,6 @@ async fn resolve_candidate_transport_ranking_facts(
     let Some(transport) = read_candidate_transport_snapshot(state, candidate).await else {
         return CandidateTransportRankingFacts {
             tunnel_bucket: SchedulerTunnelAffinityBucket::Neutral,
-            keep_priority_on_conversion: ordering_config.keep_priority_on_conversion,
         };
     };
 
@@ -111,7 +99,6 @@ async fn resolve_candidate_transport_ranking_facts_from_transport(
 ) -> CandidateTransportRankingFacts {
     CandidateTransportRankingFacts {
         tunnel_bucket: resolve_tunnel_owner_affinity_from_transport(state, cache, transport).await,
-        keep_priority_on_conversion: ordering_config.keep_priority_on_conversion,
     }
 }
 

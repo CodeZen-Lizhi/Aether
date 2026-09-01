@@ -152,17 +152,17 @@ async fn gateway_handles_admin_providers_locally_with_trusted_admin_principal() 
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     let items = payload.as_array().expect("payload should be an array");
     assert_eq!(items.len(), 2);
-    assert_eq!(items[0]["id"], "provider-openai");
-    assert_eq!(items[0]["name"], "openai");
-    assert_eq!(items[0]["api_format"], "openai:chat");
-    assert_eq!(items[0]["base_url"], "https://api.openai.example");
-    assert_eq!(items[0]["api_key"], "***");
-    assert_eq!(items[0]["created_at"], "2024-03-21T05:46:40Z");
-    assert_eq!(items[0]["updated_at"], "2024-03-21T05:48:20Z");
-    assert_eq!(items[1]["id"], "provider-anthropic");
-    assert_eq!(items[1]["api_format"], serde_json::Value::Null);
-    assert_eq!(items[1]["base_url"], serde_json::Value::Null);
-    assert_eq!(items[1]["api_key"], serde_json::Value::Null);
+    assert_eq!(items[0]["id"], "provider-anthropic");
+    assert_eq!(items[0]["api_format"], serde_json::Value::Null);
+    assert_eq!(items[0]["base_url"], serde_json::Value::Null);
+    assert_eq!(items[0]["api_key"], serde_json::Value::Null);
+    assert_eq!(items[1]["id"], "provider-openai");
+    assert_eq!(items[1]["name"], "openai");
+    assert_eq!(items[1]["api_format"], "openai:chat");
+    assert_eq!(items[1]["base_url"], "https://api.openai.example");
+    assert_eq!(items[1]["api_key"], "***");
+    assert_eq!(items[1]["created_at"], "2024-03-21T05:46:40Z");
+    assert_eq!(items[1]["updated_at"], "2024-03-21T05:48:20Z");
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();

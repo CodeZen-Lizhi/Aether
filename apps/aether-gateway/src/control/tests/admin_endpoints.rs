@@ -264,19 +264,6 @@ fn classifies_admin_reveal_key_as_admin_proxy_route() {
     assert!(!decision.is_execution_runtime_candidate());
 }
 
-#[test]
-fn classifies_admin_export_key_as_admin_proxy_route() {
-    let headers = http::HeaderMap::new();
-    let uri: Uri = "/api/admin/endpoints/keys/key-openai/export"
-        .parse()
-        .expect("uri should parse");
-    let decision = classify_control_route(&http::Method::GET, &uri, &headers)
-        .expect("decision should resolve");
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("endpoints_manage"));
-    assert_eq!(decision.route_kind.as_deref(), Some("export_key"));
-    assert!(!decision.is_execution_runtime_candidate());
-}
 
 #[test]
 fn classifies_admin_update_key_as_admin_proxy_route() {
@@ -409,74 +396,9 @@ fn classifies_admin_delete_endpoint_as_admin_proxy_route() {
     assert!(!decision.is_execution_runtime_candidate());
 }
 
-#[test]
-fn classifies_admin_refresh_provider_quota_as_admin_proxy_route() {
-    let headers = http::HeaderMap::new();
-    let uri: Uri = "/api/admin/endpoints/providers/provider-codex/refresh-quota"
-        .parse()
-        .expect("uri should parse");
-    let decision = classify_control_route(&http::Method::POST, &uri, &headers)
-        .expect("decision should resolve");
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("endpoints_manage"));
-    assert_eq!(decision.route_kind.as_deref(), Some("refresh_quota"));
-    assert!(!decision.is_execution_runtime_candidate());
-}
 
-#[test]
-fn classifies_admin_codex_reset_credit_consume_as_admin_proxy_route() {
-    let headers = http::HeaderMap::new();
-    let uri: Uri = "/api/admin/endpoints/keys/key-codex/codex-reset-credit/consume"
-        .parse()
-        .expect("uri should parse");
-    let decision = classify_control_route(&http::Method::POST, &uri, &headers)
-        .expect("decision should resolve");
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("endpoints_manage"));
-    assert_eq!(
-        decision.route_kind.as_deref(),
-        Some("codex_reset_credit_consume")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
 
-#[test]
-fn admin_codex_reset_credit_consume_buffers_idempotency_key_body() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/admin/endpoints/keys/key-codex/codex-reset-credit/consume"
-        .parse()
-        .expect("uri should parse");
-    let decision = classify_control_route(&http::Method::POST, &uri, &headers)
-        .expect("decision should resolve");
-    let context = GatewayPublicRequestContext::from_request_parts(
-        "trace-codex-reset-credit-consume",
-        &http::Method::POST,
-        &uri,
-        &headers,
-        Some(decision),
-    );
 
-    assert!(local_proxy_route_requires_buffered_body(&context));
-}
-
-#[test]
-fn admin_refresh_provider_quota_buffers_request_body_for_key_selection() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/admin/endpoints/providers/provider-codex/refresh-quota"
-        .parse()
-        .expect("uri should parse");
-    let decision = classify_control_route(&http::Method::POST, &uri, &headers)
-        .expect("decision should resolve");
-    let context = GatewayPublicRequestContext::from_request_parts(
-        "trace-refresh-quota",
-        &http::Method::POST,
-        &uri,
-        &headers,
-        Some(decision),
-    );
-
-    assert!(local_proxy_route_requires_buffered_body(&context));
-}
 
 #[test]
 fn classifies_admin_default_body_rules_as_admin_proxy_route() {

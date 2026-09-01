@@ -173,7 +173,7 @@ async fn gateway_counts_keys_with_null_api_formats_for_each_fixed_provider_endpo
     inherited_key.api_formats = None;
 
     let mut provider = sample_provider("provider-codex", "codex", 10);
-    provider.provider_type = "codex".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![
@@ -258,7 +258,7 @@ async fn gateway_counts_inherited_windsurf_key_formats_for_admin_provider_endpoi
     key.api_formats = None;
 
     let mut provider = sample_provider("provider-windsurf", "windsurf", 10);
-    provider.provider_type = "windsurf".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(

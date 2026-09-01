@@ -105,7 +105,6 @@ impl AiCandidateRankingPort for GatewayLocalCandidateRankingPort<'_> {
             required_capabilities: self.required_capabilities,
             cached_affinity_match,
             tunnel_bucket: ranking_facts.tunnel_bucket,
-            keep_priority_on_conversion: ranking_facts.keep_priority_on_conversion,
         });
         // P1-4/P1-5: attach the dynamic ranking signals. In-flight counts come
         // from the recent candidate records (same source as the concurrency
@@ -137,12 +136,12 @@ impl AiCandidateRankingPort for GatewayLocalCandidateRankingPort<'_> {
                 rankable.latency_ewma_ms = latency.get(&routing_overlaid_candidate.key_id).copied();
             }
         }
-        // R10 Economy: attach this key's per-format rate multiplier. Only the
-        // Economy mode consults it, but attaching unconditionally keeps the
+        // R10 cost-based: attach this key's per-format rate multiplier. Only the
+        // CostBased mode consults it, but attaching unconditionally keeps the
         // ranking port free of mode-specific branches; the DB read is one
         // small key-row lookup and the ordering config cache already dedups
         // system-config reads.
-        if self.ordering_config.scheduling_mode == SchedulerSchedulingMode::Economy {
+        if self.ordering_config.scheduling_mode == SchedulerSchedulingMode::CostBased {
             if let Ok(keys) = self
                 .state
                 .app()
@@ -231,7 +230,7 @@ fn ai_ranking_scheduling_mode(mode: SchedulerSchedulingMode) -> AiRankingSchedul
         SchedulerSchedulingMode::CacheAffinity => AiRankingSchedulingMode::CacheAffinity,
         #[allow(deprecated)]
         SchedulerSchedulingMode::LoadBalance => AiRankingSchedulingMode::LoadBalance,
-        SchedulerSchedulingMode::Economy => AiRankingSchedulingMode::Economy,
+        SchedulerSchedulingMode::CostBased => AiRankingSchedulingMode::CostBased,
     }
 }
 
@@ -241,11 +240,7 @@ pub(crate) async fn scheduler_ordering_config_for_routing_policy(
 ) -> SchedulerOrderingConfig {
     let system_config = read_scheduler_ordering_config_or_default(state).await;
     match routing_policy {
-        Some(policy) => {
-            let mut config = scheduler_ordering_config_from_routing_policy(policy);
-            config.keep_priority_on_conversion |= system_config.keep_priority_on_conversion;
-            config
-        }
+        Some(policy) => scheduler_ordering_config_from_routing_policy(policy),
         None => system_config,
     }
 }
@@ -265,9 +260,8 @@ fn scheduler_ordering_config_from_routing_policy(
             // resolve to CacheAffinity here — the single-user session-shaped
             // workload never wants pure random spreading.
             RoutingSchedulingMode::LoadBalance => SchedulerSchedulingMode::CacheAffinity,
-            RoutingSchedulingMode::Economy => SchedulerSchedulingMode::Economy,
+            RoutingSchedulingMode::CostBased => SchedulerSchedulingMode::CostBased,
         },
-        keep_priority_on_conversion: false,
         include_inflight: false,
         include_latency: false,
     }
@@ -377,7 +371,6 @@ mod tests {
                 required_capabilities,
                 cached_affinity_match: false,
                 tunnel_bucket: ranking_facts.tunnel_bucket,
-                keep_priority_on_conversion: ordering_config.keep_priority_on_conversion,
             }));
         }
 
@@ -446,40 +439,6 @@ mod tests {
         assert_eq!(overlaid.key_global_priority_for_format, Some(2));
     }
 
-    #[tokio::test]
-    async fn routing_policy_inherits_global_conversion_priority_override() {
-        let data_state = GatewayDataState::default().with_system_config_values_for_tests([(
-            "keep_priority_on_conversion".to_string(),
-            json!(true),
-        )]);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data_state);
-        let policy = aether_routing_core::ResolvedRoutingPolicy {
-            group_id: Some("group-1".to_string()),
-            group_version: Some(1),
-            selection_source: "system_default".to_string(),
-            requested_model: "gpt-5.4-mini".to_string(),
-            resolved_model: "gpt-5.4-mini".to_string(),
-            priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
-            scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            ranking_overlay: Default::default(),
-            mutation_plan: Default::default(),
-            matched_rules: Vec::new(),
-        };
-
-        let ordering = super::scheduler_ordering_config_for_routing_policy(
-            PlannerAppState::new(&state),
-            Some(&policy),
-        )
-        .await;
-
-        assert_eq!(
-            ordering.scheduling_mode,
-            crate::scheduler::config::SchedulerSchedulingMode::FixedOrder
-        );
-        assert!(ordering.keep_priority_on_conversion);
-    }
 
     fn sample_provider() -> StoredProviderCatalogProvider {
         sample_provider_with_config("provider-1", None)
@@ -864,115 +823,7 @@ mod tests {
         assert_eq!(ranked[1].endpoint_id, "endpoint-cross");
     }
 
-    #[tokio::test]
-    async fn local_execution_ranking_keeps_cross_format_priority_when_enabled() {
-        let provider_catalog = InMemoryProviderCatalogReadRepository::seed(
-            vec![
-                sample_provider_with_options("provider-same", false, 10),
-                sample_provider_with_options("provider-cross", true, 0),
-            ],
-            vec![
-                sample_endpoint_for_provider("provider-same", "endpoint-same", "openai:chat"),
-                sample_endpoint_for_provider("provider-cross", "endpoint-cross", "claude:messages"),
-            ],
-            vec![
-                sample_key_for_provider("provider-same", "key-same", ""),
-                sample_key_for_provider("provider-cross", "key-cross", ""),
-            ],
-        );
-        let data_state = GatewayDataState::with_provider_transport_reader_for_tests(
-            std::sync::Arc::new(provider_catalog),
-            "development-key",
-        );
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data_state);
 
-        let ranked = rank_local_execution_candidates(
-            PlannerAppState::new(&state),
-            vec![
-                sample_priority_candidate(
-                    "provider-cross",
-                    "endpoint-cross",
-                    "key-cross",
-                    "claude:messages",
-                    Some(0),
-                    0,
-                ),
-                sample_priority_candidate(
-                    "provider-same",
-                    "endpoint-same",
-                    "key-same",
-                    "openai:chat",
-                    Some(10),
-                    10,
-                ),
-            ],
-            "openai:chat",
-            None,
-        )
-        .await;
-
-        assert_eq!(ranked[0].endpoint_id, "endpoint-cross");
-        assert_eq!(ranked[1].endpoint_id, "endpoint-same");
-    }
-
-    #[tokio::test]
-    async fn local_execution_ranking_keeps_cross_format_priority_when_global_override_is_enabled() {
-        let provider_catalog = InMemoryProviderCatalogReadRepository::seed(
-            vec![
-                sample_provider_with_options("provider-same", false, 10),
-                sample_provider_with_options("provider-cross", false, 0),
-            ],
-            vec![
-                sample_endpoint_for_provider("provider-same", "endpoint-same", "openai:chat"),
-                sample_endpoint_for_provider("provider-cross", "endpoint-cross", "claude:messages"),
-            ],
-            vec![
-                sample_key_for_provider("provider-same", "key-same", ""),
-                sample_key_for_provider("provider-cross", "key-cross", ""),
-            ],
-        );
-        let data_state = GatewayDataState::with_provider_transport_reader_for_tests(
-            std::sync::Arc::new(provider_catalog),
-            "development-key",
-        )
-        .with_system_config_values_for_tests(vec![(
-            "keep_priority_on_conversion".to_string(),
-            json!(true),
-        )]);
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data_state);
-
-        let ranked = rank_local_execution_candidates(
-            PlannerAppState::new(&state),
-            vec![
-                sample_priority_candidate(
-                    "provider-cross",
-                    "endpoint-cross",
-                    "key-cross",
-                    "claude:messages",
-                    Some(0),
-                    0,
-                ),
-                sample_priority_candidate(
-                    "provider-same",
-                    "endpoint-same",
-                    "key-same",
-                    "openai:chat",
-                    Some(10),
-                    10,
-                ),
-            ],
-            "openai:chat",
-            None,
-        )
-        .await;
-
-        assert_eq!(ranked[0].endpoint_id, "endpoint-cross");
-        assert_eq!(ranked[1].endpoint_id, "endpoint-same");
-    }
 
     #[tokio::test]
     async fn local_execution_ranking_uses_provider_priority_mode_when_configured() {

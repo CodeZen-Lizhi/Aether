@@ -11,7 +11,7 @@ pub enum AiRankingSchedulingMode {
     FixedOrder,
     CacheAffinity,
     LoadBalance,
-    Economy,
+    CostBased,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +36,6 @@ pub struct AiRankableCandidateParts<'a> {
     pub required_capabilities: Option<&'a serde_json::Value>,
     pub cached_affinity_match: bool,
     pub tunnel_bucket: SchedulerTunnelAffinityBucket,
-    pub keep_priority_on_conversion: bool,
 }
 
 #[async_trait]
@@ -96,10 +95,7 @@ pub fn build_ai_rankable_candidate(
         ))
         .with_cached_affinity_match(parts.cached_affinity_match)
         .with_tunnel_bucket(parts.tunnel_bucket)
-        .with_format_state(
-            !is_same_format && !parts.keep_priority_on_conversion,
-            format_preference,
-        )
+        .with_format_state(!is_same_format, format_preference)
 }
 
 pub fn ai_ranking_context(config: AiRankingContextConfig) -> SchedulerRankingContext {
@@ -117,7 +113,7 @@ fn ai_ranking_mode(mode: AiRankingSchedulingMode) -> SchedulerRankingMode {
     match mode {
         AiRankingSchedulingMode::FixedOrder => SchedulerRankingMode::FixedOrder,
         AiRankingSchedulingMode::CacheAffinity => SchedulerRankingMode::CacheAffinity,
-        AiRankingSchedulingMode::Economy => SchedulerRankingMode::Economy,
+        AiRankingSchedulingMode::CostBased => SchedulerRankingMode::CostBased,
         AiRankingSchedulingMode::LoadBalance => SchedulerRankingMode::LoadBalance,
     }
 }

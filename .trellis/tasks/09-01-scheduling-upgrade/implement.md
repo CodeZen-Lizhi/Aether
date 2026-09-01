@@ -22,10 +22,10 @@
 - 信号注入在 planner 的 `build_rankable_candidate`; 在途数来自最近候选记录（与并发上限同源）。
 - system_config 开关: `ranking_inflight_signal`（默认开）/ `ranking_latency_signal`（默认关，采集先行）。
 
-### R10（Economy 模式 + LoadBalance 软删）
+### R10（成本优先模式 + LoadBalance 软删）
 - `SchedulerRankingMode::Economy`（scheduler-core）+ 比较器: 亲和 > 倍率升序 > 优先级 slot > 健康 > 动态信号 > 哈希。
-- 倍率读自 key 行 `rate_multipliers[api_format]`（仅 Economy 模式查询 DB，`with_rate_multiplier` 守卫非法值）。
-- 贯通枚举链: `RoutingSchedulingMode::Economy` → `SchedulerSchedulingMode::Economy` → `AiRankingSchedulingMode::Economy`; `parse_scheduler_scheduling_mode` 认 `economy`。
+- 倍率读自 key 行 `rate_multipliers[api_format]`（仅 成本优先模式查询 DB，`with_rate_multiplier` 守卫非法值）。
+- 贯通枚举链: `RoutingSchedulingMode::Economy` → `SchedulerSchedulingMode::Economy` → `AiRankingSchedulingMode::Economy`; `parse_scheduler_scheduling_mode` 认 `cost_based`。
 - LoadBalance 软删: gateway 配置解析 `load_balance` → CacheAffinity + warn 日志; routing 层 `RoutingSchedulingMode::LoadBalance` 转换映射 CacheAffinity; 枚举保留（反序列化兼容）。
 
 ### R11 后端（配置面瘦身）
@@ -37,12 +37,12 @@
 ## 验证
 
 - `cargo check` 全绿（scheduler-core / routing-core / ai-serving / gateway lib）。
-- 新增测试 16 个全绿: rate_limit_cooldown×6（分类映射/Retry-After 优先与拒绝/指数梯封顶/到期边界/payload 回读）、economy_and_signal×7（倍率排序/平级回落/亲和压成本/在途决胜/延迟低者胜/样本不足缺席/确定性）、simplified_resolution×3（allowlist 忽略/model_policies 忽略/规则仍生效）。
+- 新增测试 16 个全绿: rate_limit_cooldown×6（分类映射/Retry-After 优先与拒绝/指数梯封顶/到期边界/payload 回读）、cost_based_and_signal×7（倍率排序/平级回落/亲和压成本/在途决胜/延迟低者胜/样本不足缺席/确定性）、simplified_resolution×3（allowlist 忽略/model_policies 忽略/规则仍生效）。
 - `cargo fmt --all` 完成。
 - 既有失败隔离: scheduler-core 2 个失败（codex_live_*）与 gateway lib test 156 个编译错误均为**用户并行 slim 改动的既有问题**（stash 验证: 无我的改动时反而 251 个错误——我的改动还修复了其中约 95 个）。clippy 因网络 TLS 无法安装组件，以 check+测试替代。
 
 ### R11-8 前端 UI 重设计 + R11-7 多组入口移除（第二批完成）
-- `frontend/src/views/admin/RoutingProfiles.vue` 全量重写为单页形态: 调度模式三选一（缓存亲和[默认·推荐]/固定顺序/经济模式，各带一句话代价说明）、供应商拖拽排序（原生 HTML5 drag + ↑↓ 按钮，行首序号即调度顺序=故障转移顺序）、Key 行内展开（优先级数字输入 + 每格式倍率输入，倍率经 PUT key 即时保存）。
+- `frontend/src/views/admin/RoutingProfiles.vue` 全量重写为单页形态: 调度模式三选一（缓存亲和[默认·推荐]/固定顺序/成本优先，各带一句话代价说明）、供应商拖拽排序（原生 HTML5 drag + ↑↓ 按钮，行首序号即调度顺序=故障转移顺序）、Key 行内展开（优先级数字输入 + 每格式倍率输入，倍率经 PUT key 即时保存）。
 - 纯逻辑抽到 `frontend/src/features/routing/utils/schedulingStrategy.ts`（parse/build 往返、load_balance→cache_affinity 软删映射、系统默认组查找、顺序→优先级），vitest 8 例全绿。
 - 保存: updateRoutingGroup + publishRoutingGroup 写回单份策略（`ui_provider_priority` 规则承载 set_provider_priority/set_key_priority 动作）; 无组时首次保存自动创建系统默认组。
 - R11-7: 删除策略分组列表/新建/删除/绑定/试运行入口; 路由收敛为 `/admin/routing` 单路由（`routing/new`、`routing/:groupId` 移除）; 删除 5 个旧组件（RoutingGroupEditor/GroupList/ModelPolicyEditor/PriorityPolicyEditor/DryRunDialog）与旧 allowed-models spec。

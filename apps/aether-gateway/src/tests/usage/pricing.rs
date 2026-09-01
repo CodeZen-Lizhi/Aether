@@ -336,7 +336,7 @@ fn sample_provider_catalog_key(spec: ProviderSpec) -> StoredProviderCatalogKey {
             .expect("api key should encrypt"),
         None,
         None,
-        Some(single_format_priority_map(spec.api_format)),
+        None,
         None,
         None,
         None,
@@ -371,12 +371,6 @@ fn sample_billing_context(spec: ProviderSpec) -> StoredBillingModelContext {
         None,
     )
     .expect("billing context should build")
-}
-
-fn single_format_priority_map(api_format: &str) -> Value {
-    let mut map = serde_json::Map::new();
-    map.insert(api_format.to_string(), json!(1));
-    Value::Object(map)
 }
 
 fn sample_wallet_snapshot(user_id: &str) -> StoredWalletSnapshot {

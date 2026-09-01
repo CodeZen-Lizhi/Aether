@@ -1360,7 +1360,6 @@ mod tests {
             "default_policy": {
                 "priority_mode": "global_key",
                 "scheduling_mode": "load_balance",
-                "keep_priority_on_conversion": true
             },
             "allowed_models": [],
             "model_policies": [],

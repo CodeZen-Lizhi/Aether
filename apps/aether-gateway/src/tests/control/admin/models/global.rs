@@ -878,14 +878,15 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
 
     let providers = payload["providers"].as_array().expect("providers array");
     assert_eq!(providers.len(), 2);
-    assert_eq!(providers[0]["id"], "provider-openai");
-    assert_eq!(providers[0]["monthly_quota_usd"], 120.0);
+    assert_eq!(providers[0]["id"], "provider-alt");
+    assert_eq!(providers[1]["id"], "provider-openai");
+    assert_eq!(providers[1]["monthly_quota_usd"], 120.0);
     assert_eq!(
-        providers[0]["model_mappings"][0]["name"],
+        providers[1]["model_mappings"][0]["name"],
         "gpt-5-upstream-alias"
     );
 
-    let openai_endpoints = providers[0]["endpoints"]
+    let openai_endpoints = providers[1]["endpoints"]
         .as_array()
         .expect("endpoints array");
     assert_eq!(openai_endpoints.len(), 1);
@@ -904,7 +905,7 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
     );
     assert_eq!(openai_keys[0]["next_probe_at"], "2099-03-27T15:00:00Z");
 
-    let alt_endpoints = providers[1]["endpoints"]
+    let alt_endpoints = providers[0]["endpoints"]
         .as_array()
         .expect("endpoints array");
     assert_eq!(alt_endpoints.len(), 1);

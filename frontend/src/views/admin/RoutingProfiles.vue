@@ -77,10 +77,10 @@
               </button>
             </div>
             <p
-              v-if="mode === 'economy' && !anyKeyHasMultiplier"
+              v-if="mode === 'cost_based' && !anyKeyHasMultiplier"
               class="mt-2 text-xs text-amber-600"
             >
-              经济模式按 Key 倍率排序——当前还没有 Key 配置倍率，展开下方供应商先设置倍率。
+              成本优先按 Key 倍率排序——当前还没有 Key 配置倍率，展开下方供应商先设置倍率。
             </p>
           </div>
 
@@ -229,7 +229,7 @@
                       </div>
                     </div>
                     <p class="text-[11px] leading-relaxed text-muted-foreground">
-                      优先级只在同一供应商内平级决胜；倍率供经济模式排序（留空按 1.0）。
+                      优先级只在同一供应商内平级决胜；倍率供成本优先排序（留空按 1.0）。
                     </p>
                   </div>
                 </div>
@@ -293,8 +293,8 @@ const schedulingModeOptions: Array<{
     description: '永远严格按优先级主备，无会话亲和',
   },
   {
-    value: 'economy',
-    label: '经济模式',
+    value: 'cost_based',
+    label: '成本优先',
     description: '同模型下倍率低的 Key 优先，失败换次便宜',
   },
 ]

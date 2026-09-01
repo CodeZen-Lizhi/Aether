@@ -10,7 +10,7 @@ import type { RoutingGroupConfig, RoutingRule } from './routingPolicy'
  * 模型白名单（R11-1/R11-2）在构建时不再产出、解析时直接忽略。
  */
 
-export type SchedulingStrategyMode = 'cache_affinity' | 'fixed_order' | 'economy'
+export type SchedulingStrategyMode = 'cache_affinity' | 'fixed_order' | 'cost_based'
 
 export const PROVIDER_PRIORITY_RULE_ID = 'ui_provider_priority'
 
@@ -23,7 +23,7 @@ export interface SchedulingStrategyState {
 }
 
 export function normalizeSchedulingMode(mode: string | undefined | null): SchedulingStrategyMode {
-  if (mode === 'fixed_order' || mode === 'economy') {
+  if (mode === 'fixed_order' || mode === 'cost_based') {
     return mode
   }
   // R10 soft delete: legacy load_balance reads as cache_affinity.

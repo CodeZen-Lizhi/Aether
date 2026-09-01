@@ -107,7 +107,7 @@ fn finalize_openai_chat_provider_request_body(
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or(mapped_model);
-    crate::ai_serving::finalize_openai_provider_request(
+    crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy(
         provider_request_body,
         crate::ai_serving::OpenAiProviderRequestFinalization {
             source_api_format: "openai:chat",
@@ -122,6 +122,10 @@ fn finalize_openai_chat_provider_request_body(
                 force_body_stream_field,
             ),
         },
+        crate::ai_serving::openai_responses_reasoning_replay_policy(
+            transport.provider.provider_type.as_str(),
+            transport.endpoint.base_url.as_str(),
+        ),
     )
     .err()
     .map(|violation| {

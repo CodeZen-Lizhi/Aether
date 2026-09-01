@@ -13,14 +13,13 @@ pub(crate) enum SchedulerSchedulingMode {
     /// rounds-trips back out.
     #[deprecated(note = "soft-deleted: maps to CacheAffinity on read")]
     LoadBalance,
-    Economy,
+    CostBased,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SchedulerOrderingConfig {
     pub(crate) priority_mode: SchedulerPriorityMode,
     pub(crate) scheduling_mode: SchedulerSchedulingMode,
-    pub(crate) keep_priority_on_conversion: bool,
     /// P1-4: in-flight count participates in ranking (system_config
     /// `ranking_inflight_signal`, default true — read-only signal, no state).
     pub(crate) include_inflight: bool,
@@ -34,7 +33,6 @@ impl Default for SchedulerOrderingConfig {
         Self {
             priority_mode: SchedulerPriorityMode::Provider,
             scheduling_mode: SchedulerSchedulingMode::CacheAffinity,
-            keep_priority_on_conversion: false,
             include_inflight: false,
             include_latency: false,
         }
@@ -56,10 +54,6 @@ pub(crate) fn parse_scheduler_priority_mode(
     }
 }
 
-pub(crate) fn parse_keep_priority_on_conversion(value: Option<&serde_json::Value>) -> bool {
-    value.and_then(serde_json::Value::as_bool).unwrap_or(false)
-}
-
 pub(crate) fn parse_scheduler_scheduling_mode(
     value: Option<&serde_json::Value>,
 ) -> SchedulerSchedulingMode {
@@ -71,7 +65,7 @@ pub(crate) fn parse_scheduler_scheduling_mode(
         .as_deref()
     {
         Some("fixed_order") => SchedulerSchedulingMode::FixedOrder,
-        Some("economy") => SchedulerSchedulingMode::Economy,
+        Some("cost_based") => SchedulerSchedulingMode::CostBased,
         // R10 soft delete: legacy load_balance configs map to CacheAffinity
         // with a log trail instead of erroring — no data migration required.
         Some("load_balance") => {
@@ -101,12 +95,6 @@ pub(crate) async fn read_scheduler_ordering_config(
             .await?
             .as_ref(),
     );
-    let keep_priority_on_conversion = parse_keep_priority_on_conversion(
-        state
-            .read_system_config_json_value("keep_priority_on_conversion")
-            .await?
-            .as_ref(),
-    );
     // Dynamic ranking signals (P1-4/P1-5). In-flight defaults on (read-only,
     // zero state); latency defaults off until its collector has been observed
     // producing sane data.
@@ -125,7 +113,6 @@ pub(crate) async fn read_scheduler_ordering_config(
     Ok(SchedulerOrderingConfig {
         priority_mode,
         scheduling_mode,
-        keep_priority_on_conversion,
         include_inflight,
         include_latency,
     })

@@ -621,7 +621,7 @@ mod simplified_resolution_tests {
         let config: RoutingGroupConfig = serde_json::from_value(json!({
             "default_policy": {
                 "priority_mode": "provider",
-                "scheduling_mode": "economy"
+                "scheduling_mode": "cost_based"
             },
             "allowed_models": [],
             "model_policies": [],
@@ -648,6 +648,6 @@ mod simplified_resolution_tests {
                 .provider_priority("provider-a", i32::MAX),
             5
         );
-        assert_eq!(policy.scheduling_mode, RoutingSchedulingMode::Economy);
+        assert_eq!(policy.scheduling_mode, RoutingSchedulingMode::CostBased);
     }
 }

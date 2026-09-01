@@ -533,7 +533,6 @@ fn ai_serving_routes_control_and_execution_deps_through_facades() {
         "PlannerAppState",
         "GatewayAuthApiKeySnapshot",
         "GatewayProviderTransportSnapshot",
-        "LocalResolvedOAuthRequestAuth",
     ] {
         assert!(
             ai_serving_mod.contains(export),
@@ -566,7 +565,6 @@ fn ai_serving_routes_control_and_execution_deps_through_facades() {
     for pattern in [
         "pub(crate) use aether_ai_formats::api::{",
         "ExecutionRuntimeAuthContext",
-        "ProviderAdaptationDescriptor",
         "RequestConversionKind",
         "AiSurfaceFinalizeError",
         "LocalStandardSpec",
@@ -667,7 +665,6 @@ fn ai_serving_planner_separates_local_candidate_resolution_from_ranking() {
         "mod candidate_resolution;",
         "mod candidate_preparation;",
         "mod candidate_transport_ranking_facts;",
-        "mod pool_scheduler;",
     ] {
         assert!(
             planner_mod.contains(pattern),
@@ -770,69 +767,10 @@ fn ai_serving_planner_separates_local_candidate_resolution_from_ranking() {
         );
     }
 
-    let planner_pool_scheduler =
-        read_workspace_file("apps/aether-gateway/src/ai_serving/planner/pool_scheduler.rs");
-    for pattern in [
-        "pub(crate) use crate::dispatch::pool_scheduler::apply_local_execution_pool_scheduler;",
-        "pub(crate) use crate::dispatch::pool_scheduler::PoolKeyCursor;",
-    ] {
-        assert!(
-            planner_pool_scheduler.contains(pattern),
-            "planner/pool_scheduler.rs should only re-export dispatch pool scheduler compatibility item {pattern}"
-        );
-    }
-    for forbidden in [
-        "pub(crate) async fn apply_local_execution_pool_scheduler(",
-        "run_pool_scheduler(",
-        "fn pool_candidate_facts(",
-        "fn pool_scheduling_config(",
-        "fn pool_runtime_state(",
-    ] {
-        assert!(
-            !planner_pool_scheduler.contains(forbidden),
-            "planner/pool_scheduler.rs should not own dispatch implementation {forbidden}"
-        );
-    }
-
-    let pool_scheduler = read_workspace_file("apps/aether-gateway/src/dispatch/pool_scheduler.rs");
-    for pattern in [
-        "pub(crate) async fn apply_local_execution_pool_scheduler(",
-        "pub(crate) struct PoolKeyCursor",
-        "run_pool_scheduler(",
-        "fn pool_candidate_facts(",
-        "fn pool_scheduling_config(",
-        "fn pool_runtime_state(",
-        "DEFAULT_POOL_WINDOW_SIZE",
-        "DEFAULT_POOL_PAGE_SIZE",
-        "DEFAULT_POOL_MAX_SCAN",
-    ] {
-        assert!(
-            pool_scheduler.contains(pattern),
-            "dispatch/pool_scheduler.rs should adapt gateway pool runtime data through serving pool scheduler helper {pattern}"
-        );
-    }
-    for forbidden in [
-        "apply_scheduler_candidate_ranking",
-        "SchedulerRankableCandidate",
-        "rank_eligible_local_execution_candidates",
-        "fn schedule_pool_group(",
-        "fn pool_group_key(",
-        "fn build_pool_sort_vectors",
-        "fn plan_priority_score(",
-        "fn stable_hash_score(",
-    ] {
-        assert!(
-            !pool_scheduler.contains(forbidden),
-            "dispatch/pool_scheduler.rs should not own global candidate ranking or pool scheduling policy helper {forbidden}"
-        );
-    }
-
     let dispatch_refs = read_workspace_file("apps/aether-gateway/src/dispatch/refs.rs");
     for pattern in [
         "DispatchCandidateRef::SingleKey",
-        "DispatchCandidateRef::PoolRef",
         "pub(crate) fn key_ref_for_candidate",
-        "pub(crate) fn pool_ref_for_candidate",
     ] {
         assert!(
             dispatch_refs.contains(pattern),
@@ -841,49 +779,10 @@ fn ai_serving_planner_separates_local_candidate_resolution_from_ranking() {
     }
 
     let dispatch_core = read_workspace_file("crates/aether-dispatch-core/src/lib.rs");
-    for pattern in [
-        "DispatchCandidateRef",
-        "DispatchSequence",
-        "PoolDispatchPort",
-        "PoolWindowConfig",
-        "DispatchEffect",
-    ] {
+    for pattern in ["DispatchCandidateRef", "DispatchSequence", "DispatchEffect"] {
         assert!(
             dispatch_core.contains(pattern),
             "aether-dispatch-core should export pure dispatch primitive {pattern}"
-        );
-    }
-
-    let pool_core_lib = read_workspace_file("crates/aether-pool-core/src/lib.rs");
-    for pattern in [
-        "run_pool_scheduler",
-        "PoolCandidateInput",
-        "PoolRuntimeState",
-        "PoolSchedulingConfig",
-    ] {
-        assert!(
-            pool_core_lib.contains(pattern),
-            "aether-pool-core lib.rs should expose pool scheduling primitive {pattern}"
-        );
-    }
-
-    let pool_core_scheduler = read_workspace_file("crates/aether-pool-core/src/scheduler.rs");
-    for pattern in [
-        "pub fn run_pool_scheduler",
-        "fn schedule_pool_group",
-        "fn build_pool_sort_vectors",
-        "fn plan_priority_score(",
-        "fn stable_hash_score(",
-    ] {
-        assert!(
-            pool_core_scheduler.contains(pattern),
-            "aether-pool-core scheduler.rs should own pool scheduling use-case primitive {pattern}"
-        );
-    }
-    for forbidden in ["codex", "kiro", "chatgpt_web", "provider_type"] {
-        assert!(
-            !pool_core_scheduler.contains(forbidden) && !pool_core_lib.contains(forbidden),
-            "aether-pool-core should stay provider-agnostic and not embed provider behavior {forbidden}"
         );
     }
 
@@ -899,7 +798,6 @@ fn ai_serving_planner_separates_local_candidate_resolution_from_ranking() {
     for pattern in [
         "mod capability;",
         "mod plan;",
-        "mod presets;",
         "mod provider;",
         "mod quota;",
         "mod service;",
@@ -929,17 +827,10 @@ fn ai_serving_planner_separates_local_candidate_resolution_from_ranking() {
     let provider_pool_service = read_workspace_file("crates/aether-provider/pool/src/service.rs");
     for pattern in [
         "pub struct ProviderPoolService",
-        "with_builtin_adapters",
-        "AntigravityProviderPoolAdapter",
-        "CodexProviderPoolAdapter",
-        "GeminiCliProviderPoolAdapter",
-        "KiroProviderPoolAdapter",
-        "ChatGptWebProviderPoolAdapter",
-        "CLAUDE_CODE_PROVIDER_POOL_ADAPTER",
-        "VERTEX_AI_PROVIDER_POOL_ADAPTER",
-        "provider_types_for_capability",
-        "supports_quota_refresh",
-        "quota_refresh_endpoint_for_provider",
+        "pub fn adapter(",
+        "pub fn provider_types_for_capability(",
+        "pub fn supports_quota_refresh(",
+        "pub fn quota_refresh_endpoint_for_provider(",
     ] {
         assert!(
             provider_pool_service.contains(pattern),
@@ -953,68 +844,16 @@ fn ai_serving_planner_separates_local_candidate_resolution_from_ranking() {
 
     let provider_pool_providers =
         read_workspace_file("crates/aether-provider/pool/src/providers/mod.rs");
-    for pattern in [
-        "pub mod default;",
-        "pub mod unsupported;",
-        "pub mod antigravity;",
-        "pub mod codex;",
-        "pub mod gemini_cli;",
-        "pub mod kiro;",
-        "pub mod chatgpt_web;",
-    ] {
+    for pattern in ["pub mod default;"] {
         assert!(
             provider_pool_providers.contains(pattern),
             "aether-provider-pool providers/mod.rs should expose provider-specific module {pattern}"
         );
     }
-    for (path, patterns) in [
-        (
-            "crates/aether-provider/pool/src/providers/default.rs",
-            vec!["DefaultProviderPoolAdapter"],
-        ),
-        (
-            "crates/aether-provider/pool/src/providers/antigravity.rs",
-            vec!["AntigravityProviderPoolAdapter"],
-        ),
-        (
-            "crates/aether-provider/pool/src/providers/codex.rs",
-            vec![
-                "CodexProviderPoolAdapter",
-                "recent_refresh",
-                "quota_exhausted_from_bucket",
-            ],
-        ),
-        (
-            "crates/aether-provider/pool/src/providers/gemini_cli.rs",
-            vec![
-                "GeminiCliProviderPoolAdapter",
-                "build_gemini_cli_pool_quota_request",
-                "GEMINI_CLI_RETRIEVE_USER_QUOTA_PATH",
-            ],
-        ),
-        (
-            "crates/aether-provider/pool/src/providers/kiro.rs",
-            vec!["KiroProviderPoolAdapter", "quota_exhausted_from_bucket"],
-        ),
-        (
-            "crates/aether-provider/pool/src/providers/chatgpt_web.rs",
-            vec![
-                "ChatGptWebProviderPoolAdapter",
-                "build_chatgpt_web_pool_quota_request",
-                "enrich_chatgpt_web_quota_metadata",
-                "normalize_chatgpt_web_image_quota_limit",
-                "quota_exhausted_from_bucket",
-            ],
-        ),
-        (
-            "crates/aether-provider/pool/src/providers/unsupported.rs",
-            vec![
-                "UnsupportedQuotaProviderPoolAdapter",
-                "CLAUDE_CODE_PROVIDER_POOL_ADAPTER",
-                "VERTEX_AI_PROVIDER_POOL_ADAPTER",
-            ],
-        ),
-    ] {
+    for (path, patterns) in [(
+        "crates/aether-provider/pool/src/providers/default.rs",
+        vec!["DefaultProviderPoolAdapter"],
+    )] {
         let source = read_workspace_file(path);
         for pattern in patterns {
             assert!(
@@ -1047,16 +886,6 @@ fn ai_serving_planner_separates_local_candidate_resolution_from_ranking() {
         );
     }
 
-    let provider_pool_presets = read_workspace_file("crates/aether-provider/pool/src/presets.rs");
-    for pattern in [
-        "normalize_provider_scheduling_presets",
-        "build_admin_pool_scheduling_presets_payload",
-    ] {
-        assert!(
-            provider_pool_presets.contains(pattern),
-            "aether-provider-pool presets.rs should own provider preset adaptation primitive {pattern}"
-        );
-    }
     for forbidden in [
         "run_pool_scheduler",
         "PoolSchedulerOutcome",
@@ -1114,7 +943,6 @@ fn ai_serving_candidate_preparation_owns_shared_auth_and_mapped_model_resolution
         "pub(crate) type PreparedHeaderAuthenticatedCandidate = AiPreparedHeaderAuthenticatedCandidate;",
         "pub(crate) async fn prepare_header_authenticated_candidate(",
         "pub(crate) fn prepare_header_authenticated_candidate_from_auth(",
-        "pub(crate) async fn resolve_candidate_oauth_auth(",
         "pub(crate) fn resolve_candidate_mapped_model(",
         "prepare_ai_header_authenticated_candidate(",
         "resolve_ai_candidate_mapped_model(",
@@ -1175,10 +1003,6 @@ fn ai_serving_candidate_preparation_owns_shared_auth_and_mapped_model_resolution
         "apps/aether-gateway/src/ai_serving/planner/passthrough/provider/family/request/prepare.rs",
     );
     assert!(
-        same_format_provider_prepare.contains("resolve_candidate_oauth_auth("),
-        "same-format provider preparation should use shared oauth candidate preparation"
-    );
-    assert!(
         !same_format_provider_prepare.contains("resolve_local_oauth_request_auth("),
         "same-format provider preparation should not inline oauth resolution after preparation extraction"
     );
@@ -1197,8 +1021,6 @@ fn ai_serving_candidate_materialization_owns_affinity_and_candidate_runtime_pers
     for pattern in [
         "pub trait AiAvailableCandidatePersistencePort",
         "pub async fn run_ai_available_candidate_persistence",
-        "pub fn ai_should_persist_available_candidate_for_pool_key",
-        "pub fn ai_should_persist_skipped_candidate_for_pool_membership",
         "pub fn ai_candidate_extra_data_with_ranking",
         "attempt_slot_count",
         "should_persist_available_candidate",
@@ -1227,8 +1049,6 @@ fn ai_serving_candidate_materialization_owns_affinity_and_candidate_runtime_pers
         "impl AiSkippedCandidatePersistencePort for GatewaySkippedCandidatePersistencePort",
         "run_ai_available_candidate_persistence(&port",
         "run_ai_skipped_candidate_persistence(&port",
-        "ai_should_persist_available_candidate_for_pool_key(",
-        "ai_should_persist_skipped_candidate_for_pool_membership(",
         "ai_candidate_extra_data_with_ranking(",
         "persist_available_local_execution_candidates",
         "persist_available_local_execution_candidates_with_context",
@@ -1626,8 +1446,6 @@ fn ai_serving_standard_family_routes_request_preparation_through_request_payload
     for pattern in [
         "pub(crate) struct LocalStandardCandidatePayloadParts {",
         "pub(crate) async fn resolve_local_standard_candidate_payload_parts(",
-        "is_kiro_claude_messages_transport(",
-        "build_kiro_cross_format_upstream_url(",
         "build_standard_provider_request_headers(",
     ] {
         assert!(
@@ -1886,7 +1704,7 @@ fn ai_serving_image_routes_split_surface_normalization_and_transport_policy() {
         "pub(super) struct LocalOpenAiImageCandidatePayloadParts {",
         "pub(super) async fn resolve_local_openai_image_candidate_payload_parts(",
         "normalize_openai_image_request(",
-        "build_openai_image_provider_request_body(",
+        "build_openai_image_api_provider_request_body(",
         "build_openai_image_upstream_url(",
         "build_openai_image_headers(",
     ] {
@@ -2058,8 +1876,6 @@ fn ai_serving_openai_chat_routes_request_preparation_through_request_payload_sea
     for pattern in [
         "pub(crate) struct LocalOpenAiChatCandidatePayloadParts {",
         "pub(crate) async fn resolve_local_openai_chat_candidate_payload_parts(",
-        "is_kiro_claude_messages_transport(",
-        "build_kiro_cross_format_upstream_url(",
         "build_standard_provider_request_headers(",
     ] {
         assert!(
@@ -2205,12 +2021,8 @@ fn ai_serving_owns_pure_planner_diagnostics_and_execution_labels() {
 
     let execution_runtime = read_workspace_file("apps/aether-gateway/src/execution_runtime/mod.rs");
     assert!(
-        execution_runtime.contains(
-            "pub(crate) use aether_ai_serving::{
-ConversionMode,
-ExecutionStrategy,
-};"
-        ),
+        execution_runtime
+            .contains("pub(crate) use aether_ai_serving::{ConversionMode, ExecutionStrategy};"),
         "gateway execution_runtime should reuse serving-owned execution labels"
     );
     for forbidden in [
@@ -2237,8 +2049,6 @@ fn ai_serving_report_context_owns_local_execution_context_shape() {
     for pattern in [
         "pub struct AiExecutionReportContextParts<'a> {",
         "pub fn build_ai_execution_report_context(",
-        "pub fn provider_stream_event_api_format_for_provider_type(",
-        "pub fn insert_provider_stream_event_api_format(",
         "pub fn build_ai_report_context_original_request_echo(",
         "\"original_headers\"",
         "\"retry_index\"",
@@ -2256,8 +2066,6 @@ fn ai_serving_report_context_owns_local_execution_context_shape() {
         "pub(crate) struct LocalExecutionReportContextParts<'a> {",
         "pub(crate) fn build_local_execution_report_context(",
         "build_ai_execution_report_context(AiExecutionReportContextParts",
-        "ai_provider_stream_event_api_format_for_provider_type(provider_type)",
-        "insert_ai_provider_stream_event_api_format(extra_fields, provider_type)",
     ] {
         assert!(
             report_context.contains(pattern),
@@ -2645,7 +2453,6 @@ fn ai_serving_same_format_provider_request_policy_owns_provider_type_behavior() 
         "pub fn build_same_format_provider_upstream_url(",
         "pub fn build_same_format_provider_headers(",
         "pub fn same_format_provider_transport_supported(",
-        "pub fn should_try_same_format_provider_oauth_auth(",
         "pub fn resolve_same_format_provider_direct_auth(",
     ] {
         assert!(
@@ -2656,7 +2463,6 @@ fn ai_serving_same_format_provider_request_policy_owns_provider_type_behavior() 
     for pattern in [
         "classify_same_format_provider_request_behavior_impl(",
         "same_format_provider_transport_supported_impl(",
-        "should_try_same_format_provider_oauth_auth_impl(",
         "resolve_same_format_provider_direct_auth_impl(",
         "SameFormatProviderRequestBehaviorParams",
         "fn same_format_provider_family(",
@@ -2688,7 +2494,6 @@ fn ai_serving_same_format_provider_request_policy_owns_provider_type_behavior() 
     for pattern in [
         "classify_same_format_provider_request_behavior(",
         "same_format_provider_transport_supported(",
-        "should_try_same_format_provider_oauth_auth(",
         "resolve_same_format_provider_direct_auth(",
     ] {
         assert!(
@@ -3418,7 +3223,7 @@ fn ai_serving_planner_common_parser_is_owned_by_format_crate() {
     );
     assert!(
         gateway_common_runtime.contains(
-            "force_upstream_streaming_for_provider as force_upstream_streaming_for_provider_impl"
+            "resolve_format_upstream_is_stream_for_provider as resolve_upstream_is_stream_for_provider_impl"
         ),
         "gateway planner/common.rs should delegate upstream streaming policy through the ai_serving root seam"
     );

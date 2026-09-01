@@ -169,8 +169,8 @@ fn sample_files_provider_catalog_key() -> StoredProviderCatalogKey {
         encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-upstream-gemini-files")
             .expect("api key should encrypt"),
         None,
+        Some(serde_json::json!({"gemini_files": true})),
         None,
-        Some(serde_json::json!({"gemini:files": 1})),
         None,
         None,
         None,

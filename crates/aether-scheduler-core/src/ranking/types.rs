@@ -12,7 +12,7 @@ pub enum SchedulerRankingMode {
     /// their per-format rate multiplier ascending (cheapest key first); equal
     /// multipliers fall back to the priority slot, then the seeded hash.
     /// Session affinity still outranks cost in the comparator chain.
-    Economy,
+    CostBased,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -51,7 +51,7 @@ pub struct SchedulerRankableCandidate {
     pub latency_ewma_ms: Option<LatencyEwma>,
     /// R10: this candidate's rate multiplier for the request's api format
     /// (from the key's `rate_multipliers` map). Only participates when the
-    /// ranking mode is Economy. Absent defaults to 1.0 (neutral).
+    /// ranking mode is cost-based. Absent defaults to 1.0 (neutral).
     pub rate_multiplier: f64,
     pub original_index: usize,
 }
@@ -135,7 +135,7 @@ impl SchedulerRankableCandidate {
         self
     }
 
-    /// R10: set this candidate's Economy-mode rate multiplier.
+    /// R10: set this candidate's cost-based (成本优先) rate multiplier.
     pub fn with_rate_multiplier(mut self, value: f64) -> Self {
         if value.is_finite() && value > 0.0 {
             self.rate_multiplier = value;

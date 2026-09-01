@@ -40,7 +40,6 @@ use aether_data_contracts::repository::provider_catalog::{
 };
 use sha2::{Digest, Sha256};
 
-mod claude_code;
 mod kiro;
 mod local_chat;
 mod local_cli;

@@ -14,9 +14,9 @@ describe('normalizeSchedulingMode', () => {
     expect(normalizeSchedulingMode('load_balance')).toBe('cache_affinity')
   })
 
-  it('keeps fixed_order and economy, defaults unknown to cache_affinity', () => {
+  it('keeps fixed_order and cost_based, defaults unknown to cache_affinity', () => {
     expect(normalizeSchedulingMode('fixed_order')).toBe('fixed_order')
-    expect(normalizeSchedulingMode('economy')).toBe('economy')
+    expect(normalizeSchedulingMode('cost_based')).toBe('cost_based')
     expect(normalizeSchedulingMode('cache_affinity')).toBe('cache_affinity')
     expect(normalizeSchedulingMode(undefined)).toBe('cache_affinity')
     expect(normalizeSchedulingMode('nonsense')).toBe('cache_affinity')
@@ -29,7 +29,7 @@ describe('parseSchedulingStrategy', () => {
       allowed_models: [],
       default_policy: {
         priority_mode: 'provider',
-        scheduling_mode: 'economy',
+        scheduling_mode: 'cost_based',
         keep_priority_on_conversion: false,
       },
       model_policies: [],
@@ -60,7 +60,7 @@ describe('parseSchedulingStrategy', () => {
     }
 
     const state = parseSchedulingStrategy(config)
-    expect(state.mode).toBe('economy')
+    expect(state.mode).toBe('cost_based')
     expect(state.providerPriorities).toEqual({ 'p-a': 1, 'p-b': 2 })
     expect(state.keyPriorities).toEqual({ 'k-1': 1 })
   })
@@ -76,14 +76,14 @@ describe('parseSchedulingStrategy', () => {
 
 describe('buildSchedulingStrategyConfig', () => {
   it('builds a round-trippable config', () => {
-    const config = buildSchedulingStrategyConfig('economy', ['p-a', 'p-b'], { 'k-1': 2 })
-    expect(config.default_policy.scheduling_mode).toBe('economy')
+    const config = buildSchedulingStrategyConfig('cost_based', ['p-a', 'p-b'], { 'k-1': 2 })
+    expect(config.default_policy.scheduling_mode).toBe('cost_based')
     expect(config.default_policy.priority_mode).toBe('provider')
     expect(config.allowed_models).toEqual([])
     expect(config.model_policies).toEqual([])
 
     const state = parseSchedulingStrategy(config)
-    expect(state.mode).toBe('economy')
+    expect(state.mode).toBe('cost_based')
     expect(state.providerPriorities).toEqual({ 'p-a': 1, 'p-b': 2 })
     expect(state.keyPriorities).toEqual({ 'k-1': 2 })
   })

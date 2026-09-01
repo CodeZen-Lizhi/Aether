@@ -3,12 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
 };
-use aether_provider_transport::url::{
-    build_bigmodel_coding_models_url, build_openai_compatible_models_url,
-    openai_compatible_base_includes_unversioned_api_root,
-};
+use aether_provider_transport::url::build_openai_compatible_models_url;
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 const MODEL_FETCH_FORMAT_PRIORITY: &[&[&str]] = &[
     &[
@@ -551,21 +548,6 @@ fn model_id_from_openai_like_item(item: &Value) -> Option<String> {
     })
 }
 
-fn collect_cached_model_ids(models: &[Value]) -> Vec<String> {
-    let mut ids = Vec::new();
-    for model in models {
-        let Some(model_id) = model
-            .get("id")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        ids.push(model_id.to_string());
-    }
-    ids
-}
 
 fn split_url_query(base_url: &str) -> (&str, Option<&str>) {
     let trimmed = base_url.trim();

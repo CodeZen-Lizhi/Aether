@@ -81,13 +81,6 @@ pub(crate) async fn build_admin_global_model_routing_payload(
         .flatten()
         .and_then(|value| value.as_str().map(ToOwned::to_owned))
         .unwrap_or_else(|| "provider".to_string());
-    let keep_priority_on_conversion = state
-        .read_system_config_json_value("keep_priority_on_conversion")
-        .await
-        .ok()
-        .flatten()
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
     let now_unix_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
@@ -309,7 +302,6 @@ pub(crate) async fn build_admin_global_model_routing_payload(
         "active_providers": active_providers,
         "scheduling_mode": scheduling_mode,
         "priority_mode": priority_mode,
-        "keep_priority_on_conversion": keep_priority_on_conversion,
         "all_keys_whitelist": all_keys_whitelist,
     }))
 }

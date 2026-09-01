@@ -204,60 +204,6 @@ mod tests {
         }
     }
 
-    fn sample_claude_code_transport_without_auth() -> GatewayProviderTransportSnapshot {
-        GatewayProviderTransportSnapshot {
-            provider: GatewayProviderTransportProvider {
-                id: "provider-cc-1".to_string(),
-                name: "NekoCode".to_string(),
-                provider_type: "claude_code".to_string(),
-                website: Some("https://nekocode.ai".to_string()),
-                is_active: true,
-                enable_format_conversion: true,
-                concurrent_limit: None,
-                max_retries: None,
-                proxy: None,
-                request_timeout_secs: None,
-                stream_first_byte_timeout_secs: None,
-                config: None,
-            },
-            endpoint: GatewayProviderTransportEndpoint {
-                id: "endpoint-cc-1".to_string(),
-                provider_id: "provider-cc-1".to_string(),
-                api_format: "claude:messages".to_string(),
-                api_family: Some("claude".to_string()),
-                endpoint_kind: Some("cli".to_string()),
-                is_active: true,
-                base_url: "https://api.anthropic.com".to_string(),
-                header_rules: None,
-                body_rules: None,
-                max_retries: None,
-                custom_path: None,
-                config: None,
-                format_acceptance_config: None,
-                proxy: None,
-            },
-            key: GatewayProviderTransportKey {
-                id: "key-cc-1".to_string(),
-                provider_id: "provider-cc-1".to_string(),
-                name: "CC-特价-0.4".to_string(),
-                auth_type: "api_key".to_string(),
-                is_active: true,
-                api_formats: Some(vec!["claude:messages".to_string()]),
-                auth_type_by_format: None,
-                allow_auth_channel_mismatch_formats: None,
-
-                allowed_models: None,
-                capabilities: None,
-                rate_multipliers: None,
-                expires_at_unix_secs: None,
-                proxy: None,
-                fingerprint: None,
-                upstream_metadata: None,
-                decrypted_api_key: "__placeholder__".to_string(),
-                decrypted_auth_config: None,
-            },
-        }
-    }
 
     #[test]
     fn candidate_contract_metadata_includes_transport_diagnostics() {
@@ -307,19 +253,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn candidate_metadata_uses_same_format_provider_specific_transport_reason() {
-        let metadata = build_local_execution_candidate_metadata_for_candidate(
-            &sample_candidate(),
-            Some(&sample_claude_code_transport_without_auth()),
-            "claude:messages",
-            "claude:messages",
-            serde_json::Map::new(),
-        );
-
-        assert_eq!(
-            metadata["transport_diagnostics"]["request_pair"]["transport_unsupported_reason"],
-            Value::String("transport_auth_unavailable".to_string())
-        );
-    }
 }
