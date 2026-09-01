@@ -28,7 +28,6 @@ async fn compatible_required_capability_prefers_matching_keys_without_hard_filte
     higher_priority.provider_name = "provider-a".to_string();
     higher_priority.endpoint_id = "endpoint-a".to_string();
     higher_priority.key_id = "key-a".to_string();
-    higher_priority.key_name = "alpha".to_string();
     higher_priority.provider_priority = 0;
     higher_priority.key_internal_priority = 0;
     higher_priority.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 0}));
@@ -39,7 +38,6 @@ async fn compatible_required_capability_prefers_matching_keys_without_hard_filte
     capability_match.provider_name = "provider-b".to_string();
     capability_match.endpoint_id = "endpoint-b".to_string();
     capability_match.key_id = "key-b".to_string();
-    capability_match.key_name = "beta".to_string();
     capability_match.provider_priority = 10;
     capability_match.key_internal_priority = 10;
     capability_match.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 10}));
@@ -140,7 +138,6 @@ async fn required_capability_without_model_uses_session_scoped_affinity() {
     fallback.key_api_formats = Some(vec!["gemini:generate_content".to_string()]);
     fallback.key_id = "key-a".to_string();
     fallback.key_name = "alpha".to_string();
-    fallback.global_model_name = "gemini-2.5-pro".to_string();
     fallback.key_capabilities = Some(serde_json::json!({"gemini_files": true}));
     fallback.key_global_priority_by_format =
         Some(serde_json::json!({"gemini:generate_content": 0}));
@@ -150,7 +147,6 @@ async fn required_capability_without_model_uses_session_scoped_affinity() {
     session_target.provider_name = "provider-b".to_string();
     session_target.endpoint_id = "endpoint-b".to_string();
     session_target.key_id = "key-b".to_string();
-    session_target.key_name = "beta".to_string();
     session_target.key_global_priority_by_format =
         Some(serde_json::json!({"gemini:generate_content": 10}));
 

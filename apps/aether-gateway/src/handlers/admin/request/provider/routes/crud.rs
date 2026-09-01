@@ -1,4 +1,4 @@
-use crate::handlers::admin::provider::crud::{delete_task, pool, reads, writes};
+use crate::handlers::admin::provider::crud::{delete_task, reads, writes};
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::admin::AdminRequestContext;
 use crate::GatewayError;
@@ -47,12 +47,6 @@ impl<'a> AdminAppState<'a> {
             route_kind,
         )
         .await?
-        {
-            return Ok(Some(response));
-        }
-        if let Some(response) =
-            pool::maybe_build_local_admin_provider_pool_response(self, request_context, route_kind)
-                .await?
         {
             return Ok(Some(response));
         }

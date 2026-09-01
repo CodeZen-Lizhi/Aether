@@ -68,10 +68,8 @@ async fn gateway_executes_codex_search_with_responses_permission_and_search_cont
             "user".to_string(),
             "local".to_string(),
             true,
-            false,
             Some(json!(["openai", "codex"])),
             Some(json!(["openai:responses"])),
-            None,
             "api-key-search-1".to_string(),
             Some("search-client".to_string()),
             true,
@@ -92,7 +90,6 @@ async fn gateway_executes_codex_search_with_responses_permission_and_search_cont
             provider_id: "provider-codex-search-1".to_string(),
             provider_name: "codex".to_string(),
             provider_type: "codex".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-codex-search-1".to_string(),
             endpoint_api_format: "openai:search".to_string(),
@@ -106,8 +103,6 @@ async fn gateway_executes_codex_search_with_responses_permission_and_search_cont
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(json!({"openai:search": 1})),
             model_id: "model-codex-search-1".to_string(),
             global_model_id: "global-model-codex-search-1".to_string(),
             global_model_name: "gpt-5.6-sol".to_string(),
@@ -137,7 +132,6 @@ async fn gateway_executes_codex_search_with_responses_permission_and_search_cont
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -320,12 +314,9 @@ async fn gateway_executes_codex_search_with_responses_permission_and_search_cont
         let mut backup = primary.clone();
         backup.provider_id = "provider-codex-search-2".to_string();
         backup.provider_name = "codex-backup".to_string();
-        backup.provider_priority = 20;
         backup.endpoint_id = "endpoint-codex-search-2".to_string();
         backup.key_id = "key-codex-search-2".to_string();
         backup.key_name = "oauth-backup".to_string();
-        backup.key_internal_priority = 6;
-        backup.key_global_priority_by_format = Some(json!({"openai:search": 2}));
         backup.model_id = "model-codex-search-2".to_string();
         vec![primary, backup]
     }));
@@ -350,7 +341,6 @@ async fn gateway_executes_codex_search_with_responses_permission_and_search_cont
             backup.id = "key-codex-search-2".to_string();
             backup.provider_id = "provider-codex-search-2".to_string();
             backup.name = "oauth-backup".to_string();
-            backup.global_priority_by_format = Some(json!({"openai:search": 2}));
             vec![primary, backup]
         },
     ));

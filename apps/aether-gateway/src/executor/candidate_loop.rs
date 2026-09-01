@@ -33,7 +33,6 @@ use crate::execution_runtime::{
 use crate::executor::{
     build_local_execution_exhaustion, mark_deferred_upstream_response, LocalExecutionRequestOutcome,
 };
-use crate::handlers::shared::provider_pool::release_admin_provider_pool_key_lease;
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
     local_execution_candidate_metadata_from_report_context,
@@ -1180,16 +1179,6 @@ async fn mark_unused_local_candidate(
     report_context: Option<&serde_json::Value>,
 ) {
     let metadata = local_execution_candidate_metadata_from_report_context(report_context);
-    if let Some(lease) = metadata.pool_key_lease.as_ref() {
-        if let Err(err) =
-            release_admin_provider_pool_key_lease(state.runtime_state.as_ref(), lease).await
-        {
-            warn!(
-                error = ?err,
-                "gateway candidate loop: failed to release unused pool key lease"
-            );
-        }
-    }
     if should_skip_unused_persistence_from_metadata(&metadata) {
         return;
     }

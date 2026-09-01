@@ -2,7 +2,6 @@ use super::{AdminAppState, ADMIN_SYSTEM_DATA_EXPORT_VERSION};
 use crate::api::ai::admin_endpoint_signature_parts;
 use crate::handlers::admin::model::ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY;
 use crate::handlers::admin::provider::endpoints_admin::payloads::AdminProviderEndpointUpdatePatch;
-use crate::handlers::admin::provider::oauth::provisioning::ensure_codex_credential_generation_rotated;
 use crate::handlers::admin::provider::shared::payloads::{
     AdminProviderCreateRequest, AdminProviderKeyCreateRequest, AdminProviderKeyUpdatePatch,
     AdminProviderUpdatePatch,
@@ -203,15 +202,6 @@ fn normalize_import_endpoint_format(value: &str) -> Result<String, String> {
         .ok_or_else(|| format!("无效的 api_format: {value}"))
 }
 
-fn fixed_provider_import_endpoint_supported(provider_type: &str, api_format: &str) -> bool {
-    crate::provider_transport::provider_types::fixed_provider_template(provider_type).is_none()
-        || crate::provider_transport::provider_types::fixed_provider_endpoint_template_by_api_format(
-            provider_type,
-            api_format,
-        )
-        .is_some()
-}
-
 fn normalize_import_key_formats(
     item: &ImportedProviderKey,
     provider_endpoint_formats: &BTreeSet<String>,
@@ -382,14 +372,10 @@ fn normalize_import_key_raw_payload(
 
 fn apply_imported_oauth_key_credentials(
     state: &AdminAppState<'_>,
-    provider_type: &str,
-    previous_codex_credential_generation: Option<&str>,
     raw_key: &Map<String, Value>,
     normalized_auth_config: Option<&Value>,
     record: &mut aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey,
 ) -> Result<bool, String> {
-    let previous_encrypted_api_key = record.encrypted_api_key.clone();
-    let previous_encrypted_auth_config = record.encrypted_auth_config.clone();
     let mut credentials_supplied = false;
     let mut api_key_supplied = false;
     if let Some(api_key_value) = raw_key.get("api_key") {
@@ -433,18 +419,9 @@ fn apply_imported_oauth_key_credentials(
         api_key_supplied,
     );
 
-    let credential_material_changed = record.encrypted_api_key != previous_encrypted_api_key
-        || record.encrypted_auth_config != previous_encrypted_auth_config;
     if credentials_supplied {
         record.oauth_invalid_at_unix_secs = None;
         record.oauth_invalid_reason = None;
-    }
-    if credential_material_changed {
-        ensure_codex_credential_generation_rotated(
-            record,
-            provider_type,
-            previous_codex_credential_generation,
-        );
     }
 
     Ok(credentials_supplied)
@@ -1485,36 +1462,6 @@ impl<'a> AdminAppState<'a> {
                     )
                     .map_err(|_| "无效的 Anthropic compatibility profile".to_string())
                 );
-                if !fixed_provider_import_endpoint_supported(
-                    &provider.provider_type,
-                    &normalized_api_format,
-                ) {
-                    let retired = existing_endpoints_by_format.remove(&normalized_api_format);
-                    if let Some(mut retired) = retired {
-                        if retired.is_active {
-                            retired.is_active = false;
-                            retired.updated_at_unix_secs = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .ok()
-                                .map(|duration| duration.as_secs());
-                            let Some(_) = self.update_provider_catalog_endpoint(&retired).await?
-                            else {
-                                return Ok(Err(invalid_request(format!(
-                                    "停用 Provider '{provider_name}' 的已移除 Endpoint '{normalized_api_format}' 失败"
-                                ))));
-                            };
-                            stats.endpoints.updated += 1;
-                        } else {
-                            stats.endpoints.skipped += 1;
-                        }
-                    } else {
-                        stats.endpoints.skipped += 1;
-                    }
-                    stats.errors.push(format!(
-                        "固定 Provider '{provider_name}' 不再支持 Endpoint '{normalized_api_format}'，已跳过或停用"
-                    ));
-                    continue;
-                }
                 let existing_endpoint = existing_endpoints_by_format
                     .get(&normalized_api_format)
                     .cloned();
@@ -1738,15 +1685,6 @@ impl<'a> AdminAppState<'a> {
 
                 if let Some(existing_index) = existing_key_index {
                     let existing_key = existing_keys[existing_index].clone();
-                    let previous_codex_credential_generation = existing_key
-                        .upstream_metadata
-                        .as_ref()
-                        .and_then(Value::as_object)
-                        .and_then(|metadata| metadata.get("codex"))
-                        .and_then(|codex| {
-                            aether_admin::provider::quota::codex_credential_generation(Some(codex))
-                        })
-                        .map(ToOwned::to_owned);
                     match merge_mode {
                         AdminImportMergeMode::Skip => {
                             stats.keys.skipped += 1;
@@ -1776,8 +1714,6 @@ impl<'a> AdminAppState<'a> {
                             let oauth_credentials_supplied = if auth_type == "oauth" {
                                 invalid!(apply_imported_oauth_key_credentials(
                                     self,
-                                    &provider.provider_type,
-                                    previous_codex_credential_generation.as_deref(),
                                     &raw_key,
                                     normalized_auth_config.as_ref(),
                                     &mut updated,
@@ -1853,10 +1789,6 @@ impl<'a> AdminAppState<'a> {
                                     ))));
                                 };
                                 persisted = reloaded;
-                                let _ = self
-                                    .app()
-                                    .invalidate_local_oauth_refresh_entry(&updated.id)
-                                    .await;
                             }
                             existing_keys[existing_index] = persisted;
                             stats.keys.updated += 1;
@@ -1878,8 +1810,6 @@ impl<'a> AdminAppState<'a> {
                 if auth_type == "oauth" {
                     invalid!(apply_imported_oauth_key_credentials(
                         self,
-                        &provider.provider_type,
-                        None,
                         &raw_key,
                         normalized_auth_config.as_ref(),
                         &mut record,

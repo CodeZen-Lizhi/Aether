@@ -15,7 +15,6 @@ fn sample_openai_image_transport(provider_type: &str) -> AdminGatewayProviderTra
             provider_type: provider_type.to_string(),
             website: None,
             is_active: true,
-            keep_priority_on_conversion: false,
             enable_format_conversion: false,
             concurrent_limit: None,
             max_retries: None,
@@ -52,7 +51,6 @@ fn sample_openai_image_transport(provider_type: &str) -> AdminGatewayProviderTra
             allowed_models: None,
             capabilities: None,
             rate_multipliers: None,
-            global_priority_by_format: None,
             expires_at_unix_secs: None,
             proxy: None,
             fingerprint: None,
@@ -339,31 +337,6 @@ fn provider_query_model_test_extracts_multiple_selected_key_ids() {
 fn provider_query_model_test_empty_selected_key_ids_keep_default_selection() {
     assert!(provider_query_extract_api_key_ids(&json!({})).is_none());
     assert!(provider_query_extract_api_key_ids(&json!({ "api_key_ids": [] })).is_none());
-}
-
-#[test]
-fn provider_query_codex_pool_config_injects_recent_refresh() {
-    let raw_config = json!({
-        "pool_advanced": {
-            "scheduling_presets": [{
-                "preset": "cache_affinity",
-                "enabled": true
-            }]
-        }
-    });
-    let config = admin_provider_pool_config_from_config_value(Some(&raw_config))
-        .expect("pool config should parse");
-
-    let normalized = provider_query_ai_pool_scheduling_config(&config, "codex");
-
-    assert_eq!(
-        normalized
-            .scheduling_presets
-            .iter()
-            .map(|preset| preset.preset.as_str())
-            .collect::<Vec<_>>(),
-        ["cache_affinity", "recent_refresh"]
-    );
 }
 
 #[test]
@@ -703,52 +676,6 @@ fn provider_query_compact_test_request_body_strips_stale_chat_fields() {
 }
 
 #[test]
-fn provider_query_compact_provider_body_builds_without_chat_conversion() {
-    let payload = json!({"message": "hello compact provider"});
-    let client_api_format =
-        provider_query_standard_test_client_api_format("openai:responses:compact");
-    let mut request_body = provider_query_build_test_request_body_for_api_format(
-        &payload,
-        "gpt-5.4-mini",
-        "/api/admin/provider-query/test-model",
-        client_api_format,
-    );
-    if let Some(object) = request_body.as_object_mut() {
-        object.insert("stream".to_string(), serde_json::Value::Bool(false));
-    }
-
-    assert!(provider_query_request_body_is_openai_responses_shape(
-        &request_body
-    ));
-
-    let mut provider_request_body = crate::ai_serving::build_local_openai_responses_request_body(
-        &request_body,
-        "upstream-gpt",
-        false,
-    )
-    .expect("compact model test body should build from responses shape");
-    crate::ai_serving::apply_openai_responses_compact_special_body_edits(
-        &mut provider_request_body,
-        "openai:responses:compact",
-    );
-    crate::ai_serving::enforce_request_body_stream_field(
-        &mut provider_request_body,
-        "openai:responses:compact",
-        false,
-        true,
-    );
-
-    assert_eq!(provider_request_body["model"], json!("upstream-gpt"));
-    assert_eq!(
-        provider_request_body["input"],
-        json!("hello compact provider")
-    );
-    assert!(provider_request_body.get("messages").is_none());
-    assert!(provider_request_body.get("stream").is_none());
-    assert!(provider_request_body.get("store").is_none());
-}
-
-#[test]
 fn provider_query_standard_test_rejects_gemini_success_without_visible_output() {
     let result = aether_contracts::ExecutionResult {
         request_id: "provider-test".to_string(),
@@ -809,7 +736,7 @@ fn provider_query_test_adapter_routes_fixed_provider_endpoint_types() {
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("kiro", "claude:messages"),
-        Some(ProviderQueryTestAdapter::Kiro)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format(
@@ -823,19 +750,19 @@ fn provider_query_test_adapter_routes_fixed_provider_endpoint_types() {
             "antigravity",
             "gemini:generate_content"
         ),
-        Some(ProviderQueryTestAdapter::Antigravity)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "openai:chat"),
-        Some(ProviderQueryTestAdapter::Grok)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "openai:responses"),
-        Some(ProviderQueryTestAdapter::Grok)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "claude:messages"),
-        Some(ProviderQueryTestAdapter::Grok)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "openai:image"),
@@ -897,150 +824,12 @@ fn provider_query_endpoint_priority_prefers_text_before_cli_and_image() {
         Some(2)
     );
     assert_eq!(
-        provider_query_model_test_endpoint_priority("grok", "openai:chat"),
-        Some(0)
-    );
-    assert_eq!(
-        provider_query_model_test_endpoint_priority("grok", "openai:responses"),
-        Some(0)
-    );
-    assert_eq!(
-        provider_query_model_test_endpoint_priority("antigravity", "gemini:generate_content"),
+        provider_query_model_test_endpoint_priority("custom", "openai:responses"),
         Some(1)
     );
-}
-
-#[test]
-fn provider_query_grok_model_test_body_maps_non_reasoning_model_to_fast_mode() {
-    let payload = json!({
-        "request_body": {
-            "model": "grok-4.20-0309-non-reasoning",
-            "messages": [
-                {"role": "system", "content": "be concise"},
-                {"role": "user", "content": "hello"}
-            ]
-        }
-    });
-    let request_body = provider_query_build_test_request_body_for_route(
-        &payload,
-        "grok-4.20-0309-non-reasoning",
-        "/api/admin/provider-query/test-model",
-    );
-
-    let upstream_body = crate::provider_transport::build_grok_app_chat_body(
-        "openai:chat",
-        Some(provider_query_request_body_model(
-            &request_body,
-            "grok-4.20-0309-non-reasoning",
-        )),
-        &request_body,
-    );
-
-    assert_eq!(upstream_body["modeId"], json!("fast"));
     assert_eq!(
-        upstream_body["message"],
-        json!("[system]: be concise\n\n[user]: hello")
-    );
-}
-
-#[test]
-fn provider_query_grok_model_test_uses_responses_client_body_for_responses_endpoint() {
-    let payload = json!({
-        "request_body": {
-            "model": "grok-4.20-0309-non-reasoning",
-            "input": "hello from responses body"
-        }
-    });
-    let request_body = provider_query_build_grok_test_request_body_for_api_format(
-        &payload,
-        "grok-4.20-0309-non-reasoning",
-        "/api/admin/provider-query/test-model",
-        "openai:responses",
-    );
-
-    let upstream_body = crate::provider_transport::build_grok_app_chat_body(
-        provider_query_grok_test_client_api_format("openai:responses"),
-        Some(provider_query_request_body_model(
-            &request_body,
-            "grok-4.20-0309-non-reasoning",
-        )),
-        &request_body,
-    );
-
-    assert_eq!(upstream_body["modeId"], json!("fast"));
-    assert_eq!(upstream_body["message"], json!("hello from responses body"));
-}
-
-#[test]
-fn provider_query_grok_model_test_uses_responses_input_when_existing_body_has_messages() {
-    let payload = json!({
-        "request_body": {
-            "model": "grok-4.20-0309-non-reasoning",
-            "messages": [{
-                "role": "user",
-                "content": "hello from stale chat body"
-            }]
-        }
-    });
-    let request_body = provider_query_build_grok_test_request_body_for_api_format(
-        &payload,
-        "grok-4.20-0309-non-reasoning",
-        "/api/admin/provider-query/test-model",
-        "openai:responses",
-    );
-
-    assert_eq!(request_body["model"], json!("grok-4.20-0309-non-reasoning"));
-    assert_eq!(
-        request_body["input"],
-        json!("Hello! This is a test message.")
-    );
-    assert!(request_body.get("messages").is_some());
-
-    let upstream_body = crate::provider_transport::build_grok_app_chat_body(
-        provider_query_grok_test_client_api_format("openai:responses"),
-        Some(provider_query_request_body_model(
-            &request_body,
-            "grok-4.20-0309-non-reasoning",
-        )),
-        &request_body,
-    );
-
-    assert_eq!(upstream_body["modeId"], json!("fast"));
-    assert_eq!(
-        upstream_body["message"],
-        json!("Hello! This is a test message.")
-    );
-}
-
-#[test]
-fn provider_query_grok_model_test_defaults_claude_messages_body_for_claude_endpoint() {
-    let payload = json!({});
-    let request_body = provider_query_build_grok_test_request_body_for_api_format(
-        &payload,
-        "grok-4.20-0309-non-reasoning",
-        "/api/admin/provider-query/test-model",
-        "claude:messages",
-    );
-
-    assert_eq!(request_body["model"], json!("grok-4.20-0309-non-reasoning"));
-    assert_eq!(
-        request_body["messages"],
-        json!([{ "role": "user", "content": DEFAULT_PROVIDER_QUERY_TEST_MESSAGE }])
-    );
-
-    let upstream_body = crate::provider_transport::build_grok_app_chat_body(
-        provider_query_grok_test_client_api_format("claude:messages"),
-        Some(provider_query_request_body_model(
-            &request_body,
-            "grok-4.20-0309-non-reasoning",
-        )),
-        &request_body,
-    );
-
-    assert_eq!(upstream_body["modeId"], json!("fast"));
-    assert_eq!(
-        upstream_body["message"],
-        json!("[user]: Hello! This is a test message.")
+        provider_query_model_test_endpoint_priority("gemini", "gemini:generate_content"),
+        Some(0)
     );
 }
 

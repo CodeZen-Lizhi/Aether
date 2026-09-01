@@ -138,7 +138,6 @@ pub(super) async fn issue_test_admin_access_token(
         session_id.clone(),
         user.id.clone(),
         client_device_id.to_string(),
-        None,
         crate::data::state::StoredUserSessionRecord::hash_refresh_token(&refresh_token),
         None,
         None,
@@ -489,7 +488,6 @@ pub(super) fn sample_key(
     .expect("key should build")
     .with_transport_fields(
         Some(json!([api_format])),
-        encrypted_api_key,
         None,
         None,
         None,

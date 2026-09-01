@@ -348,7 +348,6 @@ mod tests {
             Some("endpoint-reporting-tests-123".to_string()),
             Some("key-reporting-tests-123".to_string()),
             RequestCandidateStatus::Pending,
-            None,
             false,
             None,
             None,

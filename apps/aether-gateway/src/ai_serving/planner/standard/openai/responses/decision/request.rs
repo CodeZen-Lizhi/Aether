@@ -37,9 +37,9 @@ use crate::ai_serving::transport::{
     ProviderOpenAiImageHeadersInput, StandardProviderRequestHeadersInput,
 };
 use crate::ai_serving::{
-    ai_local_execution_contract_for_formats, request_conversion_direct_auth,
-    request_conversion_kind, CandidateFailureDiagnostic, OpenAiImageOperation,
-    PlannerAppState,
+    ai_local_execution_contract_for_formats, api_format_alias_matches,
+    request_conversion_direct_auth, request_conversion_kind, CandidateFailureDiagnostic,
+    GatewayProviderTransportSnapshot, OpenAiImageOperation, PlannerAppState,
 };
 use crate::ai_serving::project_openai_image_api_request_body;
 use crate::ai_serving::{ConversionMode, ExecutionStrategy};
@@ -224,7 +224,7 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
         .await);
     }
 
-    let same_format = api_format_alias_matches(provider_api_format, &client_api_format);
+    let same_format = crate::ai_serving::api_format_alias_matches(provider_api_format, &client_api_format);
     let conversion_kind = request_conversion_kind(spec_metadata.api_format, provider_api_format);
     let transport_unsupported_reason = if same_format {
         local_standard_transport_unsupported_reason_with_network(&transport, provider_api_format)
@@ -497,7 +497,7 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
         build_local_openai_responses_upstream_url(
             parts,
             &transport,
-            api_format_alias_matches(provider_api_format, "openai:responses:compact"),
+            crate::ai_serving::api_format_alias_matches(provider_api_format, "openai:responses:compact"),
         )
     }) else {
         mark_skipped_local_openai_responses_candidate_with_failure_diagnostic(

@@ -1,10 +1,9 @@
 use crate::ai_serving::planner::common::endpoint_config_forces_body_stream_field;
 use crate::ai_serving::planner::plan_builders::{AiStreamAttempt, AiSyncAttempt};
 use crate::ai_serving::planner::spec_metadata::local_openai_responses_spec_metadata;
-use crate::ai_serving::planner::standard::codex::codex_model_capabilities_for_transport;
 use crate::ai_serving::planner::standard::normalize::{
-    build_local_openai_responses_request_body_with_codex_model_capabilities,
-    build_local_openai_responses_request_body_with_codex_model_capabilities_for_websocket_continuation,
+    build_local_openai_responses_request_body,
+    build_local_openai_responses_request_body_for_websocket_continuation,
 };
 use crate::ai_serving::planner::standard::openai_responses_reasoning_replay_policy;
 use crate::ai_serving::GatewayControlDecision;
@@ -322,7 +321,6 @@ pub(crate) struct ResponsesWebSocketBodyNormalization {
     force_body_stream_field: bool,
     body_rules: Option<serde_json::Value>,
     request_headers: http::HeaderMap,
-    codex_model_capabilities: Option<crate::ai_serving::CodexResponsesModelCapabilities>,
     reasoning_replay_policy: crate::ai_serving::OpenAiResponsesReasoningReplayPolicy,
     model_directive_patch: Option<serde_json::Value>,
 }
@@ -343,7 +341,6 @@ impl ResponsesWebSocketBodyNormalization {
             force_body_stream_field: false,
             body_rules: None,
             request_headers: http::HeaderMap::new(),
-            codex_model_capabilities: None,
             reasoning_replay_policy:
                 crate::ai_serving::OpenAiResponsesReasoningReplayPolicy::OpenAiItemIds,
             model_directive_patch: None,
@@ -375,26 +372,6 @@ impl ResponsesWebSocketBodyNormalization {
     pub(crate) fn with_model_directive_patch_for_tests(mut self, patch: serde_json::Value) -> Self {
         self.model_directive_patch = Some(patch);
         self
-    }
-
-    pub(crate) fn uses_codex_responses_lite(&self) -> bool {
-        if !self.provider_type.trim().eq_ignore_ascii_case("codex")
-            || !crate::ai_serving::is_openai_responses_family_format(
-                self.provider_api_format.as_str(),
-            )
-        {
-            return false;
-        }
-        self.codex_model_capabilities
-            .clone()
-            .unwrap_or_else(|| {
-                crate::ai_serving::resolve_codex_responses_model_capabilities(
-                    self.mapped_model.as_str(),
-                    self.requested_model.as_str(),
-                    None,
-                )
-            })
-            .use_responses_lite
     }
 
     pub(crate) fn reasoning_replay_policy(
@@ -451,9 +428,7 @@ impl ResponsesWebSocketBodyNormalization {
             && self.mapped_model == other.mapped_model
             && self.requested_model == other.requested_model
             && self.body_rules == other.body_rules
-            && self.codex_model_capabilities == other.codex_model_capabilities
             && self.model_directive_patch == other.model_directive_patch
-            && self.uses_codex_responses_lite() == other.uses_codex_responses_lite()
     }
 
     /// Produces a versioned digest of the complete body-normalization
@@ -480,10 +455,6 @@ impl ResponsesWebSocketBodyNormalization {
             &mut digest,
             &self.request_headers,
             self.body_rules.as_ref(),
-        );
-        update_normalization_codex_capabilities_digest(
-            &mut digest,
-            self.codex_model_capabilities.as_ref(),
         );
         digest.update([match self.reasoning_replay_policy {
             crate::ai_serving::OpenAiResponsesReasoningReplayPolicy::OpenAiItemIds => 0,
@@ -529,7 +500,7 @@ impl ResponsesWebSocketBodyNormalization {
         let require_body_stream_field =
             request_requires_body_stream_field(client_event, self.force_body_stream_field);
         let mut body = if websocket_continuation {
-            build_local_openai_responses_request_body_with_codex_model_capabilities_for_websocket_continuation(
+            build_local_openai_responses_request_body_for_websocket_continuation(
                 client_event,
                 &self.mapped_model,
                 self.upstream_is_stream,
@@ -538,11 +509,10 @@ impl ResponsesWebSocketBodyNormalization {
                 self.provider_api_format.as_str(),
                 self.body_rules.as_ref(),
                 &self.request_headers,
-                self.codex_model_capabilities.as_ref(),
                 false,
             )
         } else {
-            build_local_openai_responses_request_body_with_codex_model_capabilities(
+            build_local_openai_responses_request_body(
                 client_event,
                 &self.mapped_model,
                 self.upstream_is_stream,
@@ -551,7 +521,6 @@ impl ResponsesWebSocketBodyNormalization {
                 self.provider_api_format.as_str(),
                 self.body_rules.as_ref(),
                 &self.request_headers,
-                self.codex_model_capabilities.as_ref(),
                 false,
             )
         }?;
@@ -576,17 +545,15 @@ impl ResponsesWebSocketBodyNormalization {
             require_body_stream_field,
         };
         let finalized = if websocket_continuation {
-            crate::ai_serving::finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy_for_websocket_continuation(
+            crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy_for_websocket_continuation(
                 &mut body,
                 finalization,
-                self.codex_model_capabilities.as_ref(),
                 self.reasoning_replay_policy,
             )
         } else {
-            crate::ai_serving::finalize_openai_provider_request_with_codex_model_capabilities_and_reasoning_replay_policy(
+            crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy(
                 &mut body,
                 finalization,
-                self.codex_model_capabilities.as_ref(),
                 self.reasoning_replay_policy,
             )
         };
@@ -615,15 +582,6 @@ fn update_normalization_optional_string_digest(digest: &mut sha2::Sha256, value:
             update_normalization_string_digest(digest, value);
         }
         None => digest.update([0]),
-    }
-}
-
-fn update_normalization_string_vec_digest(digest: &mut sha2::Sha256, values: &[String]) {
-    use sha2::Digest as _;
-
-    digest.update((values.len() as u64).to_be_bytes());
-    for value in values {
-        update_normalization_string_digest(digest, value);
     }
 }
 
@@ -697,36 +655,6 @@ fn update_normalization_body_rule_headers_digest(
             .map(str::trim);
         update_normalization_optional_string_digest(digest, value);
     }
-}
-
-fn update_normalization_codex_capabilities_digest(
-    digest: &mut sha2::Sha256,
-    capabilities: Option<&crate::ai_serving::CodexResponsesModelCapabilities>,
-) {
-    use sha2::Digest as _;
-
-    let Some(capabilities) = capabilities else {
-        digest.update([0]);
-        return;
-    };
-    digest.update([1]);
-    digest.update([
-        u8::from(capabilities.use_responses_lite),
-        u8::from(capabilities.supports_reasoning_summary_parameter),
-        u8::from(capabilities.supports_parallel_tool_calls),
-        u8::from(capabilities.support_verbosity),
-    ]);
-    update_normalization_optional_string_digest(
-        digest,
-        capabilities.default_reasoning_effort.as_deref(),
-    );
-    update_normalization_optional_string_digest(
-        digest,
-        capabilities.default_reasoning_summary.as_deref(),
-    );
-    update_normalization_string_vec_digest(digest, &capabilities.supported_reasoning_efforts);
-    update_normalization_optional_string_digest(digest, capabilities.default_verbosity.as_deref());
-    update_normalization_string_vec_digest(digest, &capabilities.supported_service_tiers);
 }
 
 #[cfg(test)]
@@ -979,10 +907,6 @@ pub(crate) async fn maybe_build_responses_websocket_decision(
             })
         {
             let mapped_model = payload.mapped_model.clone().unwrap_or_default();
-            let source_model = body_json
-                .get("model")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(input.requested_model.as_str());
             let normalization = ResponsesWebSocketBodyNormalization {
                 provider_type: transport.provider.provider_type.clone(),
                 provider_api_format: candidate_provider_api_format.clone(),
@@ -996,12 +920,6 @@ pub(crate) async fn maybe_build_responses_websocket_decision(
                 ),
                 body_rules: transport.endpoint.body_rules.clone(),
                 request_headers: input.effective_headers(&parts.headers).clone(),
-                codex_model_capabilities: codex_model_capabilities_for_transport(
-                    &transport,
-                    candidate_provider_api_format.as_str(),
-                    mapped_model.as_str(),
-                    source_model,
-                ),
                 reasoning_replay_policy: openai_responses_reasoning_replay_policy(
                     transport.provider.provider_type.as_str(),
                     transport.endpoint.base_url.as_str(),
@@ -1035,25 +953,8 @@ pub(crate) async fn maybe_build_responses_websocket_decision(
 }
 
 async fn release_responses_websocket_planning_lease(
-    state: &AppState,
-    lease: Option<&RuntimeLockLease>,
+    _state: &AppState,
+    _lease: Option<&RuntimeLockLease>,
 ) -> bool {
-    let Some(lease) = lease else {
-        return true;
-    };
-    match crate::handlers::shared::provider_pool::release_admin_provider_pool_key_lease(
-        state.runtime_state.as_ref(),
-        lease,
-    )
-    .await
-    {
-        Ok(_) => true,
-        Err(error) => {
-            tracing::warn!(
-                error = ?error,
-                "gateway Responses WebSocket planner failed to release an unused pool key lease"
-            );
-            false
-        }
-    }
+    true
 }

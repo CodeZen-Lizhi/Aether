@@ -216,7 +216,6 @@ impl AppState {
         mut self,
         coordinator: provider_transport::LocalOAuthRefreshCoordinator,
     ) -> Self {
-        self.oauth_refresh = Arc::new(coordinator);
         self
     }
 
@@ -225,16 +224,12 @@ impl AppState {
         nonce: &str,
         payload: serde_json::Value,
     ) -> Self {
-        let store = self
-            .provider_oauth_state_store
-            .get_or_insert_with(|| Arc::new(StdMutex::new(HashMap::new())));
         store
             .lock()
             .expect("provider oauth state store should lock")
             .insert(format!("provider_oauth_state:{nonce}"), payload.to_string());
         self.runtime_state.kv_set_local_nowait(
             &format!("provider_oauth_state:{nonce}"),
-            payload.to_string(),
             Some(Duration::from_secs(
                 aether_data::repository::provider_oauth::PROVIDER_OAUTH_STATE_TTL_SECS,
             )),
@@ -259,7 +254,6 @@ impl AppState {
             );
         self.runtime_state.kv_set_local_nowait(
             &format!("device_auth_session:{session_id}"),
-            payload.to_string(),
             Some(Duration::from_secs(3600)),
         );
         self
@@ -645,7 +639,7 @@ impl AppState {
         store
             .lock()
             .expect("auth user model capability store should lock")
-            .insert(user_id.to_string(), settings);
+            .insert(settings);
         self
     }
 

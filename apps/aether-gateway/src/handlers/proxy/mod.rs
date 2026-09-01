@@ -9,7 +9,6 @@ use self::body_buffer::{
 use self::local::{
     maybe_build_local_admin_proxy_response, maybe_build_local_internal_proxy_response,
 };
-pub(crate) use self::websocket::live::{live_websocket, maybe_handle_live_http};
 pub(crate) use self::websocket::realtime::realtime_websocket;
 pub(crate) use self::websocket::responses::responses_websocket;
 use super::internal::resolve_local_proxy_execution_path;
@@ -108,7 +107,6 @@ const AUTH_API_KEY_CONCURRENCY_LIMIT_REACHED_DETAIL: &str =
 const LOCAL_EXECUTION_PLANNING_TIMEOUT_DETAIL: &str =
     "当前 AI 请求在本地执行规划阶段超时，请稍后重试";
 const EXECUTION_PATH_TUNNEL_AFFINITY_FORWARD: &str = "tunnel_affinity_forward";
-const EXECUTION_PATH_CODEX_LIVE_CALL: &str = "codex_live_call";
 fn finalize_request_body_buffer_rejection(
     state: &AppState,
     request_context: &GatewayPublicRequestContext,
@@ -1383,26 +1381,6 @@ async fn proxy_request_inner(
             &remote_addr,
             &request_context,
             EXECUTION_PATH_LOCAL_RATE_LIMITED,
-            &started_at,
-            request_permit.take(),
-        ));
-    }
-
-    if let Some(response) = Box::pin(maybe_handle_live_http(
-        &state,
-        &request_context,
-        &parts,
-        buffered_body.as_ref(),
-        &remote_addr,
-    ))
-    .await?
-    {
-        return Ok(finalize_gateway_response_with_context(
-            &state,
-            response,
-            &remote_addr,
-            &request_context,
-            EXECUTION_PATH_CODEX_LIVE_CALL,
             &started_at,
             request_permit.take(),
         ));

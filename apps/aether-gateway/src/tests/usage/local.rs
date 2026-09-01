@@ -1015,7 +1015,6 @@ async fn sync_transport_error_policy_stops_or_retries_candidates_end_to_end_impl
         let mut second_candidate = sample_local_openai_candidate_row();
         second_candidate.key_id = "key-openai-usage-local-2".to_string();
         second_candidate.key_name = "secondary".to_string();
-        second_candidate.key_internal_priority = second_candidate.key_internal_priority - 1;
         let candidate_selection_repository =
             Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
                 sample_local_openai_candidate_row(),
@@ -1144,7 +1143,7 @@ async fn gateway_records_failed_usage_for_claude_runtime_miss_without_execution_
             "user".to_string(),
             "local".to_string(),
             true,
-            false,
+        false, // user_is_deleted
             Some(serde_json::json!(["claude"])),
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["claude-sonnet-4-5"])),
@@ -1715,7 +1714,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             "local".to_string(),
             true,
             false,
-            None,
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["gpt-5.4"])),
             api_key_id.to_string(),
@@ -1726,7 +1724,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             Some(60),
             Some(5),
             Some(4_102_444_800),
-            None,
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["gpt-5.4"])),
         )
@@ -1738,7 +1735,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             provider_id: "provider-claude-cli-usage-local-miss-1".to_string(),
             provider_name: "RightCode".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-usage-local-miss-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -1752,8 +1748,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-claude-cli-usage-local-miss-1".to_string(),
             global_model_id: "global-model-claude-cli-usage-local-miss-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
@@ -1783,7 +1777,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -2063,7 +2056,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             provider_id: "provider-claude-cli-usage-local-miss-large-1".to_string(),
             provider_name: "RightCode".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-claude-cli-usage-local-miss-large-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -2077,8 +2069,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-claude-cli-usage-local-miss-large-1".to_string(),
             global_model_id: "global-model-claude-cli-usage-local-miss-large-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
@@ -2108,7 +2098,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),

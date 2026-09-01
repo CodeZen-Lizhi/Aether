@@ -365,16 +365,6 @@ async fn record_stream_sync_failure(
         error_body.as_deref(),
     )
     .await;
-    if matches!(error_type, "first_byte_timeout" | "read_timeout") {
-        apply_local_execution_effect(
-            state,
-            LocalExecutionEffectContext {
-                plan,
-                report_context,
-            },
-        )
-        .await;
-    }
     apply_local_execution_effect(
         state,
         LocalExecutionEffectContext {
@@ -677,16 +667,6 @@ async fn handle_prefetch_transport_stream_failure(
 ) -> Result<Option<Response<Body>>, GatewayError> {
     let error_type = stream_failure_body_field(&payload, "type").unwrap_or("internal");
     let error_message = stream_failure_body_field(&payload, "message").unwrap_or_default();
-    if matches!(error_type, "first_byte_timeout" | "read_timeout") {
-        apply_local_execution_effect(
-            state,
-            LocalExecutionEffectContext {
-                plan,
-                report_context: payload.report_context.as_ref(),
-            },
-        )
-        .await;
-    }
 
     let analysis = resolve_local_transport_failover_analysis_for_attempt(
         state,

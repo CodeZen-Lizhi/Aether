@@ -28,7 +28,7 @@ use super::super::{
     sample_request_candidate, start_server, AppState,
 };
 use crate::admin_api::{
-    maybe_build_local_admin_providers_response, AdminAppState, AdminRequestContext,
+    AdminAppState, AdminRequestContext,
 };
 use crate::audit::AdminAuditEvent;
 use crate::constants::{
@@ -79,13 +79,14 @@ async fn local_admin_providers_response(
     .await
     .expect("request context should resolve");
     let body_bytes = body.map(|value| Bytes::from(value.to_string()));
-    maybe_build_local_admin_providers_response(
-        &AdminAppState::new(state),
-        &AdminRequestContext::new(&request_context),
+    crate::admin_api::maybe_build_local_admin_response(crate::admin_api::AdminRouteRequest::new(
+        state,
+        &request_context,
+        &headers,
         body_bytes.as_ref(),
-    )
+    ))
     .await
-    .expect("local providers response should build")
+    .expect("local admin response should build")
     .expect("providers route should resolve locally")
 }
 
@@ -229,7 +230,6 @@ async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_princ
         .with_description(Some("OpenAI primary provider".to_string()))
         .with_transport_fields(
             true,
-            false,
             true,
             None,
             Some(4),
@@ -279,7 +279,6 @@ async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_princ
                 Some(json!(["openai:responses"])),
                 encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-test-cli-2")
                     .expect("api key ciphertext should build"),
-                None,
                 None,
                 None,
                 None,
@@ -783,7 +782,6 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
                 .with_transport_fields(
                     true,
                     false,
-                    false,
                     None,
                     None,
                     None,
@@ -1103,11 +1101,9 @@ async fn gateway_creates_admin_provider_locally_with_trusted_admin_principal() {
         .expect("created provider should exist");
     let existing = providers
         .iter()
-        .find(|provider| provider.id == "provider-existing")
-        .expect("existing provider should remain");
+        .find(|provider| provider.name == "other-provider")
+        .expect("existing provider should exist");
     assert_eq!(created.provider_type, "codex");
-    assert_eq!(created.provider_priority, 0);
-    assert_eq!(existing.provider_priority, 1);
     assert_eq!(created.website.as_deref(), Some("https://codex.example"));
     assert!(created.enable_format_conversion);
     assert_eq!(created.max_retries, Some(7));
@@ -1124,7 +1120,7 @@ async fn gateway_creates_admin_provider_locally_with_trusted_admin_principal() {
             .config
             .as_ref()
             .and_then(|value| value.get("max_transfer_timeout_seconds"))
-            .and_then(serde_json::Value::as_u64),
+            .and_then(serde_json::Value::as_i64),
         Some(90)
     );
     assert_eq!(
@@ -1289,8 +1285,7 @@ async fn gateway_updates_fixed_provider_and_reconciles_template_managed_endpoint
 
     let mut provider = sample_provider("provider-codex", "codex", 10).with_transport_fields(
         true,
-        false,
-        true,
+            false,
         None,
         Some(2),
         None,
@@ -1471,7 +1466,7 @@ async fn gateway_updates_fixed_provider_and_reconciles_template_managed_endpoint
 #[tokio::test]
 async fn gateway_lists_effective_api_formats_for_fixed_oauth_provider_keys() {
     let mut provider = sample_provider("provider-codex", "codex", 10)
-        .with_transport_fields(true, false, true, None, None, None, None, None, None);
+        .with_transport_fields(true, true, None, None, None, None, None, None);
     provider.provider_type = "codex".to_string();
 
     let mut key = sample_key(
@@ -2038,7 +2033,6 @@ async fn gateway_handles_admin_provider_pool_status_locally_with_trusted_admin_p
 
     let provider = sample_provider("provider-openai", "openai", 10).with_transport_fields(
         true,
-        false,
         true,
         None,
         None,

@@ -152,7 +152,6 @@ pub(crate) async fn build_admin_create_provider_key_record(
         encrypted_api_key,
         encrypted_auth_config,
         normalize_rate_multipliers(payload.rate_multipliers)?,
-        None,
         normalize_string_list(payload.allowed_models).map(|value| json!(value)),
         None,
         None,

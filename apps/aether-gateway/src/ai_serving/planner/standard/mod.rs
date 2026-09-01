@@ -85,7 +85,6 @@ pub(crate) fn build_standard_upstream_url(
         upstream_is_stream,
         parts.uri.query(),
         None,
-        None,
         provider_request_body,
     )
 }

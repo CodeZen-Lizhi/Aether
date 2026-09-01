@@ -108,11 +108,6 @@ impl AiCandidateResolutionPort for GatewayLocalCandidateResolutionPort<'_> {
         requested_model: Option<&str>,
     ) -> Option<&'static str> {
         if let Some(skip_reason) =
-            routing_policy_candidate_skip_reason(self.routing_policy, candidate, transport)
-        {
-            return Some(skip_reason);
-        }
-        if let Some(skip_reason) =
             candidate_auth_channel_skip_reason(transport, self.request_auth_channel)
         {
             return Some(skip_reason);
@@ -284,7 +279,6 @@ pub(crate) async fn resolve_and_rank_logical_local_execution_candidates(
         None,
         request_auth_channel,
         mode,
-        false,
     )
     .await
 }
@@ -317,7 +311,6 @@ async fn resolve_and_rank_local_execution_candidates_with_mode(
         None,
         request_auth_channel,
         mode,
-        false,
     )
     .await
 }
@@ -335,7 +328,6 @@ async fn resolve_and_rank_local_execution_candidates_with_pool_expansion(
     _sticky_session_token: Option<&str>,
     request_auth_channel: Option<&str>,
     mode: AiCandidateResolutionMode,
-    expand_pool_groups: bool,
 ) -> (
     Vec<EligibleLocalExecutionCandidate>,
     Vec<SkippedLocalExecutionCandidate>,
@@ -355,7 +347,6 @@ async fn resolve_and_rank_local_execution_candidates_with_pool_expansion(
         client_api_format,
         requested_model,
         mode,
-        expand_pool_groups,
     };
 
     let started_at = Instant::now();

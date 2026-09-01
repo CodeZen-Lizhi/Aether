@@ -150,11 +150,7 @@ pub(crate) async fn build_admin_global_model_routing_payload(
                     )
                 })
                 .collect::<Vec<_>>();
-            endpoint_keys.sort_by(|left, right| {
-                left.internal_priority
-                    .cmp(&right.internal_priority)
-                    .then_with(|| left.id.cmp(&right.id))
-            });
+            endpoint_keys.sort_by(|left, right| left.id.cmp(&right.id));
             let key_payloads = endpoint_keys
                 .iter()
                 .map(|key| {
@@ -228,9 +224,7 @@ pub(crate) async fn build_admin_global_model_routing_payload(
             "id": &provider.id,
             "name": &provider.name,
             "model_id": &model.id,
-            "provider_priority": provider.provider_priority,
             "enable_format_conversion": provider.enable_format_conversion,
-            "keep_priority_on_conversion": provider.keep_priority_on_conversion,
             "billing_type": provider.billing_type.clone(),
             "monthly_quota_usd": provider.monthly_quota_usd,
             "monthly_used_usd": provider.monthly_used_usd,

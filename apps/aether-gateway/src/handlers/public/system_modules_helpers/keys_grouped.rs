@@ -1,9 +1,6 @@
 use super::enabled_key_capability_short_names;
-use crate::handlers::shared::{parse_catalog_auth_config_json, unix_secs_to_rfc3339};
-use crate::provider_key_auth::{
-    provider_key_auth_config_is_agent_identity, provider_key_auth_config_uses_header_authorization,
-    provider_key_effective_api_formats,
-};
+use crate::handlers::shared::unix_secs_to_rfc3339;
+use crate::provider_key_auth::provider_key_effective_api_formats;
 use crate::AppState;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 use aether_scheduler_core::provider_key_circuit_payload_is_active_open_at;
@@ -11,23 +8,10 @@ use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn grouped_key_masked_label(
-    state: &AppState,
-    key: &StoredProviderCatalogKey,
-    provider_type: &str,
-) -> &'static str {
+fn grouped_key_masked_label(key: &StoredProviderCatalogKey) -> &'static str {
     match key.auth_type.trim() {
         "service_account" | "vertex_ai" => "[Service Account]",
-        "oauth" => {
-            let auth_config = parse_catalog_auth_config_json(state, key);
-            if provider_key_auth_config_is_agent_identity(provider_type, auth_config.as_ref()) {
-                "[Agent Identity]"
-            } else if provider_key_auth_config_uses_header_authorization(auth_config.as_ref()) {
-                "[OAuth Header]"
-            } else {
-                "[OAuth Token]"
-            }
-        }
+        "oauth" => "[OAuth Token]",
         _ => "[API Key]",
     }
 }
@@ -53,11 +37,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
         .map(|provider| {
             (
                 provider.id.clone(),
-                (
-                    provider.name.clone(),
-                    provider.is_active,
-                    provider.provider_type.clone(),
-                ),
+                (provider.name.clone(), provider.is_active),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -91,11 +71,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
     }
 
     let mut keys = keys_result.ok().unwrap_or_default();
-    keys.sort_by(|left, right| {
-        left.internal_priority
-            .cmp(&right.internal_priority)
-            .then_with(|| left.id.cmp(&right.id))
-    });
+    keys.sort_by(|left, right| left.id.cmp(&right.id));
 
     let now_unix_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -105,8 +81,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
 
     let mut grouped = BTreeMap::<String, Vec<serde_json::Value>>::new();
     for key in keys {
-        let Some((provider_name, provider_is_active, provider_type)) =
-            provider_metadata_by_id.get(&key.provider_id)
+        let Some((provider_name, provider_is_active)) = provider_metadata_by_id.get(&key.provider_id)
         else {
             continue;
         };
@@ -122,12 +97,6 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
         } else {
             None
         };
-        let priority_by_format = key
-            .global_priority_by_format
-            .as_ref()
-            .and_then(serde_json::Value::as_object)
-            .cloned()
-            .unwrap_or_default();
         let health_by_format = key
             .health_by_format
             .as_ref()
@@ -160,9 +129,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
                 "provider_id": key.provider_id,
                 "name": key.name,
                 "auth_type": key.auth_type,
-                "api_key_masked": grouped_key_masked_label(state, &key, provider_type),
-                "internal_priority": key.internal_priority,
-                "global_priority_by_format": key.global_priority_by_format,
+                "api_key_masked": grouped_key_masked_label(&key),
                 "rate_multipliers": key.rate_multipliers,
                 "is_active": key.is_active,
                 "provider_active": provider_is_active,
@@ -176,10 +143,6 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
                 "endpoint_base_url": endpoint_base_url_by_provider_and_format
                     .get(&(key.provider_id.clone(), api_format.clone()))
                     .cloned(),
-                "format_priority": priority_by_format
-                    .get(api_format)
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null),
                 "health_score": format_health
                     .get("health_score")
                     .and_then(serde_json::Value::as_f64)

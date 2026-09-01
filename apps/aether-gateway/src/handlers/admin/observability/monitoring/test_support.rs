@@ -233,7 +233,7 @@ pub(super) fn sample_monitoring_catalog_endpoint() -> StoredProviderCatalogEndpo
     sample_endpoint()
         .with_transport_fields(
             "https://api.openai.example/v1".to_string(),
-            None,
+            false,
             None,
             None,
             None,

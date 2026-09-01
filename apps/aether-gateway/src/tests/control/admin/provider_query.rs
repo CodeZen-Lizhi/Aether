@@ -3051,7 +3051,6 @@ async fn gateway_uses_pool_scheduler_order_for_admin_pool_model_test_impl() {
         "openai:responses",
         "sk-codex-free",
     );
-    free_key.internal_priority = 0;
     free_key.status_snapshot = Some(json!({
         "quota": {
             "provider_type": "codex",
@@ -3066,7 +3065,6 @@ async fn gateway_uses_pool_scheduler_order_for_admin_pool_model_test_impl() {
         "openai:responses",
         "sk-codex-plus",
     );
-    plus_key.internal_priority = 100;
     plus_key.status_snapshot = Some(json!({
         "quota": {
             "provider_type": "codex",

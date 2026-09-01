@@ -330,7 +330,6 @@ async fn gateway_executes_gemini_video_cancel_via_reconstructed_data_backed_loca
             true,
             false,
             false,
-            None,
             Some(2),
             None,
             Some(20.0),

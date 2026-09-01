@@ -123,7 +123,6 @@ fn provider_key_concurrency_row(
     row.provider_name = provider_id.to_string();
     row.endpoint_id = endpoint_id.to_string();
     row.key_id = key_id.to_string();
-    row.key_name = key_name.to_string();
     row.provider_priority = provider_priority;
     row.key_internal_priority = key_priority;
     row.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": key_priority}));
@@ -268,7 +267,6 @@ async fn selects_by_provider_priority_when_priority_mode_is_provider() {
     provider_first.provider_name = "provider-a".to_string();
     provider_first.endpoint_id = "endpoint-a".to_string();
     provider_first.key_id = "key-a".to_string();
-    provider_first.key_name = "alpha".to_string();
     provider_first.provider_priority = 0;
     provider_first.key_internal_priority = 20;
     provider_first.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
@@ -278,7 +276,6 @@ async fn selects_by_provider_priority_when_priority_mode_is_provider() {
     global_key_first.provider_name = "provider-b".to_string();
     global_key_first.endpoint_id = "endpoint-b".to_string();
     global_key_first.key_id = "key-b".to_string();
-    global_key_first.key_name = "beta".to_string();
     global_key_first.provider_priority = 10;
     global_key_first.key_internal_priority = 0;
     global_key_first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
@@ -322,7 +319,6 @@ async fn selects_by_global_key_priority_when_priority_mode_is_global_key() {
     provider_first.provider_name = "provider-a".to_string();
     provider_first.endpoint_id = "endpoint-a".to_string();
     provider_first.key_id = "key-a".to_string();
-    provider_first.key_name = "alpha".to_string();
     provider_first.provider_priority = 0;
     provider_first.key_internal_priority = 20;
     provider_first.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
@@ -332,7 +328,6 @@ async fn selects_by_global_key_priority_when_priority_mode_is_global_key() {
     global_key_first.provider_name = "provider-b".to_string();
     global_key_first.endpoint_id = "endpoint-b".to_string();
     global_key_first.key_id = "key-b".to_string();
-    global_key_first.key_name = "beta".to_string();
     global_key_first.provider_priority = 10;
     global_key_first.key_internal_priority = 0;
     global_key_first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
@@ -376,7 +371,6 @@ async fn scheduler_selection_prefers_required_capability_matches_before_priority
     higher_priority_missing_capability.provider_name = "provider-a".to_string();
     higher_priority_missing_capability.endpoint_id = "endpoint-a".to_string();
     higher_priority_missing_capability.key_id = "key-a".to_string();
-    higher_priority_missing_capability.key_name = "alpha".to_string();
     higher_priority_missing_capability.provider_priority = 0;
     higher_priority_missing_capability.key_internal_priority = 0;
     higher_priority_missing_capability.key_capabilities = Some(json!({"cache_1h": false}));
@@ -386,7 +380,6 @@ async fn scheduler_selection_prefers_required_capability_matches_before_priority
     lower_priority_matching_capability.provider_name = "provider-b".to_string();
     lower_priority_matching_capability.endpoint_id = "endpoint-b".to_string();
     lower_priority_matching_capability.key_id = "key-b".to_string();
-    lower_priority_matching_capability.key_name = "beta".to_string();
     lower_priority_matching_capability.provider_priority = 10;
     lower_priority_matching_capability.key_internal_priority = 10;
     lower_priority_matching_capability.key_capabilities = Some(json!({"cache_1h": true}));
@@ -430,7 +423,6 @@ async fn fixed_order_ignores_cached_scheduler_affinity_promotion() {
     first.provider_name = "provider-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.provider_priority = 0;
     first.key_internal_priority = 0;
     first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
@@ -440,7 +432,6 @@ async fn fixed_order_ignores_cached_scheduler_affinity_promotion() {
     second.provider_name = "provider-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.provider_priority = 1;
     second.key_internal_priority = 0;
     second.key_global_priority_by_format = Some(json!({"openai:chat": 1}));
@@ -495,7 +486,6 @@ async fn fixed_order_disables_same_priority_affinity_hash_tiebreaker() {
     first.provider_name = "provider-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.provider_priority = 0;
     first.key_internal_priority = 0;
     first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
@@ -505,7 +495,6 @@ async fn fixed_order_disables_same_priority_affinity_hash_tiebreaker() {
     second.provider_name = "provider-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.provider_priority = 1;
     second.key_internal_priority = 0;
     second.key_global_priority_by_format = Some(json!({"openai:chat": 1}));
@@ -549,7 +538,6 @@ async fn cache_affinity_promotes_cached_scheduler_affinity_candidate_when_enable
     first.provider_name = "provider-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.provider_priority = 0;
     first.key_internal_priority = 0;
     first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
@@ -559,7 +547,6 @@ async fn cache_affinity_promotes_cached_scheduler_affinity_candidate_when_enable
     second.provider_name = "provider-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.provider_priority = 10;
     second.key_internal_priority = 10;
     second.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
@@ -625,7 +612,6 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
     first.provider_name = "provider-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.provider_priority = 0;
     first.key_internal_priority = 0;
     first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
@@ -635,7 +621,6 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
     second.provider_name = "provider-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.provider_priority = 10;
     second.key_internal_priority = 10;
     second.key_global_priority_by_format = Some(json!({"openai:chat": 10}));
@@ -738,7 +723,6 @@ async fn load_balance_ignores_provider_priority_and_cached_affinity() {
     first.provider_name = "provider-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.provider_priority = 0;
     first.key_internal_priority = 0;
     first.key_global_priority_by_format = Some(json!({"openai:chat": 0}));
@@ -748,7 +732,6 @@ async fn load_balance_ignores_provider_priority_and_cached_affinity() {
     second.provider_name = "provider-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.provider_priority = 100;
     second.key_internal_priority = 0;
     second.key_global_priority_by_format = Some(json!({"openai:chat": 100}));
@@ -842,7 +825,6 @@ async fn selects_next_candidate_when_first_provider_quota_is_exhausted() {
     first.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-primary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
         endpoint_ids: None,
         operations: None,
     }]);
@@ -858,7 +840,6 @@ async fn selects_next_candidate_when_first_provider_quota_is_exhausted() {
     second.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-secondary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
         endpoint_ids: None,
         operations: None,
     }]);
@@ -915,7 +896,6 @@ async fn cooled_down_when_recent_failures_are_recorded_for_same_key() {
     first.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-primary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
         endpoint_ids: None,
         operations: None,
     }]);
@@ -931,7 +911,6 @@ async fn cooled_down_when_recent_failures_are_recorded_for_same_key() {
     second.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-secondary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
         endpoint_ids: None,
         operations: None,
     }]);
@@ -1031,7 +1010,6 @@ async fn selects_next_candidate_when_first_provider_concurrent_limit_is_reached(
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
@@ -1039,7 +1017,6 @@ async fn selects_next_candidate_when_first_provider_concurrent_limit_is_reached(
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -1492,7 +1469,6 @@ async fn selects_next_candidate_when_first_provider_key_rpm_slots_are_reserved_f
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
@@ -1500,7 +1476,6 @@ async fn selects_next_candidate_when_first_provider_key_rpm_slots_are_reserved_f
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -1584,7 +1559,6 @@ async fn selects_next_candidate_when_first_provider_key_circuit_is_open() {
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
@@ -1592,7 +1566,6 @@ async fn selects_next_candidate_when_first_provider_key_circuit_is_open() {
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -1649,7 +1622,6 @@ async fn pool_provider_ignores_key_circuit_open_runtime_skip() {
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
@@ -1657,7 +1629,6 @@ async fn pool_provider_ignores_key_circuit_open_runtime_skip() {
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -1714,7 +1685,6 @@ async fn exposes_runtime_skipped_candidates_with_skip_reasons() {
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
@@ -1722,7 +1692,6 @@ async fn exposes_runtime_skipped_candidates_with_skip_reasons() {
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -1786,7 +1755,6 @@ async fn skips_codex_candidate_when_account_quota_is_exhausted_and_pool_flag_ena
     first.key_id = "key-codex".to_string();
     first.key_name = "codex-exhausted".to_string();
     first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["openai:responses".to_string()]);
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
 
     let mut second = sample_row();
@@ -1796,7 +1764,6 @@ async fn skips_codex_candidate_when_account_quota_is_exhausted_and_pool_flag_ena
     second.endpoint_api_format = "openai:responses".to_string();
     second.key_id = "key-openai".to_string();
     second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["openai:responses".to_string()]);
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -1872,7 +1839,6 @@ async fn keeps_refresh_failed_oauth_candidate_selectable_before_local_auth_resol
     first.key_id = "key-codex".to_string();
     first.key_name = "codex-invalid".to_string();
     first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["openai:responses".to_string()]);
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
 
     let mut second = sample_row();
@@ -1882,7 +1848,6 @@ async fn keeps_refresh_failed_oauth_candidate_selectable_before_local_auth_resol
     second.endpoint_api_format = "openai:responses".to_string();
     second.key_id = "key-openai".to_string();
     second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["openai:responses".to_string()]);
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -1950,7 +1915,6 @@ async fn skips_refresh_failed_oauth_candidate_after_access_token_expiry() {
     row.key_id = "key-codex".to_string();
     row.key_name = "codex-refresh-failed-expired".to_string();
     row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["openai:responses".to_string()]);
     row.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -2015,7 +1979,6 @@ async fn skips_oauth_candidate_with_account_block_even_when_refresh_failed_is_pr
     row.key_id = "key-codex".to_string();
     row.key_name = "codex-account-blocked-refresh-failed".to_string();
     row.key_auth_type = "oauth".to_string();
-    row.key_api_formats = Some(vec!["openai:responses".to_string()]);
     row.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -2507,7 +2470,6 @@ async fn keeps_codex_candidate_selectable_when_exhausted_account_flag_is_disable
     first.key_id = "key-codex".to_string();
     first.key_name = "codex-exhausted".to_string();
     first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["openai:responses".to_string()]);
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 1}));
 
     let mut second = sample_row();
@@ -2517,7 +2479,6 @@ async fn keeps_codex_candidate_selectable_when_exhausted_account_flag_is_disable
     second.endpoint_api_format = "openai:responses".to_string();
     second.key_id = "key-openai".to_string();
     second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["openai:responses".to_string()]);
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:responses": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -2588,7 +2549,6 @@ async fn skips_kiro_candidate_when_account_quota_is_exhausted_and_pool_flag_enab
     first.key_id = "key-kiro".to_string();
     first.key_name = "kiro-exhausted".to_string();
     first.key_auth_type = "oauth".to_string();
-    first.key_api_formats = Some(vec!["claude:messages".to_string()]);
     first.key_global_priority_by_format = Some(serde_json::json!({"claude:messages": 1}));
 
     let mut second = sample_row();
@@ -2598,7 +2558,6 @@ async fn skips_kiro_candidate_when_account_quota_is_exhausted_and_pool_flag_enab
     second.endpoint_api_format = "claude:messages".to_string();
     second.key_id = "key-openai".to_string();
     second.key_name = "fallback".to_string();
-    second.key_api_formats = Some(vec!["claude:messages".to_string()]);
     second.key_global_priority_by_format = Some(serde_json::json!({"claude:messages": 2}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -2670,7 +2629,6 @@ async fn same_priority_candidates_prefer_healthier_provider_key_before_id_order(
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
@@ -2678,7 +2636,6 @@ async fn same_priority_candidates_prefer_healthier_provider_key_before_id_order(
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
@@ -2739,7 +2696,6 @@ async fn same_priority_candidates_use_aggregate_health_score_when_api_format_spe
     first.provider_name = "openai-a".to_string();
     first.endpoint_id = "endpoint-a".to_string();
     first.key_id = "key-a".to_string();
-    first.key_name = "alpha".to_string();
     first.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let mut second = sample_row();
@@ -2747,7 +2703,6 @@ async fn same_priority_candidates_use_aggregate_health_score_when_api_format_spe
     second.provider_name = "openai-b".to_string();
     second.endpoint_id = "endpoint-b".to_string();
     second.key_id = "key-b".to_string();
-    second.key_name = "beta".to_string();
     second.key_global_priority_by_format = Some(serde_json::json!({"openai:chat": 1}));
 
     let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![

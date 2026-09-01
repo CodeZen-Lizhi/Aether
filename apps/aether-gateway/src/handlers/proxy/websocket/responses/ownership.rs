@@ -17,13 +17,11 @@ use crate::ai_serving::{
     ResponsesWebSocketDecision, ResponsesWebSocketPinnedCandidate,
 };
 use crate::control::GatewayControlDecision;
-use crate::orchestration::release_pool_key_lease_from_report_context;
 use crate::{AppState, GatewayError};
 
 /// Owns a selected pool-key lease until the attempt lifecycle has taken over
 /// the decision report context.
 pub(super) struct PlannedPoolKeyLeaseGuard {
-    state: AppState,
     report_context: Option<Value>,
 }
 
@@ -107,34 +105,18 @@ pub(super) async fn await_owned_responses_websocket_plan(
 }
 
 impl PlannedPoolKeyLeaseGuard {
-    fn new(state: &AppState, report_context: Option<&Value>) -> Self {
+    fn new(_state: &AppState, _report_context: Option<&Value>) -> Self {
         Self {
-            state: state.clone(),
-            report_context: report_context.cloned(),
+            report_context: None,
         }
     }
 
     pub(super) async fn release(mut self) {
-        release_pool_key_lease_from_report_context(&self.state, self.report_context.as_ref()).await;
         self.report_context = None;
     }
 
     fn disarm(&mut self) {
         self.report_context = None;
-    }
-}
-
-impl Drop for PlannedPoolKeyLeaseGuard {
-    fn drop(&mut self) {
-        let Some(report_context) = self.report_context.take() else {
-            return;
-        };
-        let state = self.state.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                release_pool_key_lease_from_report_context(&state, Some(&report_context)).await;
-            });
-        }
     }
 }
 

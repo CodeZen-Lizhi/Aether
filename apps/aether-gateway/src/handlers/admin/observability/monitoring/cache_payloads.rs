@@ -1,7 +1,4 @@
 use crate::handlers::admin::request::AdminAppState;
-use crate::provider_key_auth::{
-    provider_key_auth_config_is_agent_identity, provider_key_auth_config_uses_header_authorization,
-};
 use aether_crypto::decrypt_python_fernet_ciphertext;
 #[cfg(test)]
 use aether_crypto::DEVELOPMENT_ENCRYPTION_KEY;
@@ -34,9 +31,21 @@ pub(super) fn admin_monitoring_masked_provider_key_prefix(
         "service_account" | "vertex_ai" => Some("[Service Account]".to_string()),
         "oauth" => {
             let auth_config = state.parse_catalog_auth_config_json(key);
-            if provider_key_auth_config_is_agent_identity(provider_type, auth_config.as_ref()) {
-                Some("[Agent Identity]".to_string())
-            } else if provider_key_auth_config_uses_header_authorization(auth_config.as_ref()) {
+            let _ = provider_type;
+            if auth_config.as_ref().is_some_and(|config| {
+                config
+                    .get("headers")
+                    .and_then(serde_json::Value::as_object)
+                    .is_some_and(|headers| {
+                        headers.iter().any(|(name, value)| {
+                            name.trim().eq_ignore_ascii_case("authorization")
+                                && value
+                                    .as_str()
+                                    .map(str::trim)
+                                    .is_some_and(|value| !value.is_empty())
+                        })
+                    })
+            }) {
                 Some("[OAuth Header]".to_string())
             } else {
                 Some("[OAuth Token]".to_string())
@@ -129,7 +138,7 @@ mod tests {
     use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 
     #[test]
-    fn monitoring_labels_agent_identity_instead_of_oauth_token() {
+    fn monitoring_labels_oauth_header_auth_instead_of_oauth_token() {
         let app = AppState::new().expect("gateway should build");
         let state = AdminAppState::new(&app);
         let encrypted_placeholder =
@@ -137,21 +146,19 @@ mod tests {
                 .expect("placeholder should encrypt");
         let encrypted_auth_config = encrypt_python_fernet_plaintext(
             DEVELOPMENT_ENCRYPTION_KEY,
-            r#"{"auth_mode":"agentIdentity","agent_runtime_id":"runtime-1","agent_private_key":"base64-private-key","task_id":"task-1"}"#,
+            r#"{"headers":{"authorization":"Bearer test-token"}}"#,
         )
         .expect("auth config should encrypt");
         let key = StoredProviderCatalogKey::new(
-            "key-agent".to_string(),
-            "provider-codex".to_string(),
-            "agent".to_string(),
+            "key-oauth-header".to_string(),
+            "provider-openai".to_string(),
             "oauth".to_string(),
-            None,
+            "oauth".to_string(),
             true,
         )
         .expect("key should build")
         .with_transport_fields(
             None,
-            encrypted_placeholder,
             Some(encrypted_auth_config),
             None,
             None,
@@ -163,8 +170,8 @@ mod tests {
         .expect("transport should build");
 
         assert_eq!(
-            admin_monitoring_masked_provider_key_prefix(&state, &key, "codex").as_deref(),
-            Some("[Agent Identity]")
+            admin_monitoring_masked_provider_key_prefix(&state, &key, "openai").as_deref(),
+            Some("[OAuth Header]")
         );
     }
 }

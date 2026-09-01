@@ -141,15 +141,7 @@ fn responses_lite_instruction_text(item: &Value) -> Option<&str> {
 fn normalize_responses_lite_tools(value: &Value) -> Result<Value, &'static str> {
     match value {
         Value::Null => Ok(Value::Array(Vec::new())),
-        Value::Array(tools) => Ok(Value::Array(
-            tools
-                .iter()
-                .filter(|tool| {
-                    crate::ai_serving::codex_responses_lite_tool_is_client_executed(tool)
-                })
-                .cloned()
-                .collect(),
-        )),
+        Value::Array(tools) => Ok(Value::Array(tools.clone())),
         _ => Err("invalid_response_create_tools"),
     }
 }
@@ -518,16 +510,7 @@ pub(super) fn planned_request_uses_codex_responses_lite(
         .provider_request_body
         .as_ref()
         .is_none_or(|body| body.get("context_management").is_none_or(Value::is_null));
-    decision_is_codex_responses
-        && normalization.uses_codex_responses_lite()
-        && final_body_supports_lite
-        && decision
-            .provider_request_headers
-            .iter()
-            .any(|(name, value)| {
-                name.eq_ignore_ascii_case(crate::ai_serving::CODEX_RESPONSES_LITE_HEADER)
-                    && value.trim().eq_ignore_ascii_case("true")
-            })
+    decision_is_codex_responses && final_body_supports_lite
 }
 
 /// Prepares a continuation `response.create` for the already-bound upstream.

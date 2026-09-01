@@ -212,17 +212,6 @@ impl<'a> AdminAppState<'a> {
         .await
     }
 
-    pub(crate) async fn build_admin_provider_pool_status_payload(
-        &self,
-        provider_id: &str,
-    ) -> Option<serde_json::Value> {
-        crate::handlers::admin::provider::pool::runtime::build_admin_provider_pool_status_payload(
-            self,
-            provider_id,
-        )
-        .await
-    }
-
     pub(crate) async fn build_admin_create_provider_endpoint_record(
         &self,
         provider: &aether_data_contracts::repository::provider_catalog::StoredProviderCatalogProvider,
@@ -239,9 +228,6 @@ impl<'a> AdminAppState<'a> {
 
         if payload.provider_id.trim() != provider.id {
             return Err("provider_id 不匹配".to_string());
-        }
-        if self.provider_type_is_fixed(&provider.provider_type) {
-            return Err("固定类型 Provider 不允许手动新增 Endpoint".to_string());
         }
         if !(0..=999).contains(&payload.max_retries) {
             return Err("max_retries 必须在 0 到 999 之间".to_string());
@@ -314,7 +300,6 @@ impl<'a> AdminAppState<'a> {
         String,
     > {
         use crate::api::ai::admin_endpoint_signature_parts;
-        use crate::handlers::admin::provider::write::provider::apply_admin_fixed_provider_endpoint_template_overrides;
         use crate::handlers::public::{admin_requested_force_stream, normalize_admin_base_url};
         use aether_admin::provider::endpoints as admin_provider_endpoints_pure;
         let (fields, payload) = patch.into_parts();
@@ -410,11 +395,6 @@ impl<'a> AdminAppState<'a> {
             .ok_or_else(|| format!("无效的 api_format: {}", updated.api_format))?;
         updated.api_family = Some(api_family.to_string());
         updated.endpoint_kind = Some(endpoint_kind.to_string());
-        apply_admin_fixed_provider_endpoint_template_overrides(
-            provider,
-            existing_endpoint,
-            &mut updated,
-        )?;
         updated.updated_at_unix_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .ok()

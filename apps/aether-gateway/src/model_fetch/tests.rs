@@ -71,7 +71,7 @@ fn sample_endpoint(
     .expect("endpoint should build")
     .with_transport_fields(
         base_url.to_string(),
-        None,
+            false,
         None,
         None,
         None,
@@ -319,7 +319,7 @@ async fn codex_preset_model_fetch_associates_the_api_supported_review_model() {
         "codex".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(true, false, true, None, None, None, None, None, None);
+    .with_transport_fields(true, true, None, None, None, None, None, None);
     let mut key = sample_key("provider-codex", "key-codex");
     key.locked_models = None;
     key.model_include_patterns = None;

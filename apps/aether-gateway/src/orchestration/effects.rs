@@ -205,7 +205,6 @@ pub(crate) enum LocalExecutionEffect<'a> {
     AdaptiveSuccess(LocalAdaptiveSuccessEffect),
 }
 
-#[derive(Debug)]
 /// Inputs for the terminal effects of a failed streaming attempt.
 ///
 /// The status/body are deliberately supplied by the transport-specific caller:
@@ -1244,7 +1243,6 @@ mod tests {
         }
     }
     #[test]
-    #[test]
     fn session_affinity() -> ClientSessionAffinity {
         ClientSessionAffinity::new(
             Some("generic".to_string()),
@@ -1299,7 +1297,7 @@ mod tests {
         .expect("endpoint should build")
         .with_transport_fields(
             "https://example.com/v1/chat/completions".to_string(),
-            None,
+            false,
             None,
             Some(2),
             None,
@@ -1346,7 +1344,6 @@ mod tests {
                     .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
             )
     }
-    #[tokio::test]
     fn health_state_with_key(key: StoredProviderCatalogKey) -> AppState {
         let repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
             vec![sample_health_provider()],
@@ -1546,8 +1543,6 @@ mod tests {
             Some(affinity_target)
         );
     }
-    #[tokio::test]
-    #[tokio::test]
     #[tokio::test]
     async fn attempt_failure_keeps_scheduler_affinity_for_non_failure_status() {
         let state = AppState::new().expect("gateway state should build");
@@ -2030,7 +2025,6 @@ mod tests {
         );
     }
     #[test]
-    #[test]
     fn anthropic_non_credential_failures_do_not_apply_key_wide_effects() {
         assert!(!local_candidate_failure_should_apply_key_effects(
             "claude:messages",
@@ -2078,31 +2072,6 @@ mod tests {
             503,
         ));
     }
-    #[tokio::test]
-    #[test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
-    #[tokio::test]
     #[tokio::test]
     async fn health_failure_projection_updates_key_health_for_format() {
         let state = health_state();
@@ -2279,7 +2248,6 @@ mod tests {
         assert_eq!(circuit["open"], json!(true));
         assert_eq!(circuit["reason"], json!("consecutive_failures_8"));
     }
-    #[tokio::test]
     #[tokio::test]
     async fn health_success_projection_resets_key_health_for_format() {
         let state = health_state();
@@ -2533,7 +2501,6 @@ mod tests {
             Some(target)
         );
     }
-    #[tokio::test]
     #[tokio::test]
     async fn adaptive_rate_limit_effect_ignores_fixed_limit_key() {
         let state = fixed_limit_state();

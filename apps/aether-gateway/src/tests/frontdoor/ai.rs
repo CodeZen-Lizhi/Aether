@@ -21,7 +21,6 @@ use aether_data::DataLayerError;
 use aether_data_contracts::repository::auth::AuthApiKeyWriteRepository;
 use aether_data_contracts::repository::candidate_selection::{
     MinimalCandidateSelectionReadRepository, StoredMinimalCandidateSelectionRow,
-    StoredPoolKeyCandidateRowsByKeyIdsQuery, StoredPoolKeyCandidateRowsQuery,
     StoredRequestedModelCandidateRowsQuery,
 };
 use aether_data_contracts::repository::global_models::{
@@ -192,7 +191,7 @@ fn codex_catalog_endpoint(provider_id: &str, endpoint_id: &str) -> StoredProvide
     .expect("Codex endpoint should build")
     .with_transport_fields(
         "https://chatgpt.example/backend-api/codex".to_string(),
-        None,
+            false,
         None,
         None,
         None,
@@ -453,19 +452,6 @@ impl MinimalCandidateSelectionReadRepository for PendingMinimalCandidateSelectio
         self.pending_rows().await
     }
 
-    async fn list_pool_key_rows_for_group(
-        &self,
-        _query: &StoredPoolKeyCandidateRowsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-        self.pending_rows().await
-    }
-
-    async fn list_pool_key_rows_for_group_key_ids(
-        &self,
-        _query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-        self.pending_rows().await
-    }
 }
 
 struct CachedToggleMinimalCandidateSelectionReadRepository {
@@ -567,19 +553,6 @@ impl MinimalCandidateSelectionReadRepository
             .collect())
     }
 
-    async fn list_pool_key_rows_for_group(
-        &self,
-        _query: &StoredPoolKeyCandidateRowsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-        Ok(Vec::new())
-    }
-
-    async fn list_pool_key_rows_for_group_key_ids(
-        &self,
-        _query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
-    ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-        Ok(Vec::new())
-    }
 }
 
 #[tokio::test]

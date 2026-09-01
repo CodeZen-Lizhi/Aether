@@ -151,8 +151,7 @@ pub(crate) async fn build_provider_strategy_update_billing_response(
             Some(payload.quota_reset_day),
             quota_last_reset_at_unix_secs,
             quota_expires_at_unix_secs,
-        )
-        .with_routing_fields(payload.provider_priority);
+        );
     let Some(updated) = state
         .app()
         .update_provider_catalog_provider(&updated)
@@ -167,7 +166,6 @@ pub(crate) async fn build_provider_strategy_update_billing_response(
             "id": updated.id,
             "name": updated.name,
             "billing_type": billing_type,
-            "provider_priority": updated.provider_priority,
         },
     }))
     .into_response())

@@ -24,11 +24,7 @@ pub(crate) async fn build_admin_providers_payload(
     if matches!(is_active, Some(false)) {
         providers.retain(|provider| !provider.is_active);
     }
-    providers.sort_by(|left, right| {
-        left.provider_priority
-            .cmp(&right.provider_priority)
-            .then_with(|| left.name.cmp(&right.name))
-    });
+    providers.sort_by(|left, right| left.name.cmp(&right.name));
 
     let providers = providers
         .into_iter()
@@ -89,7 +85,6 @@ pub(crate) async fn build_admin_providers_payload(
                     "api_format": endpoint.map(|item| item.api_format.clone()),
                     "base_url": endpoint.map(|item| item.base_url.clone()),
                     "api_key": has_any_key_by_provider.contains(&provider_id).then_some("***"),
-                    "priority": provider.provider_priority,
                     "is_active": provider.is_active,
                     "created_at": provider.created_at_unix_ms.and_then(unix_secs_to_rfc3339),
                     "updated_at": provider.updated_at_unix_secs.and_then(unix_secs_to_rfc3339),

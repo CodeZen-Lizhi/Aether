@@ -202,7 +202,7 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
     let mut provider_request_body = base_provider_request.body;
     let mut compatibility_edits = base_provider_request.compatibility_edits;
     if let Some(mapping) = model_directive_mapping.as_ref() {
-        let before_mapping = base_provider_request_body.clone();
+        let before_mapping = provider_request_body.clone();
         crate::ai_serving::apply_model_directive_mapping_patch(
             &mut provider_request_body,
             mapping,
@@ -228,7 +228,8 @@ pub(crate) async fn resolve_local_same_format_provider_candidate_payload_parts(
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or(input.requested_model.as_str());
-    if let Err(violation) = crate::ai_serving::finalize_openai_provider_request(
+    if let Err(violation) =
+        crate::ai_serving::finalize_openai_provider_request_with_reasoning_replay_policy(
             &mut provider_request_body,
             crate::ai_serving::OpenAiProviderRequestFinalization {
                 source_api_format: spec.api_format,

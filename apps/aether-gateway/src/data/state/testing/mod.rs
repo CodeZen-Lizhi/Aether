@@ -13,7 +13,6 @@ use super::{
     GeminiFileMappingWriteRepository, GlobalModelReadRepository, GlobalModelWriteRepository,
     ManagementTokenReadRepository, ManagementTokenWriteRepository,
     MinimalCandidateSelectionReadRepository, OAuthProviderReadRepository,
-    OAuthProviderWriteRepository, PoolMemberScoreWriteRepository, PoolScoreReadRepository,
     ProviderCatalogReadRepository, ProviderCatalogWriteRepository, ProviderQuotaReadRepository,
     ProviderQuotaWriteRepository, ProxyNodeReadRepository, ProxyNodeWriteRepository,
     RequestCandidateReadRepository, RequestCandidateWriteRepository, RoutingGroupReadRepository,
@@ -26,6 +25,8 @@ mod announcements;
 mod video_tasks;
 
 impl GatewayDataState {
+    #[cfg(test)]
+
     #[cfg(test)]
     pub(crate) fn with_user_preferences_for_tests(
         mut self,
@@ -2881,5 +2882,4 @@ impl GatewayDataState {
             system_config_value_cache: Default::default(),
             billing_model_context_cache: Default::default(),
         }
-    }
-}
+    }}

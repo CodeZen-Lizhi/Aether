@@ -1480,7 +1480,6 @@ mod tests {
     use aether_data::DataLayerError;
     use aether_data_contracts::repository::candidate_selection::{
         MinimalCandidateSelectionReadRepository, StoredApiFormatCandidateRowsQuery,
-        StoredPoolKeyCandidateRowsByKeyIdsQuery, StoredPoolKeyCandidateRowsQuery,
         StoredProviderModelMapping, StoredRequestedModelCandidateRowsQuery,
     };
     use aether_data_contracts::repository::provider_catalog::{
@@ -1599,19 +1598,6 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn list_pool_key_rows_for_group(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pool_key_rows_for_group_key_ids(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
     }
 
     impl EmptyFallbackCountingRepository {
@@ -1653,19 +1639,6 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn list_pool_key_rows_for_group(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pool_key_rows_for_group_key_ids(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
     }
 
     fn unrestricted_auth_snapshot() -> GatewayAuthApiKeySnapshot {
@@ -1713,7 +1686,6 @@ mod tests {
             &model_directive_policy,
             "openai:search",
             "missing-model",
-            None,
             false,
             None,
             &auth_snapshot,
@@ -1885,10 +1857,8 @@ mod tests {
             resolved_model: "gpt-5".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            keep_priority_on_conversion: false,
             ranking_overlay: Default::default(),
             mutation_plan: Default::default(),
-            pool_policy_overrides: Default::default(),
             matched_rules: Vec::new(),
         };
         let mut cursor = LocalCandidatePreselectionPageCursor::new(
@@ -1948,10 +1918,8 @@ mod tests {
             resolved_model: "gpt-5".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            keep_priority_on_conversion: false,
             ranking_overlay: Default::default(),
             mutation_plan: Default::default(),
-            pool_policy_overrides: Default::default(),
             matched_rules: Vec::new(),
         };
         let mut cursor = LocalCandidatePreselectionPageCursor::new(
@@ -2058,7 +2026,6 @@ mod tests {
             provider_id: "provider-openai-responses-mapped-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-responses-mapped-1".to_string(),
             endpoint_api_format: "openai:responses".to_string(),
@@ -2072,8 +2039,6 @@ mod tests {
             key_api_formats: Some(vec!["openai:responses".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:responses": 1})),
             model_id: "model-openai-responses-mapped-1".to_string(),
             global_model_id: "global-model-openai-responses-mapped-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2110,8 +2075,6 @@ mod tests {
             key_api_formats: Some(vec![api_format.to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 0,
-            key_global_priority_by_format: None,
             model_id: format!("model-{provider_id}"),
             global_model_id: "global-model-gpt-5".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -2142,7 +2105,6 @@ mod tests {
         .expect("provider should build")
         .with_transport_fields(
             true,
-            keep_priority_on_conversion,
             true,
             None,
             None,
@@ -2150,8 +2112,7 @@ mod tests {
             None,
             None,
             None,
-        )
-        .with_routing_fields(row.provider_priority);
+        );
         let endpoint = StoredProviderCatalogEndpoint::new(
             row.endpoint_id.clone(),
             row.provider_id.clone(),
@@ -2208,7 +2169,6 @@ mod tests {
             provider_id: "provider-opg".to_string(),
             provider_name: "OpenCode Go".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 1,
             provider_is_active: true,
             endpoint_id: endpoint_id.to_string(),
             endpoint_api_format: api_format.to_string(),
@@ -2228,7 +2188,6 @@ mod tests {
             ),
             key_capabilities: None,
             key_internal_priority,
-            key_global_priority_by_format: None,
             model_id: "model-opg-deepseek-v4-pro".to_string(),
             global_model_id: "global-model-deepseek-v4-pro".to_string(),
             global_model_name: "deepseek-v4-pro".to_string(),
@@ -2683,10 +2642,8 @@ mod tests {
             resolved_model: "gpt-5.4-mini".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            keep_priority_on_conversion: false,
             ranking_overlay: Default::default(),
             mutation_plan: Default::default(),
-            pool_policy_overrides: Default::default(),
             matched_rules: Vec::new(),
         };
         let mut cursor = LocalCandidatePreselectionPageCursor::new(

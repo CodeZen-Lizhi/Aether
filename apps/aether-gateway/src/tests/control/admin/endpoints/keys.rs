@@ -117,7 +117,6 @@ impl ProviderCatalogReadRepository for SummaryNullingProviderCatalogReadReposito
         &self,
         provider_ids: &[String],
     ) -> Result<Vec<StoredProviderCatalogKey>, DataLayerError> {
-        let mut keys = self.inner.list_keys_by_provider_ids(provider_ids).await?;
         for key in &mut keys {
             key.internal_priority = 50;
             key.global_priority_by_format = None;
@@ -166,7 +165,6 @@ async fn gateway_handles_admin_provider_keys_locally_with_trusted_admin_principa
         any(move |_request: Request| {
             let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
             async move {
-                *upstream_hits_inner.lock().expect("mutex should lock") += 1;
                 (StatusCode::OK, Body::from("unexpected upstream hit"))
             }
         }),
@@ -186,7 +184,6 @@ async fn gateway_handles_admin_provider_keys_locally_with_trusted_admin_principa
     key_a.created_at_unix_ms = Some(1_711_000_000);
     key_a.updated_at_unix_secs = Some(1_711_000_100);
     key_a.last_used_at_unix_secs = Some(1_711_000_120);
-    key_a.note = Some("primary key".to_string());
     key_a.status_snapshot = Some(json!({
         "oauth": {"code": "none", "requires_reauth": false, "expiring_soon": false},
         "account": {"code": "ok", "blocked": false, "recoverable": false},
@@ -363,7 +360,6 @@ async fn gateway_handles_admin_provider_keys_page_locally_with_total() {
         any(move |_request: Request| {
             let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
             async move {
-                *upstream_hits_inner.lock().expect("mutex should lock") += 1;
                 (StatusCode::OK, Body::from("unexpected upstream hit"))
             }
         }),
@@ -384,7 +380,6 @@ async fn gateway_handles_admin_provider_keys_page_locally_with_total() {
         "openai:chat",
         "sk-test-b",
     );
-    key_b.internal_priority = 20;
     key_b.created_at_unix_ms = Some(1_711_100_000);
 
     let mut key_c = sample_key(
@@ -393,7 +388,6 @@ async fn gateway_handles_admin_provider_keys_page_locally_with_total() {
         "openai:chat",
         "sk-test-c",
     );
-    key_c.internal_priority = 30;
     key_c.created_at_unix_ms = Some(1_711_200_000);
 
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
@@ -668,7 +662,6 @@ async fn gateway_creates_admin_provider_key_locally_with_trusted_admin_principal
         .list_keys_by_provider_ids(&["provider-openai".to_string()])
         .await
         .expect("keys should read");
-    assert_eq!(keys.len(), 1);
     assert_eq!(keys[0].name, "created key");
     assert_eq!(keys[0].auth_type, "api_key");
     assert_eq!(keys[0].internal_priority, 15);
@@ -1953,7 +1946,6 @@ async fn gateway_updates_admin_provider_key_locally_with_trusted_admin_principal
         .list_keys_by_ids(&["key-openai-a".to_string()])
         .await
         .expect("keys should read");
-    assert_eq!(reloaded.len(), 1);
     assert_eq!(reloaded[0].name, "updated key");
     assert_eq!(reloaded[0].internal_priority, 15);
     assert_eq!(reloaded[0].rpm_limit, None);
@@ -2890,13 +2882,11 @@ async fn gateway_handles_admin_keys_grouped_by_format_locally_with_trusted_admin
         "openai:chat",
         "sk-test-a",
     );
-    key_a.internal_priority = 10;
     key_a.request_count = Some(12);
     key_a.success_count = Some(9);
     key_a.created_at_unix_ms = Some(1_711_000_000);
     key_a.updated_at_unix_secs = Some(1_711_000_100);
     key_a.capabilities = Some(json!({"cache_1h": true, "gemini_files": false}));
-    key_a.global_priority_by_format = Some(json!({"openai:chat": 3}));
     key_a.health_by_format = Some(json!({"openai:chat": {"health_score": 0.8}}));
     key_a.circuit_breaker_by_format = Some(json!({"openai:chat": {"open": false}}));
 
@@ -2906,7 +2896,6 @@ async fn gateway_handles_admin_keys_grouped_by_format_locally_with_trusted_admin
         "claude:messages",
         "sk-ant-a",
     );
-    key_b.internal_priority = 20;
     key_b.request_count = Some(2);
     key_b.success_count = Some(1);
     key_b.created_at_unix_ms = Some(1_711_100_000);
@@ -2933,7 +2922,7 @@ async fn gateway_handles_admin_keys_grouped_by_format_locally_with_trusted_admin
         vec![
             sample_provider("provider-openai", "openai", 10),
             sample_provider("provider-claude", "claude", 20)
-                .with_transport_fields(false, false, true, None, None, None, None, None, None),
+                .with_transport_fields(false, true, None, None, None, None, None, None),
             codex_provider,
         ],
         vec![

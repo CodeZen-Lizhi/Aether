@@ -378,11 +378,8 @@ impl AppState {
             #[cfg(test)]
             turnstile_siteverify_timeout_override: None,
             #[cfg(test)]
-            provider_oauth_state_store: None,
             #[cfg(test)]
-            provider_oauth_device_session_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
             #[cfg(test)]
-            provider_oauth_batch_task_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
             #[cfg(test)]
             auth_session_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
             #[cfg(test)]
@@ -417,8 +414,6 @@ impl AppState {
             admin_monitoring_cache_affinity_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
             #[cfg(test)]
             admin_monitoring_redis_key_store: Some(Arc::new(StdMutex::new(HashMap::new()))),
-            #[cfg(test)]
-            provider_oauth_token_url_overrides: Arc::new(StdMutex::new(HashMap::new())),
         })
     }
 

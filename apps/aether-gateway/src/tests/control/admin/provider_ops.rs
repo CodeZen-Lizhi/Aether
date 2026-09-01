@@ -289,7 +289,6 @@ async fn gateway_handles_admin_provider_ops_status_locally_with_trusted_admin_pr
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -383,7 +382,6 @@ async fn gateway_handles_admin_provider_ops_config_locally_with_trusted_admin_pr
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -489,7 +487,6 @@ async fn gateway_saves_admin_provider_ops_config_locally_with_trusted_admin_prin
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -661,7 +658,6 @@ async fn gateway_deletes_admin_provider_ops_config_locally_with_trusted_admin_pr
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -2302,7 +2298,6 @@ async fn gateway_verifies_admin_provider_ops_sub2api_with_cached_access_token_wi
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -2442,7 +2437,6 @@ async fn gateway_verifies_admin_provider_ops_sub2api_persists_rotated_runtime_cr
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -2590,7 +2584,6 @@ async fn gateway_rejects_admin_provider_ops_connect_locally_with_trusted_admin_p
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -2723,7 +2716,6 @@ async fn gateway_handles_admin_provider_ops_balance_locally_with_trusted_admin_p
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -2861,7 +2853,6 @@ async fn gateway_handles_admin_provider_ops_balance_locally_for_generic_api_prox
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3018,7 +3009,6 @@ async fn gateway_handles_admin_provider_ops_balance_locally_without_proxy_via_ex
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3147,7 +3137,6 @@ async fn gateway_handles_admin_provider_ops_checkin_locally_with_trusted_admin_p
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3269,7 +3258,6 @@ async fn gateway_handles_admin_provider_ops_checkin_locally_for_generic_api_prox
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3481,7 +3469,6 @@ async fn gateway_handles_admin_provider_ops_batch_balance_locally_with_trusted_a
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3509,7 +3496,6 @@ async fn gateway_handles_admin_provider_ops_batch_balance_locally_with_trusted_a
             ),
             sample_provider("provider-anyrouter", "openai", 20).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3666,7 +3652,6 @@ async fn gateway_handles_admin_provider_ops_anyrouter_balance_with_auth_expired_
         vec![
             sample_provider("provider-anyrouter", "openai", 20).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3777,7 +3762,6 @@ async fn gateway_handles_admin_provider_ops_balance_cache_refresh_modes_with_red
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -3939,7 +3923,6 @@ async fn gateway_handles_admin_provider_ops_balance_cache_miss_without_refresh_r
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -4102,7 +4085,6 @@ async fn gateway_clears_admin_provider_ops_balance_cache_after_config_save_with_
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -4314,7 +4296,6 @@ async fn gateway_verify_does_not_pollute_balance_cache_and_balance_uses_saved_ac
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -4503,7 +4484,6 @@ async fn gateway_handles_admin_provider_ops_batch_balance_with_pending_cache_hit
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -4692,7 +4672,6 @@ async fn gateway_handles_admin_provider_ops_sub2api_balance_with_refresh_token_r
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -4961,7 +4940,6 @@ async fn gateway_handles_admin_provider_ops_sub2api_balance_against_site_root_wh
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,
@@ -5105,7 +5083,6 @@ async fn gateway_handles_admin_provider_ops_sub2api_balance_with_session_login_i
         vec![
             sample_provider("provider-openai", "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 None,
                 None,

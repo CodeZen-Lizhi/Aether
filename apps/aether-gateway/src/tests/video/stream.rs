@@ -46,7 +46,6 @@ async fn gateway_executes_openai_video_content_from_reconstructed_data_task_with
             true,
             false,
             false,
-            None,
             Some(2),
             None,
             Some(20.0),

@@ -23,7 +23,7 @@ use crate::ai_serving::planner::standard::{
 use crate::ai_serving::transport::{
     build_openai_image_headers, build_openai_image_upstream_url,
     build_standard_provider_request_headers, openai_image_transport_unsupported_reason,
-    resolve_openai_image_auth, ProviderOpenAiImageHeadersInput,
+    request_pair_direct_auth, resolve_openai_image_auth, ProviderOpenAiImageHeadersInput,
     StandardProviderRequestHeadersInput,
 };
 use crate::ai_serving::{
@@ -344,7 +344,7 @@ pub(crate) async fn resolve_local_standard_candidate_payload_parts(
         planner_state,
         transport,
         candidate,
-        request_conversion_direct_auth(transport, spec_metadata.api_format),
+        request_pair_direct_auth(transport, provider_api_format),
         oauth_context,
     )
     .await

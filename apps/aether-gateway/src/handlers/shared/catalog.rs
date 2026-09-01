@@ -1508,72 +1508,6 @@ fn build_antigravity_quota_status_snapshot(
     }))
 }
 
-fn build_grok_quota_status_snapshot(
-    upstream_metadata: Option<&Value>,
-    source: &str,
-) -> Option<Value> {
-    let metadata = provider_quota_metadata_bucket(upstream_metadata, "grok")?;
-    let observed_at_unix_secs = provider_quota_timestamp_unix_secs(metadata.get("updated_at"));
-    let inferred_pool_tier = grok_pool_tier_from_quota_bucket(metadata);
-    let pool_tier = provider_quota_metadata_string(metadata, &["pool_tier", "tier"])
-        .or_else(|| inferred_pool_tier.map(ToOwned::to_owned));
-    let plan_type = provider_quota_metadata_string(metadata, &["plan_type", "plan"])
-        .or_else(|| pool_tier.clone());
-    let supported_windows = grok_supported_quota_windows_for_tier(pool_tier.as_deref());
-    let windows = provider_quota_model_bucket(metadata)
-        .map(|models| {
-            models
-                .iter()
-                .filter_map(|(model_name, item)| {
-                    if !supported_windows
-                        .iter()
-                        .any(|(quota_key, _)| *quota_key == model_name.as_str())
-                    {
-                        return None;
-                    }
-                    model_quota_window_snapshot(
-                        model_name,
-                        item.as_object()?,
-                        observed_at_unix_secs,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    if windows.is_empty() && observed_at_unix_secs.is_none() {
-        return None;
-    }
-
-    let usage_ratio = quota_windows_usage_ratio(&windows);
-    let reset_seconds = quota_windows_min_reset_seconds(&windows);
-    let reset_at = quota_windows_min_reset_at(&windows);
-    let exhausted = quota_windows_all_exhausted(&windows);
-
-    Some(json!({
-        "version": 2,
-        "provider_type": "grok",
-        "code": if exhausted { "exhausted" } else { "ok" },
-        "label": if exhausted { Some("额度耗尽") } else { None::<&str> },
-        "reason": if exhausted {
-            Some("所有 Grok 模式额度已耗尽")
-        } else {
-            None::<&str>
-        },
-        "freshness": "fresh",
-        "source": source,
-        "observed_at": observed_at_unix_secs,
-        "exhausted": exhausted,
-        "usage_ratio": usage_ratio,
-        "updated_at": observed_at_unix_secs,
-        "reset_at": reset_at,
-        "reset_seconds": reset_seconds,
-        "plan_type": plan_type,
-        "pool_tier": pool_tier,
-        "windows": windows,
-    }))
-}
-
 fn gemini_cli_plan_type(metadata: &Map<String, Value>) -> Option<String> {
     provider_quota_metadata_string(metadata, &["plan_type", "tier", "plan"]).or_else(|| {
         provider_quota_metadata_string_by_paths(
@@ -1927,7 +1861,6 @@ pub(crate) fn sync_provider_key_quota_status_snapshot(
         "chatgpt_web" => build_chatgpt_web_quota_status_snapshot(upstream_metadata, source),
         "windsurf" => build_windsurf_quota_status_snapshot(upstream_metadata, source),
         "antigravity" => build_antigravity_quota_status_snapshot(upstream_metadata, source),
-        "grok" => build_grok_quota_status_snapshot(upstream_metadata, source),
         "gemini_cli" => build_gemini_cli_quota_status_snapshot(upstream_metadata, source),
         _ => None,
     }?;
@@ -2502,15 +2435,13 @@ mod tests {
             "provider-test".to_string(),
             "default".to_string(),
             "api_key".to_string(),
-            None,
             true,
         )
         .expect("key should build")
         .with_transport_fields(
             Some(json!(["openai:chat"])),
+            false,
             encrypted_api_key,
-            None,
-            None,
             None,
             None,
             None,
@@ -2556,7 +2487,6 @@ mod tests {
         .expect("key should build")
         .with_transport_fields(
             Some(json!(["openai:chat"])),
-            encrypted_api_key,
             None,
             None,
             None,
@@ -2594,7 +2524,6 @@ mod tests {
         .expect("key should build")
         .with_transport_fields(
             Some(json!(["openai:responses"])),
-            encrypted_placeholder,
             Some(encrypted_auth_config),
             None,
             None,
@@ -2884,69 +2813,6 @@ mod tests {
         assert_eq!(window.get("remaining_value"), Some(&json!(19.0)));
         assert_eq!(window.get("limit_value"), Some(&json!(19.0)));
         assert_eq!(window.get("used_value"), Some(&json!(0.0)));
-    }
-
-    #[test]
-    fn provider_key_status_snapshot_payload_backfills_grok_model_quota() {
-        let mut key = sample_catalog_key();
-        key.upstream_metadata = Some(json!({
-            "grok": {
-                "updated_at": 1_778_067_246u64,
-                "pool_tier": "heavy",
-                "plan_type": "heavy",
-                "quota_by_model": {
-                    "quota_auto": {
-                        "display_name": "auto",
-                        "remaining_fraction": 0.4,
-                        "used_percent": 60.0,
-                        "remaining": 60.0,
-                        "total": 150.0,
-                        "reset_at": 1_778_157_172u64,
-                        "is_exhausted": false
-                    },
-                    "quota_heavy": {
-                        "display_name": "heavy",
-                        "remaining_fraction": 0.0,
-                        "used_percent": 100.0,
-                        "reset_at": 1_778_157_172u64,
-                        "is_exhausted": true
-                    }
-                }
-            }
-        }));
-
-        let payload = provider_key_status_snapshot_payload(&key, "grok");
-        let quota = payload
-            .get("quota")
-            .and_then(Value::as_object)
-            .expect("quota snapshot should be object");
-        let windows = quota
-            .get("windows")
-            .and_then(Value::as_array)
-            .expect("grok quota windows should exist");
-
-        assert_eq!(quota.get("provider_type"), Some(&json!("grok")));
-        assert_eq!(quota.get("code"), Some(&json!("ok")));
-        assert_eq!(quota.get("plan_type"), Some(&json!("heavy")));
-        assert_eq!(quota.get("pool_tier"), Some(&json!("heavy")));
-        assert_eq!(quota.get("exhausted"), Some(&json!(false)));
-        assert_eq!(quota.get("usage_ratio"), Some(&json!(1.0)));
-        assert_eq!(quota.get("reset_at"), Some(&json!(1_778_157_172u64)));
-        assert_eq!(windows.len(), 2);
-        assert!(windows.iter().any(|window| {
-            window
-                .get("code")
-                .and_then(Value::as_str)
-                .is_some_and(|code| code == "model:quota_auto")
-        }));
-        let auto = windows
-            .iter()
-            .filter_map(Value::as_object)
-            .find(|window| window.get("code") == Some(&json!("model:quota_auto")))
-            .expect("auto quota window should exist");
-        assert_eq!(auto.get("remaining_value"), Some(&json!(60.0)));
-        assert_eq!(auto.get("limit_value"), Some(&json!(150.0)));
-        assert_eq!(auto.get("used_value"), Some(&json!(90.0)));
     }
 
     #[test]

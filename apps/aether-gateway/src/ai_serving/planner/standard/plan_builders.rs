@@ -10,10 +10,7 @@ use crate::ai_serving::transport::{
     build_standard_plan_fallback_headers, StandardPlanFallbackAcceptPolicy,
     StandardPlanFallbackHeadersInput,
 };
-use crate::ai_serving::{
-    generic_decision_missing_exact_provider_request,
-    provider_adaptation_requires_eventstream_accept,
-};
+use crate::ai_serving::generic_decision_missing_exact_provider_request;
 use crate::{AiExecutionDecision, GatewayError};
 
 pub(crate) fn build_standard_sync_plan_from_decision(
@@ -110,20 +107,7 @@ pub(crate) fn build_standard_stream_plan_from_decision(
         return Ok(None);
     };
 
-    let envelope_name = payload
-        .report_context
-        .as_ref()
-        .and_then(|context| context.get("envelope_name"))
-        .and_then(serde_json::Value::as_str);
-    let accept_policy = if payload.upstream_is_stream
-        && provider_adaptation_requires_eventstream_accept(
-            envelope_name,
-            core.provider_api_format.as_str(),
-        ) {
-        StandardPlanFallbackAcceptPolicy::ProviderEventStreamIfMissing
-    } else {
-        StandardPlanFallbackAcceptPolicy::TextEventStreamIfStreaming
-    };
+    let accept_policy = StandardPlanFallbackAcceptPolicy::TextEventStreamIfStreaming;
     let mut provider_request_headers =
         build_standard_plan_fallback_headers(StandardPlanFallbackHeadersInput {
             request_headers: &parts.headers,

@@ -5,15 +5,6 @@ impl<'a> AdminAppState<'a> {
         &self.app.client
     }
 
-    pub(crate) fn provider_oauth_token_url(
-        &self,
-        provider_type: &str,
-        default_url: &str,
-    ) -> String {
-        self.app
-            .provider_oauth_token_url(provider_type, default_url)
-    }
-
     pub(crate) fn encryption_key(&self) -> Option<&str> {
         self.app.encryption_key()
     }

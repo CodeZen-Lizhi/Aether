@@ -1,9 +1,7 @@
 use crate::ai_serving::api::{
     build_core_error_body_for_client_format, core_error_background_report_kind,
     core_error_default_client_api_format, core_success_background_report_kind,
-    is_core_error_finalize_kind, maybe_compile_sync_finalize_response,
-    normalize_provider_private_response_value as unwrap_local_finalize_response_value,
-    LocalCoreSyncErrorKind,
+    is_core_error_finalize_kind, maybe_compile_sync_finalize_response, LocalCoreSyncErrorKind,
 };
 use crate::api::response::build_client_response_from_parts;
 use crate::control::GatewayControlDecision;
@@ -310,14 +308,6 @@ fn resolve_local_sync_source_body_json(
     } else {
         return Ok(None);
     };
-
-    if let Some(report_context) = payload.report_context.as_ref() {
-        if let Some(unwrapped) =
-            unwrap_local_finalize_response_value(body_json.clone(), report_context)
-        {
-            return Ok(Some(unwrapped));
-        }
-    }
 
     Ok(Some(body_json))
 }

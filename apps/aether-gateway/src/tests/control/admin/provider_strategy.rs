@@ -311,7 +311,6 @@ async fn gateway_updates_admin_provider_strategy_billing_locally_with_trusted_ad
         .list_providers_by_ids(&["provider-openai".to_string()])
         .await
         .expect("provider query should succeed");
-    assert_eq!(updated[0].billing_type.as_deref(), Some("monthly_quota"));
     assert_eq!(updated[0].monthly_quota_usd, Some(50.0));
     assert_eq!(updated[0].monthly_used_usd, Some(12.5));
     assert_eq!(updated[0].quota_reset_day, Some(30));

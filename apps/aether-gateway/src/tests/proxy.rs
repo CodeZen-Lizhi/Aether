@@ -38,7 +38,6 @@ fn sample_auth_snapshot(
         "user".to_string(),
         "local".to_string(),
         true,
-        false,
         Some(serde_json::json!(["openai"])),
         Some(serde_json::json!(["openai:chat"])),
         Some(serde_json::json!([allowed_model])),
@@ -105,10 +104,9 @@ fn sample_provider_with_request_timeout(
     .expect("provider should build")
     .with_transport_fields(
         true,
+            false,
         false,
         false,
-        None,
-        None,
         None,
         request_timeout_secs,
         None,

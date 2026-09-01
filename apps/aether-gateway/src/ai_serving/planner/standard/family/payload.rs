@@ -395,7 +395,6 @@ GatewayProviderTransportSnapshot,
                 provider_type: "custom".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: true,
                 concurrent_limit: None,
                 max_retries: None,
@@ -448,10 +447,6 @@ GatewayProviderTransportSnapshot,
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: Some(json!({
-                    "claude:messages": 1,
-                    "openai:chat": 1,
-                })),
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -520,7 +515,6 @@ GatewayProviderTransportSnapshot,
         transport.endpoint.custom_path = Some("/v1internal:{action}".to_string());
         transport.endpoint.endpoint_kind = Some("generate_content".to_string());
         transport.key.auth_type = "bearer".to_string();
-        transport.key.api_formats = Some(vec!["gemini:generate_content".to_string()]);
         transport.key.global_priority_by_format = Some(json!({
             "gemini:generate_content": 1,
         }));

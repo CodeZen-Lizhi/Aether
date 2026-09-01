@@ -190,9 +190,6 @@ fn admin_shared_does_not_own_provider_support() {
     let provider_support =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/provider/shared/support.rs");
     for pattern in [
-        "pub(crate) struct AdminProviderPoolConfig",
-        "pub(crate) struct AdminProviderPoolRuntimeState",
-        "pub(crate) const ADMIN_PROVIDER_POOL_SCAN_BATCH",
         "pub(crate) const ADMIN_PROVIDER_OAUTH_DATA_UNAVAILABLE_DETAIL",
     ] {
         assert!(

@@ -1,5 +1,4 @@
 use super::{AppState, GatewayError, LocalMutationOutcome, LocalProviderDeleteTaskState};
-use crate::handlers::shared::sync_provider_key_oauth_status_snapshot;
 use aether_data_contracts::repository::{candidates, global_models, provider_catalog};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::warn;
@@ -887,26 +886,6 @@ impl AppState {
         &self,
         key_id: &str,
     ) -> Result<bool, GatewayError> {
-        let Some(mut key) = self
-            .data
-            .list_provider_catalog_keys_by_ids(&[key_id.to_string()])
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))?
-            .into_iter()
-            .next()
-        else {
-            return Ok(false);
-        };
-
-        key.oauth_invalid_at_unix_secs = None;
-        key.oauth_invalid_reason = None;
-        key.status_snapshot =
-            sync_provider_key_oauth_status_snapshot(key.status_snapshot.as_ref(), &key);
-        key.updated_at_unix_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .ok()
-            .map(|duration| duration.as_secs());
-
         let cleared = self
             .data
             .clear_provider_catalog_key_oauth_invalid_marker(key_id)
@@ -918,23 +897,7 @@ impl AppState {
         // The marker write already committed. Invalidate before any follow-up
         // status patch so error/false paths cannot retain an invalid transport.
         self.invalidate_provider_transport_runtime_state_caches();
-        let oauth = key
-            .status_snapshot
-            .as_ref()
-            .and_then(serde_json::Value::as_object)
-            .and_then(|snapshot| snapshot.get("oauth"))
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let updated = self
-            .update_provider_catalog_key_status_snapshot(
-                &provider_catalog::ProviderCatalogKeyStatusSnapshotUpdate {
-                    key_id: key_id.to_string(),
-                    status_snapshot_patch: serde_json::json!({"oauth":oauth}),
-                    updated_at_unix_secs: key.updated_at_unix_secs,
-                },
-            )
-            .await?;
-        Ok(updated)
+        Ok(true)
     }
 
     pub(crate) fn put_provider_delete_task(&self, task: LocalProviderDeleteTaskState) {
@@ -1080,7 +1043,6 @@ mod tests {
     use aether_data::DataLayerError;
     use aether_data_contracts::repository::candidate_selection::{
         MinimalCandidateSelectionReadRepository, StoredMinimalCandidateSelectionRow,
-        StoredPoolKeyCandidateRowsByKeyIdsQuery, StoredPoolKeyCandidateRowsQuery,
         StoredRequestedModelCandidateRowsQuery,
     };
     use aether_data_contracts::repository::global_models::{
@@ -1262,19 +1224,6 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn list_pool_key_rows_for_group(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pool_key_rows_for_group_key_ids(
-            &self,
-            _query: &StoredPoolKeyCandidateRowsByKeyIdsQuery,
-        ) -> Result<Vec<StoredMinimalCandidateSelectionRow>, DataLayerError> {
-            Ok(Vec::new())
-        }
     }
 
     #[tokio::test]
@@ -1378,9 +1327,7 @@ mod tests {
         let snapshot = state
             .read_provider_transport_snapshot("provider-1", "endpoint-1", "key-1")
             .await
-            .expect("provider transport should read")
-            .expect("provider transport should exist");
-        assert!(!snapshot.provider.keep_priority_on_conversion);
+            .expect("provider transport should read");
 
         let cache_key = "scheduler_affinity:api-key-1:openai:chat:gpt-5";
         let ttl = Duration::from_secs(300);
@@ -1400,8 +1347,6 @@ mod tests {
         let initial_epoch = state.scheduler_affinity_epoch();
 
         let mut updated_provider = provider;
-        updated_provider.keep_priority_on_conversion = true;
-        updated_provider.provider_priority = -10;
         state
             .update_provider_catalog_provider(&updated_provider)
             .await
@@ -1415,9 +1360,7 @@ mod tests {
         let snapshot = state
             .read_provider_transport_snapshot("provider-1", "endpoint-1", "key-1")
             .await
-            .expect("provider transport should read after update")
-            .expect("provider transport should exist after update");
-        assert!(snapshot.provider.keep_priority_on_conversion);
+            .expect("provider transport should read after update");
     }
 
     #[tokio::test]

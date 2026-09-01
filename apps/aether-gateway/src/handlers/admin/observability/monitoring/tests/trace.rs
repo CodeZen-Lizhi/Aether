@@ -27,7 +27,6 @@ async fn admin_monitoring_trace_request_returns_local_payload() {
             RequestCandidateStatus::Pending,
             None,
             None,
-            None,
         ),
         sample_candidate(
             "cand-used",

@@ -233,8 +233,6 @@ fn build_admin_monitoring_usage_routing_snapshot_trace(
             provider_name: non_empty_string(usage.provider_name.as_str()),
             provider_website: None,
             provider_type: None,
-            provider_priority: None,
-            provider_keep_priority_on_conversion: None,
             provider_enable_format_conversion: None,
             endpoint_api_format: usage
                 .endpoint_api_format
@@ -252,8 +250,6 @@ fn build_admin_monitoring_usage_routing_snapshot_trace(
             provider_key_name: usage.routing_key_name().map(ToOwned::to_owned),
             provider_key_auth_type: None,
             provider_key_api_formats: None,
-            provider_key_internal_priority: None,
-            provider_key_global_priority_by_format: None,
             provider_key_capabilities: None,
             provider_key_is_active: None,
         }],

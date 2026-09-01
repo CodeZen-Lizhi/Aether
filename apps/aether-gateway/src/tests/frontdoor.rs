@@ -128,7 +128,6 @@ fn unrestricted_models_snapshot(api_key_id: &str, user_id: &str) -> StoredAuthAp
         false,
         None,
         None,
-        None,
         api_key_id.to_string(),
         Some("default".to_string()),
         true,
@@ -202,7 +201,6 @@ fn sample_key(
     .expect("key should build")
     .with_transport_fields(
         Some(json!([api_format])),
-        encrypted_api_key,
         None,
         None,
         None,
@@ -278,8 +276,6 @@ fn sample_models_candidate_row(
         key_api_formats: Some(vec![api_format.to_string()]),
         key_allowed_models: None,
         key_capabilities: None,
-        key_internal_priority: 50,
-        key_global_priority_by_format: None,
         model_id: format!("model-{provider_id}-{global_model_name}"),
         global_model_id: format!("global-{global_model_name}"),
         global_model_name: global_model_name.to_string(),

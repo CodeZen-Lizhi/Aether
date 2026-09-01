@@ -423,7 +423,7 @@ mod tests {
         .expect("endpoint should build")
         .with_transport_fields(
             "https://api.provider.example".to_string(),
-            None,
+            false,
             None,
             Some(2),
             None,

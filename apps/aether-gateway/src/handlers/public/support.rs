@@ -654,7 +654,6 @@ pub(crate) async fn maybe_build_local_public_support_response(
                             let mut payload = json!({
                                 "id": provider_id.clone(),
                                 "is_active": provider.is_active,
-                                "provider_priority": provider.provider_priority,
                             });
                             if include_endpoints {
                                 payload["endpoints"] = serde_json::Value::Array(
@@ -724,7 +723,6 @@ pub(crate) async fn maybe_build_local_public_support_response(
             let mut payload = json!({
                 "id": provider_id.clone(),
                 "is_active": provider.is_active,
-                "provider_priority": provider.provider_priority,
             });
             if include_endpoints {
                 let endpoints = state

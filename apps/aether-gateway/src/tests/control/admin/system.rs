@@ -244,7 +244,6 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
         vec![
             sample_provider(&provider_id, "openai", 10).with_transport_fields(
                 true,
-                false,
                 true,
                 Some(8),
                 Some(3),

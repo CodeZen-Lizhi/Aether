@@ -14,7 +14,6 @@ use tracing::warn;
 
 use crate::ai_serving::{GatewayAuthApiKeySnapshot, PlannerAppState};
 use crate::clock::current_unix_ms;
-use crate::handlers::shared::provider_pool::admin_provider_pool_config_from_config_value;
 use crate::scheduler::config::{
     read_scheduler_ordering_config, SchedulerOrderingConfig, SchedulerSchedulingMode,
 };
@@ -159,17 +158,7 @@ fn cached_affinity_matches_local_execution_scope(
     eligible: &EligibleLocalExecutionCandidate,
     target: &SchedulerAffinityTarget,
 ) -> bool {
-    if local_execution_candidate_uses_pool(eligible) {
-        return eligible.candidate.provider_id == target.provider_id
-            && eligible.candidate.endpoint_id == target.endpoint_id;
-    }
-
     matches_affinity_target(&eligible.candidate, target)
-}
-
-fn local_execution_candidate_uses_pool(eligible: &EligibleLocalExecutionCandidate) -> bool {
-    admin_provider_pool_config_from_config_value(eligible.transport.provider.config.as_ref())
-        .is_some()
 }
 
 fn ai_ranking_context_config(ordering_config: SchedulerOrderingConfig) -> AiRankingContextConfig {
@@ -216,7 +205,7 @@ fn scheduler_ordering_config_from_routing_policy(
             RoutingSchedulingMode::CacheAffinity => SchedulerSchedulingMode::CacheAffinity,
             RoutingSchedulingMode::LoadBalance => SchedulerSchedulingMode::LoadBalance,
         },
-        keep_priority_on_conversion: policy.keep_priority_on_conversion,
+        keep_priority_on_conversion: false,
     }
 }
 
@@ -237,10 +226,6 @@ fn routing_overlaid_candidate(
             .ranking_overlay
             .key_priority_overrides
             .get(candidate.key_id.as_str()),
-        LocalExecutionCandidateKind::PoolGroup => policy
-            .ranking_overlay
-            .pool_priority_overrides
-            .get(candidate.provider_id.as_str()),
     };
     if let Some(overlaid_key_priority) = overlaid_key_priority.copied() {
         overlaid.key_internal_priority = overlaid_key_priority;
@@ -383,10 +368,8 @@ AiRankableCandidateParts,
             resolved_model: "gpt-5".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::CacheAffinity,
-            keep_priority_on_conversion: false,
             ranking_overlay: aether_routing_core::RankingOverlay::default(),
             mutation_plan: Default::default(),
-            pool_policy_overrides: BTreeMap::new(),
             matched_rules: Vec::new(),
         };
 
@@ -418,10 +401,8 @@ AiRankableCandidateParts,
             resolved_model: "gpt-5.4-mini".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::Provider,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::FixedOrder,
-            keep_priority_on_conversion: false,
             ranking_overlay: Default::default(),
             mutation_plan: Default::default(),
-            pool_policy_overrides: Default::default(),
             matched_rules: Vec::new(),
         };
 
@@ -452,14 +433,11 @@ AiRankableCandidateParts,
             resolved_model: "gpt-5".to_string(),
             priority_mode: aether_routing_core::RoutingSetPriorityMode::GlobalKey,
             scheduling_mode: aether_routing_core::RoutingSchedulingMode::CacheAffinity,
-            keep_priority_on_conversion: false,
             ranking_overlay: aether_routing_core::RankingOverlay {
-                pool_priority_overrides: BTreeMap::from([("provider-1".to_string(), 4)]),
                 key_priority_overrides: BTreeMap::from([("representative-key".to_string(), 1)]),
                 ..Default::default()
             },
             mutation_plan: Default::default(),
-            pool_policy_overrides: BTreeMap::new(),
             matched_rules: Vec::new(),
         };
 
@@ -500,9 +478,8 @@ AiRankableCandidateParts,
         .expect("provider should build")
         .with_transport_fields(
             true,
-            keep_priority_on_conversion,
             false,
-            None,
+            false,
             None,
             None,
             None,
@@ -1910,197 +1887,6 @@ AiRankableCandidateParts,
                 .collect::<Vec<_>>(),
             vec![("key-cached", "key_inactive")]
         );
-    }
-
-    #[tokio::test]
-    async fn pool_key_affinity_promotes_logical_pool_group_when_cached_key_is_inactive() {
-        let provider_catalog = InMemoryProviderCatalogReadRepository::seed(
-            vec![
-                sample_provider_with_options("provider-priority", false, 0),
-                sample_provider_with_config(
-                    "provider-pool",
-                    false,
-                    10,
-                    Some(json!({ "pool_advanced": {} })),
-                ),
-            ],
-            vec![
-                sample_endpoint_for_provider(
-                    "provider-priority",
-                    "endpoint-priority",
-                    "openai:chat",
-                ),
-                sample_endpoint_for_provider("provider-pool", "endpoint-pool", "openai:chat"),
-            ],
-            vec![
-                sample_key_for_provider("provider-priority", "key-priority", ""),
-                sample_key_for_provider_with_options(
-                    "provider-pool",
-                    "key-cached",
-                    "",
-                    false,
-                    Some(json!(["openai:chat"])),
-                    None,
-                ),
-                sample_key_for_provider("provider-pool", "key-fallback", ""),
-            ],
-        );
-        let data_state = GatewayDataState::with_provider_transport_reader_for_tests(
-            std::sync::Arc::new(provider_catalog),
-            "development-key",
-        );
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data_state);
-        let auth_snapshot = sample_auth_snapshot();
-        let client_session_affinity = ClientSessionAffinity::from_session_key("session-1");
-        let cached_candidate = sample_priority_candidate(
-            "provider-pool",
-            "endpoint-pool",
-            "key-cached",
-            "openai:chat",
-            Some(10),
-            10,
-        );
-        remember_scheduler_affinity_for_candidate(
-            PlannerAppState::new(&state),
-            Some(&auth_snapshot),
-            Some(&client_session_affinity),
-            "openai:chat",
-            "gpt-4.1",
-            &cached_candidate,
-        );
-
-        let (ranked, skipped) = resolve_and_rank_logical_local_execution_candidates(
-            PlannerAppState::new(&state),
-            vec![
-                cached_candidate,
-                sample_priority_candidate(
-                    "provider-priority",
-                    "endpoint-priority",
-                    "key-priority",
-                    "openai:chat",
-                    Some(0),
-                    0,
-                ),
-            ],
-            "openai:chat",
-            Some("gpt-4.1"),
-            Some(&auth_snapshot),
-            Some(&client_session_affinity),
-            None,
-            None,
-            None,
-            None,
-            aether_ai_serving::AiCandidateResolutionMode::Standard,
-        )
-        .await;
-
-        assert_eq!(ranked[0].candidate.key_id, "key-cached");
-        assert_eq!(ranked[0].kind, LocalExecutionCandidateKind::PoolGroup);
-        assert_eq!(ranked[0].orchestration.pool_key_index, None);
-        assert_eq!(
-            ranked[0]
-                .ranking
-                .as_ref()
-                .and_then(|ranking| ranking.promoted_by),
-            Some(RANKING_REASON_CACHED_AFFINITY)
-        );
-        assert!(skipped.is_empty());
-    }
-
-    #[tokio::test]
-    async fn pool_key_affinity_promotes_logical_pool_group_when_cached_key_is_blocked() {
-        let mut cached_key = sample_key_for_provider("provider-pool", "key-cached", "");
-        cached_key.oauth_invalid_reason =
-            Some("[ACCOUNT_BLOCK] account has been deactivated".to_string());
-
-        let provider_catalog = InMemoryProviderCatalogReadRepository::seed(
-            vec![
-                sample_provider_with_options("provider-priority", false, 0),
-                sample_provider_with_config(
-                    "provider-pool",
-                    false,
-                    10,
-                    Some(json!({ "pool_advanced": {} })),
-                ),
-            ],
-            vec![
-                sample_endpoint_for_provider(
-                    "provider-priority",
-                    "endpoint-priority",
-                    "openai:chat",
-                ),
-                sample_endpoint_for_provider("provider-pool", "endpoint-pool", "openai:chat"),
-            ],
-            vec![
-                sample_key_for_provider("provider-priority", "key-priority", ""),
-                cached_key,
-                sample_key_for_provider("provider-pool", "key-fallback", ""),
-            ],
-        );
-        let data_state = GatewayDataState::with_provider_transport_reader_for_tests(
-            std::sync::Arc::new(provider_catalog),
-            "development-key",
-        );
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data_state);
-        let auth_snapshot = sample_auth_snapshot();
-        let client_session_affinity = ClientSessionAffinity::from_session_key("session-1");
-        let cached_candidate = sample_priority_candidate(
-            "provider-pool",
-            "endpoint-pool",
-            "key-cached",
-            "openai:chat",
-            Some(10),
-            10,
-        );
-        remember_scheduler_affinity_for_candidate(
-            PlannerAppState::new(&state),
-            Some(&auth_snapshot),
-            Some(&client_session_affinity),
-            "openai:chat",
-            "gpt-4.1",
-            &cached_candidate,
-        );
-
-        let (ranked, skipped) = resolve_and_rank_logical_local_execution_candidates(
-            PlannerAppState::new(&state),
-            vec![
-                cached_candidate,
-                sample_priority_candidate(
-                    "provider-priority",
-                    "endpoint-priority",
-                    "key-priority",
-                    "openai:chat",
-                    Some(0),
-                    0,
-                ),
-            ],
-            "openai:chat",
-            Some("gpt-4.1"),
-            Some(&auth_snapshot),
-            Some(&client_session_affinity),
-            None,
-            None,
-            None,
-            None,
-            aether_ai_serving::AiCandidateResolutionMode::Standard,
-        )
-        .await;
-
-        assert_eq!(ranked[0].candidate.key_id, "key-cached");
-        assert_eq!(ranked[0].kind, LocalExecutionCandidateKind::PoolGroup);
-        assert_eq!(ranked[0].orchestration.pool_key_index, None);
-        assert_eq!(
-            ranked[0]
-                .ranking
-                .as_ref()
-                .and_then(|ranking| ranking.promoted_by),
-            Some(RANKING_REASON_CACHED_AFFINITY)
-        );
-        assert!(skipped.is_empty());
     }
 
     #[tokio::test]

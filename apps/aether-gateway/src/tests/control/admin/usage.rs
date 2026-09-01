@@ -24,7 +24,7 @@ use super::super::{
     sample_provider, start_server, AppState,
 };
 use crate::admin_api::{
-    maybe_build_local_admin_usage_response, AdminAppState, AdminRequestContext,
+    AdminAppState, AdminRequestContext,
 };
 use crate::audit::AdminAuditEvent;
 use crate::constants::{
@@ -85,13 +85,14 @@ async fn local_admin_usage_response(
     .await
     .expect("request context should resolve");
     let body_bytes = body.map(|value| Bytes::from(value.to_string()));
-    maybe_build_local_admin_usage_response(
-        &AdminAppState::new(state),
-        &AdminRequestContext::new(&request_context),
+    crate::admin_api::maybe_build_local_admin_response(crate::admin_api::AdminRouteRequest::new(
+        state,
+        &request_context,
+        &headers,
         body_bytes.as_ref(),
-    )
+    ))
     .await
-    .expect("local usage response should build")
+    .expect("local admin response should build")
     .expect("usage route should resolve locally")
 }
 

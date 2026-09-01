@@ -7,7 +7,6 @@
 //! normal HTTP/SSE execution runtime.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -48,8 +47,7 @@ use crate::execution_runtime::attempt_lifecycle::{
 };
 use crate::orchestration::{
     apply_local_stream_failure_effects, apply_local_stream_success_effects,
-    release_local_pool_key_lease, release_pool_key_lease_from_report_context,
-    LocalExecutionEffectContext, LocalStreamFailureEffect,
+    LocalStreamFailureEffect,
 };
 use crate::request_candidate_runtime::{
     ensure_execution_request_candidate_slot, record_local_request_candidate_status,
@@ -308,7 +306,6 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
     decision: AiExecutionDecision,
     client_event: &Value,
 ) -> Result<ResponsesProviderAttempt, GatewayError> {
-    let planned_report_context = decision.report_context.clone();
     let attempt = match build_openai_responses_stream_plan_from_decision(
         parts,
         client_event,
@@ -317,15 +314,11 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
     ) {
         Ok(Some(attempt)) => attempt,
         Ok(None) => {
-            release_pool_key_lease_from_report_context(state, planned_report_context.as_ref())
-                .await;
             return Err(GatewayError::Internal(
                 "Responses WebSocket request could not build a usage/audit stream plan".to_string(),
             ));
         }
         Err(error) => {
-            release_pool_key_lease_from_report_context(state, planned_report_context.as_ref())
-                .await;
             return Err(error);
         }
     };
@@ -335,14 +328,6 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
     let report_kind = match attempt.report_kind {
         Some(report_kind) => report_kind,
         None => {
-            release_local_pool_key_lease(
-                state,
-                LocalExecutionEffectContext {
-                    plan: &plan,
-                    report_context: attempt.report_context.as_ref(),
-                },
-            )
-            .await;
             return Err(GatewayError::Internal(
                 "Responses WebSocket request is missing an execution report kind".to_string(),
             ));
@@ -360,26 +345,10 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
     let balance_rejection = match balance_rejection {
         Ok(rejection) => rejection,
         Err(error) => {
-            release_local_pool_key_lease(
-                state,
-                LocalExecutionEffectContext {
-                    plan: &plan,
-                    report_context: report_context.as_ref(),
-                },
-            )
-            .await;
             return Err(error);
         }
     };
     if let Some(rejection) = balance_rejection {
-        release_local_pool_key_lease(
-            state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: report_context.as_ref(),
-            },
-        )
-        .await;
         return Err(websocket_auth_rejection_error(rejection));
     }
 
@@ -394,21 +363,12 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
     {
         Ok(admission) => admission,
         Err(error) => {
-            release_then_record_responses_websocket_admission_failure(
-                release_local_pool_key_lease(
-                    state,
-                    LocalExecutionEffectContext {
-                        plan: &plan,
-                        report_context: report_context.as_ref(),
-                    },
-                ),
-                record_responses_websocket_admission_failure(
-                    state,
-                    &plan,
-                    report_context.as_ref(),
-                    candidate_started_at_unix_ms,
-                    &error,
-                ),
+            record_responses_websocket_admission_failure(
+                state,
+                &plan,
+                report_context.as_ref(),
+                candidate_started_at_unix_ms,
+                &error,
             )
             .await;
             return Err(error);
@@ -447,17 +407,6 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
         client_delivery: AttemptClientDelivery::Complete,
         upstream_request_sent: false,
     })
-}
-
-async fn release_then_record_responses_websocket_admission_failure(
-    release_pool_lease: impl Future<Output = ()>,
-    record_candidate_failure: impl Future<Output = ()>,
-) {
-    // Lease cleanup protects live routing capacity and must not sit behind a
-    // slow candidate writer. The candidate write still follows immediately so
-    // the seeded row reaches a terminal state on the ordinary error path.
-    release_pool_lease.await;
-    record_candidate_failure.await;
 }
 
 async fn record_responses_websocket_admission_failure(
@@ -1001,7 +950,6 @@ fn elapsed_ms(started_at: Instant) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU8, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
@@ -1017,7 +965,7 @@ mod tests {
     };
     use super::{
         attach_client_delivery_to_report_context, prepare_websocket_report_context,
-        provider_terminal_outcome, release_then_record_responses_websocket_admission_failure,
+        provider_terminal_outcome,
         resolve_responses_websocket_turn_timeouts, responses_websocket_admission_failure_update,
         websocket_event_as_sse_line, ResponsesWebSocketTurnDeadline, ResponsesWebSocketTurnOutcome,
         ResponsesWebSocketTurnTimeoutPhase,
@@ -1027,25 +975,6 @@ mod tests {
         AttemptClientDelivery, AttemptProviderEffect, AttemptSettlementInputs,
     };
     use crate::GatewayError;
-
-    #[tokio::test]
-    async fn admission_failure_releases_pool_lease_before_recording_candidate_terminal() {
-        let phase = Arc::new(AtomicU8::new(0));
-        let release_phase = Arc::clone(&phase);
-        let record_phase = Arc::clone(&phase);
-
-        release_then_record_responses_websocket_admission_failure(
-            async move {
-                assert_eq!(release_phase.swap(1, Ordering::SeqCst), 0);
-            },
-            async move {
-                assert_eq!(record_phase.swap(2, Ordering::SeqCst), 1);
-            },
-        )
-        .await;
-
-        assert_eq!(phase.load(Ordering::SeqCst), 2);
-    }
 
     #[test]
     fn admission_timeout_terminalizes_the_seeded_candidate() {

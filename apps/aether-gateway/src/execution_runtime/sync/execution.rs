@@ -35,7 +35,7 @@ use tracing::{debug, info, warn};
 use crate::ai_serving::api::{
     build_core_error_body_for_client_format, extract_stream_terminal_error_body,
     implicit_sync_finalize_report_kind, maybe_build_sync_finalize_outcome, LocalCoreSyncErrorKind,
-    LocalCoreSyncFinalizeOutcome,
+    LocalCoreSyncFinalizeOutcome, UPSTREAM_IS_STREAM_KEY,
 };
 use crate::api::response::{
     attach_control_metadata_headers, build_client_response, build_client_response_from_parts,
@@ -1645,15 +1645,6 @@ async fn apply_sync_success_effects(
         LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
     )
     .await;
-    apply_local_execution_effect(
-        state,
-        LocalExecutionEffectContext {
-            plan,
-            report_context,
-        },
-        LocalExecutionEffect::PoolSuccessSync { payload },
-    )
-    .await;
 }
 
 #[cfg(test)]
@@ -1841,7 +1832,7 @@ async fn execute_execution_runtime_sync_impl(
         {
             Ok(result) => result,
         Err(err) => {
-            let transport_error_message = err.to_string();
+            let transport_error_message = format!("{err:?}");
             info!(
                 event_name = "sync_execution_runtime_unavailable",
                 log_type = "ops",
@@ -1853,7 +1844,7 @@ async fn execute_execution_runtime_sync_impl(
                 key_id,
                 model_name,
                 candidate_index = candidate_index.as_str(),
-                error = %err,
+                error = ?err,
                 "gateway in-process sync execution unavailable"
             );
             let terminal_unix_secs = current_request_candidate_unix_ms();
@@ -1970,7 +1961,7 @@ async fn execute_execution_runtime_sync_impl(
             {
                 Ok(result) => result,
             Err(err) => {
-                let transport_error_message = err.to_string();
+                let transport_error_message = format!("{err:?}");
                 info!(
                     event_name = "sync_execution_runtime_unavailable",
                     log_type = "ops",
@@ -2054,7 +2045,6 @@ async fn execute_execution_runtime_sync_impl(
                 response_headers_observed_at_unix_ms: initial_response_observed_at_unix_ms,
                 request_order_id: uuid::Uuid::now_v7().to_string(),
             });
-    let mut oauth_retry_attempted = false;
     let (
         result_error_type,
         result_error_message,
@@ -2116,68 +2106,6 @@ async fn execute_execution_runtime_sync_impl(
             &body_bytes,
             result.error.as_ref().map(|error| error.message.as_str()),
         );
-
-        if result.status_code >= 400
-            && !oauth_retry_attempted
-            && refresh_oauth_plan_auth_for_retry(
-                state,
-                &mut plan,
-                result.status_code,
-                local_failover_response_text.as_deref(),
-                trace_id,
-                report_context.as_ref(),
-                Some(provider_response_observation.request_started_at_unix_ms),
-                Some(&provider_response_observation.request_order_id),
-            )
-            .await
-        {
-            oauth_retry_attempted = true;
-            let retry_started_at_unix_ms = current_request_candidate_unix_ms();
-            let retry_request_order_id = uuid::Uuid::now_v7().to_string();
-            match crate::execution_runtime::execute_execution_runtime_sync_plan(
-                state,
-                Some(trace_id),
-                &plan,
-            )
-            .await
-            {
-                Ok(retry_result) => {
-                    let retry_response_observed_at_unix_ms = current_request_candidate_unix_ms();
-                    provider_response_observation = retry_result
-                        .response_observation
-                        .clone()
-                        .unwrap_or(ExecutionResponseObservation {
-                            request_started_at_unix_ms: retry_started_at_unix_ms,
-                            response_headers_observed_at_unix_ms:
-                                retry_response_observed_at_unix_ms,
-                            request_order_id: retry_request_order_id,
-                        });
-                    candidate_first_byte_elapsed_ms =
-                        calibrated_sync_candidate_first_byte_elapsed_ms(
-                            candidate_started_at,
-                            &retry_result,
-                        );
-                    result = retry_result;
-                    continue;
-                }
-                Err(err) => {
-                    warn!(
-                        event_name = "local_sync_oauth_retry_execution_failed",
-                        log_type = "ops",
-                        trace_id = %trace_id,
-                        request_id = %plan_request_id_for_log,
-                        candidate_id = ?plan_candidate_id,
-                        provider_name,
-                        endpoint_id,
-                        key_id,
-                        model_name,
-                        candidate_index = candidate_index.as_str(),
-                        error = ?err,
-                        "gateway oauth retry sync execution failed"
-                    );
-                }
-            }
-        }
 
         let local_failover_analysis = analyze_local_candidate_failover_sync(
             state,

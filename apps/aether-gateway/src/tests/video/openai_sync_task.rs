@@ -49,7 +49,6 @@ async fn gateway_executes_openai_video_delete_via_reconstructed_data_backed_loca
             true,
             false,
             false,
-            None,
             Some(2),
             None,
             Some(20.0),

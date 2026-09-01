@@ -266,7 +266,6 @@ async fn data_state_checks_user_uniqueness_through_user_reader() {
         None,
         None,
         true,
-        false,
         None,
         None,
     )
@@ -367,7 +366,7 @@ async fn data_state_finds_active_provider_name_through_catalog_reader() {
         "openai".to_string(),
     )
     .expect("provider should build")
-    .with_transport_fields(false, false, false, None, None, None, None, None, None);
+    .with_transport_fields(false, false, None, None, None, None, None, None);
     let state = GatewayDataState::with_provider_catalog_reader_for_tests(Arc::new(
         InMemoryProviderCatalogReadRepository::seed(vec![active, inactive], Vec::new(), Vec::new()),
     ));
@@ -542,7 +541,6 @@ fn sample_minimal_candidate_selection_row(
         key_allowed_models: None,
         key_capabilities: Some(serde_json::json!({"cache_1h": true})),
         key_internal_priority,
-        key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 3})),
         model_id: format!("model-{provider_id}"),
         global_model_id: "global-model-1".to_string(),
         global_model_name: "gpt-4.1".to_string(),
@@ -739,7 +737,6 @@ async fn data_state_reads_decrypted_provider_transport_snapshot() {
     .expect("auth config ciphertext should build");
     let provider = sample_provider_catalog_provider().with_transport_fields(
         true,
-        false,
         true,
         Some(32),
         Some(3),
@@ -763,7 +760,6 @@ async fn data_state_reads_decrypted_provider_transport_snapshot() {
     let key = sample_provider_catalog_key()
         .with_transport_fields(
             Some(serde_json::json!(["openai:chat", "openai:responses"])),
-            encrypted_api_key,
             Some(encrypted_auth_config),
             Some(serde_json::json!({"openai:chat": 0.8})),
             Some(serde_json::json!({"openai:chat": 1})),
@@ -826,7 +822,6 @@ async fn data_state_reads_minimal_candidate_selection_with_auth_filters() {
                 10,
             ),
             StoredMinimalCandidateSelectionRow {
-                key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 4})),
                 key_allowed_models: Some(vec!["gpt-4.1-edge".to_string()]),
                 ..sample_minimal_candidate_selection_row(
                     "provider-1",

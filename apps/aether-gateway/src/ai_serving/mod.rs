@@ -95,7 +95,6 @@ pub(crate) fn build_provider_transport_request_url(
     mapped_model: Option<&str>,
     upstream_is_stream: bool,
     request_query: Option<&str>,
-    kiro_api_region: Option<&str>,
     api_operation: Option<ApiOperation>,
 ) -> Option<String> {
     self::transport::build_transport_request_url(
@@ -105,7 +104,6 @@ pub(crate) fn build_provider_transport_request_url(
             mapped_model,
             upstream_is_stream,
             request_query,
-            kiro_api_region,
             api_operation,
         },
     )
@@ -117,7 +115,6 @@ pub(crate) fn build_provider_transport_request_url_for_request_body(
     mapped_model: Option<&str>,
     upstream_is_stream: bool,
     request_query: Option<&str>,
-    kiro_api_region: Option<&str>,
     api_operation: Option<ApiOperation>,
     provider_request_body: Option<&serde_json::Value>,
 ) -> Option<String> {
@@ -128,7 +125,6 @@ pub(crate) fn build_provider_transport_request_url_for_request_body(
             mapped_model,
             upstream_is_stream,
             request_query,
-            kiro_api_region,
             api_operation,
         },
         provider_request_body,

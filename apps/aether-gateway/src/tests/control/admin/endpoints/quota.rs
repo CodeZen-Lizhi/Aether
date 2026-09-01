@@ -1408,7 +1408,6 @@ async fn gateway_refreshes_admin_provider_quota_locally_for_kiro_with_trusted_ad
         "provider-kiro".to_string(),
         "default".to_string(),
         "bearer".to_string(),
-        None,
         true,
     )
     .expect("key should build")
@@ -1416,9 +1415,6 @@ async fn gateway_refreshes_admin_provider_quota_locally_for_kiro_with_trusted_ad
         Some(json!(["claude:messages"])),
         encrypted_api_key,
         Some(encrypted_auth_config),
-        None,
-        None,
-        None,
         None,
         None,
         None,
@@ -1636,7 +1632,6 @@ async fn gateway_auto_removes_kiro_quota_refresh_after_terminal_oauth_refresh_fa
     .expect("key should build")
     .with_transport_fields(
         Some(json!(["claude:messages"])),
-        encrypted_api_key,
         Some(encrypted_auth_config),
         None,
         None,
@@ -1790,7 +1785,6 @@ async fn gateway_refresh_kiro_quota_reconciles_missing_fixed_endpoint_before_ref
     .expect("key should build")
     .with_transport_fields(
         Some(json!(["claude:messages"])),
-        encrypted_api_key,
         Some(encrypted_auth_config),
         None,
         None,

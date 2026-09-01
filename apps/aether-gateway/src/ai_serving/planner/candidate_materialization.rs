@@ -1702,7 +1702,7 @@ fn build_unpersisted_local_execution_candidate_attempts(
     attempts
 }
 
-a#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn persist_skipped_local_execution_candidate(
     state: &AppState,
     trace_id: &str,
@@ -1928,7 +1928,6 @@ GatewayProviderTransportProvider,
                 provider_type: "codex".to_string(),
                 website: None,
                 is_active: true,
-                keep_priority_on_conversion: false,
                 enable_format_conversion: false,
                 concurrent_limit: None,
                 max_retries: None,
@@ -1966,7 +1965,6 @@ GatewayProviderTransportProvider,
                 allowed_models: None,
                 capabilities: None,
                 rate_multipliers: None,
-                global_priority_by_format: None,
                 expires_at_unix_secs: None,
                 proxy: None,
                 fingerprint: None,
@@ -2039,8 +2037,7 @@ GatewayProviderTransportProvider,
         candidate
     }
 
-    #[tokio::test]
-    async     #[test]
+    #[test]
     fn materialization_port_ignores_scheduler_affinity_when_cache_affinity_disabled() {
         let app = AppState::new().expect("state should build");
         let auth_snapshot = sample_auth_snapshot();

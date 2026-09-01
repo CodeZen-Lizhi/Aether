@@ -40,14 +40,12 @@ async fn gateway_skips_unsupported_local_openai_chat_sync_candidate_before_tryin
             "user".to_string(),
             "local".to_string(),
             true,
-            false,
             Some(serde_json::json!(["openai"])),
             Some(serde_json::json!(["openai:chat"])),
             Some(serde_json::json!(["gpt-5"])),
             api_key_id.to_string(),
             Some("default".to_string()),
             true,
-            false,
             false,
             Some(60),
             Some(5),
@@ -64,7 +62,6 @@ async fn gateway_skips_unsupported_local_openai_chat_sync_candidate_before_tryin
             provider_id: "provider-openai-skip-local-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-skip-local-1".to_string(),
             endpoint_api_format: "openai:chat".to_string(),
@@ -78,8 +75,6 @@ async fn gateway_skips_unsupported_local_openai_chat_sync_candidate_before_tryin
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
             model_id: "model-openai-skip-local-1".to_string(),
             global_model_id: "global-model-openai-skip-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -111,9 +106,8 @@ async fn gateway_skips_unsupported_local_openai_chat_sync_candidate_before_tryin
             true,
             false,
             false,
-            None,
+            false,
             Some(2),
-            None,
             Some(20.0),
             None,
             None,
@@ -286,9 +280,6 @@ async fn gateway_skips_unsupported_local_openai_chat_sync_candidate_before_tryin
     backup_candidate_row.endpoint_id = "endpoint-openai-skip-local-2".to_string();
     backup_candidate_row.key_id = "key-openai-skip-local-2".to_string();
     backup_candidate_row.key_name = "backup".to_string();
-    backup_candidate_row.key_internal_priority = 6;
-    backup_candidate_row.key_global_priority_by_format =
-        Some(serde_json::json!({"openai:chat": 2}));
     backup_candidate_row.model_id = "model-openai-skip-local-2".to_string();
     backup_candidate_row.global_model_id = "global-model-openai-skip-local-2".to_string();
     backup_candidate_row.model_provider_model_name = "gpt-5-upstream-backup".to_string();
@@ -472,7 +463,6 @@ async fn gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_ch
             provider_id: "provider-openai-local-miss-1".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: "endpoint-openai-local-miss-1".to_string(),
             endpoint_api_format: "openai:chat".to_string(),
@@ -486,8 +476,6 @@ async fn gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_ch
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
             model_id: "model-openai-local-miss-1".to_string(),
             global_model_id: "global-model-openai-local-miss-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -517,7 +505,6 @@ async fn gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_ch
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
@@ -763,10 +750,6 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(
-                serde_json::json!({"openai:chat": global_priority}),
-            ),
             model_id: format!("model-{provider_id}"),
             global_model_id: "global-model-openai-sync-failover".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -799,7 +782,6 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         .expect("provider should build")
         .with_transport_fields(
             true,
-            false,
             false,
             None,
             Some(2),
