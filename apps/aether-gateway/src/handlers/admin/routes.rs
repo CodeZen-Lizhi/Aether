@@ -1,6 +1,4 @@
-use super::{
-    auth, endpoint, model, observability, provider, request, routing, system, users,
-};
+use super::{auth, endpoint, model, observability, provider, request, routing, system};
 
 pub(crate) async fn maybe_build_local_admin_response(
     request: request::AdminRouteRequest<'_>,
@@ -28,10 +26,6 @@ pub(crate) async fn maybe_build_local_admin_response(
     if let Some(response) =
         observability::maybe_build_local_admin_observability_response(request).await?
     {
-        return Ok(Some(response));
-    }
-
-    if let Some(response) = users::maybe_build_local_admin_users_response(request).await? {
         return Ok(Some(response));
     }
 

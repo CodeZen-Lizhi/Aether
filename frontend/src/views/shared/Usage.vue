@@ -131,7 +131,6 @@ import { useLocalStorage } from '@vueuse/core'
 import { useAuthStore } from '@/stores/auth'
 import { usageApi } from '@/api/usage'
 import type { ImageProgress } from '@/api/requestTrace'
-import { usersApi } from '@/api/users'
 import { meApi } from '@/api/me'
 import { dashboardApi } from '@/api/dashboard'
 import { PanelTopClose, PanelTopOpen } from 'lucide-vue-next'
@@ -249,11 +248,14 @@ async function loadHeatmapData() {
 }
 
 async function loadAdminUsers() {
+  // 单用户模式：筛选器只包含当前管理员。
   try {
-    const users = await usersApi.getAllUsers()
-    availableUsers.value = users.map(u => ({ id: u.id, username: u.username, email: u.email }))
+    const profile = await meApi.getProfile()
+    availableUsers.value = [
+      { id: profile.id, username: profile.username, email: profile.email ?? '' },
+    ]
   } catch (error) {
-    log.error('加载用户列表失败:', error)
+    log.error('加载用户信息失败:', error)
   }
 }
 

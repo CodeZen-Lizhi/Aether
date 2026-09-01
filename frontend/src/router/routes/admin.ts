@@ -13,11 +13,6 @@ export const adminRoutes: RouteRecordRaw[] = [
         component: view(() => import('@/views/shared/Dashboard.vue'))
       },
       {
-        path: 'users',
-        name: 'Users',
-        component: view(() => import('@/views/admin/Users.vue'))
-      },
-      {
         path: 'keys',
         name: 'ApiKeys',
         component: view(() => import('@/views/admin/ApiKeys.vue'))
@@ -26,11 +21,6 @@ export const adminRoutes: RouteRecordRaw[] = [
         path: 'providers',
         name: 'ProviderManagement',
         component: view(() => import('@/views/admin/ProviderManagement.vue'))
-      },
-      {
-        path: 'pool',
-        name: 'PoolManagement',
-        component: view(() => import('@/views/admin/PoolManagement.vue'))
       },
       {
         path: 'models',
@@ -51,11 +41,6 @@ export const adminRoutes: RouteRecordRaw[] = [
         path: 'routing/:groupId',
         name: 'RoutingProfileDetail',
         component: view(() => import('@/views/admin/RoutingProfiles.vue'))
-      },
-      {
-        path: 'health-monitor',
-        name: 'HealthMonitor',
-        component: view(() => import('@/views/shared/HealthMonitor.vue'))
       },
       {
         path: 'usage',

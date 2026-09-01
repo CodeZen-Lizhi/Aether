@@ -1,9 +1,6 @@
-use super::extractors::{admin_health_key_id, admin_recover_key_id};
+use super::extractors::admin_recover_key_id;
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::query_param_value;
-use crate::handlers::public::{
-    ApiFormatHealthMonitorOptions, HealthMonitorRelationDimension, ModelHealthMonitorOptions,
-};
 use crate::GatewayError;
 use axum::{
     body::Body,
@@ -13,82 +10,28 @@ use axum::{
 };
 use serde_json::json;
 
-const ADMIN_ENDPOINT_HEALTH_DATA_UNAVAILABLE_DETAIL: &str =
-    "Admin endpoint health data unavailable";
-
 fn build_admin_endpoint_health_data_unavailable_response() -> Response<Body> {
     (
         http::StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({ "detail": ADMIN_ENDPOINT_HEALTH_DATA_UNAVAILABLE_DETAIL })),
+        Json(json!({ "detail": "数据层不可用" })),
     )
         .into_response()
 }
 
-fn build_admin_endpoint_health_bad_request_response(detail: &str) -> Response<Body> {
-    (
-        http::StatusCode::BAD_REQUEST,
-        Json(json!({ "detail": detail })),
-    )
-        .into_response()
-}
-
+/// 个人版只保留「手动恢复熔断 Key」操作；健康监控查询页面已随裁剪移除。
 pub(super) async fn maybe_build_local_admin_endpoints_health_response(
     state: &AdminAppState<'_>,
     request_context: &AdminRequestContext<'_>,
 ) -> Result<Option<Response<Body>>, GatewayError> {
-    let Some(decision) = request_context.decision() else {
+    let decision = request_context.decision();
+    let Some(decision) = decision else {
         return Ok(None);
     };
-
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("health_summary")
-        && request_context.path() == "/api/admin/endpoints/health/summary"
-    {
-        if !state.has_provider_catalog_data_reader() {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        }
-        let Some(payload) = state.build_admin_health_summary_payload().await else {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        };
-        return Ok(Some(Json(payload).into_response()));
+    if decision.route_family.as_deref() != Some("endpoints_health") {
+        return Ok(None);
     }
 
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("key_health")
-        && request_context
-            .request_path
-            .starts_with("/api/admin/endpoints/health/key/")
-    {
-        if !state.has_provider_catalog_data_reader() {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        }
-        let Some(key_id) = admin_health_key_id(request_context.path()) else {
-            return Ok(Some(
-                (
-                    http::StatusCode::NOT_FOUND,
-                    Json(json!({ "detail": "Key 不存在" })),
-                )
-                    .into_response(),
-            ));
-        };
-        let api_format = query_param_value(request_context.query_string(), "api_format");
-        return Ok(Some(
-            match state
-                .build_admin_key_health_payload(&key_id, api_format.as_deref())
-                .await
-            {
-                Some(payload) => Json(payload).into_response(),
-                None => (
-                    http::StatusCode::NOT_FOUND,
-                    Json(json!({ "detail": format!("Key {key_id} 不存在") })),
-                )
-                    .into_response(),
-            },
-        ));
-    }
-
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("recover_key_health")
+    if decision.route_kind.as_deref() == Some("recover_key_health")
         && request_context
             .request_path
             .starts_with("/api/admin/endpoints/health/keys/")
@@ -121,190 +64,13 @@ pub(super) async fn maybe_build_local_admin_endpoints_health_response(
         ));
     }
 
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("recover_all_keys_health")
+    if decision.route_kind.as_deref() == Some("recover_all_keys_health")
         && request_context.path() == "/api/admin/endpoints/health/keys"
     {
         if !state.has_provider_catalog_data_reader() || !state.has_provider_catalog_data_writer() {
             return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
         }
         let Some(payload) = state.recover_all_admin_key_health().await else {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        };
-        return Ok(Some(Json(payload).into_response()));
-    }
-
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("health_api_formats")
-        && request_context.path() == "/api/admin/endpoints/health/api-formats"
-    {
-        if !state.has_provider_catalog_data_reader() || !state.has_request_candidate_data_reader() {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        }
-        let lookback_hours = query_param_value(request_context.query_string(), "lookback_hours")
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|value| (1..=72).contains(value))
-            .unwrap_or(6);
-        let per_format_limit =
-            query_param_value(request_context.query_string(), "per_format_limit")
-                .and_then(|value| value.parse::<usize>().ok())
-                .filter(|value| (10..=200).contains(value))
-                .unwrap_or(60);
-        let Some(payload) = state
-            .build_api_format_health_monitor_payload(
-                lookback_hours,
-                per_format_limit,
-                ApiFormatHealthMonitorOptions {
-                    include_api_path: false,
-                    include_provider_count: true,
-                    include_key_count: true,
-                },
-            )
-            .await
-        else {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        };
-        return Ok(Some(Json(payload).into_response()));
-    }
-
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("health_models")
-        && request_context.path() == "/api/admin/endpoints/health/models"
-    {
-        if !state.has_usage_data_reader() {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        }
-        let lookback_hours = query_param_value(request_context.query_string(), "lookback_hours")
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|value| (1..=72).contains(value))
-            .unwrap_or(6);
-        let model_limit = query_param_value(request_context.query_string(), "model_limit")
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|value| (1..=50).contains(value))
-            .unwrap_or(12);
-        let per_model_limit = query_param_value(request_context.query_string(), "per_model_limit")
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|value| (10..=200).contains(value))
-            .unwrap_or(60);
-        let Some(payload) = state
-            .build_model_health_monitor_payload(
-                lookback_hours,
-                model_limit,
-                per_model_limit,
-                ModelHealthMonitorOptions {
-                    include_provider_count: true,
-                },
-            )
-            .await
-        else {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        };
-        return Ok(Some(Json(payload).into_response()));
-    }
-
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("health_providers")
-        && request_context.path() == "/api/admin/endpoints/health/providers"
-    {
-        if !state.has_provider_catalog_data_reader() || !state.has_usage_data_reader() {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        }
-        let lookback_hours = query_param_value(request_context.query_string(), "lookback_hours")
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|value| (1..=72).contains(value))
-            .unwrap_or(6);
-        let provider_limit = query_param_value(request_context.query_string(), "provider_limit")
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|value| (1..=100).contains(value))
-            .unwrap_or(50);
-        let per_provider_model_limit =
-            query_param_value(request_context.query_string(), "per_provider_model_limit")
-                .and_then(|value| value.parse::<usize>().ok())
-                .filter(|value| (1..=50).contains(value))
-                .unwrap_or(12);
-        let per_model_event_limit =
-            query_param_value(request_context.query_string(), "per_model_limit")
-                .and_then(|value| value.parse::<usize>().ok())
-                .filter(|value| (10..=200).contains(value))
-                .unwrap_or(100);
-        let Some(payload) = state
-            .build_provider_health_monitor_payload(
-                lookback_hours,
-                provider_limit,
-                per_provider_model_limit,
-                per_model_event_limit,
-            )
-            .await
-        else {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        };
-        return Ok(Some(Json(payload).into_response()));
-    }
-
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("health_related")
-        && request_context.path() == "/api/admin/endpoints/health/related"
-    {
-        if !state.has_usage_data_reader() {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        }
-        let Some(dimension) = query_param_value(request_context.query_string(), "dimension")
-            .and_then(|value| HealthMonitorRelationDimension::parse(&value))
-        else {
-            return Ok(Some(build_admin_endpoint_health_bad_request_response(
-                "dimension 必须是 endpoint、model 或 provider",
-            )));
-        };
-        let Some(value) = query_param_value(request_context.query_string(), "value")
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-        else {
-            return Ok(Some(build_admin_endpoint_health_bad_request_response(
-                "value 不能为空",
-            )));
-        };
-        let lookback_hours = query_param_value(request_context.query_string(), "lookback_hours")
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|value| (1..=72).contains(value))
-            .unwrap_or(6);
-        let related_limit = query_param_value(request_context.query_string(), "related_limit")
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|value| (1..=50).contains(value))
-            .unwrap_or(8);
-        let per_item_limit = query_param_value(request_context.query_string(), "per_item_limit")
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|value| (10..=200).contains(value))
-            .unwrap_or(100);
-        let Some(payload) = state
-            .build_related_health_monitor_payload(
-                lookback_hours,
-                dimension,
-                &value,
-                related_limit,
-                per_item_limit,
-            )
-            .await
-        else {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        };
-        return Ok(Some(Json(payload).into_response()));
-    }
-
-    if decision.route_family.as_deref() == Some("endpoints_health")
-        && decision.route_kind.as_deref() == Some("health_status")
-        && request_context.path() == "/api/admin/endpoints/health/status"
-    {
-        if !state.has_provider_catalog_data_reader() || !state.has_request_candidate_data_reader() {
-            return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
-        }
-        let lookback_hours = query_param_value(request_context.query_string(), "lookback_hours")
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|value| (1..=72).contains(value))
-            .unwrap_or(6);
-        let Some(payload) = state
-            .build_admin_endpoint_health_status_payload(lookback_hours)
-            .await
-        else {
             return Ok(Some(build_admin_endpoint_health_data_unavailable_response()));
         };
         return Ok(Some(Json(payload).into_response()));

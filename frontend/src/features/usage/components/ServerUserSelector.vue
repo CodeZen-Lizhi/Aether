@@ -103,7 +103,6 @@ import { useDebounceFn } from '@vueuse/core'
 import { Check, ChevronDown, Search } from 'lucide-vue-next'
 
 import { Input } from '@/components/ui'
-import { usersApi } from '@/api/users'
 import type { UserOption } from './UsageRecordsTable.vue'
 
 const props = withDefaults(defineProps<{
@@ -175,30 +174,12 @@ function rememberUsers(nextUsers: UserOption[]) {
   knownUsers.value = nextMap
 }
 
-async function loadUsers(search: string) {
-  const currentRequest = ++requestId
-  loading.value = true
-  try {
-    const result = await usersApi.getAllUsers({
-      search,
-      skip: 0,
-      limit: 50,
-      cacheTtlMs: search.trim() ? 0 : 30_000,
-    })
-    if (currentRequest !== requestId) return
-    const options = result.map((user) => ({
-      id: user.id,
-      username: user.username,
-      email: user.email,
-    }))
-    if (!search.trim()) loadedInitialBatch = true
-    users.value = options
-    rememberUsers(options)
-  } catch {
-    if (currentRequest === requestId) users.value = []
-  } finally {
-    if (currentRequest === requestId) loading.value = false
-  }
+async function loadUsers(_search: string) {
+  // 单用户模式：不向服务端检索用户列表，仅展示父组件传入的当前管理员。
+  const options = props.initialUsers
+  loadedInitialBatch = true
+  users.value = options
+  rememberUsers(options)
 }
 
 function selectUser(value: string) {

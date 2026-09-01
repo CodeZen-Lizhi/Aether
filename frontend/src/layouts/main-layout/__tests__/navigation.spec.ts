@@ -33,7 +33,6 @@ describe('main layout navigation builder', () => {
     ])
     expect(navigation.flatMap(group => group.items.map(item => item.name))).toEqual([
       'tx:nav.dashboard',
-      'tx:nav.healthMonitor',
       'tx:nav.modelCatalog',
       'tx:nav.apiKeys',
       'tx:nav.usageStats',
@@ -53,11 +52,9 @@ describe('main layout navigation builder', () => {
     ])
     const managementItems = navigation.find(group => group.title === 'tx:nav.group.management')?.items ?? []
     expect(managementItems.map(item => item.name)).toEqual([
-      'tx:nav.userManagement',
       'tx:nav.providers',
       'tx:nav.modelManagement',
       'tx:nav.routing',
-      'tx:nav.pool',
       'tx:nav.standaloneKeys',
       'tx:nav.proxyNodes',
     ])

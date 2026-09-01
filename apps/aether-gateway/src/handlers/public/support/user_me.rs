@@ -5,7 +5,6 @@ use super::{
     sanitize_public_model_config_for_user, unix_secs_to_rfc3339, AppState,
     AuthenticatedLocalUserContext, GatewayPublicRequestContext, PUBLIC_CAPABILITY_DEFINITIONS,
 };
-use crate::admin_api::build_admin_endpoint_health_status_payload;
 use crate::handlers::shared::{
     admin_stats_bad_request_response, parse_bounded_u32, round_to, AdminStatsTimeRange,
     AdminStatsUsageFilter,

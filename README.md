@@ -28,14 +28,13 @@
 
 - **AI 代理核心**：Claude / OpenAI / Gemini 协议互转、流式透传、Responses WebSocket 模式、模型指令解析
 - **渠道管理**：Provider / Endpoint / Key 管理，渠道 OAuth（Claude 订阅账号等）、渠道上游代理、渠道配额重置
-- **池与路由**：Provider 池、Routing Profiles、最小候选选择
+- **路由管理**：Routing Profiles、最小候选选择、Key 熔断恢复
 - **API Key**：用户 Key / 独立 Key、限流、并发限制、模型与 Provider 白名单、Key 级 IP 规则、有效期与自动删除
 - **用量统计**：请求/Tokens/成本统计、模型与 Provider 维度、活跃热图、用量明细
-- **健康监控**：API 格式 / 模型 / Endpoint 健康度与相关维度
 - **代理功能**：Aether Tunnel 正/反向代理节点（保留），渠道级上游代理（保留）
-- **本地账号**：管理员账号密码登录 + admin 后台建用户
+- **单用户**：管理员账号密码登录，账号/密码在系统设置中自助修改
 
-**已删除**：支付、套餐、用户钱包、邀请返利、用户注册、公告、邮件、推送通知、审计日志、PII 脱敏、S3 备份、在线自更新、管理令牌（CC Switch）、一键安装脚本、模块开关系统、LDAP、OAuth 登录、全局 IP 黑白名单、Gemini Files 管理页、视频任务管理页、Postgres/MySQL/Redis。
+**已删除**：支付、套餐、用户钱包、邀请返利、用户注册、公告、邮件、推送通知、审计日志、PII 脱敏、S3 备份、在线自更新、管理令牌（CC Switch）、一键安装脚本、模块开关系统、LDAP、OAuth 登录、全局 IP 黑白名单、Gemini Files 管理页、视频任务管理页、号池管理页、用户管理页、健康监控、Postgres/MySQL/Redis。多用户体系裁剪为单管理员。
 
 ## 部署
 

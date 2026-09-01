@@ -13,14 +13,13 @@ use axum::{
 use serde_json::json;
 
 use super::{
-    build_admin_endpoint_health_status_payload, build_auth_error_response, query_param_value,
+    build_auth_error_response, query_param_value,
     resolve_authenticated_local_user, sanitize_public_model_config_for_user, AppState,
     GatewayPublicRequestContext, USERS_ME_AVAILABLE_MODELS_FETCH_LIMIT,
 };
 
 const USERS_ME_MODEL_CATALOG_UNAVAILABLE_DETAIL: &str = "用户模型目录暂不可用";
 const USERS_ME_PROVIDER_CATALOG_UNAVAILABLE_DETAIL: &str = "用户提供商目录暂不可用";
-const USERS_ME_ENDPOINT_STATUS_UNAVAILABLE_DETAIL: &str = "用户端点健康数据暂不可用";
 
 fn build_users_me_available_model_payload(
     model: StoredPublicGlobalModel,
@@ -451,50 +450,5 @@ pub(super) async fn handle_users_me_providers_get(
             })
             .collect::<Vec<_>>(),
     )
-    .into_response()
-}
-
-pub(super) async fn handle_users_me_endpoint_status_get(
-    state: &AppState,
-    request_context: &GatewayPublicRequestContext,
-    headers: &http::HeaderMap,
-) -> Response<Body> {
-    match resolve_authenticated_local_user(state, request_context, headers).await {
-        Ok(_) => {}
-        Err(response) => return response,
-    };
-
-    let Some(payload) =
-        build_admin_endpoint_health_status_payload(&crate::admin_api::AdminAppState::new(state), 6)
-            .await
-    else {
-        return build_auth_error_response(
-            http::StatusCode::SERVICE_UNAVAILABLE,
-            USERS_ME_ENDPOINT_STATUS_UNAVAILABLE_DETAIL,
-            false,
-        );
-    };
-    let Some(items) = payload.as_array() else {
-        return build_auth_error_response(
-            http::StatusCode::INTERNAL_SERVER_ERROR,
-            "endpoint status payload malformed",
-            false,
-        );
-    };
-
-    Json(serde_json::Value::Array(
-        items.iter()
-            .map(|item| {
-                json!({
-                    "api_format": item.get("api_format").cloned().unwrap_or(serde_json::Value::Null),
-                    "display_name": item.get("display_name").cloned().unwrap_or(serde_json::Value::Null),
-                    "health_score": item.get("health_score").cloned().unwrap_or(serde_json::Value::Null),
-                    "timeline": item.get("timeline").cloned().unwrap_or_else(|| json!([])),
-                    "time_range_start": item.get("time_range_start").cloned().unwrap_or(serde_json::Value::Null),
-                    "time_range_end": item.get("time_range_end").cloned().unwrap_or(serde_json::Value::Null),
-                })
-            })
-            .collect(),
-    ))
     .into_response()
 }

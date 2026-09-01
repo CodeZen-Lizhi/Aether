@@ -32,13 +32,4 @@ describe('provider key batch import UI contract', () => {
     expect(fieldsSource).toContain('settings.proxy_node_id')
   })
 
-  it('uses selective update_settings in pool batch management', () => {
-    const source = readSource('src/features/pool/components/PoolAccountBatchDialog.vue')
-
-    expect(source).toContain("selectedAction === 'update_settings'")
-    expect(source).toContain('buildPoolKeySettingsPatch')
-    expect(source).toContain('confirmAndExecuteAction(selectedAction)')
-    expect(source).toContain('仅更新已勾选字段')
-    expect(source).not.toContain('v-for="item in ACTION_OPTIONS"')
-  })
 })

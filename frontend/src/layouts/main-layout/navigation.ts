@@ -1,17 +1,14 @@
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import {
-  Activity,
   BarChart3,
   Box,
   Cog,
-  Database,
   FolderTree,
   Home,
   Key,
   Layers,
   Server,
   SlidersHorizontal,
-  Users,
 } from 'lucide-vue-next'
 import type { NavigationGroup } from '@/components/layout/SidebarNav.vue'
 import type { MessageKey } from '@/i18n'
@@ -36,7 +33,6 @@ export function buildNavigation(options: {
         title: t('nav.group.overview'),
         items: [
           { name: t('nav.dashboard'), href: '/dashboard', icon: Home },
-          { name: t('nav.healthMonitor'), href: '/dashboard/endpoint-status', icon: Activity },
         ]
       },
       {
@@ -55,18 +51,15 @@ export function buildNavigation(options: {
       title: t('nav.group.overview'),
       items: [
         { name: t('nav.dashboard'), href: '/admin/dashboard', icon: Home },
-        { name: t('nav.healthMonitor'), href: '/admin/health-monitor', icon: Activity },
         { name: t('nav.usageRecords'), href: '/admin/usage', icon: BarChart3 },
       ]
     },
     {
       title: t('nav.group.management'),
       items: [
-        { name: t('nav.userManagement'), href: '/admin/users', icon: Users },
         { name: t('nav.providers'), href: '/admin/providers', icon: FolderTree },
         { name: t('nav.modelManagement'), href: '/admin/models', icon: Layers },
         { name: t('nav.routing'), href: '/admin/routing', icon: SlidersHorizontal },
-        { name: t('nav.pool'), href: '/admin/pool', icon: Database },
         { name: t('nav.standaloneKeys'), href: '/admin/keys', icon: Key },
         { name: t('nav.proxyNodes'), href: '/admin/proxy-nodes', icon: Server },
       ]

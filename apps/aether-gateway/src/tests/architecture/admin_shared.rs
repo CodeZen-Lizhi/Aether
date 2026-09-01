@@ -693,7 +693,6 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
         "model::maybe_build_local_admin_model_response(",
         "provider::maybe_build_local_admin_provider_response(",
         "system::maybe_build_local_admin_system_response(",
-        "users::maybe_build_local_admin_users_response(",
         "endpoint::maybe_build_local_admin_endpoints_response(",
     ] {
         assert!(

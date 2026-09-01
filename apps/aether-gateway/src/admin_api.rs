@@ -24,12 +24,7 @@ use axum::{
     response::Response,
 };
 
-pub(crate) async fn build_admin_endpoint_health_status_payload(
-    state: &AdminAppState<'_>,
-    lookback_hours: u64,
-) -> Option<serde_json::Value> {
-    crate::handlers::admin::build_admin_endpoint_health_status_payload(state, lookback_hours).await
-}
+
 
 pub(crate) async fn maybe_build_local_admin_usage_response(
     state: &AdminAppState<'_>,

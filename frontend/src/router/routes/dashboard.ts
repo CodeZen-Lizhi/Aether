@@ -23,11 +23,6 @@ export const dashboardRoutes: RouteRecordRaw[] = [
         component: view(() => import('@/views/shared/Usage.vue'))
       },
       {
-        path: 'endpoint-status',
-        name: 'EndpointStatus',
-        component: view(() => import('@/views/shared/HealthMonitor.vue'))
-      },
-      {
         path: 'settings',
         name: 'Settings',
         component: view(() => import('@/views/user/Settings.vue'))

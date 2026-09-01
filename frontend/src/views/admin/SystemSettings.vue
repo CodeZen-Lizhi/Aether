@@ -21,6 +21,9 @@
             系统配置加载中...
           </div>
 
+          <!-- 管理员账号 -->
+          <AdminAccountSection id="section-account" />
+
           <!-- 站点信息 -->
           <SiteInfoSection
             id="section-site-info"
@@ -265,6 +268,7 @@ import { useConfigExportImport } from './system-settings/composables/useConfigEx
 import { useScheduledTasks } from './system-settings/composables/useScheduledTasks'
 
 // Section components
+import AdminAccountSection from './system-settings/AdminAccountSection.vue'
 import SiteInfoSection from './system-settings/SiteInfoSection.vue'
 import DataManagementSection from './system-settings/DataManagementSection.vue'
 import ProxyConfigSection from './system-settings/ProxyConfigSection.vue'
@@ -283,6 +287,7 @@ const proxyNodesStore = useProxyNodesStore()
 
 // TOC 目录导航
 const tocItems = [
+  { id: 'section-account', label: '管理员账号' },
   { id: 'section-site-info', label: '站点信息' },
   { id: 'section-data-mgmt', label: '数据管理' },
   { id: 'section-proxy', label: '网络代理' },
