@@ -11,24 +11,7 @@ export interface SystemConfig {
   // 网络代理
   system_proxy_node_id: string | null
   // 基础配置
-  default_user_initial_gift_usd: number
   rate_limit_per_minute: number
-  enable_registration: boolean
-  password_policy_level: string
-  turnstile_enabled: boolean
-  turnstile_site_key: string | null
-  turnstile_secret_key: string
-  turnstile_secret_key_is_set: boolean
-  turnstile_allowed_hostnames: string[]
-  referral_enabled: boolean
-  referral_reward_mode: string
-  referral_recharge_percent: number
-  referral_headcount_amount_usd: number
-  referral_headcount_trigger: string
-  registration_privacy_policy_enabled: boolean
-  registration_privacy_policy_format: string
-  registration_privacy_policy_content: string
-  registration_privacy_policy_version: string
   // 独立余额 Key 过期管理
   auto_delete_expired_keys: boolean
   // 格式转换
@@ -68,23 +51,7 @@ const CONFIG_KEYS = [
   // 网络代理
   'system_proxy_node_id',
   // 基础配置
-  'default_user_initial_gift_usd',
   'rate_limit_per_minute',
-  'enable_registration',
-  'password_policy_level',
-  'turnstile_enabled',
-  'turnstile_site_key',
-  'turnstile_secret_key',
-  'turnstile_allowed_hostnames',
-  'referral_enabled',
-  'referral_reward_mode',
-  'referral_recharge_percent',
-  'referral_headcount_amount_usd',
-  'referral_headcount_trigger',
-  'registration_privacy_policy_enabled',
-  'registration_privacy_policy_format',
-  'registration_privacy_policy_content',
-  'registration_privacy_policy_version',
   // 独立余额 Key 过期管理
   'auto_delete_expired_keys',
   // 格式转换
@@ -125,24 +92,7 @@ function createDefaultConfig(): SystemConfig {
     // 网络代理
     system_proxy_node_id: null,
     // 基础配置
-    default_user_initial_gift_usd: 10.0,
     rate_limit_per_minute: 0,
-    enable_registration: false,
-    password_policy_level: 'weak',
-    turnstile_enabled: false,
-    turnstile_site_key: null,
-    turnstile_secret_key: '',
-    turnstile_secret_key_is_set: false,
-    turnstile_allowed_hostnames: [],
-    referral_enabled: false,
-    referral_reward_mode: 'percent',
-    referral_recharge_percent: 5,
-    referral_headcount_amount_usd: 0,
-    referral_headcount_trigger: 'registration',
-    registration_privacy_policy_enabled: false,
-    registration_privacy_policy_format: 'markdown',
-    registration_privacy_policy_content: '',
-    registration_privacy_policy_version: '1',
     // 独立余额 Key 过期管理
     auto_delete_expired_keys: false,
     // 格式转换
@@ -212,28 +162,7 @@ export function useSystemConfig() {
     if (systemConfigLoading.value) return false
     if (!originalConfig.value) return false
     return (
-      systemConfig.value.default_user_initial_gift_usd !== originalConfig.value.default_user_initial_gift_usd ||
       systemConfig.value.rate_limit_per_minute !== originalConfig.value.rate_limit_per_minute ||
-      systemConfig.value.enable_registration !== originalConfig.value.enable_registration ||
-      systemConfig.value.password_policy_level !== originalConfig.value.password_policy_level ||
-      systemConfig.value.turnstile_enabled !== originalConfig.value.turnstile_enabled ||
-      systemConfig.value.turnstile_site_key !== originalConfig.value.turnstile_site_key ||
-      systemConfig.value.turnstile_secret_key.trim() !== '' ||
-      JSON.stringify(systemConfig.value.turnstile_allowed_hostnames) !==
-      JSON.stringify(originalConfig.value.turnstile_allowed_hostnames) ||
-      systemConfig.value.referral_enabled !== originalConfig.value.referral_enabled ||
-      systemConfig.value.referral_reward_mode !== originalConfig.value.referral_reward_mode ||
-      systemConfig.value.referral_recharge_percent !== originalConfig.value.referral_recharge_percent ||
-      systemConfig.value.referral_headcount_amount_usd !== originalConfig.value.referral_headcount_amount_usd ||
-      systemConfig.value.referral_headcount_trigger !== originalConfig.value.referral_headcount_trigger ||
-      systemConfig.value.registration_privacy_policy_enabled !==
-      originalConfig.value.registration_privacy_policy_enabled ||
-      systemConfig.value.registration_privacy_policy_format !==
-      originalConfig.value.registration_privacy_policy_format ||
-      systemConfig.value.registration_privacy_policy_content !==
-      originalConfig.value.registration_privacy_policy_content ||
-      systemConfig.value.registration_privacy_policy_version !==
-      originalConfig.value.registration_privacy_policy_version ||
       systemConfig.value.auto_delete_expired_keys !== originalConfig.value.auto_delete_expired_keys ||
       systemConfig.value.enable_format_conversion !== originalConfig.value.enable_format_conversion ||
       systemConfig.value.enable_openai_image_sync_heartbeat !==
@@ -292,16 +221,6 @@ export function useSystemConfig() {
     },
   })
 
-  const turnstileAllowedHostnamesStr = computed({
-    get: () => systemConfig.value.turnstile_allowed_hostnames.join(', '),
-    set: (val: string) => {
-      systemConfig.value.turnstile_allowed_hostnames = val
-        .split(',')
-        .map((s) => s.trim().toLowerCase())
-        .filter((s) => s.length > 0)
-    },
-  })
-
   // 加载配置
   async function loadSystemConfig() {
     systemConfigLoading.value = true
@@ -314,11 +233,6 @@ export function useSystemConfig() {
         const response = configsByKey.get(key)
         if (!response) continue
         try {
-          if (key === 'turnstile_secret_key') {
-            nextConfig.turnstile_secret_key = ''
-            nextConfig.turnstile_secret_key_is_set = !!response.is_set
-            continue
-          }
           if (response.value !== null && response.value !== undefined) {
             ; (nextConfig as Record<string, unknown>)[key] = response.value
           }
@@ -401,84 +315,9 @@ export function useSystemConfig() {
     try {
       const configItems = [
         {
-          key: 'default_user_initial_gift_usd',
-          value: systemConfig.value.default_user_initial_gift_usd,
-          description: '默认用户初始赠款（美元）',
-        },
-        {
           key: 'rate_limit_per_minute',
           value: systemConfig.value.rate_limit_per_minute,
           description: '每分钟请求限制',
-        },
-        {
-          key: 'enable_registration',
-          value: systemConfig.value.enable_registration,
-          description: '是否开放用户注册',
-        },
-        {
-          key: 'password_policy_level',
-          value: systemConfig.value.password_policy_level,
-          description: '密码策略等级',
-        },
-        {
-          key: 'turnstile_enabled',
-          value: systemConfig.value.turnstile_enabled,
-          description: 'Cloudflare Turnstile 注册人机验证开关',
-        },
-        {
-          key: 'turnstile_site_key',
-          value: systemConfig.value.turnstile_site_key?.trim() || null,
-          description: 'Cloudflare Turnstile 站点 Key',
-        },
-        {
-          key: 'turnstile_allowed_hostnames',
-          value: systemConfig.value.turnstile_allowed_hostnames,
-          description: 'Cloudflare Turnstile 允许的 hostname 列表',
-        },
-        {
-          key: 'referral_enabled',
-          value: systemConfig.value.referral_enabled,
-          description: '邀请返利开关',
-        },
-        {
-          key: 'referral_reward_mode',
-          value: systemConfig.value.referral_reward_mode,
-          description: '邀请返利方式',
-        },
-        {
-          key: 'referral_recharge_percent',
-          value: systemConfig.value.referral_recharge_percent,
-          description: '邀请充值比例返利百分比',
-        },
-        {
-          key: 'referral_headcount_amount_usd',
-          value: systemConfig.value.referral_headcount_amount_usd,
-          description: '邀请人头返利金额（美元）',
-        },
-        {
-          key: 'referral_headcount_trigger',
-          value: systemConfig.value.referral_headcount_trigger,
-          description: '邀请人头返利触发时机',
-        },
-        {
-          key: 'registration_privacy_policy_enabled',
-          value: systemConfig.value.registration_privacy_policy_enabled,
-          description: '注册隐私政策确认开关',
-        },
-        {
-          key: 'registration_privacy_policy_format',
-          value: systemConfig.value.registration_privacy_policy_format,
-          description: '注册隐私政策内容格式',
-        },
-        {
-          key: 'registration_privacy_policy_content',
-          value: systemConfig.value.registration_privacy_policy_content,
-          description: '注册隐私政策内容',
-        },
-        {
-          key: 'registration_privacy_policy_version',
-          value: systemConfig.value.registration_privacy_policy_version,
-          description: '注册隐私政策版本',
         },
         {
           key: 'auto_delete_expired_keys',
@@ -506,14 +345,6 @@ export function useSystemConfig() {
           description: 'Cyber继续转移开关：开启后在响应内容开始前将Cyber Policy错误按普通错误继续故障转移，可能增加首字等待时间',
         },
       ]
-      const turnstileSecret = systemConfig.value.turnstile_secret_key.trim()
-      if (turnstileSecret) {
-        configItems.push({
-          key: 'turnstile_secret_key',
-          value: turnstileSecret,
-          description: 'Cloudflare Turnstile Secret Key',
-        })
-      }
 
       await Promise.all(
         configItems.map((item) =>
@@ -521,36 +352,7 @@ export function useSystemConfig() {
         )
       )
       if (originalConfig.value) {
-        originalConfig.value.default_user_initial_gift_usd = systemConfig.value.default_user_initial_gift_usd
         originalConfig.value.rate_limit_per_minute = systemConfig.value.rate_limit_per_minute
-        originalConfig.value.enable_registration = systemConfig.value.enable_registration
-        originalConfig.value.password_policy_level = systemConfig.value.password_policy_level
-        originalConfig.value.turnstile_enabled = systemConfig.value.turnstile_enabled
-        originalConfig.value.turnstile_site_key = systemConfig.value.turnstile_site_key?.trim() || null
-        originalConfig.value.turnstile_allowed_hostnames = [
-          ...systemConfig.value.turnstile_allowed_hostnames,
-        ]
-        originalConfig.value.referral_enabled = systemConfig.value.referral_enabled
-        originalConfig.value.referral_reward_mode = systemConfig.value.referral_reward_mode
-        originalConfig.value.referral_recharge_percent = systemConfig.value.referral_recharge_percent
-        originalConfig.value.referral_headcount_amount_usd =
-          systemConfig.value.referral_headcount_amount_usd
-        originalConfig.value.referral_headcount_trigger =
-          systemConfig.value.referral_headcount_trigger
-        originalConfig.value.registration_privacy_policy_enabled =
-          systemConfig.value.registration_privacy_policy_enabled
-        originalConfig.value.registration_privacy_policy_format =
-          systemConfig.value.registration_privacy_policy_format
-        originalConfig.value.registration_privacy_policy_content =
-          systemConfig.value.registration_privacy_policy_content
-        originalConfig.value.registration_privacy_policy_version =
-          systemConfig.value.registration_privacy_policy_version
-        if (turnstileSecret) {
-          systemConfig.value.turnstile_secret_key = ''
-          systemConfig.value.turnstile_secret_key_is_set = true
-          originalConfig.value.turnstile_secret_key = ''
-          originalConfig.value.turnstile_secret_key_is_set = true
-        }
         originalConfig.value.auto_delete_expired_keys =
           systemConfig.value.auto_delete_expired_keys
         originalConfig.value.enable_format_conversion =
@@ -566,29 +368,6 @@ export function useSystemConfig() {
     } catch (err) {
       error('保存配置失败')
       log.error('保存基础配置失败:', err)
-    } finally {
-      basicConfigLoading.value = false
-    }
-  }
-
-  async function clearTurnstileSecret() {
-    basicConfigLoading.value = true
-    try {
-      await adminApi.updateSystemConfig(
-        'turnstile_secret_key',
-        '',
-        'Cloudflare Turnstile Secret Key'
-      )
-      systemConfig.value.turnstile_secret_key = ''
-      systemConfig.value.turnstile_secret_key_is_set = false
-      if (originalConfig.value) {
-        originalConfig.value.turnstile_secret_key = ''
-        originalConfig.value.turnstile_secret_key_is_set = false
-      }
-      success('Turnstile 密钥已清空')
-    } catch (err) {
-      error('清空 Turnstile 密钥失败')
-      log.error('清空 Turnstile 密钥失败:', err)
     } finally {
       basicConfigLoading.value = false
     }
@@ -760,7 +539,6 @@ export function useSystemConfig() {
     hasCleanupConfigChanges,
     // 计算属性
     sensitiveHeadersStr,
-    turnstileAllowedHostnamesStr,
     // 加载函数
     loadSystemConfig,
     loadSystemVersion,
@@ -768,7 +546,6 @@ export function useSystemConfig() {
     saveSiteInfo,
     saveProxyConfig,
     saveBasicConfig,
-    clearTurnstileSecret,
     saveLogConfig,
     saveCleanupConfig,
     handleAutoCleanupToggle,

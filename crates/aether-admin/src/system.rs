@@ -22,14 +22,6 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone)]
-pub struct AdminSystemSettingsUpdate {
-    pub default_provider: Option<Option<String>>,
-    pub default_model: Option<Option<String>>,
-    pub enable_usage_tracking: Option<bool>,
-    pub password_policy_level: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 pub struct AdminSystemConfigUpdate {
     pub normalized_key: String,
     pub value: serde_json::Value,
@@ -733,7 +725,6 @@ const LEGACY_REQUEST_LOG_LEVEL_KEY: &str = "request_log_level";
 const DEFAULT_BARK_API_BASE: &str = "https://api.day.app";
 const SENSITIVE_SYSTEM_CONFIG_KEYS: &[&str] = &[
     "smtp_password",
-    "turnstile_secret_key",
     "backup_s3_secret_access_key",
     "module.server_chan_push.send_key",
     "module.important_notification.server_chan_send_key",
@@ -1040,121 +1031,6 @@ pub fn build_admin_system_stats_payload(
     })
 }
 
-pub fn build_admin_system_settings_payload(
-    default_provider: Option<String>,
-    default_model: Option<String>,
-    enable_usage_tracking: bool,
-    password_policy_level: String,
-) -> serde_json::Value {
-    json!({
-        "default_provider": default_provider,
-        "default_model": default_model,
-        "enable_usage_tracking": enable_usage_tracking,
-        "password_policy_level": password_policy_level,
-    })
-}
-
-pub fn parse_admin_system_settings_update(
-    request_body: &[u8],
-) -> Result<AdminSystemSettingsUpdate, (http::StatusCode, serde_json::Value)> {
-    let payload = match serde_json::from_slice::<serde_json::Value>(request_body) {
-        Ok(serde_json::Value::Object(payload)) => payload,
-        Ok(_) | Err(_) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-    };
-
-    let default_provider = match payload.get("default_provider") {
-        Some(serde_json::Value::String(value)) => {
-            let value = value.trim();
-            if value.is_empty() {
-                Some(None)
-            } else {
-                Some(Some(value.to_string()))
-            }
-        }
-        Some(serde_json::Value::Null) => Some(None),
-        Some(_) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-        None => None,
-    };
-
-    let default_model = match payload.get("default_model") {
-        Some(serde_json::Value::String(value)) => {
-            let value = value.trim();
-            if value.is_empty() {
-                Some(None)
-            } else {
-                Some(Some(value.to_string()))
-            }
-        }
-        Some(serde_json::Value::Null) => Some(None),
-        Some(_) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-        None => None,
-    };
-
-    let enable_usage_tracking = match payload.get("enable_usage_tracking") {
-        Some(serde_json::Value::Bool(value)) => Some(*value),
-        Some(serde_json::Value::Null) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-        Some(_) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-        None => None,
-    };
-
-    let password_policy_level = match payload.get("password_policy_level") {
-        Some(serde_json::Value::String(value)) => {
-            let value = value.trim();
-            if matches!(value, "weak" | "medium" | "strong") {
-                Some(value.to_string())
-            } else {
-                return Err((
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                ));
-            }
-        }
-        Some(_) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-        None => None,
-    };
-
-    Ok(AdminSystemSettingsUpdate {
-        default_provider,
-        default_model,
-        enable_usage_tracking,
-        password_policy_level,
-    })
-}
-
-pub fn build_admin_system_settings_updated_payload() -> serde_json::Value {
-    json!({ "message": "系统设置更新成功" })
-}
-
 pub fn build_admin_email_templates_payload(templates: Vec<serde_json::Value>) -> serde_json::Value {
     json!({ "templates": templates })
 }
@@ -1458,8 +1334,6 @@ pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value>
     match key {
         "site_name" => Some(json!("Aether")),
         "site_subtitle" => Some(json!("AI Gateway")),
-        "default_user_initial_gift_usd" => Some(json!(10.0)),
-        "password_policy_level" => Some(json!("weak")),
         REQUEST_RECORD_LEVEL_KEY => Some(json!("full")),
         "max_request_body_size" => Some(json!(0)),
         "max_response_body_size" => Some(json!(0)),
@@ -1486,10 +1360,6 @@ pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value>
         "provider_priority_mode" => Some(json!("provider")),
         "scheduling_mode" => Some(json!("cache_affinity")),
         "auto_delete_expired_keys" => Some(json!(false)),
-        "turnstile_enabled" => Some(json!(false)),
-        "turnstile_site_key" => Some(serde_json::Value::Null),
-        "turnstile_secret_key" => Some(serde_json::Value::Null),
-        "turnstile_allowed_hostnames" => Some(json!([])),
         "backup_s3_enabled" => Some(json!(false)),
         "backup_s3_scope" => Some(json!("data")),
         "backup_s3_endpoint" => Some(serde_json::Value::Null),
@@ -1969,29 +1839,6 @@ pub fn parse_admin_system_config_update(
             ));
         }
     };
-
-    if normalized_key == "password_policy_level" {
-        match value.as_str().map(str::trim) {
-            Some("weak" | "medium" | "strong") => {
-                value = json!(value.as_str().unwrap().trim());
-            }
-            Some(_) => {
-                return Err((
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                ));
-            }
-            None if value.is_null() => {
-                value = json!("weak");
-            }
-            None => {
-                return Err((
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                ));
-            }
-        }
-    }
 
     match normalized_key.as_str() {
         "cyber_continue_failover"
@@ -3213,8 +3060,6 @@ mod tests {
     fn sensitive_admin_system_config_keys_are_case_insensitive() {
         assert!(is_sensitive_admin_system_config_key("smtp_password"));
         assert!(is_sensitive_admin_system_config_key("SMTP_PASSWORD"));
-        assert!(is_sensitive_admin_system_config_key("turnstile_secret_key"));
-        assert!(is_sensitive_admin_system_config_key("TURNSTILE_SECRET_KEY"));
         assert!(is_sensitive_admin_system_config_key(
             "module.server_chan_push.send_key"
         ));
@@ -3515,18 +3360,5 @@ mod tests {
         )
         .expect_err("server url without scheme should fail");
         assert_eq!(err.0, http::StatusCode::BAD_REQUEST);
-    }
-
-    #[test]
-    fn build_admin_system_config_detail_masks_turnstile_secret_key() {
-        let payload = build_admin_system_config_detail_payload(
-            "turnstile_secret_key",
-            Some(json!("encrypted-turnstile-secret")),
-        )
-        .expect("turnstile secret detail should build");
-
-        assert_eq!(payload["key"], "turnstile_secret_key");
-        assert_eq!(payload["value"], serde_json::Value::Null);
-        assert_eq!(payload["is_set"], json!(true));
     }
 }

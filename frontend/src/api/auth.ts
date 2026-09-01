@@ -31,74 +31,6 @@ export interface UserStats {
   [key: string]: unknown // 允许扩展其他统计数据
 }
 
-export interface SendVerificationCodeRequest {
-  email: string
-  turnstile_token?: string
-}
-
-export interface SendVerificationCodeResponse {
-  message: string
-  success: boolean
-  expire_minutes?: number
-}
-
-export interface VerifyEmailRequest {
-  email: string
-  code: string
-}
-
-export interface VerifyEmailResponse {
-  message: string
-  success: boolean
-}
-
-export interface VerificationStatusRequest {
-  email: string
-}
-
-export interface VerificationStatusResponse {
-  email: string
-  has_pending_code: boolean
-  is_verified: boolean
-  cooldown_remaining: number | null
-  code_expires_in: number | null
-}
-
-export interface RegisterRequest {
-  email?: string
-  username: string
-  password: string
-  turnstile_token?: string
-  invite_code?: string
-  privacy_policy_accepted?: boolean
-  privacy_policy_version?: string
-}
-
-export interface RegisterResponse {
-  user_id: string
-  email?: string
-  username: string
-  message: string
-}
-
-export interface RegistrationSettingsResponse {
-  enable_registration: boolean
-  require_email_verification: boolean
-  email_configured: boolean
-  password_policy_level: string
-  turnstile_enabled?: boolean
-  turnstile_site_key?: string | null
-  turnstile_required_actions?: string[]
-  privacy_policy?: RegistrationPrivacyPolicySettings
-}
-
-export interface RegistrationPrivacyPolicySettings {
-  enabled: boolean
-  format: 'markdown' | 'html'
-  content: string
-  version: string
-}
-
 export interface AuthSettingsResponse {
   local_enabled: boolean
   ldap_enabled: boolean
@@ -166,49 +98,6 @@ export const authApi = {
   async refreshToken(): Promise<LoginResponse> {
     const response = await apiClient.post<LoginResponse>('/api/auth/refresh')
     apiClient.setToken(response.data.access_token)
-    return response.data
-  },
-
-  async sendVerificationCode(
-    email: string,
-    turnstileToken?: string
-  ): Promise<SendVerificationCodeResponse> {
-    const payload: SendVerificationCodeRequest = { email }
-    if (turnstileToken) {
-      payload.turnstile_token = turnstileToken
-    }
-    const response = await apiClient.post<SendVerificationCodeResponse>(
-      '/api/auth/send-verification-code',
-      payload
-    )
-    return response.data
-  },
-
-  async verifyEmail(email: string, code: string): Promise<VerifyEmailResponse> {
-    const response = await apiClient.post<VerifyEmailResponse>(
-      '/api/auth/verify-email',
-      { email, code }
-    )
-    return response.data
-  },
-
-  async register(data: RegisterRequest): Promise<RegisterResponse> {
-    const response = await apiClient.post<RegisterResponse>('/api/auth/register', data)
-    return response.data
-  },
-
-  async getRegistrationSettings(): Promise<RegistrationSettingsResponse> {
-    const response = await apiClient.get<RegistrationSettingsResponse>(
-      '/api/auth/registration-settings'
-    )
-    return response.data
-  },
-
-  async getVerificationStatus(email: string): Promise<VerificationStatusResponse> {
-    const response = await apiClient.post<VerificationStatusResponse>(
-      '/api/auth/verification-status',
-      { email }
-    )
     return response.data
   },
 

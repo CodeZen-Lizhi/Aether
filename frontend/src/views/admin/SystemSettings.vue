@@ -21,9 +21,6 @@
             系统配置加载中...
           </div>
 
-          <!-- 管理员账号 -->
-          <AdminAccountSection id="section-account" />
-
           <!-- 站点信息 -->
           <SiteInfoSection
             id="section-site-info"
@@ -53,8 +50,6 @@
           <ProxyConfigSection
             id="section-proxy"
             :proxy-node-id="systemConfig.system_proxy_node_id"
-            :online-nodes="proxyNodesStore.onlineNodes"
-            :all-nodes="proxyNodesStore.nodes"
             :loading="systemConfigLoading || proxyConfigLoading"
             :has-changes="hasProxyConfigChanges"
             @save="saveProxyConfig"
@@ -64,24 +59,7 @@
           <!-- 基础配置 -->
           <BasicConfigSection
             id="section-basic"
-            :default-user-initial-gift-usd="systemConfig.default_user_initial_gift_usd"
             :rate-limit-per-minute="systemConfig.rate_limit_per_minute"
-            :enable-registration="systemConfig.enable_registration"
-            :password-policy-level="systemConfig.password_policy_level"
-            :turnstile-enabled="systemConfig.turnstile_enabled"
-            :turnstile-site-key="systemConfig.turnstile_site_key"
-            :turnstile-secret-key="systemConfig.turnstile_secret_key"
-            :turnstile-secret-configured="systemConfig.turnstile_secret_key_is_set"
-            :turnstile-allowed-hostnames-str="turnstileAllowedHostnamesStr"
-            :referral-enabled="systemConfig.referral_enabled"
-            :referral-reward-mode="systemConfig.referral_reward_mode"
-            :referral-recharge-percent="systemConfig.referral_recharge_percent"
-            :referral-headcount-amount-usd="systemConfig.referral_headcount_amount_usd"
-            :referral-headcount-trigger="systemConfig.referral_headcount_trigger"
-            :registration-privacy-policy-enabled="systemConfig.registration_privacy_policy_enabled"
-            :registration-privacy-policy-format="systemConfig.registration_privacy_policy_format"
-            :registration-privacy-policy-content="systemConfig.registration_privacy_policy_content"
-            :registration-privacy-policy-version="systemConfig.registration_privacy_policy_version"
             :auto-delete-expired-keys="systemConfig.auto_delete_expired_keys"
             :enable-format-conversion="systemConfig.enable_format_conversion"
             :enable-openai-image-sync-heartbeat="systemConfig.enable_openai_image_sync_heartbeat"
@@ -90,24 +68,7 @@
             :loading="systemConfigLoading || basicConfigLoading"
             :has-changes="hasBasicConfigChanges"
             @save="saveBasicConfig"
-            @update:default-user-initial-gift-usd="systemConfig.default_user_initial_gift_usd = $event"
             @update:rate-limit-per-minute="systemConfig.rate_limit_per_minute = $event"
-            @update:enable-registration="systemConfig.enable_registration = $event"
-            @update:password-policy-level="systemConfig.password_policy_level = $event"
-            @update:turnstile-enabled="systemConfig.turnstile_enabled = $event"
-            @update:turnstile-site-key="systemConfig.turnstile_site_key = $event"
-            @update:turnstile-secret-key="systemConfig.turnstile_secret_key = $event"
-            @update:turnstile-allowed-hostnames-str="turnstileAllowedHostnamesStr = $event"
-            @clear-turnstile-secret="clearTurnstileSecret"
-            @update:referral-enabled="systemConfig.referral_enabled = $event"
-            @update:referral-reward-mode="systemConfig.referral_reward_mode = $event"
-            @update:referral-recharge-percent="systemConfig.referral_recharge_percent = $event"
-            @update:referral-headcount-amount-usd="systemConfig.referral_headcount_amount_usd = $event"
-            @update:referral-headcount-trigger="systemConfig.referral_headcount_trigger = $event"
-            @update:registration-privacy-policy-enabled="systemConfig.registration_privacy_policy_enabled = $event"
-            @update:registration-privacy-policy-format="systemConfig.registration_privacy_policy_format = $event"
-            @update:registration-privacy-policy-content="systemConfig.registration_privacy_policy_content = $event"
-            @update:registration-privacy-policy-version="systemConfig.registration_privacy_policy_version = $event"
             @update:auto-delete-expired-keys="systemConfig.auto_delete_expired_keys = $event"
             @update:enable-format-conversion="systemConfig.enable_format_conversion = $event"
             @update:enable-openai-image-sync-heartbeat="systemConfig.enable_openai_image_sync_heartbeat = $event"
@@ -260,7 +221,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { PageHeader, PageContainer } from '@/components/layout'
-import { useProxyNodesStore } from '@/stores/proxy-nodes'
 
 // Composables
 import { useSystemConfig } from './system-settings/composables/useSystemConfig'
@@ -268,7 +228,6 @@ import { useConfigExportImport } from './system-settings/composables/useConfigEx
 import { useScheduledTasks } from './system-settings/composables/useScheduledTasks'
 
 // Section components
-import AdminAccountSection from './system-settings/AdminAccountSection.vue'
 import SiteInfoSection from './system-settings/SiteInfoSection.vue'
 import DataManagementSection from './system-settings/DataManagementSection.vue'
 import ProxyConfigSection from './system-settings/ProxyConfigSection.vue'
@@ -283,11 +242,8 @@ import ConfigImportDialog from './system-settings/ConfigImportDialog.vue'
 import UsersImportDialog from './system-settings/UsersImportDialog.vue'
 import AggregateImportDialog from './system-settings/AggregateImportDialog.vue'
 
-const proxyNodesStore = useProxyNodesStore()
-
 // TOC 目录导航
 const tocItems = [
-  { id: 'section-account', label: '管理员账号' },
   { id: 'section-site-info', label: '站点信息' },
   { id: 'section-data-mgmt', label: '数据管理' },
   { id: 'section-proxy', label: '网络代理' },
@@ -361,13 +317,11 @@ const {
   hasLogConfigChanges,
   hasCleanupConfigChanges,
   sensitiveHeadersStr,
-  turnstileAllowedHostnamesStr,
   loadSystemConfig,
   loadSystemVersion,
   saveSiteInfo,
   saveProxyConfig,
   saveBasicConfig,
-  clearTurnstileSecret,
   saveLogConfig,
   saveCleanupConfig,
   handleAutoCleanupToggle,
@@ -445,7 +399,6 @@ onMounted(async () => {
   await Promise.all([
     loadSystemConfig(),
     loadSystemVersion(),
-    proxyNodesStore.ensureLoaded(),
   ])
   // 配置加载完成后初始化定时任务的原始值
   initPreviousValues()

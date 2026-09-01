@@ -7,7 +7,6 @@ import {
   Home,
   Key,
   Layers,
-  Server,
   SlidersHorizontal,
 } from 'lucide-vue-next'
 import type { NavigationGroup } from '@/components/layout/SidebarNav.vue'
@@ -61,7 +60,6 @@ export function buildNavigation(options: {
         { name: t('nav.modelManagement'), href: '/admin/models', icon: Layers },
         { name: t('nav.routing'), href: '/admin/routing', icon: SlidersHorizontal },
         { name: t('nav.standaloneKeys'), href: '/admin/keys', icon: Key },
-        { name: t('nav.proxyNodes'), href: '/admin/proxy-nodes', icon: Server },
       ]
     },
     {

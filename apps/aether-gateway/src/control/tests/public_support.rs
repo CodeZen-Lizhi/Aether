@@ -653,20 +653,8 @@ fn classifies_auth_routes_as_public_support_route() {
     for (method, path, route_kind) in [
         (http::Method::POST, "/api/auth/login", "login"),
         (http::Method::POST, "/api/auth/refresh", "refresh"),
-        (http::Method::POST, "/api/auth/register", "register"),
         (http::Method::GET, "/api/auth/me", "me"),
         (http::Method::POST, "/api/auth/logout", "logout"),
-        (
-            http::Method::POST,
-            "/api/auth/send-verification-code",
-            "send_verification_code",
-        ),
-        (http::Method::POST, "/api/auth/verify-email", "verify_email"),
-        (
-            http::Method::POST,
-            "/api/auth/verification-status",
-            "verification_status",
-        ),
     ] {
         let headers = headers(&[]);
         let uri: Uri = path.parse().expect("uri should parse");

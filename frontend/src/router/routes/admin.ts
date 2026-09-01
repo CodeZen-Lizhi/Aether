@@ -51,11 +51,6 @@ export const adminRoutes: RouteRecordRaw[] = [
         path: 'system',
         name: 'SystemSettings',
         component: view(() => import('@/views/admin/SystemSettings.vue'))
-      },
-      {
-        path: 'proxy-nodes',
-        name: 'ProxyNodes',
-        component: view(() => import('@/views/admin/ProxyNodes.vue'))
       }
     ]
   }

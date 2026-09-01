@@ -31,14 +31,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin:system",
             false,
         ))
-    } else if method == http::Method::GET && normalized_path == "/api/admin/system/settings" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "settings_get",
-            "admin:system",
-            false,
-        ))
     } else if method == http::Method::GET && normalized_path == "/api/admin/system/config/export" {
         Some(classified(
             "admin_proxy",
@@ -200,14 +192,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin_proxy",
             "system_manage",
             "purge_stats",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::PUT && normalized_path == "/api/admin/system/settings" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "settings_set",
             "admin:system",
             false,
         ))

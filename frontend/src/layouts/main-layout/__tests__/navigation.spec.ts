@@ -39,7 +39,7 @@ describe('main layout navigation builder', () => {
     ])
   })
 
-  it('builds admin navigation with proxy nodes entry', () => {
+  it('builds admin navigation', () => {
     const navigation = buildNavigation({
       canAccessAdmin: true,
       t: translate,
@@ -56,7 +56,6 @@ describe('main layout navigation builder', () => {
       'tx:nav.modelManagement',
       'tx:nav.routing',
       'tx:nav.standaloneKeys',
-      'tx:nav.proxyNodes',
     ])
   })
 

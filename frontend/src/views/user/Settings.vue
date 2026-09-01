@@ -56,9 +56,9 @@
               />
             </div>
 
-            <!-- 邮箱字段：当系统配置了邮箱服务或用户已有邮箱时显示 -->
+            <!-- 邮箱字段：已有邮箱时展示（修改请前往系统设置的管理员账号） -->
             <div
-              v-if="emailConfigured || profileForm.email"
+              v-if="profileForm.email"
               class="grid grid-cols-1 md:grid-cols-2 gap-4"
             >
               <div>
@@ -67,80 +67,14 @@
                   id="email"
                   v-model="profileForm.email"
                   type="email"
-                  class="mt-1"
-                  :disabled="!emailConfigured"
+                  disabled
                 />
-                <p
-                  v-if="!emailConfigured && profileForm.email"
-                  class="mt-1 text-xs text-muted-foreground"
-                >
+                <p class="mt-1 text-xs text-muted-foreground">
                   邮箱服务未配置，暂不可修改
                 </p>
               </div>
             </div>
           </form>
-        </Card>
-
-        <Card class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h3 class="text-lg font-medium text-foreground">
-                敏感信息保护
-              </h3>
-              <p class="text-sm text-muted-foreground mt-1">
-                管理员开启功能后，可默认应用到你的账户和 API Key
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              :disabled="savingFeatureSettings || !hasFeatureSettingsChanges"
-              @click="updateFeatureSettings"
-            >
-              {{ savingFeatureSettings ? '保存中...' : '保存' }}
-            </Button>
-          </div>
-          <div class="space-y-4">
-            <div class="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
-              <div>
-                <Label class="text-sm font-medium">默认启用</Label>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  未单独配置的 API Key 会跟随此设置
-                </p>
-              </div>
-              <Switch v-model="featureSettingsForm.chatPiiRedactionEnabled" />
-            </div>
-            <div class="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
-              <div>
-                <Label class="text-sm font-medium">占位符说明</Label>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  向模型说明占位符含义
-                </p>
-              </div>
-              <Switch
-                v-model="featureSettingsForm.chatPiiRedactionInjectNotice"
-                :disabled="!featureSettingsForm.chatPiiRedactionEnabled"
-              />
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          v-if="featureSettingsForm.notificationPushServiceEnabled"
-          class="p-6"
-        >
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <h3 class="text-lg font-medium text-foreground">
-                通知推送服务
-              </h3>
-              <p class="mt-1 text-sm text-muted-foreground">
-                管理员已允许你配置自己的第三方推送渠道
-              </p>
-            </div>
-            <Badge variant="success">
-              已开放
-            </Badge>
-          </div>
         </Card>
 
         <!-- 密码设置（LDAP 用户不显示） -->
@@ -398,71 +332,6 @@
               </div>
             </div>
 
-            <div class="space-y-3">
-              <h4 class="font-medium text-foreground">
-                通知设置
-              </h4>
-              <div class="space-y-3">
-                <!-- 邮件通知：仅当系统配置了邮箱服务时显示 -->
-                <div
-                  v-if="emailConfigured"
-                  class="flex items-center justify-between py-2 border-b border-border/40 last:border-0"
-                >
-                  <div class="flex-1">
-                    <Label
-                      for="email-notifications"
-                      class="text-sm font-medium cursor-pointer"
-                    >
-                      邮件通知
-                    </Label>
-                    <p class="text-xs text-muted-foreground mt-1">
-                      接收系统通知邮件
-                    </p>
-                  </div>
-                  <Switch
-                    id="email-notifications"
-                    v-model="preferencesForm.notifications.email"
-                    @update:model-value="updatePreferences"
-                  />
-                </div>
-                <div class="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
-                  <div class="flex-1">
-                    <Label
-                      for="usage-alerts"
-                      class="text-sm font-medium cursor-pointer"
-                    >
-                      使用提醒
-                    </Label>
-                    <p class="text-xs text-muted-foreground mt-1">
-                      当余额接近不足时提醒
-                    </p>
-                  </div>
-                  <Switch
-                    id="usage-alerts"
-                    v-model="preferencesForm.notifications.usage_alerts"
-                    @update:model-value="updatePreferences"
-                  />
-                </div>
-                <div class="flex items-center justify-between py-2">
-                  <div class="flex-1">
-                    <Label
-                      for="announcement-notifications"
-                      class="text-sm font-medium cursor-pointer"
-                    >
-                      公告通知
-                    </Label>
-                    <p class="text-xs text-muted-foreground mt-1">
-                      接收系统公告
-                    </p>
-                  </div>
-                  <Switch
-                    id="announcement-notifications"
-                    v-model="preferencesForm.notifications.announcements"
-                    @update:model-value="updatePreferences"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
         </Card>
       </div>
@@ -501,51 +370,6 @@
             </div>
           </div>
         </Card>
-
-        <!-- 钱包状态 -->
-        <Card class="p-6">
-          <h3 class="text-lg font-medium text-foreground mb-4">
-            钱包状态
-          </h3>
-          <div class="space-y-4">
-            <div class="flex justify-between text-sm">
-              <span class="text-muted-foreground">总余额</span>
-              <span class="text-foreground">
-                <template v-if="isUnlimitedBilling()">
-                  无限制
-                </template>
-                <template v-else>
-                  {{ formatCurrency(profile?.billing?.balance || 0) }}
-                </template>
-              </span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-muted-foreground">充值余额</span>
-              <span class="text-foreground">{{ formatCurrency(profile?.billing?.recharge_balance || 0) }}</span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-muted-foreground">赠款余额</span>
-              <span class="text-foreground">{{ formatCurrency(profile?.billing?.gift_balance || 0) }}</span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-muted-foreground">累计消费</span>
-              <span class="text-foreground">{{ formatCurrency(profile?.billing?.total_consumed || 0) }}</span>
-            </div>
-
-            <div v-if="!isUnlimitedBilling()">
-              <div class="flex justify-between text-sm mb-1">
-                <span class="text-muted-foreground">累计消费占比</span>
-                <span class="text-foreground">{{ getBillingUsagePercentage().toFixed(1) }}%</span>
-              </div>
-              <div class="w-full bg-muted rounded-full h-2.5">
-                <div
-                  class="bg-success h-2.5 rounded-full"
-                  :style="`width: ${getBillingUsagePercentage()}%`"
-                />
-              </div>
-            </div>
-          </div>
-        </Card>
       </div>
     </div>
   </div>
@@ -557,13 +381,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { meApi, type Profile } from '@/api/me'
 import { type UserSession, formatSessionMeta } from '@/types/session'
-import { authApi } from '@/api/auth'
 import { getClientDeviceId } from '@/utils/deviceId'
 import { useDarkMode, type ThemeMode } from '@/composables/useDarkMode'
 import {
   getPasswordPolicyHint,
   getPasswordPolicyPlaceholder,
-  normalizePasswordPolicyLevel,
   validatePasswordByPolicy,
   type PasswordPolicyLevel,
 } from '@/utils/passwordPolicy'
@@ -580,15 +402,9 @@ import SelectContent from '@/components/ui/select-content.vue'
 import SelectItem from '@/components/ui/select-item.vue'
 import Switch from '@/components/ui/switch.vue'
 import { useToast } from '@/composables/useToast'
-import { formatCurrency } from '@/utils/format'
 import { getApiUrl } from '@/utils/url'
 import { log } from '@/utils/logger'
 import { getErrorMessage, getErrorStatus } from '@/types/api-error'
-import {
-  mergeChatPiiRedactionFeatureSettings,
-  readNotificationPushServiceFeatureSettings,
-  readChatPiiRedactionFeatureSettings,
-} from '@/utils/featureSettings'
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -628,14 +444,8 @@ const preferencesForm = ref({
   }
 })
 
-const featureSettingsForm = ref({
-  chatPiiRedactionEnabled: false,
-  chatPiiRedactionInjectNotice: true,
-  notificationPushServiceEnabled: false,
-})
 
 const savingProfile = ref(false)
-const savingFeatureSettings = ref(false)
 const changingPassword = ref(false)
 const sessionsLoading = ref(false)
 const sessionActionLoading = ref<string | null>(null)
@@ -645,12 +455,9 @@ const passwordPolicyLevel = ref<PasswordPolicyLevel>('weak')
 const themeSelectOpen = ref(false)
 const languageSelectOpen = ref(false)
 
-const emailConfigured = ref(false) // 系统是否配置了邮箱服务
-
 // 原始值，用于检测是否有修改
 const originalProfileForm = ref({ email: '', username: '' })
 const originalPreferencesForm = ref({ avatar_url: '', bio: '' })
-const originalFeatureSettingsForm = ref({ ...featureSettingsForm.value })
 
 // 检测基本信息是否有修改
 const hasProfileChanges = computed(() => {
@@ -662,12 +469,6 @@ const hasProfileChanges = computed(() => {
   )
 })
 
-const hasFeatureSettingsChanges = computed(() => {
-  return (
-    featureSettingsForm.value.chatPiiRedactionEnabled !== originalFeatureSettingsForm.value.chatPiiRedactionEnabled ||
-    featureSettingsForm.value.chatPiiRedactionInjectNotice !== originalFeatureSettingsForm.value.chatPiiRedactionInjectNotice
-  )
-})
 
 const passwordPolicyHint = computed(() => getPasswordPolicyHint(passwordPolicyLevel.value))
 const passwordError = computed(() =>
@@ -708,21 +509,9 @@ onMounted(async () => {
   await Promise.all([
     loadPreferences(),
     loadSessions(),
-    loadEmailConfigured(),
   ])
   void profilePromise
 })
-
-async function loadEmailConfigured() {
-  try {
-    const settings = await authApi.getRegistrationSettings()
-    emailConfigured.value = !!settings.email_configured
-    passwordPolicyLevel.value = normalizePasswordPolicyLevel(settings.password_policy_level)
-  } catch {
-    emailConfigured.value = false
-    passwordPolicyLevel.value = 'weak'
-  }
-}
 
 async function loadProfile() {
   try {
@@ -731,44 +520,11 @@ async function loadProfile() {
       email: profile.value.email || '',
       username: profile.value.username
     }
-    const redactionFeature = readChatPiiRedactionFeatureSettings(profile.value.feature_settings)
-    const notificationPushFeature = readNotificationPushServiceFeatureSettings(profile.value.feature_settings)
-    featureSettingsForm.value = {
-      chatPiiRedactionEnabled: redactionFeature.enabled,
-      chatPiiRedactionInjectNotice: redactionFeature.inject_model_instruction,
-      notificationPushServiceEnabled: notificationPushFeature.enabled,
-    }
     // 保存原始值
     originalProfileForm.value = { ...profileForm.value }
-    originalFeatureSettingsForm.value = { ...featureSettingsForm.value }
   } catch (error) {
     log.error('加载个人信息失败:', error)
     showError('加载个人信息失败')
-  }
-}
-
-async function updateFeatureSettings() {
-  savingFeatureSettings.value = true
-  try {
-    await meApi.updateProfile({
-      feature_settings: mergeChatPiiRedactionFeatureSettings(profile.value?.feature_settings, {
-        enabled: featureSettingsForm.value.chatPiiRedactionEnabled,
-        inject_model_instruction: featureSettingsForm.value.chatPiiRedactionInjectNotice,
-      }),
-    })
-    if (profile.value) {
-      profile.value.feature_settings = mergeChatPiiRedactionFeatureSettings(profile.value.feature_settings, {
-        enabled: featureSettingsForm.value.chatPiiRedactionEnabled,
-        inject_model_instruction: featureSettingsForm.value.chatPiiRedactionInjectNotice,
-      })
-    }
-    originalFeatureSettingsForm.value = { ...featureSettingsForm.value }
-    success('敏感信息保护设置已保存')
-  } catch (err) {
-    log.error('更新敏感信息保护设置失败:', err)
-    showError(getErrorMessage(err), '更新敏感信息保护设置失败')
-  } finally {
-    savingFeatureSettings.value = false
   }
 }
 
@@ -979,19 +735,6 @@ async function updatePreferences() {
     log.error('更新偏好设置失败:', error)
     showError('保存设置失败')
   }
-}
-
-function getBillingUsagePercentage(): number {
-  const billing = profile.value?.billing
-  if (!billing) return 0
-  const consumed = billing.total_consumed || 0
-  const denominator = consumed + (billing.balance || 0)
-  if (denominator <= 0) return 0
-  return Math.min(100, (consumed / denominator) * 100)
-}
-
-function isUnlimitedBilling(): boolean {
-  return profile.value?.billing?.unlimited === true
 }
 
 function formatDate(dateString?: string): string {

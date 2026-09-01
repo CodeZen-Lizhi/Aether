@@ -10,8 +10,7 @@ use crate::handlers::admin::system::shared::paths::{
     admin_system_config_key_from_path, is_admin_system_configs_root,
 };
 use crate::handlers::admin::system::shared::settings::{
-    apply_admin_system_settings_update, build_admin_api_formats_payload,
-    build_admin_system_settings_payload, build_admin_system_stats_payload, current_aether_version,
+    build_admin_api_formats_payload, build_admin_system_stats_payload, current_aether_version,
 };
 use crate::maintenance::{ManualUsageCleanupMode, ManualUsageCleanupOptions};
 use crate::GatewayError;
@@ -64,15 +63,6 @@ pub(super) async fn maybe_build_local_admin_core_system_response(
     {
         return Ok(Some(
             Json(build_admin_system_stats_payload(state).await?).into_response(),
-        ));
-    }
-
-    if decision.route_kind.as_deref() == Some("settings_get")
-        && request_method == http::Method::GET
-        && request_path == "/api/admin/system/settings"
-    {
-        return Ok(Some(
-            Json(build_admin_system_settings_payload(state).await?).into_response(),
         ));
     }
 
@@ -271,33 +261,6 @@ pub(super) async fn maybe_build_local_admin_core_system_response(
             object_type,
             object_id,
         )));
-    }
-
-    if decision.route_kind.as_deref() == Some("settings_set")
-        && request_method == http::Method::PUT
-        && request_path == "/api/admin/system/settings"
-    {
-        let Some(request_body) = request_body else {
-            return Ok(Some(
-                (
-                    http::StatusCode::BAD_REQUEST,
-                    Json(json!({ "detail": "请求数据验证失败" })),
-                )
-                    .into_response(),
-            ));
-        };
-        return Ok(Some(
-            match apply_admin_system_settings_update(state, request_body).await? {
-                Ok(payload) => attach_admin_audit_response(
-                    Json(payload).into_response(),
-                    "admin_system_settings_updated",
-                    "update_system_settings",
-                    "system_settings",
-                    "global",
-                ),
-                Err((status, payload)) => (status, Json(payload)).into_response(),
-            },
-        ));
     }
 
     if decision.route_kind.as_deref() == Some("configs_list")

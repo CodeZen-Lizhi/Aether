@@ -258,7 +258,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("system_manage"), http::Method::POST, Some("config_import"))
                 | (Some("system_manage"), http::Method::POST, Some("users_import"))
                 | (Some("system_manage"), http::Method::POST, Some("data_import"))
-                | (Some("system_manage"), http::Method::PUT, Some("settings_set"))
                 | (Some("system_manage"), http::Method::PUT, Some("config_set"))
                 | (Some("system_manage"), http::Method::PUT, Some("email_template_set"))
                 | (Some("system_manage"), http::Method::POST, Some("email_template_preview"))
@@ -459,13 +458,7 @@ pub(crate) fn public_support_local_requires_buffered_body(
                 (
                     Some("auth"),
                     http::Method::POST,
-                    Some(
-                        "login"
-                            | "register"
-                            | "send_verification_code"
-                            | "verify_email"
-                            | "verification_status"
-                    ),
+                    Some("login"),
                 ) | (
                     Some("users_me"),
                     http::Method::PUT,

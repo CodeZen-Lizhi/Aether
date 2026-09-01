@@ -4,15 +4,11 @@ import {
   proxyNodesApi,
   type ManualProxyNodeCreateRequest,
   type ProxyNode,
-  type ProxyNodeInstallSession,
-  type ProxyNodeInstallSessionCreateRequest,
-  type ProxyNodeUpgradeRolloutStatus,
 } from '@/api/proxy-nodes'
 import { parseApiError } from '@/utils/errorParser'
 
 export const useProxyNodesStore = defineStore('proxy-nodes', () => {
   const nodes = ref<ProxyNode[]>([])
-  const rollout = ref<ProxyNodeUpgradeRolloutStatus | null>(null)
   const total = ref(0)
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -35,11 +31,9 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
     try {
       const data = await proxyNodesApi.listProxyNodes({ ...params, limit: 1000 })
       nodes.value = data.items
-      rollout.value = data.rollout
       total.value = data.total
       fetched.value = true
     } catch (err: unknown) {
-      rollout.value = null
       error.value = parseApiError(err, '获取代理节点列表失败')
     } finally {
       loading.value = false
@@ -70,15 +64,6 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
     }
   }
 
-  async function createInstallSession(data: ProxyNodeInstallSessionCreateRequest): Promise<ProxyNodeInstallSession> {
-    try {
-      return await proxyNodesApi.createInstallSession(data)
-    } catch (err: unknown) {
-      error.value = parseApiError(err, '生成代理节点安装命令失败')
-      throw err
-    }
-  }
-
   async function deleteNode(nodeId: string) {
     loading.value = true
     error.value = null
@@ -97,7 +82,6 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
 
   return {
     nodes,
-    rollout,
     total,
     loading,
     error,
@@ -106,7 +90,6 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
     fetchNodes,
     ensureLoaded,
     createManualNode,
-    createInstallSession,
     deleteNode,
   }
 })

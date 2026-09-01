@@ -116,23 +116,15 @@ pub(super) fn classify_public_support_route(
             normalized_path,
             "/api/auth/login"
                 | "/api/auth/refresh"
-                | "/api/auth/register"
                 | "/api/auth/me"
                 | "/api/auth/logout"
-                | "/api/auth/send-verification-code"
-                | "/api/auth/verify-email"
-                | "/api/auth/verification-status"
         )
     {
         let route_kind = match normalized_path {
             "/api/auth/login" => "login",
             "/api/auth/refresh" => "refresh",
-            "/api/auth/register" => "register",
             "/api/auth/me" => "me",
             "/api/auth/logout" => "logout",
-            "/api/auth/send-verification-code" => "send_verification_code",
-            "/api/auth/verify-email" => "verify_email",
-            "/api/auth/verification-status" => "verification_status",
             _ => "login",
         };
         Some(classified(
@@ -390,9 +382,7 @@ pub(super) fn classify_public_support_route(
                 | "/api/users/me/providers"
                 | "/api/users/me/available-models"
                 | "/api/users/me/client-config"
-                | "/api/users/me/endpoint-status"
                 | "/api/users/me/preferences"
-                | "/api/users/me/referral"
                 | "/api/users/me/model-capabilities"
         )
     {
@@ -407,9 +397,7 @@ pub(super) fn classify_public_support_route(
             "/api/users/me/providers" => "providers",
             "/api/users/me/available-models" => "available_models",
             "/api/users/me/client-config" => "client_config",
-            "/api/users/me/endpoint-status" => "endpoint_status",
             "/api/users/me/preferences" => "preferences",
-            "/api/users/me/referral" => "referral",
             "/api/users/me/model-capabilities" => "model_capabilities",
             _ => "detail",
         };
