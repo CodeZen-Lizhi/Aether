@@ -41,6 +41,15 @@
 - `cargo fmt --all` 完成。
 - 既有失败隔离: scheduler-core 2 个失败（codex_live_*）与 gateway lib test 156 个编译错误均为**用户并行 slim 改动的既有问题**（stash 验证: 无我的改动时反而 251 个错误——我的改动还修复了其中约 95 个）。clippy 因网络 TLS 无法安装组件，以 check+测试替代。
 
+### R11-8 前端 UI 重设计 + R11-7 多组入口移除（第二批完成）
+- `frontend/src/views/admin/RoutingProfiles.vue` 全量重写为单页形态: 调度模式三选一（缓存亲和[默认·推荐]/固定顺序/经济模式，各带一句话代价说明）、供应商拖拽排序（原生 HTML5 drag + ↑↓ 按钮，行首序号即调度顺序=故障转移顺序）、Key 行内展开（优先级数字输入 + 每格式倍率输入，倍率经 PUT key 即时保存）。
+- 纯逻辑抽到 `frontend/src/features/routing/utils/schedulingStrategy.ts`（parse/build 往返、load_balance→cache_affinity 软删映射、系统默认组查找、顺序→优先级），vitest 8 例全绿。
+- 保存: updateRoutingGroup + publishRoutingGroup 写回单份策略（`ui_provider_priority` 规则承载 set_provider_priority/set_key_priority 动作）; 无组时首次保存自动创建系统默认组。
+- R11-7: 删除策略分组列表/新建/删除/绑定/试运行入口; 路由收敛为 `/admin/routing` 单路由（`routing/new`、`routing/:groupId` 移除）; 删除 5 个旧组件（RoutingGroupEditor/GroupList/ModelPolicyEditor/PriorityPolicyEditor/DryRunDialog）与旧 allowed-models spec。
+- API 补充: `listAdminProviders`（GET /api/admin/providers，R11-5 的优先级排序列表）、`getEndpointKeysGroupedByFormat`（grouped-by-format，含 R11-6 回退）。
+- Key 优先级持久化说明: slim 迁移已删 key 表优先级列，Key 优先级经单份策略 overlay（set_key_priority）持久化——比较器链 `routing_overlaid_candidate` 原生支持，语义与 R11-4 决策一致。
+- 验证: `vue-tsc --noEmit` 零错误; vitest 全量 111 文件 654 测试全绿（含新增 8 例）; `vite build` 成功。
+
 ## 未完成（明确遗留）
 
 - R11-8 前端 UI 重设计（单页重画、模式三选一、供应商拖拽、Key 行内展开）——需要前端栈动手，本次仅后端。

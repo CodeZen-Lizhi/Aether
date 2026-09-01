@@ -246,7 +246,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-vue-next'
 
-import { Badge, Button, Input, PageContainer, TableCard } from '@/components/ui'
+import { Badge, Button, Input, TableCard } from '@/components/ui'
+import { PageContainer } from '@/components/layout'
 import {
   listRoutingGroups,
   createRoutingGroup,
