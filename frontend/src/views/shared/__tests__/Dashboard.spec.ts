@@ -8,14 +8,6 @@ const dashboardApiMocks = vi.hoisted(() => ({
   getDailyStats: vi.fn(),
 }))
 
-vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({
-    canAccessAdmin: false,
-    isAdmin: false,
-    isAuditAdmin: false,
-  }),
-}))
-
 vi.mock('@/api/dashboard', () => ({
   dashboardApi: dashboardApiMocks,
 }))
@@ -35,11 +27,6 @@ vi.mock('@/components/charts/BarChart.vue', async () => {
 vi.mock('@/components/charts/DoughnutChart.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return { default: defineComponent({ name: 'DoughnutChartStub', setup: () => () => h('div') }) }
-})
-
-vi.mock('@/components/charts/LineChart.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-  return { default: defineComponent({ name: 'LineChartStub', setup: () => () => h('div') }) }
 })
 
 vi.mock('@/components/common', async () => {
@@ -138,34 +125,6 @@ afterEach(() => {
     root.remove()
   }
   document.body.innerHTML = ''
-})
-
-describe('Dashboard ordinary user wallet card', () => {
-  it('renders package and wallet balance split from mocked stats', async () => {
-    dashboardApiMocks.getStats.mockResolvedValue({
-      stats: [
-        { name: 'API 密钥', value: '0', subValue: '活跃 0', icon: 'Activity' },
-        { name: '本月请求', value: '0', subValue: '今日 0', icon: 'Users' },
-        {
-          name: '钱包余额',
-          value: '$110.00',
-          subValue: '套餐额度 $100.00 · 钱包余额 $10.00',
-          icon: 'DollarSign',
-        },
-        { name: '本月 Token', value: '0', subValue: '输入 0 / 输出 0', icon: 'Zap' },
-      ],
-      today: { requests: 0, tokens: 0, cost: 0 },
-      cache_stats: { cache_creation_tokens: 0, cache_read_tokens: 0, total_cache_tokens: 0 },
-      token_breakdown: { input: 0, output: 0, cache_creation: 0, cache_read: 0 },
-      monthly_cost: 0,
-    })
-
-    const root = mountDashboard()
-    await settle()
-
-    expect(root.textContent).toContain('$110.00')
-    expect(root.textContent).toContain('套餐额度 $100.00 · 钱包余额 $10.00')
-  })
 })
 
 describe('Dashboard refresh controls', () => {

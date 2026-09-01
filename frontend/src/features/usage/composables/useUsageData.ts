@@ -1,6 +1,5 @@
-import { ref, computed, type Ref } from 'vue'
+import { ref, computed } from 'vue'
 import { usageApi } from '@/api/usage'
-import { meApi } from '@/api/me'
 import type {
   UsageStatsState,
   ModelStatsItem,
@@ -20,10 +19,6 @@ import {
   mergeUsageRecordResponseTiming,
   parseUsageTimestampMs,
 } from '../utils/recordSync'
-
-export interface UseUsageDataOptions {
-  isAdminPage: Ref<boolean>
-}
 
 export interface LoadStatsOptions {
   force?: boolean
@@ -46,8 +41,7 @@ export interface FilterParams {
   hideUnknownRecords?: boolean
 }
 
-export function useUsageData(options: UseUsageDataOptions) {
-  const { isAdminPage } = options
+export function useUsageData() {
 
   // 加载状态
   const isLoadingStats = ref(true)
@@ -133,7 +127,7 @@ export function useUsageData(options: UseUsageDataOptions) {
     currentDateRange.value = dateRange
 
     try {
-      if (isAdminPage.value) {
+      {
         // 管理员页面顺序加载统计数据，避免刷新使用记录时瞬时打满后端 worker。
         if (!options.preserveOnFailure) {
           stats.value = createDefaultStats()
@@ -257,103 +251,12 @@ export function useUsageData(options: UseUsageDataOptions) {
 
         return hadFailure
       }
-
-      // 用户页面
-      const userData = await meApi.getUsage(dateRange)
-      if (requestId !== loadStatsRequestId) {
-        return false
-      }
-
-      stats.value = {
-        total_requests: userData.total_requests || 0,
-        total_tokens: userData.total_tokens || 0,
-        total_cost: userData.total_cost || 0,
-        total_actual_cost: userData.total_actual_cost,
-        avg_response_time: userData.avg_response_time || 0,
-        period_start: '',
-        period_end: '',
-      }
-
-      modelStats.value = (userData.summary_by_model || []).map((item) => ({
-        model: item.model,
-        request_count: item.requests || 0,
-        total_tokens: item.total_tokens || 0,
-        effective_input_tokens: item.effective_input_tokens || 0,
-        total_input_context: item.total_input_context || 0,
-        output_tokens: item.output_tokens || 0,
-        cache_read_tokens: item.cache_read_tokens || 0,
-        cache_creation_tokens: item.cache_creation_tokens || 0,
-        cache_hit_rate: item.cache_hit_rate || 0,
-        total_cost: item.total_cost_usd || 0,
-        actual_cost: item.actual_total_cost_usd
-      }))
-
-      providerStats.value = (userData.summary_by_provider || [])
-        .filter((item) => isUsageProviderVisible(item.provider))
-        .map((item) => ({
-          provider: item.provider,
-          requests: item.requests || 0,
-          totalTokens: item.total_tokens || 0,
-          effectiveInputTokens: item.effective_input_tokens || 0,
-          totalInputContext: item.total_input_context || 0,
-          outputTokens: item.output_tokens || 0,
-          cacheReadTokens: item.cache_read_tokens || 0,
-          cacheCreationTokens: item.cache_creation_tokens || 0,
-          cacheHitRate: item.cache_hit_rate || 0,
-          totalCost: item.total_cost_usd || 0,
-          successRate: item.success_rate || 0,
-          avgResponseTime: (item.avg_response_time_ms ?? 0) > 0
-            ? `${((item.avg_response_time_ms ?? 0) / 1000).toFixed(2)}s`
-            : '-'
-        }))
-
-      // 用户页面：记录直接从 userData 获取（数量较少）
-      // 使用 mergeRecordStatus 保护已有的活跃状态，避免轮询更新被覆盖
-      const nextRecords = (userData.records || []) as UsageRecord[]
-      currentRecords.value = mergeRecordStatus(currentRecords.value, nextRecords)
-      totalRecords.value = userData.pagination?.total ?? currentRecords.value.length
-
-      // 从记录中提取筛选选项
-      const models = new Set<string>()
-      const providers = new Set<string>()
-      currentRecords.value.forEach(record => {
-        if (record.model) models.add(record.model)
-        if (isUsageProviderVisible(record.provider)) providers.add(record.provider)
-      })
-      availableModels.value = Array.from(models).sort()
-      availableProviders.value = Array.from(providers).sort()
-
-      // API 格式统计直接使用后端聚合数据
-      apiFormatStats.value = (userData.summary_by_api_format || []).map(item => ({
-        api_format: item.api_format,
-        request_count: item.request_count || 0,
-        total_tokens: item.total_tokens || 0,
-        effective_input_tokens: item.effective_input_tokens || 0,
-        total_input_context: item.total_input_context || 0,
-        output_tokens: item.output_tokens || 0,
-        cache_read_tokens: item.cache_read_tokens || 0,
-        cache_creation_tokens: item.cache_creation_tokens || 0,
-        cache_hit_rate: item.cache_hit_rate || 0,
-        total_cost: item.total_cost_usd || 0,
-        avgResponseTime: (item.avg_response_time_ms ?? 0) > 0
-          ? `${((item.avg_response_time_ms ?? 0) / 1000).toFixed(2)}s`
-          : '-'
-      }))
-
-      return false
     } catch (error: unknown) {
       if (requestId !== loadStatsRequestId) {
         return true
       }
       if (getErrorStatus(error) !== 403) {
         log.error('加载统计数据失败:', error)
-      }
-      if (!isAdminPage.value) {
-        stats.value = createDefaultStats()
-        modelStats.value = []
-        // 用户页的 records 依赖 stats 一起加载；管理员页的 records 是独立分页，不应被统计失败清空。
-        currentRecords.value = []
-        totalRecords.value = 0
       }
       return true
     } finally {
@@ -397,7 +300,7 @@ export function useUsageData(options: UseUsageDataOptions) {
         params.api_format = filters.api_format
       }
 
-      if (isAdminPage.value) {
+      {
         // 管理员页面：使用管理员 API
         if (filters?.user_id) {
           params.user_id = filters.user_id
@@ -429,15 +332,6 @@ export function useUsageData(options: UseUsageDataOptions) {
         if (response.total_is_estimated === true) {
           void refreshAdminRecordTotal(params, requestId, totalKey)
         }
-      } else {
-        // 用户页面：使用用户 API
-        const userData = await meApi.getUsage(params)
-        if (requestId !== loadRecordsRequestId) {
-          return
-        }
-        const nextRecords = (userData.records || []) as UsageRecord[]
-        currentRecords.value = mergeRecordStatus(currentRecords.value, nextRecords)
-        totalRecords.value = userData.pagination?.total || currentRecords.value.length
       }
     } catch (error) {
       if (requestId !== loadRecordsRequestId) {

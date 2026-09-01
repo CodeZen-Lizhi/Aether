@@ -95,7 +95,7 @@ async function handleLogin(event?: Event) {
     sessionStorage.removeItem('redirectPath')
     const targetPath = redirectPath && redirectPath !== '/'
       ? redirectPath
-      : (authStore.canAccessAdmin ? '/admin/dashboard' : '/dashboard')
+      : '/admin/dashboard'
 
     await navigateAfterLogin(router, targetPath)
     showSuccess(t('auth.login.successRedirecting'))
