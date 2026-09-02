@@ -53,13 +53,6 @@ export interface CacheStats {
   total_cache_tokens: number
 }
 
-// 用户统计（管理员专用）
-export interface UserStats {
-  total: number
-  active: number
-  online?: number
-}
-
 // Token 详细分类
 export interface TokenBreakdown {
   input: number
@@ -89,7 +82,6 @@ export interface DashboardStatsResponse {
   system_health?: SystemHealth
   cost_stats?: CostStats
   cache_stats?: CacheStats
-  users?: UserStats
   token_breakdown?: TokenBreakdown
   // 普通用户专用字段
   monthly_cost?: number

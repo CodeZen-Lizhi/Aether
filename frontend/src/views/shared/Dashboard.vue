@@ -235,7 +235,6 @@
           </div>
         </div>
       </div>
-
     </div>
 
     <!-- 趋势图表筛选 -->
@@ -559,7 +558,6 @@ import { TimeRangePicker } from "@/components/common";
 import BarChart from "@/components/charts/BarChart.vue";
 import DoughnutChart from "@/components/charts/DoughnutChart.vue";
 import {
-  Users,
   Activity,
   TrendingUp,
   DollarSign,
@@ -659,7 +657,6 @@ const costStats = ref<{
   cost_savings: number;
 } | null>(null);
 
-const activeUsers = ref(0);
 const dailyStats = ref<DailyStat[]>([]);
 const providerSummary = ref<ProviderSummary[]>([]);
 const dailyTimeRange = ref<DateRangeParams>(
@@ -677,7 +674,6 @@ let dailyStatsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 const detailDialogOpen = ref(false);
 
 const iconMap: Record<string, Component> = {
-  Users,
   Activity,
   TrendingUp,
   DollarSign,
@@ -690,10 +686,10 @@ const iconMap: Record<string, Component> = {
 // 空状态占位卡片
 const emptyStatPlaceholders = computed(() => {
   return [
-    { name: "今日请求 / 今日费用", icon: Activity },
+    { name: "今日请求", icon: Activity },
     { name: "今日 Tokens", icon: Hash },
+    { name: "今日费用", icon: DollarSign },
     { name: "全站 RPM / 全站 TPM", icon: Activity },
-    { name: "在线用户 / 启用用户", icon: Users },
   ];
 });
 
@@ -937,7 +933,6 @@ async function loadDashboardData() {
     if (statsData.today) todayStats.value = statsData.today;
     if (statsData.system_health) systemHealth.value = statsData.system_health;
     if (statsData.cost_stats) costStats.value = statsData.cost_stats;
-    if (statsData.users) activeUsers.value = statsData.users.active;
   } finally {
     loading.value = false;
   }

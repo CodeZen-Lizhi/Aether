@@ -4,9 +4,9 @@ use super::{
 };
 use aether_data_contracts::repository::usage::{
     StoredUsageCostSavingsSummary, StoredUsageDashboardDailyBreakdownRow,
-    StoredUsageDashboardStatsSummary, StoredUsageDashboardSummary, UsageAuditAggregationGroupBy,
-    UsageAuditAggregationQuery, UsageDashboardDailyBreakdownQuery,
-    UsageDashboardProviderCountsQuery, UsageDashboardSummaryQuery,
+    StoredUsageDashboardStatsSummary, StoredUsageDashboardSummary,
+    UsageDashboardDailyBreakdownQuery, UsageDashboardProviderCountsQuery,
+    UsageDashboardSummaryQuery,
 };
 use axum::{
     body::Body,
@@ -19,8 +19,6 @@ use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 const DASHBOARD_SITE_RATE_WINDOW_SECS: u64 = 60;
-const DASHBOARD_ONLINE_USER_WINDOW_SECS: u64 = 300;
-const DASHBOARD_ONLINE_USER_AGGREGATION_LIMIT: usize = 100_000;
 
 #[derive(Debug, Clone, Copy)]
 struct DashboardDateRange {
@@ -758,49 +756,6 @@ async fn dashboard_load_api_key_counts(state: &AppState) -> Result<(u64, u64), G
     Ok((summary.total, summary.active))
 }
 
-async fn dashboard_load_user_counts(
-    state: &AppState,
-    range: DashboardDateRange,
-) -> Result<(u64, u64), GatewayError> {
-    let summary = state.summarize_export_users().await?;
-    if summary.total > 0 {
-        return Ok((summary.total, summary.active));
-    }
-
-    let Some((created_from_unix_secs, created_until_unix_secs)) =
-        dashboard_range_bounds_unix(range)
-    else {
-        return Ok((0, 0));
-    };
-    let fallback = state
-        .aggregate_usage_audits(&UsageAuditAggregationQuery {
-            created_from_unix_secs,
-            created_until_unix_secs,
-            group_by: UsageAuditAggregationGroupBy::User,
-            limit: 10_000,
-            exclude_reserved_provider_labels: false,
-        })
-        .await?;
-    let count = fallback.len() as u64;
-    Ok((count, count))
-}
-
-async fn dashboard_load_online_user_count(
-    state: &AppState,
-    now_unix_secs: u64,
-) -> Result<u64, GatewayError> {
-    let rows = state
-        .aggregate_usage_audits(&UsageAuditAggregationQuery {
-            created_from_unix_secs: now_unix_secs.saturating_sub(DASHBOARD_ONLINE_USER_WINDOW_SECS),
-            created_until_unix_secs: now_unix_secs.saturating_add(1),
-            group_by: UsageAuditAggregationGroupBy::User,
-            limit: DASHBOARD_ONLINE_USER_AGGREGATION_LIMIT,
-            exclude_reserved_provider_labels: false,
-        })
-        .await?;
-    Ok(rows.len() as u64)
-}
-
 fn dashboard_cache_savings_usd(summary: &StoredUsageCostSavingsSummary) -> f64 {
     let estimated_full_cost =
         if summary.estimated_full_cost_usd <= 0.0 && summary.cache_read_cost_usd > 0.0 {
@@ -856,12 +811,7 @@ pub(super) async fn handle_dashboard_stats_get(
         tz_offset_minutes: summary_range.tz_offset_minutes,
     };
     let (period_result, today_result) = tokio::join!(
-        dashboard_stats_for_range(
-            state,
-            summary_range,
-            None,
-            "dashboard stats lookup failed",
-        ),
+        dashboard_stats_for_range(state, summary_range, None, "dashboard stats lookup failed",),
         dashboard_stats_for_range(
             state,
             today_range,
@@ -930,27 +880,6 @@ pub(super) async fn handle_dashboard_stats_get(
         Err(response) => return response,
     };
     let site_rate_totals = dashboard_usage_totals_from_summary(&site_rate_summary);
-    let online_users = match dashboard_load_online_user_count(state, now_unix_secs).await {
-        Ok(value) => value,
-        Err(err) => {
-            return build_auth_error_response(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("dashboard online user stats lookup failed: {err:?}"),
-                false,
-            );
-        }
-    };
-    let (total_users, active_users) =
-        match dashboard_load_user_counts(state, summary_range).await {
-            Ok(value) => value,
-            Err(err) => {
-                return build_auth_error_response(
-                    http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("dashboard user stats lookup failed: {err:?}"),
-                    false,
-                );
-            }
-        };
     let success_rate = if today_totals.requests == 0 {
         0.0
     } else {
@@ -963,19 +892,29 @@ pub(super) async fn handle_dashboard_stats_get(
     let (period_cost_savings_summary, today_cost_savings_summary) = admin_cost_savings;
     let today_cost_savings = dashboard_cache_savings_usd(&today_cost_savings_summary);
     let period_cost_savings = dashboard_cache_savings_usd(&period_cost_savings_summary);
+    let success_requests = today_totals
+        .requests
+        .saturating_sub(today_totals.error_requests);
+    // dashboard_cache_savings_usd 已保证结果 >= 0，节省为 0 时不展示副行。
+    let mut today_cost_stats = json!({
+        "name": "今日费用",
+        "value": dashboard_format_usd(today_totals.total_cost_usd),
+        "icon": "DollarSign",
+    });
+    if today_cost_savings > 0.0 {
+        today_cost_stats["subValue"] =
+            json!(format!("节省 {}", dashboard_format_usd(today_cost_savings)));
+    }
     let stats = json!([
         {
-            "name": "今日请求 / 费用",
-            "value": format!(
-                "{} / {}",
-                dashboard_format_integer(today_totals.requests),
-                dashboard_format_usd(today_totals.total_cost_usd)
-            ),
+            "name": "今日请求",
+            "value": dashboard_format_integer(today_totals.requests),
             "subValue": format!(
-                "成功率 {} / 节省 {}",
-                dashboard_format_percentage(success_rate),
-                dashboard_format_usd(today_cost_savings.max(0.0))
+                "成功 {} / 失败 {}",
+                dashboard_format_integer(success_requests),
+                dashboard_format_integer(today_totals.error_requests)
             ),
+            "change": format!("成功率 {}", dashboard_format_percentage(success_rate)),
             "icon": "Activity",
         },
         {
@@ -984,6 +923,7 @@ pub(super) async fn handle_dashboard_stats_get(
             "subValue": dashboard_format_today_token_subvalue(&today_totals),
             "icon": "Zap",
         },
+        today_cost_stats,
         {
             "name": "全站 RPM / TPM",
             "value": format!(
@@ -993,19 +933,6 @@ pub(super) async fn handle_dashboard_stats_get(
             ),
             "subValue": "最近 60 秒",
             "icon": "Activity",
-        },
-        {
-            "name": "在线 / 启用用户",
-            "value": format!(
-                "{} / {}",
-                dashboard_format_integer(online_users),
-                dashboard_format_integer(active_users)
-            ),
-            "subValue": format!(
-                "最近 5 分钟 / 总用户 {}",
-                dashboard_format_integer(total_users)
-            ),
-            "icon": "Users",
         }
     ]);
     let payload = json!({
@@ -1031,11 +958,6 @@ pub(super) async fn handle_dashboard_stats_get(
             "cost_savings": period_cost_savings,
         },
         "cache_stats": cache_stats,
-        "users": {
-            "total": total_users,
-            "active": active_users,
-            "online": online_users,
-        },
         "token_breakdown": token_breakdown,
     });
     dashboard_cached_json_response(state, cache_key, cache_ttl, &payload)

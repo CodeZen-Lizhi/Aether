@@ -135,9 +135,11 @@ async fn gateway_dashboard_stats_include_end_of_day_boundary() {
     assert_eq!(stats.len(), 4);
     let today_request_stats = stats
         .iter()
-        .find(|item| item["name"] == json!("今日请求 / 费用"))
+        .find(|item| item["name"] == json!("今日请求"))
         .expect("today request stats card should exist");
-    assert_eq!(today_request_stats["value"], json!("1 / $1.25"));
+    assert_eq!(today_request_stats["value"], json!("1"));
+    assert_eq!(today_request_stats["subValue"], json!("成功 1 / 失败 0"));
+    assert_eq!(today_request_stats["change"], json!("成功率 100.0%"));
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
@@ -414,15 +416,21 @@ async fn gateway_handles_admin_dashboard_stats_locally_without_proxying_upstream
     assert_eq!(payload["cost_stats"]["cost_savings"], json!(0.025));
     let stats = payload["stats"].as_array().expect("stats should be array");
     assert_eq!(stats.len(), 4);
+    let stat_names = stats
+        .iter()
+        .filter_map(|item| item["name"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        stat_names,
+        vec!["今日请求", "今日 Token", "今日费用", "全站 RPM / TPM"]
+    );
     let today_request_stats = stats
         .iter()
-        .find(|item| item["name"] == json!("今日请求 / 费用"))
+        .find(|item| item["name"] == json!("今日请求"))
         .expect("today request stats card should exist");
-    assert_eq!(today_request_stats["value"], json!("2 / $2.50"));
-    assert_eq!(
-        today_request_stats["subValue"],
-        json!("成功率 100.0% / 节省 $0.01")
-    );
+    assert_eq!(today_request_stats["value"], json!("2"));
+    assert_eq!(today_request_stats["subValue"], json!("成功 2 / 失败 0"));
+    assert_eq!(today_request_stats["change"], json!("成功率 100.0%"));
     let today_token_stats = stats
         .iter()
         .find(|item| item["name"] == json!("今日 Token"))
@@ -432,8 +440,12 @@ async fn gateway_handles_admin_dashboard_stats_locally_without_proxying_upstream
         today_token_stats["subValue"],
         json!("输入 10.9K / 输出 3.1K · 写缓存 1.25K / 读缓存 1K")
     );
-    assert_eq!(payload["users"]["total"], 2);
-    assert_eq!(payload["users"]["active"], 1);
+    let today_cost_stats = stats
+        .iter()
+        .find(|item| item["name"] == json!("今日费用"))
+        .expect("today cost stats card should exist");
+    assert_eq!(today_cost_stats["value"], json!("$2.50"));
+    assert_eq!(today_cost_stats["subValue"], json!("节省 $0.01"));
     assert_eq!(payload["api_keys"]["total"], 3);
     assert_eq!(payload["api_keys"]["active"], 2);
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
