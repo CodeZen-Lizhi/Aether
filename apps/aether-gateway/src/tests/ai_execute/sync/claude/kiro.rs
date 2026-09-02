@@ -178,7 +178,6 @@ async fn gateway_executes_kiro_claude_cli_sync_via_local_provider_catalog_candid
             model_id: "model-kiro-cli-local-sync-1".to_string(),
             global_model_id: "global-model-kiro-cli-local-sync-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

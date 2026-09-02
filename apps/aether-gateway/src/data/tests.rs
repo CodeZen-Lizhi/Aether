@@ -539,7 +539,6 @@ fn sample_minimal_candidate_selection_row(
         model_id: format!("model-{provider_id}"),
         global_model_id: "global-model-1".to_string(),
         global_model_name: "gpt-4.1".to_string(),
-        global_model_mappings: Some(vec!["gpt-4\\.1-.*".to_string()]),
         global_model_supports_streaming: Some(true),
         model_provider_model_name: "gpt-4.1-upstream".to_string(),
         model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -871,19 +870,10 @@ async fn data_state_reads_minimal_candidate_selection_with_auth_filters() {
         })
         .expect("selection should read");
 
-    assert_eq!(selection.len(), 2);
+    assert_eq!(selection.len(), 1);
     assert_eq!(selection[0].provider_id, "provider-1");
     assert_eq!(selection[0].selected_provider_model_name, "gpt-4.1-canary");
     assert_eq!(selection[0].mapping_matched_model, None);
-    assert_eq!(selection[1].key_id, "key-3");
-    assert_eq!(
-        selection[1].selected_provider_model_name,
-        "gpt-4.1-edge".to_string()
-    );
-    assert_eq!(
-        selection[1].mapping_matched_model,
-        Some("gpt-4.1-edge".to_string())
-    );
 }
 
 #[tokio::test]

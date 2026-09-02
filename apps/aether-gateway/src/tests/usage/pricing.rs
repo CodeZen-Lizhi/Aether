@@ -257,7 +257,6 @@ fn sample_candidate_row(spec: ProviderSpec) -> StoredMinimalCandidateSelectionRo
         model_id: spec.model_id.to_string(),
         global_model_id: spec.global_model_id.to_string(),
         global_model_name: spec.global_model_name.to_string(),
-        global_model_mappings: None,
         global_model_supports_streaming: Some(true),
         model_provider_model_name: spec.provider_model_name.to_string(),
         model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

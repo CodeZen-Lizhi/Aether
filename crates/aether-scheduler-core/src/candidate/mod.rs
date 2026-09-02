@@ -60,7 +60,6 @@ mod tests {
             model_id: format!("model-{id}"),
             global_model_id: format!("global-model-{id}"),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]),
             global_model_supports_streaming: Some(true),
             model_provider_model_name: format!("gpt-5-upstream-{id}"),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

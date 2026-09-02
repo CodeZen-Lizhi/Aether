@@ -28,7 +28,6 @@ pub(super) fn sample_row() -> StoredMinimalCandidateSelectionRow {
         model_id: "model-1".to_string(),
         global_model_id: "global-model-1".to_string(),
         global_model_name: "gpt-4.1".to_string(),
-        global_model_mappings: Some(vec!["gpt-4\\.1-.*".to_string()]),
         global_model_supports_streaming: Some(true),
         model_provider_model_name: "gpt-4.1-upstream".to_string(),
         model_provider_model_mappings: Some(vec![

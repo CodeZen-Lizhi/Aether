@@ -99,7 +99,6 @@ async fn gateway_executes_gemini_video_create_via_local_decision_gate_with_local
             model_id: "model-gemini-video-local-1".to_string(),
             global_model_id: "global-model-gemini-video-local-1".to_string(),
             global_model_name: "veo-3".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(false),
             model_provider_model_name: "veo-3-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

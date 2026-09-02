@@ -119,7 +119,6 @@ fn rerank_candidate_row() -> StoredMinimalCandidateSelectionRow {
         model_id: "model-rerank-base".to_string(),
         global_model_id: "global-rerank-base".to_string(),
         global_model_name: "bge-reranker-base".to_string(),
-        global_model_mappings: None,
         global_model_supports_streaming: Some(false),
         model_provider_model_name: "upstream-rerank".to_string(),
         model_provider_model_mappings: None,

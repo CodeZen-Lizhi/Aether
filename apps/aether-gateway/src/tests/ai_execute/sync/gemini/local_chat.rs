@@ -112,7 +112,6 @@ async fn gateway_executes_gemini_chat_sync_via_local_decision_gate_with_local_sy
             model_id: "model-gemini-local-1".to_string(),
             global_model_id: "global-model-gemini-local-1".to_string(),
             global_model_name: "gemini-2.5-pro".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -536,7 +535,6 @@ async fn gateway_returns_gemini_chat_error_for_local_sync_failure_impl() {
             model_id: "model-gemini-local-1".to_string(),
             global_model_id: "global-model-gemini-local-1".to_string(),
             global_model_name: "gemini-2.5-pro".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

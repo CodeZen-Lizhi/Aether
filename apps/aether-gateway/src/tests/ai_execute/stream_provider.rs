@@ -163,7 +163,6 @@ async fn gateway_executes_kiro_claude_cli_stream_via_local_provider_catalog_cand
             model_id: "model-kiro-cli-local-stream-1".to_string(),
             global_model_id: "global-model-kiro-cli-local-stream-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -678,7 +677,6 @@ async fn gateway_executes_claude_cli_stream_via_local_decision_gate_without_wait
             model_id: "model-claude-cli-local-1".to_string(),
             global_model_id: "global-model-claude-cli-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-code-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1133,7 +1131,6 @@ async fn gateway_executes_claude_chat_stream_via_local_decision_gate_with_local_
             model_id: "model-claude-chat-local-stream-1".to_string(),
             global_model_id: "global-model-claude-chat-local-stream-1".to_string(),
             global_model_name: "claude-sonnet-4-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

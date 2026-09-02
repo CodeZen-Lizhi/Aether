@@ -653,9 +653,6 @@ fn sort_candidate_selection_rows(
 
 fn map_candidate_selection_row(row: &SqliteRow) -> Result<CandidateSelectionRow, DataLayerError> {
     let global_model_config = parse_json(row.try_get("global_model_config").ok().flatten())?;
-    let global_model_mappings = global_model_config
-        .as_ref()
-        .and_then(|value| value.get("model_mappings").cloned());
     let global_model_supports_streaming = global_model_config
         .as_ref()
         .and_then(|value| value.get("streaming"))
@@ -687,10 +684,6 @@ fn map_candidate_selection_row(row: &SqliteRow) -> Result<CandidateSelectionRow,
             model_id: row.try_get("model_id").map_sql_err()?,
             global_model_id: row.try_get("global_model_id").map_sql_err()?,
             global_model_name: row.try_get("global_model_name").map_sql_err()?,
-            global_model_mappings: parse_string_list(
-                global_model_mappings,
-                "global_models.config.model_mappings",
-            )?,
             global_model_supports_streaming,
             model_provider_model_name: row.try_get("model_provider_model_name").map_sql_err()?,
             model_provider_model_mappings: parse_provider_model_mappings(parse_json(
@@ -992,10 +985,6 @@ mod tests {
                 .map(|row| row.key_id.as_str())
                 .collect::<Vec<_>>(),
             vec!["key-1", "key-2"]
-        );
-        assert_eq!(
-            rows[0].global_model_mappings,
-            Some(vec!["alias-global".to_string()])
         );
         assert_eq!(rows[0].global_model_supports_streaming, Some(true));
         assert_eq!(

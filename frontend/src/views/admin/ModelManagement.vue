@@ -330,8 +330,6 @@
       @delete-provider="confirmDeleteProviderImplementation"
       @toggle-provider-status="toggleProviderStatus"
       @refresh-model="refreshSelectedModel"
-      @link-provider="linkProviderToModel"
-      @link-providers="linkProvidersToModel"
     />
 
     <!-- 批量添加关联提供商对话框 -->
@@ -1308,11 +1306,6 @@ function openAddProviderDialog() {
     // 同步选择状态
     syncBatchProviderSelection()
   })
-}
-
-// 关联指定提供商到当前模型
-async function linkProviderToModel(providerId: string) {
-  await linkProvidersToModel([providerId])
 }
 
 // 批量关联提供商到当前模型

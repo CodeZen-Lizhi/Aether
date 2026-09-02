@@ -104,7 +104,6 @@ fn sample_files_candidate_row() -> StoredMinimalCandidateSelectionRow {
         model_id: "model-gemini-files-local-1".to_string(),
         global_model_id: "global-model-gemini-files-local-1".to_string(),
         global_model_name: "gemini-2.5-pro".to_string(),
-        global_model_mappings: None,
         global_model_supports_streaming: Some(true),
         model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
         model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

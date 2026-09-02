@@ -180,17 +180,6 @@ fn row_exposes_global_model_for_models(
         }
     }
 
-    let Some(global_model_mappings) = row.global_model_mappings.as_ref() else {
-        return false;
-    };
-    for allowed_model in key_allowed_models {
-        for pattern in global_model_mappings {
-            if matches_model_mapping_for_models(pattern, allowed_model) {
-                return true;
-            }
-        }
-    }
-
     false
 }
 

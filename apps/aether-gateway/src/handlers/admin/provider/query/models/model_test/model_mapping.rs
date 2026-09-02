@@ -159,7 +159,6 @@ fn provider_query_admin_model_selection_row(
         model_id: model.id.clone(),
         global_model_id: model.global_model_id.clone(),
         global_model_name: model.global_model_name.clone().unwrap_or_default(),
-        global_model_mappings: None,
         global_model_supports_streaming: None,
         model_provider_model_name: model.provider_model_name.clone(),
         model_provider_model_mappings: mappings,

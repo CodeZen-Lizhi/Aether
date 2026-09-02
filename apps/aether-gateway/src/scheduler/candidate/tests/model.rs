@@ -76,18 +76,6 @@ fn resolves_mapping_matched_model_from_key_allowed_models() {
 }
 
 #[test]
-fn resolves_mapping_matched_model_from_global_regex_mapping() {
-    let mut row = sample_row();
-    row.key_allowed_models = Some(vec!["gpt-4.1-variant".to_string()]);
-
-    let resolved = resolve_provider_model_name(&row, "gpt-4.1", "openai:chat")
-        .expect("candidate should resolve");
-
-    assert_eq!(resolved.0, "gpt-4.1-variant");
-    assert_eq!(resolved.1, Some("gpt-4.1-variant".to_string()));
-}
-
-#[test]
 fn invalid_regex_mapping_is_treated_as_non_match() {
     assert!(!matches_model_mapping("(", "gpt-4.1-variant"));
 }
@@ -104,17 +92,6 @@ fn resolves_requested_global_model_from_provider_model_alias() {
         endpoint_ids: None,
         operations: None,
     }]);
-
-    let resolved = resolve_requested_global_model_name(&[row], "gpt-5.2", "openai:chat");
-
-    assert_eq!(resolved.as_deref(), Some("gpt-5"));
-}
-
-#[test]
-fn resolves_requested_global_model_from_global_regex_mapping() {
-    let mut row = sample_row();
-    row.global_model_name = "gpt-5".to_string();
-    row.global_model_mappings = Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]);
 
     let resolved = resolve_requested_global_model_name(&[row], "gpt-5.2", "openai:chat");
 
@@ -245,7 +222,6 @@ async fn enumerate_minimal_candidate_selection_keeps_only_resolved_global_model_
     mapped.model_id = "model-mapped".to_string();
     mapped.global_model_id = "global-mapped".to_string();
     mapped.global_model_name = "claude-sonnet".to_string();
-    mapped.global_model_mappings = Some(vec!["gpt-5".to_string()]);
     mapped.model_provider_model_name = "claude-sonnet-upstream".to_string();
     mapped.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "claude-sonnet-upstream".to_string(),
@@ -285,7 +261,6 @@ async fn enumerate_minimal_candidate_selection_keeps_only_resolved_global_model_
 async fn enumerate_minimal_candidate_selection_allows_resolved_global_model_in_auth_snapshot() {
     let mut row = sample_row();
     row.global_model_name = "gpt-5".to_string();
-    row.global_model_mappings = Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]);
     row.model_provider_model_name = "gpt-5-upstream".to_string();
     row.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-5-upstream".to_string(),
@@ -307,7 +282,7 @@ async fn enumerate_minimal_candidate_selection_allows_resolved_global_model_in_a
     let selection = enumerate_minimal_candidate_selection_with_required_capabilities(
         &state,
         "openai:chat",
-        "gpt-5.2",
+        "gpt-5",
         false,
         Some(&auth_snapshot),
         None,

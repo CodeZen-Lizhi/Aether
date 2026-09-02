@@ -125,7 +125,6 @@ async fn gateway_executes_gemini_chat_sync_same_format_via_local_finalize_respon
             model_id: "model-gemini-chat-finalize-local-1".to_string(),
             global_model_id: "global-model-gemini-chat-finalize-local-1".to_string(),
             global_model_name: "gemini-2.5-pro".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -616,7 +615,6 @@ async fn gateway_executes_gemini_chat_sync_upstream_stream_via_local_finalize_re
             model_id: "model-gemini-chat-stream-finalize-local-1".to_string(),
             global_model_id: "global-model-gemini-chat-stream-finalize-local-1".to_string(),
             global_model_name: "gemini-2.5-pro".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1097,7 +1095,6 @@ async fn gateway_executes_gemini_cli_sync_upstream_stream_via_local_finalize_res
             model_id: "model-gemini-cli-finalize-local-1".to_string(),
             global_model_id: "global-model-gemini-cli-finalize-local-1".to_string(),
             global_model_name: "gemini-cli".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-cli-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

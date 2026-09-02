@@ -73,7 +73,6 @@ async fn gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_ch
             model_id: "model-openai-local-miss-1".to_string(),
             global_model_id: "global-model-openai-local-miss-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -343,7 +342,6 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
             model_id: format!("model-{provider_id}"),
             global_model_id: "global-model-openai-sync-failover".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: mapped_model.to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

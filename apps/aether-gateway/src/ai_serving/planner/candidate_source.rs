@@ -1717,12 +1717,10 @@ mod tests {
     async fn fallback_can_supply_a_real_second_candidate_after_fast_path_page() {
         let mut first = standard_candidate_row("provider-first", "openai:chat");
         first.global_model_name = "gpt-5".to_string();
-        first.global_model_mappings = Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]);
         first.model_provider_model_name = "gpt-5.1".to_string();
 
         let mut second = standard_candidate_row("provider-second", "openai:chat");
         second.global_model_name = "gpt-5".to_string();
-        second.global_model_mappings = Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]);
         second.model_provider_model_name = "gpt-5-secondary".to_string();
 
         let repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
@@ -1991,7 +1989,6 @@ mod tests {
             model_id: "model-openai-responses-mapped-1".to_string(),
             global_model_id: "global-model-openai-responses-mapped-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]),
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: None,
@@ -2025,7 +2022,6 @@ mod tests {
             model_id: format!("model-{provider_id}"),
             global_model_id: "global-model-gpt-5".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5".to_string(),
             model_provider_model_mappings: None,
@@ -2067,7 +2063,6 @@ mod tests {
             model_id: "model-opg-deepseek-v4-pro".to_string(),
             global_model_id: "global-model-deepseek-v4-pro".to_string(),
             global_model_name: "deepseek-v4-pro".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "deepseek-v4-pro".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -2139,7 +2134,6 @@ mod tests {
     #[tokio::test]
     async fn paged_preselection_prefers_operation_scoped_mapping_for_compaction() {
         let mut row = openai_responses_mapping_row();
-        row.global_model_mappings = None;
         row.global_model_name = "gpt-5.6-sol".to_string();
         row.model_provider_model_name = "gpt-5.6-sol".to_string();
         row.model_provider_model_mappings = Some(vec![
@@ -2204,7 +2198,6 @@ mod tests {
     async fn custom_policy_suffix_uses_the_same_base_model_for_candidate_selection() {
         let mut row = openai_responses_mapping_row();
         row.global_model_name = "deployment-alias".to_string();
-        row.global_model_mappings = None;
         row.model_provider_model_name = "gpt-5.6-sol".to_string();
         let repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
             Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed([row]));

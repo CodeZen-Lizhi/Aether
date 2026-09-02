@@ -90,7 +90,6 @@ pub(super) fn sample_local_openai_candidate_row() -> StoredMinimalCandidateSelec
         model_id: "model-openai-usage-local-1".to_string(),
         global_model_id: "global-model-openai-usage-local-1".to_string(),
         global_model_name: "gpt-5".to_string(),
-        global_model_mappings: None,
         global_model_supports_streaming: Some(true),
         model_provider_model_name: "gpt-5-upstream".to_string(),
         model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

@@ -102,7 +102,6 @@ async fn gateway_executes_openai_responses_cross_format_upstream_stream_via_loca
             model_id: "model-openai-cli-gemini-finalize-local-1".to_string(),
             global_model_id: "global-model-openai-cli-gemini-finalize-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -562,7 +561,6 @@ async fn gateway_executes_openai_responses_cross_format_function_call_upstream_s
             model_id: "model-openai-cli-gemini-tool-finalize-local-1".to_string(),
             global_model_id: "global-model-openai-cli-gemini-tool-finalize-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

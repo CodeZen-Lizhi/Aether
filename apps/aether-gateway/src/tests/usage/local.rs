@@ -1753,7 +1753,6 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             model_id: "model-claude-cli-usage-local-miss-1".to_string(),
             global_model_id: "global-model-claude-cli-usage-local-miss-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5.4".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -2064,7 +2063,6 @@ fn gateway_keeps_failed_usage_request_capture_lightweight_for_large_local_claude
             model_id: "model-claude-cli-usage-local-miss-large-1".to_string(),
             global_model_id: "global-model-claude-cli-usage-local-miss-large-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5.4".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

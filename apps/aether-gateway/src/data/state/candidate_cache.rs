@@ -1120,7 +1120,6 @@ mod tests {
             model_id: "model-1".to_string(),
             global_model_id: "global-model-1".to_string(),
             global_model_name: "mock-model".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "mock-model".to_string(),
             model_provider_model_mappings: None,

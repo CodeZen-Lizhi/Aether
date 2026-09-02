@@ -235,7 +235,6 @@ fn openai_chat_pressure_candidates(
             model_id: pressure_model_id(index),
             global_model_id: "global-model-openai-chat-pressure".to_string(),
             global_model_name: config.requested_model.clone(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: config.provider_model.clone(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

@@ -120,7 +120,6 @@ async fn gateway_executes_claude_chat_sync_same_format_via_local_finalize_respon
             model_id: "model-claude-chat-finalize-local-1".to_string(),
             global_model_id: "global-model-claude-chat-finalize-local-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -563,7 +562,6 @@ async fn gateway_executes_claude_chat_sync_upstream_stream_via_local_finalize_re
             model_id: "model-claude-chat-stream-finalize-local-1".to_string(),
             global_model_id: "global-model-claude-chat-stream-finalize-local-1".to_string(),
             global_model_name: "claude-sonnet-4".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1011,7 +1009,6 @@ async fn gateway_executes_claude_cli_sync_upstream_stream_via_local_finalize_res
             model_id: "model-claude-cli-finalize-local-1".to_string(),
             global_model_id: "global-model-claude-cli-finalize-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-code-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

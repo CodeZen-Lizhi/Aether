@@ -68,16 +68,6 @@ pub fn resolve_requested_global_model_name_with_model_directives_and_request_ope
                         })
                 })
             })
-            .or_else(|| {
-                resolve_global_model_name_by(rows, |row| {
-                    row_has_available_provider_model(row, api_format, request_operation)
-                        && row.global_model_mappings.as_ref().is_some_and(|patterns| {
-                            patterns
-                                .iter()
-                                .any(|pattern| matches_model_mapping(pattern, requested_model_name))
-                        })
-                })
-            })
         },
     )
 }
@@ -133,12 +123,7 @@ fn row_supports_requested_model_exact(
     row_has_available_provider_model(row, api_format, request_operation)
         && (row.global_model_name == requested_model_name
             || (row_default_provider_model_name_available(row, api_format, request_operation)
-                && row.model_provider_model_name == requested_model_name)
-            || row.global_model_mappings.as_ref().is_some_and(|patterns| {
-                patterns
-                    .iter()
-                    .any(|pattern| matches_model_mapping(pattern, requested_model_name))
-            }))
+                && row.model_provider_model_name == requested_model_name))
         || row
             .model_provider_model_mappings
             .as_ref()
@@ -234,16 +219,6 @@ pub fn resolve_provider_model_name_with_model_directives_and_request_operation(
         if row_has_candidate_model_name(row, api_format, request_operation, allowed_model) {
             let allowed_model = allowed_model.to_owned();
             return Some((selected_provider_model_name.clone(), Some(allowed_model)));
-        }
-    }
-
-    let global_model_mappings = row.global_model_mappings.as_ref()?;
-    for &allowed_model in &sorted_allowed_models {
-        for pattern in global_model_mappings {
-            if matches_model_mapping(pattern, allowed_model) {
-                let allowed_model = allowed_model.to_owned();
-                return Some((allowed_model.clone(), Some(allowed_model)));
-            }
         }
     }
 
@@ -586,26 +561,6 @@ mod tests {
     }
 
     #[test]
-    fn regex_allowed_model_replaces_selected_provider_model_name() {
-        let mut row = sample_row("gpt-5", "gpt-5-upstream");
-        row.key_allowed_models = Some(vec!["gpt-5.4".to_string()]);
-        row.global_model_mappings = Some(vec!["gpt-5(?:\\.\\d+)?".to_string()]);
-        row.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
-            name: "gpt-5-canonical-upstream".to_string(),
-            priority: 1,
-            api_formats: Some(vec!["openai:chat".to_string()]),
-            endpoint_ids: None,
-            operations: None,
-        }]);
-
-        let resolved = resolve_provider_model_name(&row, "gpt-5", "openai:chat")
-            .expect("regex-matched allowed model should allow the key");
-
-        assert_eq!(resolved.0, "gpt-5.4");
-        assert_eq!(resolved.1.as_deref(), Some("gpt-5.4"));
-    }
-
-    #[test]
     fn model_directive_suffix_matches_base_model_as_fallback() {
         let row = sample_row("gpt-5.4", "gpt-5.4-upstream");
 
@@ -923,7 +878,6 @@ mod tests {
             model_id: format!("model-{global_model_name}"),
             global_model_id: format!("global-{global_model_name}"),
             global_model_name: global_model_name.to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: model_provider_model_name.to_string(),
             model_provider_model_mappings: None,

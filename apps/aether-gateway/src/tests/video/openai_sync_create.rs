@@ -104,7 +104,6 @@ async fn gateway_executes_openai_video_create_via_local_decision_gate_with_local
             model_id: "model-openai-video-local-1".to_string(),
             global_model_id: "global-model-openai-video-local-1".to_string(),
             global_model_name: "sora-2".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(false),
             model_provider_model_name: "sora-2-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

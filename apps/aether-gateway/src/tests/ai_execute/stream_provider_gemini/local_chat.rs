@@ -90,7 +90,6 @@ async fn gateway_executes_gemini_chat_stream_via_local_decision_gate_with_local_
             model_id: "model-gemini-chat-local-stream-1".to_string(),
             global_model_id: "global-model-gemini-chat-local-stream-1".to_string(),
             global_model_name: "gemini-2.5-pro".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

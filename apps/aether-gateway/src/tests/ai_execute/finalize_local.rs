@@ -127,7 +127,6 @@ async fn gateway_executes_openai_chat_sync_upstream_stream_via_local_finalize_re
             model_id: "model-openai-finalize-local-1".to_string(),
             global_model_id: "global-model-openai-finalize-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -613,7 +612,6 @@ async fn gateway_executes_openai_chat_cross_format_upstream_stream_via_local_fin
             model_id: "model-openai-chat-gemini-finalize-local-1".to_string(),
             global_model_id: "global-model-openai-chat-gemini-finalize-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1045,7 +1043,6 @@ async fn gateway_executes_openai_chat_cross_format_tool_use_upstream_stream_via_
             model_id: "model-openai-chat-claude-tool-finalize-local-1".to_string(),
             global_model_id: "global-model-openai-chat-claude-tool-finalize-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1493,7 +1490,6 @@ async fn gateway_executes_openai_chat_cross_format_claude_upstream_sync_via_loca
             model_id: "model-openai-chat-claude-direct-sync-1".to_string(),
             global_model_id: "global-model-openai-chat-claude-direct-sync-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1839,7 +1835,6 @@ async fn gateway_executes_openai_chat_cross_format_gemini_upstream_sync_via_loca
             model_id: "model-openai-chat-gemini-direct-sync-1".to_string(),
             global_model_id: "global-model-openai-chat-gemini-direct-sync-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

@@ -123,7 +123,6 @@ fn image_bridge_candidate_row(
         model_id: format!("model-{prefix}"),
         global_model_id: format!("global-model-{prefix}"),
         global_model_name: "gpt-image-2".to_string(),
-        global_model_mappings: None,
         global_model_supports_streaming: Some(false),
         model_provider_model_name: "gpt-image-2".to_string(),
         model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

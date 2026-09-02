@@ -112,7 +112,6 @@ async fn gateway_executes_gemini_cli_sync_via_local_decision_gate_with_local_syn
             model_id: "model-gemini-cli-local-1".to_string(),
             global_model_id: "global-model-gemini-cli-local-1".to_string(),
             global_model_name: "gemini-cli".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-cli-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -546,7 +545,6 @@ async fn gateway_returns_gemini_cli_error_for_local_sync_failure_impl() {
             model_id: "model-gemini-cli-local-1".to_string(),
             global_model_id: "global-model-gemini-cli-local-1".to_string(),
             global_model_name: "gemini-cli".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-cli-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -829,7 +827,6 @@ async fn gateway_executes_vertex_ai_gemini_cli_sync_via_local_decision_gate_with
             model_id: "model-vertex-cli-local-1".to_string(),
             global_model_id: "global-model-vertex-cli-local-1".to_string(),
             global_model_name: "gemini-cli".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-cli-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

@@ -130,7 +130,6 @@ async fn gateway_executes_openai_responses_sync_via_local_decision_gate_with_loc
             model_id: "model-openai-cli-local-1".to_string(),
             global_model_id: "global-model-openai-cli-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -635,7 +634,6 @@ async fn gateway_waits_for_api_key_concurrency_slot_then_executes_openai_respons
             model_id: "model-openai-cli-local-limit-1".to_string(),
             global_model_id: "global-model-openai-cli-local-limit-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1014,7 +1012,6 @@ async fn gateway_executes_openai_responses_sync_after_api_key_concurrency_wait_b
             model_id: "model-openai-cli-local-timeout-1".to_string(),
             global_model_id: "global-model-openai-cli-local-timeout-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1371,7 +1368,6 @@ async fn gateway_returns_openai_responses_error_for_local_sync_failure_impl() {
             model_id: "model-openai-cli-local-1".to_string(),
             global_model_id: "global-model-openai-cli-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1672,7 +1668,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_cl
             model_id: "model-openai-cli-gemini-local-1".to_string(),
             global_model_id: "global-model-openai-cli-gemini-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-cli-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -2065,7 +2060,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_sy
             model_id: "model-openai-cli-claude-local-1".to_string(),
             global_model_id: "global-model-openai-cli-claude-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-code-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -2437,7 +2431,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_claude_ch
             model_id: "model-openai-cli-claude-chat-local-1".to_string(),
             global_model_id: "global-model-openai-cli-claude-chat-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-sonnet-4-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -2812,7 +2805,6 @@ async fn gateway_returns_openai_responses_error_for_local_cross_format_gemini_ch
             model_id: "model-openai-cli-gemini-chat-local-1".to_string(),
             global_model_id: "global-model-openai-cli-gemini-chat-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

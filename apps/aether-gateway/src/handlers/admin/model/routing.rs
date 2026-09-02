@@ -8,8 +8,8 @@ use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
 };
 use aether_scheduler_core::{
-    is_provider_key_circuit_open_at, matches_model_mapping,
-    provider_key_circuit_payload_is_active_open_at, provider_key_health_score,
+    is_provider_key_circuit_open_at, provider_key_circuit_payload_is_active_open_at,
+    provider_key_health_score,
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -86,20 +86,6 @@ pub(crate) async fn build_admin_global_model_routing_payload(
         .map(|duration| duration.as_secs())
         .unwrap_or_default();
 
-    let global_model_mappings = global_model
-        .config
-        .as_ref()
-        .and_then(|value| value.get("model_mappings"))
-        .and_then(serde_json::Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(ToOwned::to_owned)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
     let mut providers_payload = Vec::new();
     let mut all_keys_whitelist = Vec::new();
     for model in provider_models {
@@ -139,7 +125,6 @@ pub(crate) async fn build_admin_global_model_routing_payload(
                     key_allowed_models_match_global_model_for_routing(
                         key.allowed_models.as_ref(),
                         &key_match_model_names,
-                        &global_model_mappings,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -296,7 +281,6 @@ pub(crate) async fn build_admin_global_model_routing_payload(
         "global_model_name": &global_model.name,
         "display_name": &global_model.display_name,
         "is_active": global_model.is_active,
-        "global_model_mappings": global_model_mappings,
         "providers": providers_payload,
         "total_providers": total_providers,
         "active_providers": active_providers,
@@ -309,7 +293,6 @@ pub(crate) async fn build_admin_global_model_routing_payload(
 fn key_allowed_models_match_global_model_for_routing(
     raw_allowed_models: Option<&serde_json::Value>,
     model_names: &[String],
-    global_model_mappings: &[String],
 ) -> bool {
     // 兼容 Python 预览逻辑：None/[] 视为“不限制”，在链路预览中保留该 Key。
     let allowed_models = json_string_list(raw_allowed_models);
@@ -326,11 +309,6 @@ fn key_allowed_models_match_global_model_for_routing(
             .any(|model_name| model_name.eq_ignore_ascii_case(allowed_model))
         {
             return true;
-        }
-        for pattern in global_model_mappings {
-            if matches_model_mapping(pattern, allowed_model) {
-                return true;
-            }
         }
     }
 

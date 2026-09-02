@@ -115,7 +115,6 @@ async fn gateway_converts_openai_image_sync_to_gemini_image_provider_impl() {
             model_id: "model-gemini-image-bridge-1".to_string(),
             global_model_id: "global-model-gemini-image-bridge-1".to_string(),
             global_model_name: "gpt-image-2".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-flash-image-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -455,7 +454,6 @@ async fn gateway_converts_gemini_image_sync_to_openai_image_provider_impl() {
             model_id: "model-openai-image-bridge-1".to_string(),
             global_model_id: "global-model-openai-image-bridge-1".to_string(),
             global_model_name: "gemini-image".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-image-2-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

@@ -525,7 +525,6 @@ mod tests {
             model_id: "model-1".to_string(),
             global_model_id: "global-model-1".to_string(),
             global_model_name: global_model_name.to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: global_model_name.to_string(),
             model_provider_model_mappings: None,

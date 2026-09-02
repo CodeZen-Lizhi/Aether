@@ -120,7 +120,6 @@ async fn gateway_executes_openai_chat_stream_via_local_decision_gate_without_exe
             model_id: "model-openai-local-stream-1".to_string(),
             global_model_id: "global-model-openai-local-stream-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -538,7 +537,6 @@ async fn gateway_executes_openai_chat_stream_via_local_cross_format_gemini_candi
             model_id: "model-openai-chat-gemini-stream-local-1".to_string(),
             global_model_id: "global-model-openai-chat-gemini-stream-local-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gemini-2.5-pro-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -963,7 +961,6 @@ async fn gateway_executes_openai_chat_stream_with_custom_path_via_local_decision
             model_id: "model-openai-custom-stream-1".to_string(),
             global_model_id: "global-model-openai-custom-stream-1".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -1459,7 +1456,6 @@ async fn gateway_retries_next_local_openai_chat_stream_candidate_after_retryable
             model_id: format!("model-{provider_id}"),
             global_model_id: "global-model-openai-stream-failover".to_string(),
             global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: mapped_model.to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

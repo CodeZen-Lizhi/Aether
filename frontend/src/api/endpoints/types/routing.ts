@@ -88,7 +88,6 @@ export interface ModelRoutingPreviewResponse {
   global_model_name: string
   display_name: string
   is_active: boolean
-  global_model_mappings: string[]  // GlobalModel 的模型映射规则（正则模式）
   providers: RoutingProviderInfo[]
   total_providers: number
   active_providers: number

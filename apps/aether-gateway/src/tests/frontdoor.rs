@@ -278,7 +278,6 @@ fn sample_models_candidate_row(
         model_id: format!("model-{provider_id}-{global_model_name}"),
         global_model_id: format!("global-{global_model_name}"),
         global_model_name: global_model_name.to_string(),
-        global_model_mappings: None,
         global_model_supports_streaming: Some(true),
         model_provider_model_name: global_model_name.to_string(),
         model_provider_model_mappings: Some(vec![StoredProviderModelMapping {

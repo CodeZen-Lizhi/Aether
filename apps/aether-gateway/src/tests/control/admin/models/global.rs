@@ -870,7 +870,7 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
     assert_eq!(payload["global_model_id"], "global-gpt-5");
     assert_eq!(payload["global_model_name"], "gpt-5");
     assert_eq!(payload["display_name"], "GPT 5");
-    assert_eq!(payload["global_model_mappings"], json!(["gpt-5-upstream"]));
+    assert!(payload.get("global_model_mappings").is_none());
     assert_eq!(payload["scheduling_mode"], "fixed_order");
     assert_eq!(payload["priority_mode"], "global_key");
     assert_eq!(payload["total_providers"], 2);

@@ -34,7 +34,6 @@ pub struct StoredMinimalCandidateSelectionRow {
     pub model_id: String,
     pub global_model_id: String,
     pub global_model_name: String,
-    pub global_model_mappings: Option<Vec<String>>,
     pub global_model_supports_streaming: Option<bool>,
     pub model_provider_model_name: String,
     pub model_provider_model_mappings: Option<Vec<StoredProviderModelMapping>>,

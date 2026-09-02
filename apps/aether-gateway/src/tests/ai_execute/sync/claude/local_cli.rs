@@ -113,7 +113,6 @@ async fn gateway_executes_claude_cli_sync_via_local_decision_gate_with_local_syn
             model_id: "model-claude-cli-local-1".to_string(),
             global_model_id: "global-model-claude-cli-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-code-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -556,7 +555,6 @@ async fn gateway_returns_claude_cli_error_for_local_sync_failure_impl() {
             model_id: "model-claude-cli-local-1".to_string(),
             global_model_id: "global-model-claude-cli-local-1".to_string(),
             global_model_name: "claude-code".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "claude-code-upstream".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
@@ -836,7 +834,6 @@ async fn gateway_marks_claude_cli_cross_format_runtime_miss_when_format_conversi
             model_id: "model-claude-cli-openai-local-miss-1".to_string(),
             global_model_id: "global-model-claude-cli-openai-local-miss-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
-            global_model_mappings: None,
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5.4".to_string(),
             model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
