@@ -290,3 +290,36 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: 供应商列表恢复余额监控
+<!-- trellis-session: v=2 fp=c12c78a60a2e0e34 -->
+
+**Date**: 2026-09-03
+**Task**: 供应商列表恢复余额监控
+**Branch**: `slim-personal`
+
+### Summary
+
+恢复供应商管理桌面的余额监控列，复用既有批量余额查询与用户认证摘要字段；支持余额、积分、额度、签到/Cookie 状态和查询错误展示。
+
+### Main Changes
+
+- 恢复余额监控表头、行单元格与批量余额加载生命周期
+- 补齐供应商摘要的用户认证字段类型，并保留全部查询状态以展示认证或上游错误
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `55921620a` | feat(provider): 恢复供应商余额监控 |
+
+### Testing
+
+- [OK] vue-tsc -p frontend/tsconfig.app.json --noEmit
+- [OK] ESLint 检查 5 个余额列相关前端文件
+- [OK] git diff --check
+
+### Status
+
+[OK] **Completed**
