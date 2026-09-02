@@ -201,3 +201,25 @@
 ### Next Steps
 
 - 等待下一项需求
+
+
+## Session 6: 仪表盘统计卡片改版：今日请求/费用/RPM 重排
+<!-- trellis-session: v=2 fp=ae425875e2a0558b -->
+
+**Date**: 2026-09-02
+**Task**: 仪表盘统计卡片改版：今日请求/费用/RPM 重排
+**Branch**: `slim-personal`
+
+### Summary
+
+仪表盘 4 张统计卡片改版并重排：① 今日请求（含成功/失败明细与成功率徽标）② 今日 Token ③ 今日费用（仅费用，节省>0 时副行）④ 全站 RPM/TPM；移除用户数卡片、在线/总用户查询与 payload users 字段，清理前端死类型 UserStats；同步更新 frontdoor dashboard 测试与空状态占位文案。新增 spec: aether-gateway/backend/dashboard-stats-api.md。后端 dashboard 测试 10/10 通过；主工作区前端 vitest 因并行会话遗留的未跟踪编译产物暂不可跑，已在干净 worktree 验证 Dashboard 测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `08fa244fb` | feat(dashboard): 仪表盘统计卡片改版 — 今日请求/费用/RPM 重排并移除用户数统计 |
+
+### Status
+
+[OK] **Completed**
