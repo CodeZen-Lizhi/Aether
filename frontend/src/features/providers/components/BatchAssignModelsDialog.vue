@@ -184,9 +184,9 @@ import { useConfirm } from '@/composables/useConfirm'
 import { parseApiError } from '@/utils/errorParser'
 import { useUpstreamModelsCache } from '../composables/useUpstreamModelsCache'
 import {
-  getGlobalModels,
-  type GlobalModelResponse
+  getGlobalModels
 } from '@/api/endpoints/global-models'
+import type { GlobalModelResponse } from '@/api/endpoints/types/model'
 import {
   getProviderModels,
   getProviderKeys,

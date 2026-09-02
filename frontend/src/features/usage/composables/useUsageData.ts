@@ -154,7 +154,7 @@ export function useUsageData() {
           }
 
           // statsData may contain additional fields not declared in UsageStats
-          const statsRaw = statsData as Record<string, unknown>
+          const statsRaw = statsData as unknown as Record<string, unknown>
           stats.value = {
             total_requests: statsData.total_requests || 0,
             total_tokens: statsData.total_tokens || 0,
@@ -181,7 +181,7 @@ export function useUsageData() {
           }
 
           modelStats.value = modelData.map(item => {
-            const raw = item as Record<string, unknown>
+            const raw = item as unknown as Record<string, unknown>
             return {
               model: item.model,
               request_count: item.request_count || 0,
@@ -325,7 +325,7 @@ export function useUsageData() {
         if (requestId !== loadRecordsRequestId) {
           return
         }
-        const nextRecords = (response.records || []) as UsageRecord[]
+        const nextRecords = (response.records || []) as unknown as UsageRecord[]
         currentRecords.value = mergeRecordStatus(currentRecords.value, nextRecords)
         const totalKey = buildAdminRecordTotalKey(params)
         applyAdminRecordTotal(totalKey, response.total ?? 0, response.total_is_estimated === true)
@@ -418,8 +418,8 @@ export function useUsageData() {
       // 确定是否需要保护 status（避免刷新把已知状态覆盖为 undefined 或回退）
       const hasExistingStatus = typeof existing.status === 'string' && existing.status.length > 0
       const hasNextStatus = typeof record.status === 'string' && record.status.length > 0
-      const currentRank = hasExistingStatus ? (statusPriority[existing.status] ?? -1) : -1
-      const nextRank = hasNextStatus ? (statusPriority[record.status] ?? -1) : -1
+      const currentRank = hasExistingStatus ? (statusPriority[existing.status as string] ?? -1) : -1
+      const nextRank = hasNextStatus ? (statusPriority[record.status as string] ?? -1) : -1
       const existingUpdatedAtMs = parseUsageTimestampMs(existing.updated_at)
       const nextUpdatedAtMs = parseUsageTimestampMs(record.updated_at)
       const nextStatusSnapshotIsStale = existingUpdatedAtMs != null &&

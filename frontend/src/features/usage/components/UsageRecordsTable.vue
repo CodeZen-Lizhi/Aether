@@ -425,7 +425,7 @@
     <!-- 桌面端表格视图 -->
     <Table
       class="hidden md:table table-fixed w-full"
-      :class="[desktopTableMinWidthClass]"
+      :class="desktopTableMinWidthClass"
     >
       <colgroup v-if="isAdmin">
         <col
@@ -559,7 +559,7 @@
           <SortableTableHead
             v-if="isColumnVisible('model')"
             class="h-12 font-semibold"
-            :class="[isAdmin ? 'w-[14%]' : 'w-[22%]']"
+            :class="isAdmin ? 'w-[14%]' : 'w-[22%]'"
             column-key="model"
             :sortable="false"
             :filter-active="filterModel !== '__all__'"
@@ -598,7 +598,7 @@
           <SortableTableHead
             v-if="isColumnVisible('api_format')"
             class="h-12 font-semibold"
-            :class="[isAdmin ? 'w-[15%]' : 'w-[14%]']"
+            :class="isAdmin ? 'w-[15%]' : 'w-[14%]'"
             column-key="api_format"
             :sortable="false"
             :filter-active="filterApiFormat !== '__all__'"
@@ -757,7 +757,7 @@
           <TableCell
             v-if="isColumnVisible('model')"
             class="font-medium py-4"
-            :class="[isAdmin ? 'w-[14%]' : 'w-[22%]']"
+            :class="isAdmin ? 'w-[14%]' : 'w-[22%]'"
             :title="getModelTooltip(record)"
           >
             <UsageModelDisplay
@@ -803,7 +803,7 @@
           <TableCell
             v-if="isColumnVisible('api_format')"
             class="py-4"
-            :class="[isAdmin ? 'w-[15%]' : 'w-[14%]']"
+            :class="isAdmin ? 'w-[15%]' : 'w-[14%]'"
             :title="getApiFormatTooltip(record)"
           >
             <!-- 有格式转换或同族格式差异：两行显示 -->
