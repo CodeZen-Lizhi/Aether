@@ -230,7 +230,10 @@ function transformTextSegment(segment: string): TemplateTransformResult {
 }
 
 function closeTag(stack: TagStackEntry[], tagName: string): void {
-  const index = stack.findLastIndex(entry => entry.name === tagName)
+  let index = -1
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    if (stack[i].name === tagName) { index = i; break }
+  }
   if (index >= 0) {
     stack.splice(index)
   }

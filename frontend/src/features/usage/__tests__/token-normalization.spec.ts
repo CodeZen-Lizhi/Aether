@@ -48,6 +48,6 @@ describe('usage token normalization', () => {
       cache_read_input_tokens: 52873,
       output_tokens: 973,
       api_format: 'claude:messages',
-    })).toBe(4941)
+    } as unknown as Parameters<typeof getEffectiveInputTokens>[0])).toBe(4941)
   })
 })

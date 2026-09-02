@@ -42,8 +42,8 @@
                     <span class="shrink-0">·</span>
                     <span
                       class="text-xs truncate"
-                      :title="model.config?.description"
-                    >{{ model.config?.description }}</span>
+                      :title="typeof model.config?.description === 'string' ? model.config.description : undefined"
+                    >{{ typeof model.config?.description === 'string' ? model.config.description : '' }}</span>
                   </template>
                 </div>
               </div>
@@ -618,16 +618,28 @@ defineExpose({
   refreshRoutingData
 })
 
+// 读取模型 config 中视频分辨率计费配置
+function readVideoPriceByResolution(): Record<string, unknown> | null {
+  const billing = props.model?.config?.billing
+  if (typeof billing !== 'object' || billing === null) return null
+  const video = (billing as Record<string, unknown>).video
+  if (typeof video !== 'object' || video === null) return null
+  const priceByResolution = (video as Record<string, unknown>).price_per_second_by_resolution
+  return typeof priceByResolution === 'object' && priceByResolution !== null
+    ? (priceByResolution as Record<string, unknown>)
+    : null
+}
+
 // 检测是否有视频分辨率计费配置
 const hasVideoPricing = computed(() => {
-  const priceByResolution = props.model?.config?.billing?.video?.price_per_second_by_resolution
-  return priceByResolution && typeof priceByResolution === 'object' && Object.keys(priceByResolution).length > 0
+  const priceByResolution = readVideoPriceByResolution()
+  return priceByResolution !== null && Object.keys(priceByResolution).length > 0
 })
 
 // 获取视频分辨率计费条目（按分辨率从低到高排序）
 const videoPricingEntries = computed(() => {
-  const priceByResolution = props.model?.config?.billing?.video?.price_per_second_by_resolution
-  if (!priceByResolution || typeof priceByResolution !== 'object') return []
+  const priceByResolution = readVideoPriceByResolution()
+  if (!priceByResolution) return []
   return sortResolutionEntries(Object.entries(priceByResolution))
 })
 

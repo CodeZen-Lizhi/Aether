@@ -259,7 +259,7 @@ export interface GroupedEndpointKey {
   auth_type: string
   api_key_masked?: string | null
   rate_multipliers: Record<string, number> | null
-  default_rate_multiplier?: number | null
+  default_rate_multiplier?: number
   is_active: boolean
   provider_active: boolean
   provider_name?: string | null

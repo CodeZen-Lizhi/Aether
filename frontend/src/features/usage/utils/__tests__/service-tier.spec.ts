@@ -5,6 +5,7 @@ import {
   hasServiceTierFact,
   normalizeServiceTierFact,
   resolveServiceTierFacts,
+  type ServiceTierFactSource,
 } from '../service-tier'
 
 describe('service tier facts', () => {
@@ -22,7 +23,7 @@ describe('service tier facts', () => {
         },
       },
     }
-    const facts = resolveServiceTierFacts(source)
+    const facts = resolveServiceTierFacts(source as unknown as ServiceTierFactSource)
 
     expect(facts).toEqual({ requested: 'priority' })
     expect(hasServiceTierFact(facts)).toBe(true)
@@ -40,7 +41,7 @@ describe('service tier facts', () => {
       },
     }
 
-    const facts = resolveServiceTierFacts(source)
+    const facts = resolveServiceTierFacts(source as unknown as ServiceTierFactSource)
     expect(facts).toEqual({ requested: null })
     expect(hasServiceTierFact(facts)).toBe(false)
   })

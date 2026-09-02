@@ -463,12 +463,12 @@ async function testMapping(group: AliasGroup, mapping: ProviderModelAlias) {
 
   try {
     // 根据分组的 API 格式来确定应该使用的格式
-    let apiFormat = null
+    let apiFormat: string | null = null
     if (group.apiFormats.length === 1) {
       apiFormat = group.apiFormats[0]
     } else if (group.apiFormats.length === 0) {
-      // 如果没有指定格式，但分组显示为"全部"，则使用模型的默认格式
-      apiFormat = group.model.effective_api_format || group.model.api_format
+      // 未指定格式时传 null，由后端自行选择（模型对象不携带格式信息）
+      apiFormat = null
     }
 
     const result = await testModel(

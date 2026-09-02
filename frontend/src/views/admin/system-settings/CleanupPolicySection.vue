@@ -451,7 +451,7 @@ defineEmits<{
 
 const cleanupRuns = ref<CleanupRunRecord[]>([])
 const cleanupRunsLoading = ref(false)
-let cleanupRunsTimer: ReturnType<typeof window.setInterval> | null = null
+let cleanupRunsTimer: number | null = null
 
 const manualCleanupDialogOpen = ref(false)
 const manualCleanupRunning = ref(false)

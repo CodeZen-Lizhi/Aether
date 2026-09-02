@@ -89,7 +89,7 @@ function mount(props: Record<string, unknown>) {
   document.body.appendChild(root)
   const app = createApp(defineComponent({
     setup() {
-      return () => h(ProviderKeyActionCluster, props)
+      return () => h(ProviderKeyActionCluster, props as any)
     },
   }))
   app.use(createI18n())

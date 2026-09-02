@@ -12,7 +12,7 @@ const provider = {
   is_active: true,
   active_keys: 0,
   api_formats: [],
-} as ProviderWithEndpointsSummary
+} as unknown as ProviderWithEndpointsSummary
 
 describe('ModelMappingTab response contracts', () => {
   it('keeps the module visible when a legacy or malformed preview reaches the component', async () => {
@@ -25,7 +25,7 @@ describe('ModelMappingTab response contracts', () => {
         mappingPreview: {
           message: '演示模式：该接口暂未模拟',
           demo_mode: true,
-        },
+        } as any,
         loading: false,
       }),
     })

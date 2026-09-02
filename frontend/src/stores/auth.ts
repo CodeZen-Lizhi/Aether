@@ -124,7 +124,9 @@ export const useAuthStore = defineStore('auth', () => {
 
     fetchCurrentUserToken = requestToken
     const requestAuthStateVersion = authStateVersion
-    const request = (async () => {
+    // request 在内部 async 闭包的 finally 中自引用，需要 let + 延迟赋值以避免 TDZ
+    let request!: Promise<User | null>
+    request = (async () => {
       try {
         const userInfo = await authApi.getCurrentUser()
         if (requestAuthStateVersion !== authStateVersion || !token.value) {

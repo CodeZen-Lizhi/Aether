@@ -820,7 +820,7 @@ function editApiKey(apiKey: AdminApiKey) {
 }
 
 function isApiKeyUnlimited(apiKey: AdminApiKey): boolean {
-  return apiKey.unlimited === true
+  return apiKey.rate_limit === 0
 }
 
 function formatApiKeyTotalTokens(apiKey: AdminApiKey): string {

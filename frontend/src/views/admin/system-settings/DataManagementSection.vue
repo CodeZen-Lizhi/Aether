@@ -136,7 +136,7 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { parseApiError } from '@/utils/errorParser'
 
-type DataItemKey = 'config' | 'users' | 'aggregate'
+type DataItemKey = 'config' | 'aggregate'
 
 interface DataItem {
   key: DataItemKey

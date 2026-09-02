@@ -42,7 +42,7 @@
           max="10000"
           class="h-10"
           placeholder="自适应"
-          @update:model-value="updateSetting('rpm_limit', parseNullableNumberInput($event, { min: 1, max: 10000 }))"
+          @update:model-value="updateSetting('rpm_limit', parseNullableNumberInput($event, { min: 1, max: 10000 }) ?? null)"
         />
       </div>
       <div class="space-y-1.5">
@@ -53,7 +53,7 @@
           min="0"
           class="h-10"
           placeholder="不限制"
-          @update:model-value="updateSetting('concurrent_limit', parseNullableNumberInput($event, { min: 0 }))"
+          @update:model-value="updateSetting('concurrent_limit', parseNullableNumberInput($event, { min: 0 }) ?? null)"
         />
       </div>
       <div class="space-y-1.5">

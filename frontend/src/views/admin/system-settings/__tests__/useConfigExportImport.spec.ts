@@ -18,6 +18,7 @@ vi.mock('@/api/admin', () => ({
 }))
 
 import { useConfigExportImport } from '../composables/useConfigExportImport'
+import type { SystemConfig } from '../composables/useSystemConfig'
 
 function buildFileInputEvent(file: File): Event {
   return {
@@ -41,7 +42,7 @@ describe('useConfigExportImport file selection', () => {
   })
 
   it('accepts config import files larger than the old 10MB limit', async () => {
-    const state = useConfigExportImport(ref({ site_name: 'Aether' }))
+    const state = useConfigExportImport(ref({ site_name: 'Aether' }) as unknown as { value: SystemConfig })
     const file = makeSizedFile(
       JSON.stringify({
         version: '1',
@@ -66,7 +67,7 @@ describe('useConfigExportImport file selection', () => {
   })
 
   it('accepts config import files larger than the previous 500MB limit', async () => {
-    const state = useConfigExportImport(ref({ site_name: 'Aether' }))
+    const state = useConfigExportImport(ref({ site_name: 'Aether' }) as unknown as { value: SystemConfig })
     const file = makeSizedFile(
       JSON.stringify({
         version: '1',
@@ -86,7 +87,7 @@ describe('useConfigExportImport file selection', () => {
   })
 
   it('accepts aggregate imports larger than the previous 500MB limit', async () => {
-    const aggregateState = useConfigExportImport(ref({ site_name: 'Aether' }))
+    const aggregateState = useConfigExportImport(ref({ site_name: 'Aether' }) as unknown as { value: SystemConfig })
     const aggregateFile = makeSizedFile(
       JSON.stringify({
         version: '1.0',

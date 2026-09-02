@@ -593,7 +593,8 @@ import {
 } from '@/api/global-models'
 import { log } from '@/utils/logger'
 import { formatUsageCount } from '@/utils/format'
-import { getProvidersSummary, type ProviderWithEndpointsSummary } from '@/api/endpoints/providers'
+import { getProvidersSummary } from '@/api/endpoints/providers'
+import type { ProviderWithEndpointsSummary } from '@/api/endpoints/types/provider'
 import { getModelsDevList, type ModelsDevModelItem } from '@/api/models-dev'
 import {
   buildGlobalModelPriceSyncPlan,
@@ -722,23 +723,35 @@ function hasTieredPricing(model: GlobalModelResponse): boolean {
   return (tiered?.tiers?.length || 0) > 1
 }
 
+// 读取模型 config 中视频分辨率计费配置
+function getVideoPriceByResolution(model: GlobalModelResponse): Record<string, unknown> | null {
+  const billing = model.config?.billing
+  if (typeof billing !== 'object' || billing === null) return null
+  const video = (billing as Record<string, unknown>).video
+  if (typeof video !== 'object' || video === null) return null
+  const priceByResolution = (video as Record<string, unknown>).price_per_second_by_resolution
+  return typeof priceByResolution === 'object' && priceByResolution !== null
+    ? (priceByResolution as Record<string, unknown>)
+    : null
+}
+
 // 检测是否有视频分辨率计费配置
 function hasVideoPricing(model: GlobalModelResponse): boolean {
-  const priceByResolution = model.config?.billing?.video?.price_per_second_by_resolution
-  return priceByResolution && typeof priceByResolution === 'object' && Object.keys(priceByResolution).length > 0
+  const priceByResolution = getVideoPriceByResolution(model)
+  return priceByResolution !== null && Object.keys(priceByResolution).length > 0
 }
 
 // 获取视频分辨率计费的数量
 function _getVideoPricingCount(model: GlobalModelResponse): number {
-  const priceByResolution = model.config?.billing?.video?.price_per_second_by_resolution
-  if (!priceByResolution || typeof priceByResolution !== 'object') return 0
+  const priceByResolution = getVideoPriceByResolution(model)
+  if (!priceByResolution) return 0
   return Object.keys(priceByResolution).length
 }
 
 // 获取视频计费的显示文本（如：720p $0.1/s [多分辨率]）
 function getVideoPricingDisplay(model: GlobalModelResponse): string {
-  const priceByResolution = model.config?.billing?.video?.price_per_second_by_resolution
-  if (!priceByResolution || typeof priceByResolution !== 'object') return ''
+  const priceByResolution = getVideoPriceByResolution(model)
+  if (!priceByResolution) return ''
   const entries = sortResolutionEntries(Object.entries(priceByResolution))
   if (entries.length === 0) return ''
   // 获取最低分辨率和价格
@@ -753,8 +766,8 @@ function getVideoPricingDisplay(model: GlobalModelResponse): string {
 
 // 获取视频计费详情的 tooltip
 function getVideoPricingTooltip(model: GlobalModelResponse): string {
-  const priceByResolution = model.config?.billing?.video?.price_per_second_by_resolution
-  if (!priceByResolution || typeof priceByResolution !== 'object') return ''
+  const priceByResolution = getVideoPriceByResolution(model)
+  if (!priceByResolution) return ''
   const entries = sortResolutionEntries(Object.entries(priceByResolution))
   return entries.map(([res, price]) => `${res}: $${(price as number).toFixed(4)}/s`).join('\n')
 }
@@ -1369,8 +1382,8 @@ function handleDrawerOpenChange(value: boolean) {
 }
 
 // 编辑提供商模型
-function openEditProviderImplementation(provider: ModelProviderDisplay) {
-  editingProvider.value = provider
+function openEditProviderImplementation(provider: Record<string, unknown>) {
+  editingProvider.value = provider as unknown as ModelProviderDisplay
   editProviderDialogOpen.value = true
 }
 
@@ -1390,7 +1403,8 @@ async function handleEditProviderSaved() {
 }
 
 // 切换关联提供商状态
-async function toggleProviderStatus(provider: ModelProviderDisplay) {
+async function toggleProviderStatus(providerRecord: Record<string, unknown>) {
+  const provider = providerRecord as unknown as ModelProviderDisplay
   if (!provider.model_id) {
     showError('缺少模型 ID')
     return
@@ -1410,7 +1424,8 @@ async function toggleProviderStatus(provider: ModelProviderDisplay) {
 }
 
 // 删除关联提供商
-async function confirmDeleteProviderImplementation(provider: ModelProviderDisplay) {
+async function confirmDeleteProviderImplementation(providerRecord: Record<string, unknown>) {
+  const provider = providerRecord as unknown as ModelProviderDisplay
   if (!provider.model_id) {
     showError('缺少模型 ID')
     return

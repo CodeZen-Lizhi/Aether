@@ -696,7 +696,7 @@
 
                   <TabsContent value="request-body">
                     <JsonContent
-                      :data="selectedInspectionAttempt.request_body"
+                      :data="asJsonDataValue(selectedInspectionAttempt.request_body)"
                       view-mode="formatted"
                       :expand-depth="inspectionExpandDepth"
                       :is-dark="isDark"
@@ -716,7 +716,7 @@
 
                   <TabsContent value="response-body">
                     <JsonContent
-                      :data="selectedInspectionAttempt.response_body"
+                      :data="asJsonDataValue(selectedInspectionAttempt.response_body)"
                       view-mode="formatted"
                       :expand-depth="inspectionExpandDepth"
                       :is-dark="isDark"
@@ -1256,6 +1256,12 @@ const selectedInspectionAttempt = computed(() => {
 
   return inspectableAttempts.value[0] ?? resultAttempts.value[0] ?? null
 })
+
+// JsonContent 的 data 类型宽于接口返回值，这里做显式归一化
+type JsonDataValue = Record<string, unknown> | unknown[] | string | number | boolean | null | undefined
+function asJsonDataValue(value: unknown): JsonDataValue {
+  return value as JsonDataValue
+}
 
 const resultImageAttempt = computed(() => {
   return resultAttempts.value.find(attempt => attempt.status === 'success' && attemptImagePreviews(attempt).length > 0)

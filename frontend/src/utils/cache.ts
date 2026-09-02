@@ -162,8 +162,8 @@ export async function cachedRequest<T>(
   const version = cache.version(key)
   // Keep this mutable declaration: a synchronously throwing fetcher can reach `finally`
   // before the Promise assignment completes, so a self-referencing `const` would hit TDZ.
-  let request: Promise<T>
   // eslint-disable-next-line prefer-const
+  let request!: Promise<T>
   request = (async () => {
     try {
       const data = await fetcher()

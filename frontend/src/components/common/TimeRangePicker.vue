@@ -5,7 +5,7 @@
     >
       <SelectTrigger
         class="h-8 w-32 text-xs border-border/60"
-        :class="[presetTriggerClass]"
+        :class="presetTriggerClass"
       >
         <SelectValue :placeholder="legacyT('选择时间段')" />
       </SelectTrigger>
