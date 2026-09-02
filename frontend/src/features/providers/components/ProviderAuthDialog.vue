@@ -161,6 +161,14 @@
                     masked
                     @update:model-value="handleFieldChange(field.key, $event)"
                   />
+
+                  <!-- 帮助文本 -->
+                  <p
+                    v-if="field.helpText"
+                    class="text-xs text-muted-foreground"
+                  >
+                    {{ field.helpText }}
+                  </p>
                 </div>
               </div>
 

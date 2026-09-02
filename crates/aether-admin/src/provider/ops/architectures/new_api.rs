@@ -63,7 +63,8 @@ pub(super) fn spec() -> ProviderOpsArchitectureSpec {
                 "title": "Cookie",
                 "description": "用于 Cookie 认证",
                 "x-sensitive": true,
-                "x-input-type": "password"
+                "x-input-type": "password",
+                "x-help": "从浏览器开发者工具复制完整 Cookie"
             },
             "user_id": {
                 "type": "string",
@@ -78,10 +79,13 @@ pub(super) fn spec() -> ProviderOpsArchitectureSpec {
         "x-field-groups": [
             { "fields": ["base_url"] },
             {
-                "fields": ["cookie"],
-                "x-help": "从浏览器开发者工具复制完整 Cookie"
-            },
-            { "fields": ["user_id"] }
+                "fields": ["cookie", "user_id"],
+                "layout": "inline",
+                "x-flex": {
+                    "cookie": 3,
+                    "user_id": 1
+                }
+            }
         ],
         "x-field-hooks": {
             "cookie": {
