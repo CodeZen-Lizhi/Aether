@@ -49,6 +49,8 @@
           <!-- 网络代理 -->
           <ProxyConfigSection
             id="section-proxy"
+            collapsible
+            :default-open="false"
             :proxy-node-id="systemConfig.system_proxy_node_id"
             :loading="systemConfigLoading || proxyConfigLoading"
             :has-changes="hasProxyConfigChanges"
@@ -59,6 +61,8 @@
           <!-- 基础配置 -->
           <BasicConfigSection
             id="section-basic"
+            collapsible
+            :default-open="false"
             :rate-limit-per-minute="systemConfig.rate_limit_per_minute"
             :auto-delete-expired-keys="systemConfig.auto_delete_expired_keys"
             :enable-format-conversion="systemConfig.enable_format_conversion"
@@ -79,6 +83,8 @@
           <!-- 请求记录配置 -->
           <RequestLogSection
             id="section-request-log"
+            collapsible
+            :default-open="false"
             :request-record-level="systemConfig.request_record_level"
             :sensitive-headers-str="sensitiveHeadersStr"
             :loading="systemConfigLoading || logConfigLoading"

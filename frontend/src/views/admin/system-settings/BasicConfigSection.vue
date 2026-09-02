@@ -2,6 +2,8 @@
   <CardSection
     title="基础配置"
     description="配置系统默认参数"
+    :collapsible="collapsible"
+    :default-open="defaultOpen"
   >
     <template #actions>
       <Button
@@ -157,6 +159,8 @@ defineProps<{
   cyberContinueFailover: boolean
   loading: boolean
   hasChanges: boolean
+  collapsible?: boolean
+  defaultOpen?: boolean
 }>()
 
 defineEmits<{

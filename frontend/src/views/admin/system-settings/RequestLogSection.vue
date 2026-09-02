@@ -2,6 +2,8 @@
   <CardSection
     title="请求记录"
     description="控制请求/响应详情的入库方式和内容"
+    :collapsible="collapsible"
+    :default-open="defaultOpen"
   >
     <template #actions>
       <Button
@@ -85,6 +87,8 @@ defineProps<{
   sensitiveHeadersStr: string
   loading: boolean
   hasChanges: boolean
+  collapsible?: boolean
+  defaultOpen?: boolean
 }>()
 
 defineEmits<{
