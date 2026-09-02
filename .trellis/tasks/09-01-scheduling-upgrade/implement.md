@@ -23,9 +23,9 @@
 - system_config 开关: `ranking_inflight_signal`（默认开）/ `ranking_latency_signal`（默认关，采集先行）。
 
 ### R10（成本优先模式 + LoadBalance 软删）
-- `SchedulerRankingMode::Economy`（scheduler-core）+ 比较器: 亲和 > 倍率升序 > 优先级 slot > 健康 > 动态信号 > 哈希。
+- `SchedulerRankingMode::CostBased`（scheduler-core；原名 Economy，后应用户要求全栈改名 cost_based）+ 比较器: 亲和 > 倍率升序 > 优先级 slot > 健康 > 动态信号 > 哈希。
 - 倍率读自 key 行 `rate_multipliers[api_format]`（仅 成本优先模式查询 DB，`with_rate_multiplier` 守卫非法值）。
-- 贯通枚举链: `RoutingSchedulingMode::Economy` → `SchedulerSchedulingMode::Economy` → `AiRankingSchedulingMode::Economy`; `parse_scheduler_scheduling_mode` 认 `cost_based`。
+- 贯通枚举链: `RoutingSchedulingMode::CostBased` → `SchedulerSchedulingMode::CostBased` → `AiRankingSchedulingMode::CostBased`; `parse_scheduler_scheduling_mode` 认 `cost_based`。
 - LoadBalance 软删: gateway 配置解析 `load_balance` → CacheAffinity + warn 日志; routing 层 `RoutingSchedulingMode::LoadBalance` 转换映射 CacheAffinity; 枚举保留（反序列化兼容）。
 
 ### R11 后端（配置面瘦身）
