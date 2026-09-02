@@ -124,7 +124,7 @@ class ApiClient {
   /**
    * 处理响应错误
    */
-  private async handleResponseError(error: unknown): Promise<never> {
+  private async handleResponseError(error: unknown): Promise<AxiosResponse> {
     // 请求被取消
     if (axios.isCancel(error)) {
       return Promise.reject(error)
@@ -289,27 +289,27 @@ class ApiClient {
   }
 
   // 以下方法直接委托给 axios client
-  async request<T = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  async request<T = any>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.request<T>(config)
   }
 
-  async get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.get<T>(url, config)
   }
 
-  async post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  async post<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.post<T>(url, data, config)
   }
 
-  async put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  async put<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.put<T>(url, data, config)
   }
 
-  async patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  async patch<T = any>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.patch<T>(url, data, config)
   }
 
-  async delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.client.delete<T>(url, config)
   }
 }
