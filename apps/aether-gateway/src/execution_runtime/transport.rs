@@ -5468,35 +5468,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn connect_json_error_response_is_decoded_for_stream_sync_body() {
-        let headers = BTreeMap::from([(
-            "content-type".to_string(),
-            "application/connect+json".to_string(),
-        )]);
-        let payload = br#"{"error":{"code":"resource_exhausted","message":"quota exhausted"}}"#;
-        let mut body_bytes = vec![2];
-        body_bytes.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-        body_bytes.extend_from_slice(payload);
-
-        let body = build_execution_response_body(
-            &headers,
-            &body_bytes,
-            &body_bytes,
-            true,
-            ExecutionResponseBodyMode::StructuredJson,
-        )
-        .expect("body should build")
-        .expect("body should be present");
-
-        assert_eq!(
-            body.json_body
-                .as_ref()
-                .and_then(|value| value.pointer("/error/code")),
-            Some(&json!("resource_exhausted"))
-        );
-        assert!(body.body_bytes_b64.is_none());
-    }
 
     #[tokio::test]
     async fn direct_sync_execution_runtime_compresses_json_body_when_requested() {

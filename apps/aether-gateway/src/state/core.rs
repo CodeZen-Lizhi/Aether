@@ -4258,7 +4258,7 @@ mod tests {
             .expect("app state should build")
             .with_data_state_for_tests(
                 GatewayDataState::disabled().with_system_config_values_for_tests([(
-                    "keep_priority_on_conversion".to_string(),
+                    "enable_format_conversion".to_string(),
                     json!(false),
                 )]),
             );
@@ -4267,7 +4267,7 @@ mod tests {
 
         assert_eq!(
             state
-                .read_system_config_json_value("keep_priority_on_conversion")
+                .read_system_config_json_value("enable_format_conversion")
                 .await
                 .expect("system config read should succeed"),
             Some(json!(false))
@@ -4288,13 +4288,13 @@ mod tests {
 
         let initial_epoch = state.scheduler_affinity_epoch();
         state
-            .upsert_system_config_entry("keep_priority_on_conversion", &json!(true), None)
+            .upsert_system_config_entry("enable_format_conversion", &json!(true), None)
             .await
             .expect("admin config write should succeed");
 
         assert_eq!(
             state
-                .read_system_config_json_value("keep_priority_on_conversion")
+                .read_system_config_json_value("enable_format_conversion")
                 .await
                 .expect("system config read should use refreshed cache"),
             Some(json!(true))

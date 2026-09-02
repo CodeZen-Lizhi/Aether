@@ -1713,9 +1713,9 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             "local".to_string(),
             true,
             false,
+            None,
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["gpt-5.4"])),
-            None,
             api_key_id.to_string(),
             Some("default".to_string()),
             true,
@@ -1724,9 +1724,9 @@ async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_s
             Some(60),
             Some(5),
             Some(4_102_444_800),
+            None,
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["gpt-5.4"])),
-            None,
         )
         .expect("auth snapshot should build")
     }

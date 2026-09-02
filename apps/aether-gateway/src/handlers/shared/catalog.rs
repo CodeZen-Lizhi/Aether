@@ -2488,7 +2488,7 @@ mod tests {
         .expect("key should build")
         .with_transport_fields(
             Some(json!(["openai:chat"])),
-            None,
+            Some(encrypted_api_key),
             None,
             None,
             None,
@@ -2503,44 +2503,6 @@ mod tests {
         assert_ne!(masked, "***ERROR***");
     }
 
-    #[test]
-    fn provider_aware_mask_labels_agent_identity_without_exposing_placeholder() {
-        let state = AppState::new().expect("gateway should build");
-        let encrypted_placeholder =
-            encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "__placeholder__")
-                .expect("placeholder ciphertext should build");
-        let encrypted_auth_config = encrypt_python_fernet_plaintext(
-            DEVELOPMENT_ENCRYPTION_KEY,
-            r#"{"provider_type":"codex","auth_mode":"agentIdentity","agent_runtime_id":"runtime-1","agent_private_key":"base64-private-key","task_id":"task-1"}"#,
-        )
-        .expect("auth config ciphertext should build");
-        let key = StoredProviderCatalogKey::new(
-            "key-agent".to_string(),
-            "provider-codex".to_string(),
-            "agent".to_string(),
-            "oauth".to_string(),
-            None,
-            true,
-        )
-        .expect("key should build")
-        .with_transport_fields(
-            Some(json!(["openai:responses"])),
-            Some(encrypted_auth_config),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("key transport should build");
-
-        assert_eq!(
-            masked_catalog_api_key_for_provider(&state, &key, "codex"),
-            "[Agent Identity]"
-        );
-        assert!(!masked_catalog_api_key_for_provider(&state, &key, "codex").contains("placeholder"));
-    }
 
     #[test]
     fn provider_key_status_snapshot_payload_backfills_missing_quota_from_upstream_metadata() {
@@ -3666,25 +3628,6 @@ mod tests {
         assert_eq!(account.get("source"), Some(&json!("oauth_invalid")));
     }
 
-    #[test]
-    fn provider_key_status_snapshot_payload_upgrades_deleted_agent_runtime_to_invalid() {
-        let mut key = sample_catalog_key();
-        key.auth_type = "oauth".to_string();
-        key.oauth_invalid_at_unix_secs = Some(1_784_728_663);
-        key.oauth_invalid_reason =
-            Some("[REQUEST_FAILED] Agent runtime has been deleted.".to_string());
-
-        let payload = provider_key_status_snapshot_payload(&key, "codex");
-        let oauth = payload
-            .get("oauth")
-            .and_then(Value::as_object)
-            .expect("oauth snapshot should be object");
-
-        assert_eq!(oauth.get("code"), Some(&json!("invalid")));
-        assert_eq!(oauth.get("label"), Some(&json!("已失效")));
-        assert_eq!(oauth.get("invalid_at"), Some(&json!(1_784_728_663u64)));
-        assert_eq!(oauth.get("requires_reauth"), Some(&json!(true)));
-    }
 
     #[test]
     fn provider_key_status_snapshot_payload_backfills_workspace_deactivated_from_metadata() {

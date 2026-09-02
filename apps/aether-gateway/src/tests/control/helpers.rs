@@ -488,7 +488,7 @@ pub(super) fn sample_key(
     .expect("key should build")
     .with_transport_fields(
         Some(json!([api_format])),
-        None,
+        Some(encrypted_api_key),
         None,
         None,
         None,

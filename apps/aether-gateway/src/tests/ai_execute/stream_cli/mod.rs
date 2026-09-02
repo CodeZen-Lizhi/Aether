@@ -47,5 +47,4 @@ where
     }
 }
 
-mod compact;
 mod direct;

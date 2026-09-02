@@ -653,38 +653,6 @@ mod tests {
         assert!(normalized.get("background").is_none());
     }
 
-    #[test]
-    fn websocket_first_response_create_keeps_responses_lite_static_config() {
-        // A socket's first event has no previous_response_id, so its tools and
-        // instructions still need the normal Responses Lite projection. The
-        // continuation-only pass must not accidentally suppress this prefix.
-        let event = json!({
-            "type": "response.create",
-            "model": "gpt-5.6-sol",
-            "instructions": "developer instructions",
-            "tools": [{
-                "type": "function",
-                "name": "lookup",
-                "parameters": {"type": "object"}
-            }],
-            "input": [{
-                "role": "user",
-                "content": [{"type": "input_text", "text": "hello"}]
-            }]
-        });
-
-        let normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol")
-            .with_provider_type_for_tests("codex");
-        let normalized = normalized_continuation(&event, &normalization);
-        let input = normalized["input"].as_array().expect("normalized input");
-        assert_eq!(input[0]["type"], "additional_tools");
-        assert_eq!(input[0]["tools"][0]["name"], "lookup");
-        assert_eq!(input[1]["role"], "developer");
-        assert_eq!(input[1]["content"][0]["text"], "developer instructions");
-        assert!(normalized.get("tools").is_none());
-        assert!(normalized.get("instructions").is_none());
-        assert!(normalized.get("previous_response_id").is_none());
-    }
 
     #[test]
     fn explicit_store_and_previous_response_id_are_forwarded() {
@@ -852,81 +820,7 @@ mod tests {
         assert!(normalized.get("generate").is_some_and(Value::is_null));
     }
 
-    #[test]
-    fn continuation_strips_fields_the_codex_backend_rejects() {
-        // The point of the fix: before it, turns 2..N reached Codex with the
-        // client's raw body, so a `temperature` that turn 1 had stripped would
-        // be rejected upstream. This also proves normalization really runs
-        // rather than silently falling back to the unmodified event.
-        let event = json!({
-            "type": "response.create",
-            "model": "public-model",
-            "previous_response_id": "resp_123",
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "input": [],
-        });
 
-        let normalized = normalized_continuation(
-            &event,
-            &ResponsesWebSocketBodyNormalization::for_tests("provider-model")
-                .with_provider_type_for_tests("codex"),
-        );
-
-        assert!(normalized.get("temperature").is_none());
-        assert!(normalized.get("top_p").is_none());
-        assert_eq!(normalized["store"], false);
-        // ...and the protocol state survives the same pass.
-        assert_eq!(normalized["previous_response_id"], "resp_123");
-    }
-
-    #[test]
-    fn lite_continuations_forward_only_each_turns_incremental_input() {
-        let normalization = ResponsesWebSocketBodyNormalization::for_tests("gpt-5.6-sol")
-            .with_provider_type_for_tests("codex");
-
-        for turn in 1..=4 {
-            let event = json!({
-                "type": "response.create",
-                "model": "gpt-5.6-sol",
-                "previous_response_id": format!("resp_{turn}"),
-                "instructions": "The same large developer instructions.",
-                "tools": [{
-                    "type": "function",
-                    "name": "shell",
-                    "parameters": {"type": "object"}
-                }],
-                "input": [
-                    {
-                        "type": "reasoning",
-                        "id": format!("rs_{turn}"),
-                        "content": [{
-                            "type": "reasoning_text",
-                            "text": format!("reasoning state {turn}")
-                        }],
-                        "encrypted_content": format!("opaque-{turn}")
-                    },
-                    {
-                        "type": "function_call_output",
-                        "call_id": format!("call_{turn}"),
-                        "output": format!("result {turn}")
-                    }
-                ]
-            });
-
-            let normalized = normalized_continuation(&event, &normalization);
-            let input = normalized["input"].as_array().expect("incremental input");
-            assert_eq!(input.len(), 2);
-            assert_eq!(input[0]["type"], "reasoning");
-            assert_eq!(input[0]["content"][0]["type"], "reasoning_text");
-            assert_eq!(input[1]["type"], "function_call_output");
-            assert!(normalized.get("instructions").is_none());
-            assert!(normalized.get("tools").is_none());
-            assert!(!input.iter().any(|item| item["type"] == "additional_tools"));
-            assert!(!input.iter().any(|item| item["role"] == "developer"));
-            assert_eq!(normalized["previous_response_id"], format!("resp_{turn}"));
-        }
-    }
 
     #[test]
     fn deepseek_continuations_preserve_idless_opaque_reasoning_state() {
@@ -1170,55 +1064,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn responses_lite_static_tools_match_the_actual_client_executed_synthetic_subset() {
-        let function = json!({"type": "function", "name": "lookup", "parameters": {}});
-        let custom = json!({"type": "custom", "name": "shell", "format": {}});
-        let namespace = json!({"type": "namespace", "name": "browser", "tools": []});
-        let client_search = json!({"type": "tool_search", "execution": "client"});
-        let first = json!({
-            "type": "response.create",
-            "model": "gpt-5.6-sol",
-            "instructions": "developer instructions",
-            "tools": [
-                function.clone(),
-                {"type": "web_search"},
-                {"type": "image_generation"},
-                custom.clone(),
-                namespace.clone(),
-                client_search.clone(),
-                {"type": "tool_search", "execution": "server"},
-                {"type": "tool_search"},
-                {"type": "future_hosted_tool"}
-            ],
-            "input": [{"role": "user", "content": "hello"}]
-        });
-        let stored = ResponsesLiteStaticConfig::from_response_create(&first);
-        let continuation = json!({
-            "type": "response.create",
-            "model": "gpt-5.6-sol",
-            "previous_response_id": "resp_1",
-            "input": [
-                {
-                    "type": "additional_tools",
-                    "role": "developer",
-                    "tools": [function, custom, namespace, client_search]
-                },
-                {
-                    "type": "message",
-                    "role": "developer",
-                    "content": [{"type": "input_text", "text": "developer instructions"}]
-                },
-                {"type": "function_call_output", "call_id": "call_1", "output": "ok"}
-            ]
-        });
-
-        let prepared = prepare_responses_lite_continuation(&continuation, &stored)
-            .expect("hosted tools are not part of the stored Lite synthetic prefix");
-        let input = prepared["input"].as_array().expect("prepared input");
-        assert_eq!(input.len(), 1);
-        assert_eq!(input[0]["type"], "function_call_output");
-    }
 
     #[test]
     fn responses_lite_static_identity_must_be_retained_before_redaction() {

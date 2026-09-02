@@ -126,7 +126,7 @@ fn gemini_embedding_success_state(
             gemini_embedding_candidate_row(),
         ]));
     let mut provider = sample_provider("provider-gemini-embedding", "Gemini Embeddings", 1);
-    provider.provider_type = "gemini".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -174,7 +174,7 @@ fn vertex_gemini_embedding_success_state(execution_runtime_url: String) -> AppSt
             vertex_gemini_embedding_candidate_row(),
         ]));
     let mut provider = sample_provider("provider-vertex-gemini-embedding", "Vertex AI", 1);
-    provider.provider_type = "vertex_ai".to_string();
+    provider.provider_type = "custom".to_string();
     let mut key = sample_key(
         "key-upstream-vertex-gemini-embedding",
         "provider-vertex-gemini-embedding",
@@ -224,7 +224,7 @@ fn aliyun_embedding_success_state(execution_runtime_url: String) -> AppState {
             aliyun_embedding_candidate_row(),
         ]));
     let mut provider = sample_provider("provider-aliyun-embedding", "Aliyun DashScope", 1);
-    provider.provider_type = "aliyun".to_string();
+    provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![sample_endpoint(
@@ -280,7 +280,7 @@ fn mixed_embedding_success_state(execution_runtime_url: String) -> AppState {
         ]));
 
     let mut aliyun_provider = sample_provider("provider-aliyun-embedding", "Aliyun DashScope", 1);
-    aliyun_provider.provider_type = "aliyun".to_string();
+    aliyun_provider.provider_type = "custom".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![
             sample_provider("provider-embedding", "OpenAI Embeddings", 1),
@@ -425,7 +425,7 @@ fn gemini_embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
     StoredMinimalCandidateSelectionRow {
         provider_id: "provider-gemini-embedding".to_string(),
         provider_name: "Gemini Embeddings".to_string(),
-        provider_type: "gemini".to_string(),
+        provider_type: "custom".to_string(),
         provider_is_active: true,
         endpoint_id: "endpoint-gemini-embedding".to_string(),
         endpoint_api_format: "gemini:embedding".to_string(),
@@ -456,7 +456,7 @@ fn vertex_gemini_embedding_candidate_row() -> StoredMinimalCandidateSelectionRow
     let mut row = gemini_embedding_candidate_row();
     row.provider_id = "provider-vertex-gemini-embedding".to_string();
     row.provider_name = "Vertex AI".to_string();
-    row.provider_type = "vertex_ai".to_string();
+    row.provider_type = "custom".to_string();
     row.endpoint_id = "endpoint-vertex-gemini-embedding".to_string();
     row.key_id = "key-upstream-vertex-gemini-embedding".to_string();
     row.key_name = "default".to_string();
@@ -469,7 +469,7 @@ fn aliyun_embedding_candidate_row() -> StoredMinimalCandidateSelectionRow {
     StoredMinimalCandidateSelectionRow {
         provider_id: "provider-aliyun-embedding".to_string(),
         provider_name: "Aliyun DashScope".to_string(),
-        provider_type: "aliyun".to_string(),
+        provider_type: "custom".to_string(),
         provider_is_active: true,
         endpoint_id: "endpoint-aliyun-embedding".to_string(),
         endpoint_api_format: "aliyun:multimodal_embedding".to_string(),

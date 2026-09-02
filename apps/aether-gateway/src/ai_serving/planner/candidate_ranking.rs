@@ -814,59 +814,6 @@ AiRankableCandidateParts,
     }
 
     #[tokio::test]
-    async fn local_execution_ranking_keeps_cross_format_priority_when_enabled() {
-        let provider_catalog = InMemoryProviderCatalogReadRepository::seed(
-            vec![
-                sample_provider_with_options("provider-same", false, 10),
-                sample_provider_with_options("provider-cross", true, 0),
-            ],
-            vec![
-                sample_endpoint_for_provider("provider-same", "endpoint-same", "openai:chat"),
-                sample_endpoint_for_provider("provider-cross", "endpoint-cross", "claude:messages"),
-            ],
-            vec![
-                sample_key_for_provider("provider-same", "key-same", ""),
-                sample_key_for_provider("provider-cross", "key-cross", ""),
-            ],
-        );
-        let data_state = GatewayDataState::with_provider_transport_reader_for_tests(
-            std::sync::Arc::new(provider_catalog),
-            "development-key",
-        );
-        let state = AppState::new()
-            .expect("state should build")
-            .with_data_state_for_tests(data_state);
-
-        let ranked = rank_local_execution_candidates(
-            PlannerAppState::new(&state),
-            vec![
-                sample_priority_candidate(
-                    "provider-cross",
-                    "endpoint-cross",
-                    "key-cross",
-                    "claude:messages",
-                    Some(0),
-                    0,
-                ),
-                sample_priority_candidate(
-                    "provider-same",
-                    "endpoint-same",
-                    "key-same",
-                    "openai:chat",
-                    Some(10),
-                    10,
-                ),
-            ],
-            "openai:chat",
-            None,
-        )
-        .await;
-
-        assert_eq!(ranked[0].endpoint_id, "endpoint-cross");
-        assert_eq!(ranked[1].endpoint_id, "endpoint-same");
-    }
-
-    #[tokio::test]
     async fn local_execution_ranking_keeps_cross_format_priority_when_global_override_is_enabled() {
         let provider_catalog = InMemoryProviderCatalogReadRepository::seed(
             vec![

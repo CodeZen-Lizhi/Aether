@@ -13,412 +13,6 @@ use super::{
 };
 
 large_stack_async_test!(
-    gateway_skips_unsupported_local_openai_chat_sync_candidate_before_trying_next_one,
-    gateway_skips_unsupported_local_openai_chat_sync_candidate_before_trying_next_one_impl
-);
-
-async fn gateway_skips_unsupported_local_openai_chat_sync_candidate_before_trying_next_one_impl() {
-    #[derive(Debug, Clone)]
-    struct SeenExecutionRuntimeSyncRequest {
-        trace_id: String,
-        url: String,
-        model: String,
-        authorization: String,
-    }
-
-    fn hash_api_key(value: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(value.as_bytes());
-        format!("{:x}", hasher.finalize())
-    }
-
-    fn sample_auth_snapshot(api_key_id: &str, user_id: &str) -> StoredAuthApiKeySnapshot {
-        StoredAuthApiKeySnapshot::new(user_id.to_string(),
-"alice".to_string(),
-Some("alice@example.com".to_string()),
-"user".to_string(),
-"local".to_string(),
-true,
-false,
-Some(serde_json::json!(["openai"])),
-Some(serde_json::json!(["openai:chat"])),
-Some(serde_json::json!(["gpt-5"])),
-api_key_id.to_string(),
-Some("default".to_string()),
-true,
-false,
-false,
-Some(60),
-Some(5),
-Some(4_102_444_800),
-Some(serde_json::json!(["openai"])),
-Some(serde_json::json!(["openai:chat"])),
-Some(serde_json::json!(["gpt-5"])),
-        )
-        .expect("auth snapshot should build")
-    }
-
-    fn sample_candidate_row() -> StoredMinimalCandidateSelectionRow {
-        StoredMinimalCandidateSelectionRow {
-            provider_id: "provider-openai-skip-local-1".to_string(),
-            provider_name: "openai".to_string(),
-            provider_type: "custom".to_string(),
-            provider_is_active: true,
-            endpoint_id: "endpoint-openai-skip-local-1".to_string(),
-            endpoint_api_format: "openai:chat".to_string(),
-            endpoint_api_family: Some("openai".to_string()),
-            endpoint_kind: Some("chat".to_string()),
-            endpoint_is_active: true,
-            key_id: "key-openai-skip-local-1".to_string(),
-            key_name: "prod".to_string(),
-            key_auth_type: "api_key".to_string(),
-            key_is_active: true,
-            key_api_formats: Some(vec!["openai:chat".to_string()]),
-            key_allowed_models: None,
-            key_capabilities: None,
-            model_id: "model-openai-skip-local-1".to_string(),
-            global_model_id: "global-model-openai-skip-local-1".to_string(),
-            global_model_name: "gpt-5".to_string(),
-            global_model_mappings: None,
-            global_model_supports_streaming: Some(true),
-            model_provider_model_name: "gpt-5-upstream".to_string(),
-            model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
-                name: "gpt-5-upstream".to_string(),
-                priority: 1,
-                api_formats: Some(vec!["openai:chat".to_string()]),
-                endpoint_ids: None,
-                operations: None,
-            }]),
-            model_supports_streaming: Some(true),
-            model_is_active: true,
-            model_is_available: true,
-        }
-    }
-
-    fn sample_provider_catalog_provider() -> StoredProviderCatalogProvider {
-        StoredProviderCatalogProvider::new(
-            "provider-openai-skip-local-1".to_string(),
-            "openai".to_string(),
-            Some("https://example.com".to_string()),
-            "custom".to_string(),
-        )
-        .expect("provider should build")
-        .with_transport_fields(
-            true,
-            false,
-            None,
-            Some(2),
-            None,
-            Some(20.0),
-            None,
-            None,
-        )
-    }
-
-    fn sample_provider_catalog_endpoint() -> StoredProviderCatalogEndpoint {
-        StoredProviderCatalogEndpoint::new(
-            "endpoint-openai-skip-local-1".to_string(),
-            "provider-openai-skip-local-1".to_string(),
-            "openai:chat".to_string(),
-            Some("openai".to_string()),
-            Some("chat".to_string()),
-            true,
-        )
-        .expect("endpoint should build")
-        .with_transport_fields(
-            "https://api.openai.skip.example".to_string(),
-            None,
-            None,
-            Some(2),
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("endpoint transport should build")
-    }
-
-    fn sample_provider_catalog_key() -> StoredProviderCatalogKey {
-        StoredProviderCatalogKey::new(
-            "key-openai-skip-local-1".to_string(),
-            "provider-openai-skip-local-1".to_string(),
-            "prod".to_string(),
-            "api_key".to_string(),
-            None,
-            true,
-        )
-        .expect("key should build")
-        .with_transport_fields(
-            Some(serde_json::json!(["openai:chat"])),
-            encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-upstream-openai")
-                .expect("api key should encrypt"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("key transport should build")
-    }
-
-    let seen_execution_runtime = Arc::new(Mutex::new(None::<SeenExecutionRuntimeSyncRequest>));
-    let seen_execution_runtime_clone = Arc::clone(&seen_execution_runtime);
-    let decision_hits = Arc::new(Mutex::new(0usize));
-    let decision_hits_clone = Arc::clone(&decision_hits);
-    let plan_hits = Arc::new(Mutex::new(0usize));
-    let plan_hits_clone = Arc::clone(&plan_hits);
-    let public_hits = Arc::new(Mutex::new(0usize));
-    let public_hits_clone = Arc::clone(&public_hits);
-
-    let upstream = Router::new()
-        .route(
-            "/api/internal/gateway/decision-sync",
-            any(move |_request: Request| {
-                let decision_hits_inner = Arc::clone(&decision_hits_clone);
-                async move {
-                    *decision_hits_inner.lock().expect("mutex should lock") += 1;
-                    Json(json!({"action": "proxy_public"}))
-                }
-            }),
-        )
-        .route(
-            "/api/internal/gateway/plan-sync",
-            any(move |_request: Request| {
-                let plan_hits_inner = Arc::clone(&plan_hits_clone);
-                async move {
-                    *plan_hits_inner.lock().expect("mutex should lock") += 1;
-                    Json(json!({"action": "proxy_public"}))
-                }
-            }),
-        )
-        .route(
-            "/api/internal/gateway/report-sync",
-            any(|_request: Request| async move { Json(json!({"ok": true})) }),
-        )
-        .route(
-            "/v1/chat/completions",
-            any(move |_request: Request| {
-                let public_hits_inner = Arc::clone(&public_hits_clone);
-                async move {
-                    *public_hits_inner.lock().expect("mutex should lock") += 1;
-                    (StatusCode::IM_A_TEAPOT, Body::from("public-route-hit"))
-                }
-            }),
-        );
-
-    let execution_runtime = Router::new().route(
-        "/v1/execute/sync",
-        any(move |request: Request| {
-            let seen_execution_runtime_inner = Arc::clone(&seen_execution_runtime_clone);
-            async move {
-                let (parts, body) = request.into_parts();
-                let raw_body = to_bytes(body, usize::MAX).await.expect("body should read");
-                let payload: serde_json::Value = serde_json::from_slice(&raw_body)
-                    .expect("execution runtime payload should parse");
-                *seen_execution_runtime_inner
-                    .lock()
-                    .expect("mutex should lock") = Some(SeenExecutionRuntimeSyncRequest {
-                    trace_id: parts
-                        .headers
-                        .get(TRACE_ID_HEADER)
-                        .and_then(|value| value.to_str().ok())
-                        .unwrap_or_default()
-                        .to_string(),
-                    url: payload
-                        .get("url")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    model: payload
-                        .get("body")
-                        .and_then(|value| value.get("json_body"))
-                        .and_then(|value| value.get("model"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    authorization: payload
-                        .get("headers")
-                        .and_then(|value| value.get("authorization"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                });
-                Json(json!({
-                    "request_id": "trace-openai-chat-skip-local-123",
-                    "status_code": 200,
-                    "headers": {
-                        "content-type": "application/json"
-                    },
-                    "body": {
-                        "json_body": {
-                            "id": "chatcmpl-local-skip-123",
-                            "object": "chat.completion",
-                            "model": "gpt-5-upstream-backup",
-                            "choices": [],
-                            "usage": {
-                                "prompt_tokens": 2,
-                                "completion_tokens": 3,
-                                "total_tokens": 5
-                            }
-                        }
-                    },
-                    "telemetry": {
-                        "elapsed_ms": 25
-                    }
-                }))
-            }
-        }),
-    );
-
-    let auth_repository = Arc::new(InMemoryAuthApiKeySnapshotRepository::seed(vec![(
-        Some(hash_api_key("sk-client-openai-skip-local")),
-        sample_auth_snapshot("api-key-openai-skip-local-1", "user-openai-skip-local-1"),
-    )]));
-    let mut backup_candidate_row = sample_candidate_row();
-    backup_candidate_row.provider_id = "provider-openai-skip-local-2".to_string();
-    backup_candidate_row.endpoint_id = "endpoint-openai-skip-local-2".to_string();
-    backup_candidate_row.key_id = "key-openai-skip-local-2".to_string();
-    backup_candidate_row.key_name = "backup".to_string();
-    backup_candidate_row.model_id = "model-openai-skip-local-2".to_string();
-    backup_candidate_row.global_model_id = "global-model-openai-skip-local-2".to_string();
-    backup_candidate_row.model_provider_model_name = "gpt-5-upstream-backup".to_string();
-    backup_candidate_row.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
-        name: "gpt-5-upstream-backup".to_string(),
-        priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
-        endpoint_ids: None,
-        operations: None,
-    }]);
-    let candidate_selection_repository =
-        Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
-            sample_candidate_row(),
-            backup_candidate_row,
-        ]));
-    let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::default());
-    let mut unsupported_provider = sample_provider_catalog_provider();
-    unsupported_provider.provider_type = "codex".to_string();
-    let mut supported_provider = sample_provider_catalog_provider();
-    supported_provider.id = "provider-openai-skip-local-2".to_string();
-    let mut unsupported_endpoint = sample_provider_catalog_endpoint();
-    unsupported_endpoint.base_url = "https://chatgpt.com/backend-api/codex".to_string();
-    let mut supported_endpoint = sample_provider_catalog_endpoint();
-    supported_endpoint.id = "endpoint-openai-skip-local-2".to_string();
-    supported_endpoint.provider_id = "provider-openai-skip-local-2".to_string();
-    supported_endpoint.base_url = "https://api.openai.backup.example".to_string();
-    let unsupported_key = sample_provider_catalog_key();
-    let mut supported_key = sample_provider_catalog_key();
-    supported_key.id = "key-openai-skip-local-2".to_string();
-    supported_key.provider_id = "provider-openai-skip-local-2".to_string();
-    supported_key.name = "backup".to_string();
-    supported_key.encrypted_api_key = Some(
-        encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-upstream-openai-backup")
-            .expect("api key should encrypt"),
-    );
-    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![unsupported_provider, supported_provider],
-        vec![unsupported_endpoint, supported_endpoint],
-        vec![unsupported_key, supported_key],
-    ));
-
-    let (upstream_url, upstream_handle) = start_server(upstream).await;
-    let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
-    let gateway_state =
-        build_state_with_execution_runtime_override(execution_runtime_url.clone())
-    .with_data_state_for_tests(
-        crate::data::GatewayDataState::with_auth_candidate_selection_provider_catalog_and_request_candidate_repository_for_tests(
-            auth_repository,
-            candidate_selection_repository,
-            provider_catalog_repository,
-            Arc::clone(&request_candidate_repository),
-            DEVELOPMENT_ENCRYPTION_KEY,
-        )
-        .with_system_config_values_for_tests(vec![(
-            "provider_priority_mode".to_string(),
-            json!("global_key"),
-        )]),
-    );
-    let gateway = build_router_with_state(gateway_state);
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let response = reqwest::Client::new()
-        .post(format!("{gateway_url}/v1/chat/completions"))
-        .header(http::header::CONTENT_TYPE, "application/json")
-        .header(
-            http::header::AUTHORIZATION,
-            "Bearer sk-client-openai-skip-local",
-        )
-        .header(TRACE_ID_HEADER, "trace-openai-chat-skip-local-123")
-        .body("{\"model\":\"gpt-5\",\"messages\":[]}")
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response
-            .headers()
-            .get(EXECUTION_PATH_HEADER)
-            .and_then(|value| value.to_str().ok()),
-        Some(EXECUTION_PATH_EXECUTION_RUNTIME_SYNC)
-    );
-    let response_json: serde_json::Value = response.json().await.expect("body should parse");
-    assert_eq!(response_json["model"], "gpt-5-upstream-backup");
-
-    let seen_execution_runtime_request = seen_execution_runtime
-        .lock()
-        .expect("mutex should lock")
-        .clone()
-        .expect("execution runtime sync should be captured");
-    assert_eq!(
-        seen_execution_runtime_request.trace_id,
-        "trace-openai-chat-skip-local-123"
-    );
-    assert_eq!(
-        seen_execution_runtime_request.url,
-        "https://api.openai.backup.example/chat/completions"
-    );
-    assert_eq!(
-        seen_execution_runtime_request.model,
-        "gpt-5-upstream-backup"
-    );
-    assert_eq!(
-        seen_execution_runtime_request.authorization,
-        "Bearer sk-upstream-openai-backup"
-    );
-
-    let stored_candidates = request_candidate_repository
-        .list_by_request_id("trace-openai-chat-skip-local-123")
-        .await
-        .expect("request candidate trace should read");
-    assert_eq!(stored_candidates.len(), 2);
-    let skipped_candidate = stored_candidates
-        .iter()
-        .find(|candidate| candidate.candidate_index == 0)
-        .expect("skipped candidate should exist");
-    assert_eq!(skipped_candidate.status, RequestCandidateStatus::Skipped);
-    assert_eq!(
-        skipped_candidate.skip_reason.as_deref(),
-        Some("transport_provider_type_unsupported")
-    );
-    assert!(skipped_candidate.started_at_unix_ms.is_none());
-    assert!(skipped_candidate.finished_at_unix_ms.is_some());
-    let successful_candidate = stored_candidates
-        .iter()
-        .find(|candidate| candidate.candidate_index == 1)
-        .expect("successful candidate should exist");
-    assert_eq!(successful_candidate.status, RequestCandidateStatus::Success);
-
-    assert_eq!(*decision_hits.lock().expect("mutex should lock"), 0);
-    assert_eq!(*plan_hits.lock().expect("mutex should lock"), 0);
-    assert_eq!(*public_hits.lock().expect("mutex should lock"), 0);
-
-    gateway_handle.abort();
-    execution_runtime_handle.abort();
-    upstream_handle.abort();
-}
-
-large_stack_async_test!(
     gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_chat_candidates_are_skipped,
     gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_chat_candidates_are_skipped_impl
 );
@@ -600,12 +194,21 @@ async fn gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_ch
             sample_candidate_row(),
         ]));
     let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::default());
-    let mut unsupported_provider = sample_provider_catalog_provider();
-    unsupported_provider.provider_type = "codex".to_string();
+    // Provider-type policies collapsed to the generic standard policy in the
+    // single-user slim, so the unsupported-transport trigger is an OAuth auth
+    // config key, which local openai:chat transport never resolved.
+    let mut unsupported_key = sample_provider_catalog_key();
+    unsupported_key.encrypted_auth_config = Some(
+        encrypt_python_fernet_plaintext(
+            DEVELOPMENT_ENCRYPTION_KEY,
+            r#"{"provider_type":"codex","account_id":"account-local-miss-1"}"#,
+        )
+        .expect("auth config should encrypt"),
+    );
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![unsupported_provider],
+        vec![sample_provider_catalog_provider()],
         vec![sample_provider_catalog_endpoint()],
-        vec![sample_provider_catalog_key()],
+        vec![unsupported_key],
     ));
 
     let (upstream_url, upstream_handle) = start_server(upstream).await;
@@ -667,7 +270,7 @@ async fn gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_ch
     assert_eq!(stored_candidates[0].status, RequestCandidateStatus::Skipped);
     assert_eq!(
         stored_candidates[0].skip_reason.as_deref(),
-        Some("transport_provider_type_unsupported")
+        Some("transport_oauth_resolution_unsupported")
     );
     assert_eq!(*public_hits.lock().expect("mutex should lock"), 0);
 
@@ -1105,28 +708,34 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         .expect("mutex should lock")
         .clone();
     assert_eq!(seen_execution_runtime_requests.len(), 2);
+    assert!(seen_execution_runtime_requests
+        .iter()
+        .all(|request| request.trace_id == "trace-openai-chat-local-failover-123"));
+    // With key/provider priorities removed by the single-user slim, either
+    // candidate may be attempted first; the first attempt must fail over and
+    // the second must succeed with the other candidate's credentials.
+    let primary_url = "https://api.openai.primary.example/chat/completions";
+    let backup_url = "https://api.openai.backup.example/chat/completions";
+    let (failed_request, succeeded_request) =
+        if seen_execution_runtime_requests[0].url == primary_url {
+            (
+                &seen_execution_runtime_requests[0],
+                &seen_execution_runtime_requests[1],
+            )
+        } else {
+            (
+                &seen_execution_runtime_requests[1],
+                &seen_execution_runtime_requests[0],
+            )
+        };
+    assert_eq!(failed_request.url, primary_url);
     assert_eq!(
-        seen_execution_runtime_requests[0].trace_id,
-        "trace-openai-chat-local-failover-123"
-    );
-    assert_eq!(
-        seen_execution_runtime_requests[0].url,
-        "https://api.openai.primary.example/chat/completions"
-    );
-    assert_eq!(
-        seen_execution_runtime_requests[0].authorization,
+        failed_request.authorization,
         "Bearer sk-upstream-openai-primary"
     );
+    assert_eq!(succeeded_request.url, backup_url);
     assert_eq!(
-        seen_execution_runtime_requests[1].url,
-        "https://api.openai.backup.example/chat/completions"
-    );
-    assert_eq!(
-        seen_execution_runtime_requests[1].model,
-        "gpt-5-upstream-backup"
-    );
-    assert_eq!(
-        seen_execution_runtime_requests[1].authorization,
+        succeeded_request.authorization,
         "Bearer sk-upstream-openai-backup"
     );
     let stored_candidates = request_candidate_repository
@@ -1134,26 +743,27 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         .await
         .expect("request candidate trace should read");
     assert_eq!(stored_candidates.len(), 2);
-    assert_eq!(stored_candidates[0].candidate_index, 0);
-    assert_eq!(stored_candidates[0].status, RequestCandidateStatus::Failed);
-    assert_eq!(stored_candidates[0].status_code, Some(401));
-    assert_eq!(
-        stored_candidates[0].error_message.as_deref(),
-        Some("invalid auth token")
-    );
-    let failed_upstream_response = stored_candidates[0]
-        .extra_data
-        .as_ref()
+    assert!(stored_candidates
+        .iter()
+        .any(|candidate| candidate.status == RequestCandidateStatus::Failed
+            && candidate.status_code == Some(401)
+            && candidate.error_message.as_deref() == Some("invalid auth token")));
+    let failed_upstream_response = stored_candidates
+        .iter()
+        .find(|candidate| candidate.status == RequestCandidateStatus::Failed)
+        .and_then(|candidate| candidate.extra_data.as_ref())
         .and_then(|value| value.get("upstream_response"))
-        .expect("failed candidate should keep its upstream response");
+        .expect("failed candidate should keep its upstream response")
+        .clone();
     assert_eq!(failed_upstream_response["status_code"], json!(401));
     assert_eq!(
         failed_upstream_response["body"]["error"]["message"],
         json!("invalid auth token")
     );
-    assert_eq!(stored_candidates[1].candidate_index, 1);
-    assert_eq!(stored_candidates[1].status, RequestCandidateStatus::Success);
-    assert_eq!(stored_candidates[1].status_code, Some(200));
+    assert!(stored_candidates
+        .iter()
+        .any(|candidate| candidate.status == RequestCandidateStatus::Success
+            && candidate.status_code == Some(200)));
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(

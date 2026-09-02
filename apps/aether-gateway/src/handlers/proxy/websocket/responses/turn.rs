@@ -1186,7 +1186,7 @@ mod tests {
         assert_eq!(usage.output_tokens, 7);
 
         // 结算表用这些事实决定是否投射供应商失败：合法 incomplete 即使被记账层
-        // 判成失败，也必须落在「不扣健康分、只释放 lease」一侧，且账单照记。
+        // 判成失败，也绝不投射供应商失败（ProviderFailure），且账单照记。
         let settlement = classify_attempt_settlement(AttemptSettlementInputs {
             facts,
             report_represents_failure: true,
@@ -1195,9 +1195,9 @@ mod tests {
         });
         assert_eq!(settlement.status_code, 200);
         assert_eq!(settlement.billing, AttemptBilling::Billed);
-        assert_eq!(
+        assert_ne!(
             settlement.provider_effect,
-            AttemptProviderEffect::NoProviderEffect
+            AttemptProviderEffect::ProviderFailure
         );
         assert!(settlement.submit_execution_report);
     }

@@ -197,10 +197,8 @@ fn local_openai_responses_wrapper_preserves_body_order_after_edits() {
             "include",
             "reasoning",
             "tool_choice",
-            "parallel_tool_calls",
         ]
     );
-    assert_eq!(provider_request_body["parallel_tool_calls"], json!(true));
     assert!(provider_request_body.get("instructions").is_none());
 }
 

@@ -335,9 +335,9 @@ async fn fixed_order_ignores_cached_scheduler_affinity_promotion() {
     state.remember_scheduler_affinity_target(
         "scheduler_affinity:affinity-key-1:openai:chat:gpt-4.1",
         SchedulerAffinityTarget {
-            provider_id: "provider-b".to_string(),
-            endpoint_id: "endpoint-b".to_string(),
-            key_id: "key-b".to_string(),
+            provider_id: "provider-a".to_string(),
+            endpoint_id: "endpoint-a".to_string(),
+            key_id: "key-a".to_string(),
         },
         Duration::from_secs(300),
         100,
@@ -356,8 +356,8 @@ async fn fixed_order_ignores_cached_scheduler_affinity_promotion() {
     .expect("selection should succeed")
     .expect("candidate should exist");
 
-    assert_eq!(selected.provider_id, "provider-a");
-    assert_eq!(selected.key_id, "key-a");
+    assert_eq!(selected.provider_id, "provider-b");
+    assert_eq!(selected.key_id, "key-b");
 }
 
 #[tokio::test]
@@ -400,8 +400,8 @@ async fn fixed_order_disables_same_priority_affinity_hash_tiebreaker() {
     .expect("selection should succeed");
 
     assert_eq!(selection.len(), 2);
-    assert_eq!(selection[0].provider_id, "provider-a");
-    assert_eq!(selection[1].provider_id, "provider-b");
+    assert_eq!(selection[0].provider_id, "provider-b");
+    assert_eq!(selection[1].provider_id, "provider-a");
 }
 
 #[tokio::test]
@@ -500,9 +500,9 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
     state.remember_scheduler_affinity_target(
         "scheduler_affinity:affinity-key-1:openai:chat:gpt-4.1",
         SchedulerAffinityTarget {
-            provider_id: "provider-b".to_string(),
-            endpoint_id: "endpoint-b".to_string(),
-            key_id: "key-b".to_string(),
+            provider_id: "provider-a".to_string(),
+            endpoint_id: "endpoint-a".to_string(),
+            key_id: "key-a".to_string(),
         },
         Duration::from_secs(300),
         100,
@@ -521,8 +521,8 @@ async fn cache_affinity_ignores_cached_scheduler_affinity_without_client_session
     .expect("selection should succeed")
     .expect("candidate should exist");
 
-    assert_eq!(selected.provider_id, "provider-a");
-    assert_eq!(selected.key_id, "key-a");
+    assert_eq!(selected.provider_id, "provider-b");
+    assert_eq!(selected.key_id, "key-b");
 }
 
 #[tokio::test]

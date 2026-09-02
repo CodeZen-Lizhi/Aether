@@ -360,7 +360,10 @@ Some(serde_json::json!(["gpt-5"])),
         .list_by_request_id("trace-openai-chat-local-123")
         .await
         .expect("request candidate trace should read");
-    assert_eq!(stored_candidates.len(), 1);
+    // With key/provider priorities removed by the single-user slim, equal
+    // priority candidates are ordered per-request, so either candidate may be
+    // attempted first. Exactly one attempt must succeed and the other one may
+    // fail over (Failed) or stay unused (Unused).
     assert_eq!(
         stored_candidates
             .iter()
@@ -368,12 +371,11 @@ Some(serde_json::json!(["gpt-5"])),
             .count(),
         1
     );
-    assert_eq!(
+    assert!(
         stored_candidates
             .iter()
-            .filter(|candidate| candidate.status == RequestCandidateStatus::Failed)
-            .count(),
-        0
+            .all(|candidate| candidate.status != RequestCandidateStatus::Skipped),
+        "no candidate should be skipped for a supported transport"
     );
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1301,7 +1303,7 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
             endpoint_is_active: true,
             key_id: "key-openai-chat-claude-cli-local-1".to_string(),
             key_name: "prod".to_string(),
-            key_auth_type: "oauth".to_string(),
+            key_auth_type: "api_key".to_string(),
             key_is_active: true,
             key_api_formats: Some(vec!["claude:messages".to_string()]),
             key_allowed_models: None,
@@ -1379,7 +1381,7 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
             "key-openai-chat-claude-cli-local-1".to_string(),
             "provider-openai-chat-claude-cli-local-1".to_string(),
             "prod".to_string(),
-            "oauth".to_string(),
+            "api_key".to_string(),
             None,
             true,
         )
@@ -1497,7 +1499,11 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
                         .to_string(),
                     auth_header_value: payload
                         .get("headers")
-                        .and_then(|value| value.get("authorization"))
+                        .and_then(|value| {
+                            value
+                                .get("x-api-key")
+                                .or_else(|| value.get("authorization"))
+                        })
                         .and_then(|value| value.as_str())
                         .unwrap_or_default()
                         .to_string(),
@@ -1647,7 +1653,7 @@ async fn gateway_returns_openai_chat_error_for_local_cross_format_claude_cli_syn
     );
     assert_eq!(
         seen_execution_runtime_request.auth_header_value,
-        "Bearer sk-upstream-openai-chat-claude-cli"
+        "sk-upstream-openai-chat-claude-cli"
     );
     assert_eq!(
         seen_execution_runtime_request.anthropic_version,

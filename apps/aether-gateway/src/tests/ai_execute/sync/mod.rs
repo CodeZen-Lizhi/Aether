@@ -28,4 +28,3 @@ mod claude;
 mod cli;
 mod gemini;
 mod image;
-mod search;

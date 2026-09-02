@@ -162,18 +162,19 @@ async fn gateway_handles_public_catalog_providers_without_proxying_upstream() {
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     let providers = payload.as_array().expect("providers should be an array");
     assert_eq!(providers.len(), 2);
-    assert_eq!(providers[0]["id"], "provider-openai");
+    // Provider priority was removed in the single-user slim; providers are
+    // ordered by name.
+    assert_eq!(providers[0]["id"], "provider-claude");
     assert!(providers[0].get("name").is_none());
     assert!(providers[0].get("description").is_none());
     assert!(providers[0].get("website").is_none());
-    assert_eq!(providers[0]["provider_priority"], 10);
-    assert_eq!(providers[0]["endpoints_count"], 1);
-    assert_eq!(providers[0]["active_endpoints_count"], 1);
+    assert_eq!(providers[0]["endpoints_count"], 2);
+    assert_eq!(providers[0]["active_endpoints_count"], 2);
     assert_eq!(providers[0]["models_count"], 0);
     assert_eq!(providers[0]["active_models_count"], 0);
-    assert_eq!(providers[1]["id"], "provider-claude");
-    assert_eq!(providers[1]["endpoints_count"], 2);
-    assert_eq!(providers[1]["active_endpoints_count"], 2);
+    assert_eq!(providers[1]["id"], "provider-openai");
+    assert_eq!(providers[1]["endpoints_count"], 1);
+    assert_eq!(providers[1]["active_endpoints_count"], 1);
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
@@ -731,40 +732,6 @@ async fn gateway_handles_public_capabilities_without_proxying_upstream() {
 }
 
 #[tokio::test]
-async fn gateway_handles_public_user_configurable_capabilities_without_proxying_upstream() {
-    let upstream_hits = Arc::new(Mutex::new(0usize));
-    let upstream_hits_clone = Arc::clone(&upstream_hits);
-    let upstream = Router::new().route(
-        "/{*path}",
-        any(move |_request: Request| {
-            let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
-            async move {
-                *upstream_hits_inner.lock().expect("mutex should lock") += 1;
-                (StatusCode::OK, Body::from("proxied"))
-            }
-        }),
-    );
-
-    let (upstream_url, upstream_handle) = start_server(upstream).await;
-    let gateway = build_router().expect("gateway should build");
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let response = reqwest::Client::new()
-        .get(format!("{gateway_url}/api/capabilities/user-configurable"))
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload, json!({ "capabilities": [] }));
-    assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
-
-    gateway_handle.abort();
-    upstream_handle.abort();
-}
-
-#[tokio::test]
 async fn gateway_handles_public_model_capabilities_without_proxying_upstream() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
@@ -909,7 +876,6 @@ async fn gateway_handles_public_providers_without_proxying_upstream() {
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert!(payload["providers"][0].get("name").is_none());
-    assert_eq!(payload["providers"][0]["provider_priority"], 10);
     assert!(payload["providers"][1].get("name").is_none());
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
@@ -959,7 +925,6 @@ async fn gateway_handles_public_provider_detail_without_proxying_upstream() {
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["id"], "provider-1");
     assert!(payload.get("name").is_none());
-    assert_eq!(payload["provider_priority"], 10);
 
     let response = reqwest::Client::new()
         .get(format!("{gateway_url}/v1/providers/openai"))
@@ -1925,130 +1890,6 @@ where
     let gateway = build_router_with_state(build_state());
     let (gateway_url, gateway_handle) = start_server(gateway).await;
     (gateway_url, upstream_hits, gateway_handle, upstream_handle)
-}
-
-#[tokio::test]
-async fn gateway_handles_user_monitoring_rate_limit_status_locally_without_proxying_upstream() {
-    let now = Utc::now();
-    let user = sample_auth_user(now);
-    let access_token = build_test_auth_token(
-        "access",
-        serde_json::Map::from_iter([
-            ("user_id".to_string(), json!(user.id)),
-            ("role".to_string(), json!(user.role)),
-            (
-                "created_at".to_string(),
-                json!(user.created_at.map(|value| value.to_rfc3339())),
-            ),
-            (
-                "session_id".to_string(),
-                json!("session-monitoring-rate-limit-status"),
-            ),
-        ]),
-        now + chrono::Duration::hours(1),
-    );
-
-    let auth_repository = Arc::new(InMemoryAuthApiKeySnapshotRepository::seed(vec![(
-        Some("hash-monitoring-key-1".to_string()),
-        StoredAuthApiKeySnapshot::new(
-            "user-auth-1".to_string(),
-            "alice".to_string(),
-            Some("alice@example.com".to_string()),
-            "user".to_string(),
-            "local".to_string(),
-            true,
-            false,
-            Some(json!(["openai"])),
-            Some(json!(["openai:chat"])),
-            Some(json!(["gpt-5"])),
-            "api-key-monitoring-1".to_string(),
-            Some("monitoring-key".to_string()),
-            true,
-            false,
-            false,
-            Some(30),
-            Some(5),
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("auth api key snapshot should build")
-        .with_user_rate_limit(Some(80)),
-    )]));
-    let user_repository: Arc<dyn UserReadRepository> =
-        Arc::new(InMemoryUserReadRepository::seed_auth_users(vec![
-            sample_auth_user(now),
-        ]));
-    let group = user_repository
-        .create_user_group(UpsertUserGroupRecord {
-            name: "Monitoring Limits".to_string(),
-            description: None,
-            priority: 0,
-            allowed_providers: None,
-            allowed_providers_mode: "unrestricted".to_string(),
-            allowed_api_formats: None,
-            allowed_api_formats_mode: "unrestricted".to_string(),
-            allowed_models: None,
-            allowed_models_mode: "unrestricted".to_string(),
-            rate_limit: Some(80),
-            rate_limit_mode: "custom".to_string(),
-        })
-        .await
-        .expect("group should create")
-        .expect("group should exist");
-    user_repository
-        .add_user_to_group(&group.id, "user-auth-1")
-        .await
-        .expect("group membership should create");
-
-    let (gateway_url, upstream_hits, gateway_handle, upstream_handle) =
-        start_auth_gateway_with_builder(|| {
-            let data_state = crate::data::GatewayDataState::with_auth_api_key_repository_for_tests(
-                auth_repository,
-            )
-            .with_user_reader(Arc::clone(&user_repository));
-            AppState::new()
-                .expect("gateway should build")
-                .with_data_state_for_tests(data_state)
-                .with_auth_sessions_for_tests([sample_auth_session(
-                    "user-auth-1",
-                    "session-monitoring-rate-limit-status",
-                    "device-monitoring-rate-limit-status",
-                    "refresh-monitoring-rate-limit-status",
-                    now,
-                )])
-        })
-        .await;
-
-    let response = reqwest::Client::new()
-        .get(format!("{gateway_url}/api/monitoring/rate-limit-status"))
-        .header("authorization", format!("Bearer {access_token}"))
-        .header("x-client-device-id", "device-monitoring-rate-limit-status")
-        .header("user-agent", "AetherTest/1.0")
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload["user_id"], "user-auth-1");
-    let api_keys = payload["api_keys"]
-        .as_array()
-        .expect("api_keys should be array");
-    assert_eq!(api_keys.len(), 1);
-    assert_eq!(api_keys[0]["api_key_name"], "monitoring-key");
-    assert_eq!(api_keys[0]["limit"], 30);
-    assert_eq!(api_keys[0]["remaining"], 30);
-    assert_eq!(api_keys[0]["scope"], "key");
-    assert_eq!(api_keys[0]["user_limit"], 80);
-    assert_eq!(api_keys[0]["user_remaining"], 80);
-    assert_eq!(api_keys[0]["key_limit"], 30);
-    assert_eq!(api_keys[0]["key_remaining"], 30);
-    assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
-
-    gateway_handle.abort();
-    upstream_handle.abort();
 }
 
 #[tokio::test]
