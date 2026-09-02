@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本次改动横跨后端 payload 与前端消费（users 字段删除、卡片结构变化），检查时需确认前后端契约一致、无残留死代码"}

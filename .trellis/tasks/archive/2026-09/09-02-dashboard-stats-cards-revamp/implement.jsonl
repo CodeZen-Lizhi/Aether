@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "改动会新增格式化/组装逻辑，先确认可复用 dashboard_filters.rs 中已有的 dashboard_format_* 辅助函数，避免重复实现"}
+{"file": ".trellis/spec/aether-gateway/backend/index.md", "reason": "后端改动位于 apps/aether-gateway 的 public support dashboard 处理器，遵循该包的通用后端约定"}
