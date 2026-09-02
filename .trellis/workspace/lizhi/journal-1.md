@@ -245,3 +245,26 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 8: 系统设置-网络代理 UI 重构为节点列表+编辑弹窗
+<!-- trellis-session: v=2 fp=6805d9ef3e6a2586 -->
+
+**Date**: 2026-09-02
+**Task**: 系统设置-网络代理 UI 重构为节点列表+编辑弹窗
+**Branch**: `slim-personal`
+
+### Summary
+
+重构 ProxyConfigSection：头部按钮消歧为「保存默认代理」（禁用提示「暂无改动」）；节点管理从内联单节点表单+隐性下拉改为节点列表+ProxyNodeEditDialog 编辑弹窗（地址前缀校验、内联持久测试结果、删除隔离到弹窗左侧）；新增 20 个组件测试；沉淀 .trellis/spec/frontend 层规范（i18n 中文文案+英文映射字典机制、设置卡片保存模式、代理 URL 校验口径与后端对齐）。636 测试全绿；CostForecastChart.vue 存在预存 TS 错误与本任务无关。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ac32e6749` | feat(frontend): 重构网络代理卡片为节点列表+编辑弹窗 |
+| `bbcde7024` | docs(spec): 新增 frontend 层规范（i18n 文案机制、设置卡片模式、代理 URL 校验口径） |
+
+### Status
+
+[OK] **Completed**
