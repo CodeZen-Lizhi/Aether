@@ -36,6 +36,8 @@
           <!-- 数据管理 -->
           <DataManagementSection
             id="section-data-mgmt"
+            collapsible
+            :default-open="false"
             :config-export-loading="exportLoading"
             :config-import-loading="importLoading"
             :aggregate-export-loading="exportAggregateLoading"
@@ -89,6 +91,8 @@
           <!-- 请求记录清理策略 -->
           <CleanupPolicySection
             id="section-cleanup"
+            collapsible
+            :default-open="false"
             :enable-auto-cleanup="systemConfig.enable_auto_cleanup"
             :detail-log-retention-days="systemConfig.detail_log_retention_days"
             :compressed-log-retention-days="systemConfig.compressed_log_retention_days"
@@ -121,12 +125,16 @@
           <!-- 定时任务 -->
           <ScheduledTasksSection
             id="section-scheduled"
+            collapsible
+            :default-open="false"
             :scheduled-tasks="scheduledTasks"
           />
 
           <!-- 系统版本信息 -->
           <SystemInfoSection
             id="section-sysinfo"
+            collapsible
+            :default-open="false"
             :system-version="systemVersion"
           />
         </div>

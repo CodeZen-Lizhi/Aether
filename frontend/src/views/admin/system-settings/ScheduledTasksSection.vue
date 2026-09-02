@@ -2,6 +2,8 @@
   <CardSection
     title="定时任务"
     description="配置系统后台定时任务"
+    :collapsible="collapsible"
+    :default-open="defaultOpen"
   >
     <div class="space-y-3">
       <template
@@ -151,5 +153,7 @@ interface ScheduledTask {
 
 defineProps<{
   scheduledTasks: ScheduledTask[]
+  collapsible?: boolean
+  defaultOpen?: boolean
 }>()
 </script>

@@ -2,6 +2,8 @@
   <CardSection
     title="请求记录清理策略"
     description="配置请求记录的分级保留和自动清理"
+    :collapsible="collapsible"
+    :default-open="defaultOpen"
   >
     <template #actions>
       <div class="flex items-center gap-4">
@@ -427,6 +429,8 @@ defineProps<{
   proxyNodeMetricsCleanupBatchSize: number
   loading: boolean
   hasChanges: boolean
+  collapsible?: boolean
+  defaultOpen?: boolean
 }>()
 
 defineEmits<{

@@ -93,6 +93,16 @@
           variant="ghost"
           size="icon"
           class="h-7 w-7"
+          :title="legacyT('用户认证')"
+          data-testid="provider-open-auth"
+          @click="$emit('openOpsConfig', provider)"
+        >
+          <KeyRound class="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          class="h-7 w-7"
           @click="$emit('toggleStatus', provider)"
         >
           <Power class="h-3.5 w-3.5" />
@@ -175,6 +185,7 @@ import {
   Eye,
   Trash2,
   Power,
+  KeyRound,
   ExternalLink,
   Pencil,
   Check,
@@ -195,6 +206,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'viewDetail': [providerId: string]
   'editProvider': [provider: ProviderWithEndpointsSummary]
+  'openOpsConfig': [provider: ProviderWithEndpointsSummary]
   'toggleStatus': [provider: ProviderWithEndpointsSummary]
   'deleteProvider': [provider: ProviderWithEndpointsSummary]
   'startEditDescription': [event: Event, provider: ProviderWithEndpointsSummary]

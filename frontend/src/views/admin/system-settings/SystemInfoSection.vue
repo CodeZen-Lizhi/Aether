@@ -2,6 +2,8 @@
   <CardSection
     title="系统信息"
     description="当前系统版本和构建信息"
+    :collapsible="collapsible"
+    :default-open="defaultOpen"
   >
     <div class="flex items-center gap-4">
       <div class="flex items-center gap-2">
@@ -29,5 +31,7 @@ import { CardSection } from '@/components/layout'
 
 defineProps<{
   systemVersion: string
+  collapsible?: boolean
+  defaultOpen?: boolean
 }>()
 </script>

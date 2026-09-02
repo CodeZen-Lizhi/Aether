@@ -132,6 +132,7 @@
               @row-click="handleRowClick"
               @view-detail="openProviderDrawer"
               @edit-provider="openEditProviderDialog"
+              @open-ops-config="openOpsConfigDialog"
               @toggle-status="toggleProviderStatus"
               @delete-provider="handleDeleteProvider"
               @start-edit-description="startEditDescription"
@@ -154,6 +155,7 @@
           :editing-description-id="editingDescriptionId"
           @view-detail="openProviderDrawer"
           @edit-provider="openEditProviderDialog"
+          @open-ops-config="openOpsConfigDialog"
           @toggle-status="toggleProviderStatus"
           @delete-provider="handleDeleteProvider"
           @start-edit-description="startEditDescription"
@@ -194,6 +196,12 @@
     @refresh="handleDrawerRefresh"
   />
 
+  <ProviderAuthDialog
+    v-model:open="opsConfigDialogOpen"
+    :provider-id="opsConfigProviderId"
+    :provider-website="opsConfigProviderWebsite"
+    @saved="handleOpsConfigSaved"
+  />
 </template>
 
 <script setup lang="ts">
@@ -207,7 +215,7 @@ import TableHead from '@/components/ui/table-head.vue'
 import SortableTableHead from '@/components/ui/sortable-table-head.vue'
 import TableFilterMenu from '@/components/ui/table-filter-menu.vue'
 import Pagination from '@/components/ui/pagination.vue'
-import { ProviderFormDialog } from '@/features/providers/components'
+import { ProviderFormDialog, ProviderAuthDialog } from '@/features/providers/components'
 import ProviderTableHeader from '@/features/providers/components/ProviderTableHeader.vue'
 import ProviderTableRow from '@/features/providers/components/ProviderTableRow.vue'
 import ProviderMobileCard from '@/features/providers/components/ProviderMobileCard.vue'
@@ -260,6 +268,9 @@ const providers = ref<ProviderWithEndpointsSummary[]>([])
 let providersRequestId = 0
 const providerDialogOpen = ref(false)
 const providerToEdit = ref<ProviderWithEndpointsSummary | null>(null)
+const opsConfigDialogOpen = ref(false)
+const opsConfigProviderId = ref('')
+const opsConfigProviderWebsite = ref('')
 const providerDrawerOpen = ref(false)
 const providerDrawerMounted = ref(false)
 const selectedProviderId = ref<string | null>(null)
@@ -517,6 +528,12 @@ function openAddProviderDialog() {
   providerDialogOpen.value = true
 }
 
+function openOpsConfigDialog(provider: ProviderWithEndpointsSummary) {
+  opsConfigProviderId.value = provider.id
+  opsConfigProviderWebsite.value = provider.website || ''
+  opsConfigDialogOpen.value = true
+}
+
 // 打开提供商详情抽屉
 function openProviderDrawer(providerId: string) {
   selectedProviderId.value = providerId
@@ -566,6 +583,11 @@ async function handleDrawerRefresh() {
 // 处理提供商添加
 function handleProviderAdded() {
   void loadProviders()
+}
+
+function handleOpsConfigSaved() {
+  opsConfigDialogOpen.value = false
+  void loadProviders({ cacheTtlMs: 0 })
 }
 
 // 删除提供商

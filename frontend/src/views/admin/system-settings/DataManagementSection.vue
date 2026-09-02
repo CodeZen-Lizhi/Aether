@@ -2,6 +2,8 @@
   <CardSection
     title="数据管理"
     description="导出、导入或清空系统数据"
+    :collapsible="props.collapsible"
+    :default-open="props.defaultOpen"
   >
     <div class="space-y-6">
       <div>
@@ -162,6 +164,8 @@ const props = defineProps<{
   configImportLoading: boolean
   aggregateExportLoading: boolean
   aggregateImportLoading: boolean
+  collapsible?: boolean
+  defaultOpen?: boolean
 }>()
 
 defineEmits<{

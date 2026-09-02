@@ -148,6 +148,16 @@
           variant="ghost"
           size="icon"
           class="h-7 w-7 text-muted-foreground/70 hover:text-foreground"
+          :title="legacyT('用户认证')"
+          data-testid="provider-open-auth"
+          @click="$emit('openOpsConfig', provider)"
+        >
+          <KeyRound class="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          class="h-7 w-7 text-muted-foreground/70 hover:text-foreground"
           :title="legacyT(provider.is_active ? '停用提供商' : '启用提供商')"
           @click="$emit('toggleStatus', provider)"
         >
@@ -174,6 +184,7 @@ import {
   Eye,
   Trash2,
   Power,
+  KeyRound,
   ExternalLink,
   Pencil,
   Check,
@@ -197,6 +208,7 @@ const emit = defineEmits<{
   'rowClick': [event: MouseEvent, providerId: string]
   'viewDetail': [providerId: string]
   'editProvider': [provider: ProviderWithEndpointsSummary]
+  'openOpsConfig': [provider: ProviderWithEndpointsSummary]
   'toggleStatus': [provider: ProviderWithEndpointsSummary]
   'deleteProvider': [provider: ProviderWithEndpointsSummary]
   'startEditDescription': [event: Event, provider: ProviderWithEndpointsSummary]
