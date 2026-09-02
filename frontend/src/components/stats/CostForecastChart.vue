@@ -29,6 +29,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { TooltipItem } from 'chart.js'
 import LineChart from '@/components/charts/LineChart.vue'
 import { LoadingState } from '@/components/common'
 import { formatCurrency } from '@/utils/format'
@@ -82,8 +83,8 @@ const chartOptions = computed(() => ({
   plugins: {
     tooltip: {
       callbacks: {
-        label: (context: { parsed?: { y?: number }; dataset: { label?: string } }) => {
-          const value = context.parsed?.y ?? 0
+        label: (context: TooltipItem<'line'>) => {
+          const value = context.parsed.y ?? 0
           return `${context.dataset.label}: ${formatCurrency(value)}`
         }
       }
