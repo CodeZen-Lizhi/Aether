@@ -6153,7 +6153,6 @@ mod tests {
         );
     }
 
-
     #[tokio::test]
     async fn direct_sync_execution_runtime_compresses_json_body_when_requested() {
         let listener = crate::test_support::bind_loopback_listener()

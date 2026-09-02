@@ -95,7 +95,8 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
 
     let mut grouped = BTreeMap::<String, Vec<serde_json::Value>>::new();
     for key in keys {
-        let Some((provider_name, provider_is_active)) = provider_metadata_by_id.get(&key.provider_id)
+        let Some((provider_name, provider_is_active)) =
+            provider_metadata_by_id.get(&key.provider_id)
         else {
             continue;
         };

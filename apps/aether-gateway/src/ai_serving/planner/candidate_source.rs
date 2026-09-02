@@ -2071,10 +2071,7 @@ mod tests {
         assert_eq!(page.candidates.len(), 1);
         assert_eq!(page.candidates[0].endpoint_api_format, "openai:responses");
         assert_eq!(page.candidates[0].global_model_name, "gpt-5");
-        assert_eq!(
-            page.candidates[0].selected_provider_model_name,
-            "gpt-5.5"
-        );
+        assert_eq!(page.candidates[0].selected_provider_model_name, "gpt-5.5");
     }
 
     #[tokio::test]

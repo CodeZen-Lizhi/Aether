@@ -760,11 +760,10 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         .await
         .expect("request candidate trace should read");
     assert_eq!(stored_candidates.len(), 2);
-    assert!(stored_candidates
-        .iter()
-        .any(|candidate| candidate.status == RequestCandidateStatus::Failed
-            && candidate.status_code == Some(401)
-            && candidate.error_message.as_deref() == Some("invalid auth token")));
+    assert!(stored_candidates.iter().any(|candidate| candidate.status
+        == RequestCandidateStatus::Failed
+        && candidate.status_code == Some(401)
+        && candidate.error_message.as_deref() == Some("invalid auth token")));
     let failed_upstream_response = stored_candidates
         .iter()
         .find(|candidate| candidate.status == RequestCandidateStatus::Failed)
@@ -777,10 +776,9 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         failed_upstream_response["body"]["error"]["message"],
         json!("invalid auth token")
     );
-    assert!(stored_candidates
-        .iter()
-        .any(|candidate| candidate.status == RequestCandidateStatus::Success
-            && candidate.status_code == Some(200)));
+    assert!(stored_candidates.iter().any(|candidate| candidate.status
+        == RequestCandidateStatus::Success
+        && candidate.status_code == Some(200)));
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(

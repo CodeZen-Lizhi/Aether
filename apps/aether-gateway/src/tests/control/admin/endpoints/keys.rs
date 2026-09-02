@@ -163,9 +163,7 @@ async fn gateway_handles_admin_provider_keys_locally_with_trusted_admin_principa
         "/api/admin/endpoints/providers/provider-openai/keys",
         any(move |_request: Request| {
             let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
-            async move {
-                (StatusCode::OK, Body::from("unexpected upstream hit"))
-            }
+            async move { (StatusCode::OK, Body::from("unexpected upstream hit")) }
         }),
     );
 
@@ -356,9 +354,7 @@ async fn gateway_handles_admin_provider_keys_page_locally_with_total() {
         "/api/admin/endpoints/providers/provider-openai/keys",
         any(move |_request: Request| {
             let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
-            async move {
-                (StatusCode::OK, Body::from("unexpected upstream hit"))
-            }
+            async move { (StatusCode::OK, Body::from("unexpected upstream hit")) }
         }),
     );
 

@@ -595,7 +595,6 @@ impl GatewayDataState {
             .await
     }
 
-
     #[allow(dead_code)]
     pub(crate) async fn initialize_auth_user_wallet(
         &self,

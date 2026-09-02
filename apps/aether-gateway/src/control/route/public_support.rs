@@ -155,9 +155,7 @@ pub(super) fn classify_public_support_route(
     } else if method == http::Method::GET
         && matches!(
             normalized_path,
-            "/api/users/me"
-                | "/api/users/me/sessions"
-                | "/api/users/me/preferences"
+            "/api/users/me" | "/api/users/me/sessions" | "/api/users/me/preferences"
         )
     {
         let route_kind = match normalized_path {

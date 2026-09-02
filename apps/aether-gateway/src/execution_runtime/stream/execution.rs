@@ -6903,9 +6903,6 @@ fn apply_stream_summary_report_context(
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
