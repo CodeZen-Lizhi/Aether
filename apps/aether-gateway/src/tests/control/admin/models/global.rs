@@ -797,7 +797,7 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
                 "sk-alt-routing-5678",
             );
             mapped_key.name = "mapped".to_string();
-            mapped_key.allowed_models = Some(json!(["gpt-5-upstream"]));
+            mapped_key.allowed_models = Some(json!(["gpt-5-alt"]));
             mapped_key.rpm_limit = Some(120);
 
             let mut unlinked_key = sample_key(
@@ -911,7 +911,7 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
     assert_eq!(alt_endpoints.len(), 1);
     let alt_keys = alt_endpoints[0]["keys"].as_array().expect("keys array");
     assert_eq!(alt_keys.len(), 1);
-    assert_eq!(alt_keys[0]["allowed_models"], json!(["gpt-5-upstream"]));
+    assert_eq!(alt_keys[0]["allowed_models"], json!(["gpt-5-alt"]));
 
     let whitelist = payload["all_keys_whitelist"]
         .as_array()

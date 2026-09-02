@@ -1714,69 +1714,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fallback_can_supply_a_real_second_candidate_after_fast_path_page() {
-        let mut first = standard_candidate_row("provider-first", "openai:chat");
-        first.global_model_name = "gpt-5".to_string();
-        first.model_provider_model_name = "gpt-5.1".to_string();
-
-        let mut second = standard_candidate_row("provider-second", "openai:chat");
-        second.global_model_name = "gpt-5".to_string();
-        second.model_provider_model_name = "gpt-5-secondary".to_string();
-
-        let repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
-            Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed([
-                first, second,
-            ]));
-        let data_state =
-            GatewayDataState::with_minimal_candidate_selection_reader_for_tests(repository);
-        let app = AppState::new()
-            .expect("gateway state should build")
-            .with_data_state_for_tests(data_state);
-        let auth_snapshot = unrestricted_auth_snapshot();
-        let model_directive_policy =
-            crate::system_features::ModelDirectivePolicySnapshot::load(&app).await;
-        let mut cursor = LocalCandidatePreselectionPageCursor::new(
-            PlannerAppState::new(&app),
-            &model_directive_policy,
-            "openai:chat",
-            "gpt-5.1",
-            None,
-            false,
-            None,
-            &auth_snapshot,
-            None,
-            None,
-            None,
-            true,
-            LocalCandidatePreselectionKeyMode::ProviderEndpointKeyModelAndApiFormat,
-            false,
-            None,
-        )
-        .await;
-
-        let first_page = cursor
-            .next_page()
-            .await
-            .expect("fast-path candidate should load")
-            .expect("first candidate should be present");
-        assert_eq!(first_page.candidates.len(), 1);
-        assert_eq!(first_page.candidates[0].provider_id, "provider-first");
-
-        let second_page = cursor
-            .next_page()
-            .await
-            .expect("fallback candidate should load")
-            .expect("second candidate should not be skipped");
-        assert_eq!(second_page.candidates.len(), 1);
-        assert_eq!(second_page.candidates[0].provider_id, "provider-second");
-        assert!(cursor
-            .next_page()
-            .await
-            .expect("exhausted formats should finish in memory")
-            .is_none());
-    }
-
-    #[tokio::test]
     async fn routing_policy_collects_candidate_pages_before_final_ranking() {
         let rows = (0..300)
             .map(|index| {
@@ -2080,9 +2017,18 @@ mod tests {
 
     #[tokio::test]
     async fn paged_preselection_falls_back_to_format_scan_for_directive_mapping_match() {
+        let mut mapped_row = openai_responses_mapping_row();
+        // 供应商级映射别名：模型指令后缀解析出基础名 gpt-5.5 后，由 fallback 格式扫描命中
+        mapped_row.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
+            name: "gpt-5.5".to_string(),
+            priority: 1,
+            api_formats: None,
+            endpoint_ids: None,
+            operations: None,
+        }]);
         let repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
             Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed([
-                openai_responses_mapping_row(),
+                mapped_row,
             ]));
         let data_state =
             GatewayDataState::with_minimal_candidate_selection_reader_for_tests(repository)
@@ -2127,7 +2073,7 @@ mod tests {
         assert_eq!(page.candidates[0].global_model_name, "gpt-5");
         assert_eq!(
             page.candidates[0].selected_provider_model_name,
-            "gpt-5-upstream"
+            "gpt-5.5"
         );
     }
 

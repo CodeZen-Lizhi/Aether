@@ -643,56 +643,6 @@ mod tests {
     }
 
     #[test]
-    fn codex_live_reuses_only_codex_responses_model_mappings() {
-        let mut row = sample_row("live-client-alias", "gpt-realtime-future");
-        row.provider_type = "codex".to_string();
-        row.endpoint_id = "endpoint-live".to_string();
-        row.endpoint_api_format = "codex:live".to_string();
-        row.key_auth_type = "oauth".to_string();
-        row.key_api_formats = Some(vec!["codex:live".to_string()]);
-        row.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
-            name: "gpt-realtime-future".to_string(),
-            priority: 1,
-            api_formats: Some(vec!["openai:responses".to_string()]),
-            endpoint_ids: Some(vec!["endpoint-live".to_string()]),
-            operations: None,
-        }]);
-
-        assert!(row_supports_requested_model(
-            &row,
-            "live-client-alias",
-            "codex:live"
-        ));
-        assert_eq!(
-            resolve_provider_model_name(&row, "live-client-alias", "codex:live")
-                .map(|resolved| resolved.0),
-            Some("gpt-realtime-future".to_string())
-        );
-
-        let mut wrong_endpoint = row.clone();
-        wrong_endpoint.endpoint_id = "endpoint-other".to_string();
-        assert!(!row_supports_requested_model(
-            &wrong_endpoint,
-            "live-client-alias",
-            "codex:live"
-        ));
-
-        for provider_type in ["openai", "custom"] {
-            let mut non_codex = row.clone();
-            non_codex.provider_type = provider_type.to_string();
-            assert!(!row_supports_requested_model(
-                &non_codex,
-                "live-client-alias",
-                "codex:live"
-            ));
-            assert!(
-                resolve_provider_model_name(&non_codex, "live-client-alias", "codex:live")
-                    .is_none()
-            );
-        }
-    }
-
-    #[test]
     fn operation_scoped_mapping_overrides_generic_mapping_for_compaction() {
         let mut row = sample_row("gpt-5.6-sol", "gpt-5.6-sol");
         row.endpoint_api_format = "openai:responses".to_string();

@@ -829,13 +829,23 @@ mod tests {
             global_model_name: "gpt-5".to_string(),
             global_model_supports_streaming: Some(true),
             model_provider_model_name: "gpt-5-upstream".to_string(),
-            model_provider_model_mappings: Some(vec![StoredProviderModelMapping {
-                name: "gpt-5-upstream".to_string(),
-                priority: 1,
-                api_formats: Some(vec!["openai:chat".to_string()]),
-                endpoint_ids: None,
-                operations: None,
-            }]),
+            model_provider_model_mappings: Some(vec![
+                StoredProviderModelMapping {
+                    name: "gpt-5-upstream".to_string(),
+                    priority: 1,
+                    api_formats: Some(vec!["openai:chat".to_string()]),
+                    endpoint_ids: None,
+                    operations: None,
+                },
+                // 供应商级映射别名：客户端用 gpt-5.2 请求时解析到全局模型 gpt-5
+                StoredProviderModelMapping {
+                    name: "gpt-5.2".to_string(),
+                    priority: 1,
+                    api_formats: Some(vec!["openai:chat".to_string()]),
+                    endpoint_ids: None,
+                    operations: None,
+                },
+            ]),
             model_supports_streaming: Some(true),
             model_is_active: true,
             model_is_available: true,
@@ -1184,7 +1194,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn model_rejection_allows_cross_format_regex_mapping_to_allowed_global_model() {
+    async fn model_rejection_allows_cross_format_provider_alias_to_allowed_global_model() {
         let state = state_with_rows(vec![sample_row_for_api_format("claude:messages")]);
         let decision = decision_with_allowed_models(vec!["gpt-5".to_string()]);
         let uri: Uri = "/v1/chat/completions".parse().expect("uri should parse");
