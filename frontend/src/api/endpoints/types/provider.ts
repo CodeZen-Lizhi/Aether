@@ -594,6 +594,8 @@ export interface ProviderWithEndpointsSummary {
   endpoint_health_details: EndpointHealthDetail[]
   chat_pii_redaction?: ChatPiiRedactionProviderConfig | null
   failover_rules?: FailoverRulesConfig | null
+  ops_configured?: boolean  // 是否配置了用户认证（余额查询等）
+  ops_architecture_id?: string  // 用户认证使用的架构 ID
   responses_websocket_enabled?: boolean
   created_at: string
   updated_at: string

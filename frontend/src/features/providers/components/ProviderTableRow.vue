@@ -62,6 +62,21 @@
         >{{ legacyT('添加备注') }}</span>
       </div>
     </TableCell>
+    <TableCell class="py-3.5">
+      <ProviderBalanceCell
+        :provider="provider"
+        :is-balance-loading="isBalanceLoading"
+        :get-provider-balance="getProviderBalance"
+        :get-provider-balance-breakdown="getProviderBalanceBreakdown"
+        :get-provider-balance-error="getProviderBalanceError"
+        :get-provider-checkin="getProviderCheckin"
+        :get-provider-cookie-expired="getProviderCookieExpired"
+        :get-provider-balance-extra="getProviderBalanceExtra"
+        :format-balance-display="formatBalanceDisplay"
+        :format-reset-countdown="formatResetCountdown"
+        :get-quota-used-color-class="getQuotaUsedColorClass"
+      />
+    </TableCell>
     <TableCell class="py-3.5 text-center">
       <div class="inline-grid grid-cols-[1.75rem_1.75rem_1.75rem] gap-x-0.5 gap-y-0.5 text-xs text-left">
         <span class="text-muted-foreground/70">{{ legacyT('端点:') }}</span>
@@ -194,13 +209,25 @@ import Button from '@/components/ui/button.vue'
 import Badge from '@/components/ui/badge.vue'
 import TableRow from '@/components/ui/table-row.vue'
 import TableCell from '@/components/ui/table-cell.vue'
+import ProviderBalanceCell from './ProviderBalanceCell.vue'
 import { type ProviderWithEndpointsSummary, formatApiFormatShort } from '@/api/endpoints'
 import { sortEndpoints, isEndpointAvailable, getEndpointDotColor, getEndpointTooltip } from '@/features/providers/composables/useEndpointStatus'
+import type { BalanceExtraItem } from '@/features/providers/auth-templates'
 import { useI18n } from '@/i18n'
 
 const props = defineProps<{
   provider: ProviderWithEndpointsSummary
   editingDescriptionId: string | null
+  isBalanceLoading: (providerId: string) => boolean
+  getProviderBalance: (providerId: string) => { available: number | null; currency: string } | null
+  getProviderBalanceBreakdown: (providerId: string) => { balance: number; points: number; currency: string } | null
+  getProviderBalanceError: (providerId: string) => { status: string; message: string } | null
+  getProviderCheckin: (providerId: string) => { success: boolean | null; message: string } | null
+  getProviderCookieExpired: (providerId: string) => { expired: boolean; message: string } | null
+  getProviderBalanceExtra: (providerId: string, architectureId?: string) => BalanceExtraItem[]
+  formatBalanceDisplay: (balance: { available: number | null; currency: string } | null) => string
+  formatResetCountdown: (resetsAt: number) => string
+  getQuotaUsedColorClass: (provider: ProviderWithEndpointsSummary) => string
 }>()
 
 const emit = defineEmits<{

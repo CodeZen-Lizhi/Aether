@@ -64,6 +64,9 @@
               <TableHead class="w-[18%] min-w-[140px]">
                 {{ legacyT('提供商信息') }}
               </TableHead>
+              <TableHead class="w-[20%] min-w-[180px]">
+                {{ legacyT('余额监控') }}
+              </TableHead>
               <SortableTableHead
                 class="w-[12%] min-w-[100px] text-center"
                 column-key="model"
@@ -128,6 +131,16 @@
               :key="provider.id"
               :provider="provider"
               :editing-description-id="editingDescriptionId"
+              :is-balance-loading="isBalanceLoading"
+              :get-provider-balance="getProviderBalance"
+              :get-provider-balance-breakdown="getProviderBalanceBreakdown"
+              :get-provider-balance-error="getProviderBalanceError"
+              :get-provider-checkin="getProviderCheckin"
+              :get-provider-cookie-expired="getProviderCookieExpired"
+              :get-provider-balance-extra="getProviderBalanceExtra"
+              :format-balance-display="formatBalanceDisplay"
+              :format-reset-countdown="formatResetCountdown"
+              :get-quota-used-color-class="getQuotaUsedColorClass"
               @mousedown="handleMouseDown"
               @row-click="handleRowClick"
               @view-detail="openProviderDrawer"
@@ -224,6 +237,7 @@ import ProviderEmptyState from '@/features/providers/components/ProviderEmptySta
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useRowClick } from '@/composables/useRowClick'
+import { useProviderBalance } from '@/features/providers/composables/useProviderBalance'
 import { useProviderFilters } from '@/features/providers/composables/useProviderFilters'
 import {
   getProvidersSummary,
@@ -410,6 +424,23 @@ const {
   () => globalModels.value,
 )
 
+const {
+  loadArchitectureSchemas,
+  loadBalances,
+  getProviderBalance,
+  getProviderBalanceBreakdown,
+  getProviderBalanceError,
+  isBalanceLoading,
+  getProviderCheckin,
+  getProviderCookieExpired,
+  formatBalanceDisplay,
+  formatResetCountdown,
+  getProviderBalanceExtra,
+  getQuotaUsedColorClass,
+  startTick,
+  stopTick,
+} = useProviderBalance()
+
 // 内联编辑备注
 const editingDescriptionId = ref<string | null>(null)
 
@@ -483,6 +514,7 @@ async function loadProviders(options: { cacheTtlMs?: number } = {}) {
       return existing
     })
     total.value = response.total
+    void loadBalances(providers.value)
   } catch (err: unknown) {
     if (requestId !== providersRequestId) return
     showLegacyError(err, '加载提供商列表失败')
@@ -545,6 +577,7 @@ function mergeUpdatedProvider(updated: ProviderWithEndpointsSummary) {
   const index = providers.value.findIndex(p => p.id === updated.id)
   if (index !== -1) {
     Object.assign(providers.value[index], updated)
+    void loadBalances([providers.value[index]], false)
   }
 }
 
@@ -662,12 +695,15 @@ function handleGlobalClick(event: MouseEvent) {
 onMounted(() => {
   void loadProviders({ cacheTtlMs: PROVIDER_SUMMARY_CACHE_TTL_MS })
   void loadGlobalModelList({ cacheTtlMs: PROVIDER_MODEL_FILTER_CACHE_TTL_MS })
+  void loadArchitectureSchemas()
   document.addEventListener('click', handleGlobalClick, true)
+  startTick()
 })
 
 onUnmounted(() => {
   deletePollAbort?.abort()
   if (debounceTimer) clearTimeout(debounceTimer)
   document.removeEventListener('click', handleGlobalClick, true)
+  stopTick()
 })
 </script>
