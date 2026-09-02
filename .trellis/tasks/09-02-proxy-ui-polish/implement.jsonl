@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "重构涉及组件拆分与逻辑迁移（Dialog 表单、payload 组装、删除副作用），动手前先查重复模式"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "前端代理地址校验口径需与后端 proxy_url 解析规则对齐（apps/aether-gateway/src/state/proxy.rs）"}

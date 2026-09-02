@@ -223,3 +223,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: New API 认证方式拆分与余额查询错误透传
+<!-- trellis-session: v=2 fp=4284d6c29081be1e -->
+
+**Date**: 2026-09-02
+**Task**: New API 认证方式拆分与余额查询错误透传
+**Branch**: `slim-personal`
+
+### Summary
+
+排查 new_api 站点查余额失败：核实上游 v0.10.9 鉴权（/api/user/self 必带 New-Api-User 头、访问令牌≠sk-令牌）与 CC Switch 对照。实现：new_api 预设拆「访问令牌/Cookie」两种认证方式（user_id 必填，保留 cookie 解析 hook）；余额查询非 2xx 透传上游 message 并回退固定文案。aether-admin 210 测试全绿，gateway provider_ops 33/33；沉淀 spec 约定两条。工作树含并行任务改动，仅提交本任务 11 个文件。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a6d8f9b6f` | feat(provider-ops): New API 认证方式拆分与余额查询错误透传 |
+
+### Status
+
+[OK] **Completed**

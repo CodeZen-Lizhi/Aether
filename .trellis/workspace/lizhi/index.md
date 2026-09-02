@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-09-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~225 | Active |
+| `journal-1.md` | ~247 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-09-02 | New API 认证方式拆分与余额查询错误透传 | `a6d8f9b6f` | `slim-personal` |
 | 6 | 2026-09-02 | 仪表盘统计卡片改版：今日请求/费用/RPM 重排 | `08fa244fb` | `slim-personal` |
 | 5 | 2026-09-02 | 会话收尾检查 | - | `slim-personal` |
 | 4 | 2026-09-02 | 合并后测试编译修复 | `9e85a02fc` | `slim-personal` |
