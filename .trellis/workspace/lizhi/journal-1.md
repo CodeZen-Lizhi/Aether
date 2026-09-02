@@ -133,3 +133,39 @@
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session 4: 预存质量债修复（测试 + 前端 type-check）
+<!-- trellis-session: v=2 fp=0186ba983bc95c0d -->
+
+**Date**: 2026-09-02
+**Task**: 09-02-fix-preexisting-quality-debts
+**Branch**: `slim-personal`
+
+### Summary
+
+修复 Session 2 发现的两项预存质量债。**关键修正**：Session 2 所称"仅剩 3 个预存失败"不完整——`cargo test --workspace` 默认 fail-fast，在第一个失败目标即停；用 `--no-fail-fast` 实测 gateway lib 基线失败 29 个。
+
+- **Phase A（43455c6eb）**：3 个原报失败均为 111929e72（单用户化快照）删除语义后漏改的废弃测试（CodexLive 格式 ×2、ClaudeReadToolSanitize 流式模式 ×1）→ 删除；另修复需求落地连带失败 7 个（gate ×3 改走供应商映射别名路径、candidate_source ×2、路由预览白名单 fixture、hotrouter 签到遗留）。gateway lib 失败 32 → 25（剩余全部为开工前基线）。
+- **Phase B（e45ea6d47 / 9ce8221f2 / ae57b8ab2 / b0a6e4e68）**：前端预存类型错误 358 → 0（`vue-tsc -b`）。系统性根因：ApiClient HTTP 方法默认泛型 `unknown`（对齐 axios 改 `any`）+ `handleResponseError` 返回类型；其余为逐文件的组件/测试类型债（class 数组绑定、Timeout 声明、findLastIndex 兼容、TDZ 自引用、spec mock 收窄、模型 config.billing.video 类型化读取等）。**type-check 脚本已从空跑的 `vue-tsc --noEmit` 切换为 `vue-tsc -b`**（solution-style 根 tsconfig 下前者不检查任何文件）。
+- vitest 616 全过（并行会话同期删除 api-keys 规格文件致基数下降）、vite build 通过。
+
+### 交接（非本任务范围）
+
+- gateway lib 预存基线失败 ~25 个（execution_runtime stream 的 mock SSE JSON 截断 EOF ×16 为主，疑似单一根因）；并行会话 slim 阶段 3/4 又新增 6 个失败（auth resolution/data startup/redirect 等，其工作面）
+- 全仓测试验证必须加 `--no-fail-fast`，否则只能看到第一个失败目标
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `43455c6eb` | test: 清理废弃语义测试并修复需求落地连带失败 |
+| `e45ea6d47` | fix(frontend): ApiClient 默认泛型 unknown 改为 any |
+| `9ce8221f2` | fix(frontend): 预存类型错误清理第一批 |
+| `ae57b8ab2` | fix(frontend): 预存类型错误清理第二批 |
+| `b0a6e4e68` | fix(frontend): 预存类型错误清理第三批 — 清零并将 type-check 切换为 vue-tsc -b |
+
+### Status
+
+[OK] **Completed**
