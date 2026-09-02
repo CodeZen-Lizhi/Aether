@@ -4341,6 +4341,34 @@ mod tests {
             .expect("direct reqwest env lock")
     }
 
+    fn direct_timeout_plan(
+        url: String,
+        stream: bool,
+        timeouts: ExecutionTimeouts,
+    ) -> ExecutionPlan {
+        ExecutionPlan {
+            request_id: "req-direct-timeout".into(),
+            candidate_id: None,
+            provider_name: Some("provider".into()),
+            provider_id: "prov-direct-timeout".into(),
+            endpoint_id: "ep-direct-timeout".into(),
+            key_id: "key-direct-timeout".into(),
+            method: "POST".into(),
+            url,
+            headers: BTreeMap::from([("content-type".into(), "application/json".into())]),
+            content_type: Some("application/json".into()),
+            content_encoding: None,
+            body: RequestBody::from_json(json!({"model": "gpt-4.1"})),
+            stream,
+            client_api_format: "openai:chat".into(),
+            provider_api_format: "openai:chat".into(),
+            model_name: Some("gpt-4.1".into()),
+            proxy: None,
+            transport_profile: None,
+            timeouts: Some(timeouts),
+        }
+    }
+
     fn tunnel_proxy_snapshot(base_url: String) -> ProxySnapshot {
         ProxySnapshot {
             enabled: Some(true),

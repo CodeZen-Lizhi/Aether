@@ -559,7 +559,6 @@ mod tests {
             key_id: "key-1".to_string(),
             key_name: "key".to_string(),
             key_auth_type: "bearer".to_string(),
-            provider_priority: 0,
             key_internal_priority: 0,
             key_global_priority_for_format: None,
             key_capabilities: None,

@@ -89,8 +89,8 @@ fn builds_openai_chat_cross_format_request_body_from_openai_responses_source() {
         false,
         "openai",
         None,
-        &http::HeaderMap::new(),
         None,
+        &http::HeaderMap::new(),
         false,
     )
     .expect("openai responses to openai chat body should build");
@@ -134,8 +134,8 @@ fn maps_openai_responses_additional_tools_without_message_name() {
         false,
         "openai",
         None,
-        &http::HeaderMap::new(),
         None,
+        &http::HeaderMap::new(),
         false,
     )
     .expect("Responses additional tools should map to a Chat request body");
@@ -225,6 +225,7 @@ fn local_openai_responses_wrapper_defers_reasoning_replay_filtering() {
         "codex",
         "openai:responses",
         None,
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -289,6 +290,7 @@ fn local_openai_responses_wrapper_applies_model_directive_before_body_rules() {
         "openai",
         "openai:responses",
         Some(&body_rules),
+        None,
         &http::HeaderMap::new(),
         true,
     )
@@ -314,6 +316,7 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         "openai",
         "openai:responses",
         None,
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -325,6 +328,7 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         false,
         "openai",
         "openai:responses",
+        None,
         None,
         &http::HeaderMap::new(),
         false,
@@ -363,6 +367,7 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         "openai",
         "openai:responses",
         None,
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -374,6 +379,7 @@ fn final_openai_provider_contract_uses_the_mapped_model_for_reasoning() {
         false,
         "openai",
         "openai:responses",
+        None,
         None,
         &http::HeaderMap::new(),
         false,
@@ -399,6 +405,7 @@ fn final_openai_provider_contract_validates_body_rule_output() {
         "openai",
         "openai:responses",
         Some(&model_override),
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -417,6 +424,7 @@ fn final_openai_provider_contract_validates_body_rule_output() {
         "openai",
         "openai:responses",
         Some(&cache_override),
+        None,
         &http::HeaderMap::new(),
         false,
     )
@@ -495,8 +503,8 @@ fn openai_chat_to_codex_responses_preserves_json_mode_chat_messages() {
         false,
         "codex",
         None,
-        &http::HeaderMap::new(),
         None,
+        &http::HeaderMap::new(),
         false,
     )
     .expect("openai chat to codex responses request should build");
@@ -542,8 +550,8 @@ fn applies_codex_defaults_unless_body_rules_handle_the_field() {
         false,
         "codex",
         Some(&body_rules),
-        &http::HeaderMap::new(),
         None,
+        &http::HeaderMap::new(),
         false,
     )
     .expect("claude cli to codex request should build");
@@ -572,9 +580,8 @@ fn omits_codex_prompt_cache_key_for_openai_responses_cross_format_requests() {
         false,
         "codex",
         None,
-        None,
-        &http::HeaderMap::new(),
         Some("key-123"),
+        &http::HeaderMap::new(),
         false,
     )
     .expect("claude cli to codex request should build");

@@ -7124,6 +7124,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .expect("key transport should build");
 
@@ -8535,31 +8536,6 @@ mod tests {
             panic!("HTTP stop policy should return the upstream error");
         };
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    fn tunnel_proxy_snapshot(base_url: String) -> aether_contracts::ProxySnapshot {
-        aether_contracts::ProxySnapshot {
-            enabled: Some(true),
-            mode: Some("tunnel".into()),
-            node_id: Some("node-1".into()),
-            label: Some("relay-node".into()),
-            url: None,
-            extra: Some(json!({"tunnel_base_url": base_url})),
-        }
-    }
-
-    fn connect_json_frame(flags: u8, payload: &[u8]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(5 + payload.len());
-        out.push(flags);
-        out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-        out.extend_from_slice(payload);
-        out
-    }
-
-    fn ndjson_frame(frame: StreamFrame) -> Bytes {
-        let mut bytes = serde_json::to_vec(&frame).expect("stream frame should serialize");
-        bytes.push(b'\n');
-        Bytes::from(bytes)
     }
 
     #[test]
