@@ -350,7 +350,7 @@ async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_princ
         json!(["openai:chat", "openai:responses"])
     );
     assert_eq!(payload["ops_configured"], true);
-    assert_eq!(payload["ops_architecture_id"], "anyrouter");
+    assert_eq!(payload["ops_architecture_id"], "generic_api");
     assert_eq!(payload["chat_pii_redaction"], json!({"enabled": true}));
     assert_eq!(payload["kiro_simulated_cache_enabled"], true);
     assert_eq!(payload["created_at"], "2024-03-21T05:46:40Z");
@@ -865,7 +865,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
     assert_eq!(payload["failover_rules"], json!({"strategy": "ordered"}));
     assert_eq!(payload["chat_pii_redaction"], json!({"enabled": true}));
     assert_eq!(payload["ops_configured"], true);
-    assert_eq!(payload["ops_architecture_id"], "cubence");
+    assert_eq!(payload["ops_architecture_id"], "generic_api");
 
     let invalid_timeout_response = reqwest::Client::new()
         .patch(format!("{gateway_url}/api/admin/providers/provider-openai"))
@@ -935,7 +935,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
         disable_payload["failover_rules"],
         json!({"strategy": "ordered"})
     );
-    assert_eq!(disable_payload["ops_architecture_id"], "cubence");
+    assert_eq!(disable_payload["ops_architecture_id"], "generic_api");
 
     let invalid_response = reqwest::Client::new()
         .patch(format!("{gateway_url}/api/admin/providers/provider-openai"))

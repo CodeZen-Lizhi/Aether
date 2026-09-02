@@ -100,15 +100,7 @@ fn assert_provider_ops_architectures_payload(payload: &serde_json::Value) {
         .collect::<Vec<_>>();
 
     assert_eq!(architecture_ids, expected_ids);
-    assert!(items
-        .iter()
-        .all(|item| item["architecture_id"] != "generic_api"));
-
-    let anyrouter = items
-        .iter()
-        .find(|item| item["architecture_id"] == "anyrouter")
-        .expect("anyrouter architecture should exist");
-    assert_eq!(anyrouter["default_connector"], "cookie");
+    assert_eq!(architecture_ids, vec!["new_api", "sub2api", "usage_api"]);
 
     let new_api = items
         .iter()
@@ -343,7 +335,7 @@ async fn gateway_handles_admin_provider_ops_status_locally_with_trusted_admin_pr
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["provider_id"], "provider-openai");
     assert_eq!(payload["is_configured"], true);
-    assert_eq!(payload["architecture_id"], "anyrouter");
+    assert_eq!(payload["architecture_id"], "generic_api");
     assert_eq!(payload["connection_status"]["status"], "disconnected");
     assert_eq!(payload["connection_status"]["auth_type"], "cookie");
     assert_eq!(
@@ -446,7 +438,7 @@ async fn gateway_handles_admin_provider_ops_config_locally_with_trusted_admin_pr
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["provider_id"], "provider-openai");
     assert_eq!(payload["is_configured"], true);
-    assert_eq!(payload["architecture_id"], "cubence");
+    assert_eq!(payload["architecture_id"], "generic_api");
     assert_eq!(payload["base_url"], "https://api.openai.example");
     assert_eq!(payload["connector"]["auth_type"], "session_login");
     assert_eq!(payload["connector"]["config"]["username"], "alice");
@@ -589,7 +581,7 @@ async fn gateway_saves_admin_provider_ops_config_locally_with_trusted_admin_prin
         .expect("provider ops config should exist");
     assert_eq!(
         provider_ops.get("architecture_id"),
-        Some(&json!("anyrouter"))
+        Some(&json!("generic_api"))
     );
     assert_eq!(
         provider_ops.get("base_url"),
@@ -891,6 +883,7 @@ async fn gateway_verifies_admin_provider_ops_locally_for_generic_api_with_truste
 }
 
 #[test]
+#[ignore = "Anyrouter architecture preset was removed"]
 fn gateway_verifies_admin_provider_ops_locally_for_anyrouter_with_trusted_admin_principal() {
     run_provider_ops_test(
         "gateway_verifies_admin_provider_ops_locally_for_anyrouter_with_trusted_admin_principal",
@@ -1030,6 +1023,7 @@ async fn gateway_verifies_admin_provider_ops_locally_for_anyrouter_with_trusted_
 }
 
 #[test]
+#[ignore = "Anyrouter architecture preset was removed"]
 fn gateway_verifies_admin_provider_ops_locally_for_anyrouter_with_cookie_auth_failure_message() {
     run_provider_ops_test(
         "gateway_verifies_admin_provider_ops_locally_for_anyrouter_with_cookie_auth_failure_message",
@@ -1128,6 +1122,7 @@ async fn gateway_verifies_admin_provider_ops_locally_for_anyrouter_with_cookie_a
 }
 
 #[test]
+#[ignore = "Anyrouter architecture preset was removed"]
 fn gateway_verifies_admin_provider_ops_locally_for_anyrouter_when_acw_redirect_body_contains_arg1()
 {
     run_provider_ops_test(
@@ -1261,6 +1256,7 @@ async fn gateway_verifies_admin_provider_ops_locally_for_anyrouter_when_acw_redi
 }
 
 #[test]
+#[ignore = "Anyrouter architecture preset was removed"]
 fn gateway_verifies_admin_provider_ops_locally_for_anyrouter_proxy_mode() {
     run_provider_ops_test(
         "gateway_verifies_admin_provider_ops_locally_for_anyrouter_proxy_mode",
@@ -3485,9 +3481,9 @@ async fn gateway_handles_admin_provider_ops_batch_balance_locally_with_trusted_a
                         }
                     }
                 }))),
-            sample_provider("provider-anyrouter", "openai", 20).with_transport_fields(true, true, None, None, None, None, None, Some(json!({
+            sample_provider("provider-generic", "openai", 20).with_transport_fields(true, true, None, None, None, None, None, Some(json!({
                     "provider_ops": {
-                        "architecture_id": "anyrouter",
+                        "architecture_id": "generic_api",
                         "base_url": ops_url,
                         "connector": {
                             "auth_type": "cookie",
@@ -3528,7 +3524,7 @@ async fn gateway_handles_admin_provider_ops_batch_balance_locally_with_trusted_a
         .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
         .json(&json!([
             "provider-openai",
-            "provider-anyrouter",
+            "provider-generic",
             "provider-missing"
         ]))
         .send()
@@ -3539,18 +3535,15 @@ async fn gateway_handles_admin_provider_ops_batch_balance_locally_with_trusted_a
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["provider-openai"]["status"], "success");
     assert_eq!(payload["provider-openai"]["data"]["total_available"], 5.0);
-    assert_eq!(payload["provider-anyrouter"]["status"], "success");
+    assert_eq!(payload["provider-generic"]["status"], "success");
+    assert_eq!(payload["provider-generic"]["data"]["total_available"], 5.0);
     assert_eq!(
-        payload["provider-anyrouter"]["data"]["total_available"],
-        7.0
-    );
-    assert_eq!(
-        payload["provider-anyrouter"]["data"]["extra"]["checkin_success"],
+        payload["provider-generic"]["data"]["extra"]["checkin_success"],
         true
     );
     assert_eq!(
-        payload["provider-anyrouter"]["data"]["extra"]["checkin_message"],
-        "Anyrouter 签到成功"
+        payload["provider-generic"]["data"]["extra"]["checkin_message"],
+        "签到成功"
     );
     assert_eq!(payload["provider-missing"]["status"], "not_configured");
     assert_eq!(payload["provider-missing"]["message"], "未配置操作设置");
@@ -3562,6 +3555,7 @@ async fn gateway_handles_admin_provider_ops_batch_balance_locally_with_trusted_a
 }
 
 #[test]
+#[ignore = "Anyrouter architecture preset was removed"]
 fn gateway_handles_admin_provider_ops_anyrouter_balance_with_auth_expired_cookie() {
     run_provider_ops_test(
         "gateway_handles_admin_provider_ops_anyrouter_balance_with_auth_expired_cookie",

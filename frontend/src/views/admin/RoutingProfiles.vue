@@ -77,10 +77,10 @@
               </button>
             </div>
             <p
-              v-if="mode === 'cost_based' && !anyKeyHasMultiplier"
-              class="mt-2 text-xs text-amber-600"
+              v-if="mode === 'cost_based'"
+              class="mt-2 text-xs text-muted-foreground"
             >
-              成本优先按 Key 倍率排序——当前还没有 Key 配置倍率，展开下方供应商先设置倍率。
+              成本优先按供应商 Key 的倍率排序，请在供应商管理中设置倍率。
             </p>
           </div>
 
@@ -110,7 +110,7 @@
                 v-for="(provider, index) in orderedProviders"
                 :key="provider.id"
                 class="rounded-lg border border-border bg-background"
-                :draggable="!expandedProviderId"
+                draggable="true"
                 @dragstart="onDragStart($event, index)"
                 @dragover.prevent
                 @drop="onDrop($event, index)"
@@ -122,11 +122,7 @@
                     {{ index + 1 }}
                   </span>
                   <GripVertical class="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" />
-                  <button
-                    type="button"
-                    class="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    @click="toggleExpand(provider.id)"
-                  >
+                  <div class="flex min-w-0 flex-1 items-center gap-2 text-left">
                     <span class="truncate text-sm font-medium">{{ provider.name }}</span>
                     <Badge
                       v-if="!provider.is_active"
@@ -135,10 +131,7 @@
                     >
                       已停用
                     </Badge>
-                    <span class="shrink-0 text-xs text-muted-foreground">
-                      {{ providerKeyCount(provider.id) }} 个 Key
-                    </span>
-                  </button>
+                  </div>
                   <div class="flex shrink-0 items-center gap-1">
                     <Button
                       variant="ghost"
@@ -160,77 +153,6 @@
                     >
                       <ChevronDown class="h-4 w-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7"
-                      :aria-label="expandedProviderId === provider.id ? '收起 Key' : '展开 Key'"
-                      @click="toggleExpand(provider.id)"
-                    >
-                      <ChevronDown
-                        class="h-4 w-4 transition-transform"
-                        :class="{ 'rotate-180': expandedProviderId === provider.id }"
-                      />
-                    </Button>
-                  </div>
-                </div>
-
-                <!-- Key 行内展开：优先级 + 倍率 -->
-                <div
-                  v-if="expandedProviderId === provider.id"
-                  class="border-t bg-muted/20 px-3 py-3"
-                >
-                  <p
-                    v-if="providerKeys(provider.id).length === 0"
-                    class="py-2 text-xs text-muted-foreground"
-                  >
-                    该供应商还没有 Key
-                  </p>
-                  <div
-                    v-else
-                    class="space-y-2"
-                  >
-                    <div
-                      v-for="key in providerKeys(provider.id)"
-                      :key="key.id"
-                      class="rounded-md border border-border/60 bg-background px-3 py-2"
-                    >
-                      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <span class="min-w-0 flex-1 truncate text-xs font-medium">
-                          {{ key.name || key.api_key_masked || key.id }}
-                        </span>
-                        <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          优先级
-                          <Input
-                            v-model.number="keyPriorities[key.id]"
-                            type="number"
-                            min="1"
-                            class="h-7 w-16 text-xs"
-                            :disabled="!key.is_active"
-                            @change="touchKeyPriority(key.id)"
-                          />
-                        </label>
-                        <label
-                          v-for="format in key.api_formats"
-                          :key="format"
-                          class="flex items-center gap-1.5 text-xs text-muted-foreground"
-                        >
-                          {{ formatLabel(format) }} 倍率
-                          <Input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            class="h-7 w-16 text-xs"
-                            :value="keyMultiplier(key, format)"
-                            :disabled="!key.is_active"
-                            @change="saveKeyMultiplier(key, format, $event)"
-                          />
-                        </label>
-                      </div>
-                    </div>
-                    <p class="text-[11px] leading-relaxed text-muted-foreground">
-                      优先级只在同一供应商内平级决胜；倍率供成本优先排序（留空按 1.0）。
-                    </p>
                   </div>
                 </div>
               </li>
@@ -246,7 +168,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-vue-next'
 
-import { Badge, Button, Input, TableCard } from '@/components/ui'
+import { Badge, Button, TableCard } from '@/components/ui'
 import { PageContainer } from '@/components/layout'
 import {
   listRoutingGroups,
@@ -256,17 +178,11 @@ import {
   type RoutingGroupRecord,
 } from '@/api/routing-profiles'
 import { listAdminProviders, type AdminProviderListItem } from '@/api/endpoints/providers'
-import {
-  getEndpointKeysGroupedByFormat,
-  updateProviderKey,
-  type GroupedEndpointKey,
-} from '@/api/endpoints/keys'
 import type { RoutingGroupConfig } from '@/features/routing/utils/routingPolicy'
 import {
   buildSchedulingStrategyConfig,
   findSystemDefaultRoutingGroup,
   parseSchedulingStrategy,
-  prioritiesFromOrder,
   type SchedulingStrategyMode,
 } from '@/features/routing/utils/schedulingStrategy'
 import { useToast } from '@/composables/useToast'
@@ -304,10 +220,9 @@ const saving = ref(false)
 const loadError = ref<string | null>(null)
 const mode = ref<SchedulingStrategyMode>('cache_affinity')
 const providers = ref<AdminProviderListItem[]>([])
-const keys = ref<GroupedEndpointKey[]>([])
 const orderedProviderIds = ref<string[]>([])
+// 保留已存在的 Key 优先级覆盖，页面不再提供重复编辑入口。
 const keyPriorities = ref<Record<string, number>>({})
-const expandedProviderId = ref<string | null>(null)
 const systemDefaultGroup = ref<RoutingGroupRecord | null>(null)
 const savedSnapshot = ref<string | null>(null)
 
@@ -327,13 +242,6 @@ const orderedProviders = computed(() => {
   return ordered
 })
 
-const anyKeyHasMultiplier = computed(() =>
-  keys.value.some(
-    key => key.rate_multipliers
-      && Object.values(key.rate_multipliers).some(value => Number.isFinite(value) && value !== 1),
-  ),
-)
-
 const dirty = computed(() => currentSnapshot() !== savedSnapshot.value)
 
 function currentSnapshot(): string {
@@ -342,27 +250,6 @@ function currentSnapshot(): string {
     order: orderedProviderIds.value,
     keyPriorities: keyPriorities.value,
   })
-}
-
-function providerKeys(providerId: string): GroupedEndpointKey[] {
-  return keys.value.filter(key => key.provider_id === providerId)
-}
-
-function providerKeyCount(providerId: string): number {
-  return providerKeys(providerId).length
-}
-
-function keyMultiplier(key: GroupedEndpointKey, format: string): number | null {
-  const value = key.rate_multipliers?.[format]
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function formatLabel(format: string): string {
-  return format.split(':')[0] || format
-}
-
-function toggleExpand(providerId: string) {
-  expandedProviderId.value = expandedProviderId.value === providerId ? null : providerId
 }
 
 function setMode(next: SchedulingStrategyMode) {
@@ -375,10 +262,6 @@ function moveProvider(index: number, direction: -1 | 1) {
   const next = [...orderedProviderIds.value]
   ;[next[index], next[target]] = [next[target], next[index]]
   orderedProviderIds.value = next
-  keyPriorities.value = {
-    ...keyPriorities.value,
-    ...prioritiesFromOrder(orderedProviderIds.value),
-  }
 }
 
 let dragFromIndexValue: number | null = null
@@ -398,53 +281,17 @@ function onDrop(event: DragEvent, targetIndex: number) {
   const [moved] = next.splice(fromIndex, 1)
   next.splice(targetIndex, 0, moved)
   orderedProviderIds.value = next
-  keyPriorities.value = {
-    ...keyPriorities.value,
-    ...prioritiesFromOrder(orderedProviderIds.value),
-  }
-}
-
-function touchKeyPriority(keyId: string) {
-  const value = keyPriorities.value[keyId]
-  if (!Number.isFinite(value) || (value ?? 0) <= 0) {
-    delete keyPriorities.value[keyId]
-  }
-  keyPriorities.value = { ...keyPriorities.value }
-}
-
-async function saveKeyMultiplier(key: GroupedEndpointKey, format: string, event: Event) {
-  const raw = (event.target as HTMLInputElement).value
-  const parsed = Number.parseFloat(raw)
-  const merged: Record<string, number> = { ...(key.rate_multipliers ?? {}) }
-  if (Number.isFinite(parsed) && parsed > 0) {
-    merged[format] = parsed
-  } else {
-    delete merged[format]
-  }
-  try {
-    await updateProviderKey(key.id, { rate_multipliers: merged })
-    key.rate_multipliers = Object.keys(merged).length > 0 ? merged : null
-    success('倍率已保存')
-  } catch (err) {
-    log.error('failed to save key rate multiplier', err)
-    showError(parseApiError(err, '倍率保存失败'))
-  }
 }
 
 async function loadStrategy() {
   loading.value = true
   loadError.value = null
   try {
-    const [groupsResponse, providerList, keyList] = await Promise.all([
+    const [groupsResponse, providerList] = await Promise.all([
       listRoutingGroups(),
       listAdminProviders(),
-      getEndpointKeysGroupedByFormat().catch(err => {
-        log.warn('grouped keys unavailable', err)
-        return [] as GroupedEndpointKey[]
-      }),
     ])
     providers.value = providerList
-    keys.value = keyList
 
     const group = findSystemDefaultRoutingGroup(groupsResponse.items)
     systemDefaultGroup.value = group

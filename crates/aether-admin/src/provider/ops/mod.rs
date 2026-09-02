@@ -5,7 +5,7 @@ pub mod verify;
 
 pub use self::actions::{
     attach_balance_checkin_outcome, parse_query_balance_payload, parse_sub2api_balance_payload,
-    parse_yescode_combined_balance_payload, ProviderOpsCheckinOutcome,
+    ProviderOpsCheckinOutcome,
 };
 pub use self::architectures::{
     admin_provider_ops_is_supported_auth_type, get_architecture, list_architectures,
@@ -19,12 +19,10 @@ pub use self::config::{
     resolve_admin_provider_ops_base_url,
 };
 pub use self::verify::{
-    admin_provider_ops_anyrouter_compute_acw_sc_v2,
-    admin_provider_ops_anyrouter_parse_session_user_id, admin_provider_ops_extract_cookie_value,
     admin_provider_ops_frontend_updated_credentials, admin_provider_ops_json_object,
     admin_provider_ops_value_as_f64, admin_provider_ops_value_as_u64,
     admin_provider_ops_verify_failure, admin_provider_ops_verify_headers,
     admin_provider_ops_verify_success, admin_provider_ops_verify_user_payload,
-    admin_provider_ops_verify_user_payload_with_usage, admin_provider_ops_yescode_cookie_header,
-    build_headers, parse_verify_payload, ADMIN_PROVIDER_OPS_USER_AGENT,
+    admin_provider_ops_verify_user_payload_with_usage, build_headers, parse_verify_payload,
+    ADMIN_PROVIDER_OPS_USER_AGENT,
 };

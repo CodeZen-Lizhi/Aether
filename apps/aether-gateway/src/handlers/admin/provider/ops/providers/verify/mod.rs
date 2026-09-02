@@ -9,9 +9,7 @@ use aether_admin::provider::ops::{
 };
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogProvider;
 
-pub(super) use proxy::{
-    admin_provider_ops_anyrouter_acw_cookie, admin_provider_ops_resolve_proxy_snapshot,
-};
+pub(super) use proxy::admin_provider_ops_resolve_proxy_snapshot;
 pub(super) use request::{
     admin_provider_ops_execute_json_request, admin_provider_ops_execute_proxy_json_request,
     AdminProviderOpsExecuteJsonError,
@@ -52,19 +50,7 @@ pub(super) async fn admin_provider_ops_local_verify_response(
         .await;
     }
 
-    let mut resolved_config = config.clone();
-    if architecture.architecture_id == "anyrouter" {
-        if let Some(challenge) =
-            proxy::admin_provider_ops_anyrouter_acw_cookie(state, base_url, Some(config)).await
-        {
-            resolved_config.insert(
-                "acw_cookie".to_string(),
-                serde_json::Value::String(challenge.acw_cookie),
-            );
-        }
-    }
-
-    let headers = match build_headers(architecture.architecture_id, &resolved_config, credentials) {
+    let headers = match build_headers(architecture.architecture_id, config, credentials) {
         Ok(headers) => headers,
         Err(message) => return admin_provider_ops_verify_failure(message),
     };

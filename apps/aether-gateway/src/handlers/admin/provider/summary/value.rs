@@ -6,6 +6,7 @@ use crate::handlers::admin::shared::unix_secs_to_rfc3339;
 use crate::handlers::public::{request_candidate_event_unix_ms, request_candidate_status_label};
 use crate::orchestration::{codex_cyber_flag_passthrough_enabled, responses_websocket_adapter};
 use crate::provider_key_auth::provider_key_effective_api_formats;
+use aether_admin::provider::ops::normalize_architecture_id;
 use aether_data_contracts::repository::candidates::{
     RequestCandidateStatus, StoredRequestCandidate,
 };
@@ -140,6 +141,7 @@ pub(crate) fn build_admin_provider_summary_value(
         .and_then(serde_json::Value::as_object)
         .and_then(|cfg| cfg.get("architecture_id"))
         .and_then(serde_json::Value::as_str)
+        .map(normalize_architecture_id)
         .map(ToOwned::to_owned);
     let kiro_simulated_cache_enabled = config
         .and_then(|cfg| cfg.get("kiro"))

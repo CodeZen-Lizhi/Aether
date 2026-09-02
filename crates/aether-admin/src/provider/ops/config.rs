@@ -1,3 +1,4 @@
+use super::architectures::normalize_architecture_id;
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogProvider,
 };
@@ -82,6 +83,11 @@ pub fn build_admin_provider_ops_status_payload(
     provider: Option<&StoredProviderCatalogProvider>,
 ) -> serde_json::Value {
     let provider_ops_config = provider.and_then(admin_provider_ops_config_object);
+    let architecture_id = provider_ops_config
+        .and_then(|config| config.get("architecture_id"))
+        .and_then(serde_json::Value::as_str)
+        .map(normalize_architecture_id)
+        .unwrap_or("generic_api");
     let auth_type = provider_ops_config
         .and_then(admin_provider_ops_connector_object)
         .and_then(|connector| connector.get("auth_type"))
@@ -115,12 +121,7 @@ pub fn build_admin_provider_ops_status_payload(
     json!({
         "provider_id": provider_id,
         "is_configured": provider_ops_config.is_some(),
-        "architecture_id": provider_ops_config.map(|config| {
-            config
-                .get("architecture_id")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("generic_api")
-        }),
+        "architecture_id": provider_ops_config.map(|_| architecture_id),
         "connection_status": {
             "status": "disconnected",
             "auth_type": auth_type,

@@ -412,6 +412,7 @@ const hasExistingConfig = ref(false)
 // 架构列表（从后端获取）
 const architectures = ref<ArchitectureInfo[]>([])
 const architecturesLoaded = ref(false)
+const SUPPORTED_ARCHITECTURE_IDS = new Set(['new_api', 'sub2api', 'usage_api'])
 
 // 当前选择
 const selectedArchitectureId = ref('new_api')
@@ -830,7 +831,10 @@ function loadQuotaAlert(value: unknown) {
 async function ensureArchitecturesLoaded(): Promise<void> {
   if (architecturesLoaded.value) return
   try {
-    architectures.value = await getArchitectures()
+    const availableArchitectures = await getArchitectures()
+    architectures.value = availableArchitectures.filter((architecture) =>
+      SUPPORTED_ARCHITECTURE_IDS.has(architecture.architecture_id)
+    )
     architecturesLoaded.value = true
   } catch {
     architectures.value = []

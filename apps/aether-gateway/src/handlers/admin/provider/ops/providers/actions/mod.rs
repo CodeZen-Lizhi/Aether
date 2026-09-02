@@ -8,9 +8,7 @@ use super::config::{
     admin_provider_ops_decrypted_credentials, resolve_admin_provider_ops_base_url,
 };
 use super::support::ADMIN_PROVIDER_OPS_ACTION_RUST_ONLY_MESSAGE;
-use super::verify::{
-    admin_provider_ops_anyrouter_acw_cookie, admin_provider_ops_resolve_proxy_snapshot,
-};
+use super::verify::admin_provider_ops_resolve_proxy_snapshot;
 use crate::handlers::admin::request::AdminAppState;
 use aether_admin::provider::ops::{
     build_headers, get_architecture, normalize_architecture_id, resolve_action_config,
@@ -66,21 +64,11 @@ pub(crate) async fn admin_provider_ops_local_action_response(
         );
     };
 
-    let mut connector_config = admin_provider_ops_connector_object(provider_ops_config)
+    let connector_config = admin_provider_ops_connector_object(provider_ops_config)
         .and_then(|connector| connector.get("config"))
         .and_then(serde_json::Value::as_object)
         .cloned()
         .unwrap_or_default();
-    if architecture_id == "anyrouter" {
-        if let Some(challenge) =
-            admin_provider_ops_anyrouter_acw_cookie(state, &base_url, Some(&connector_config)).await
-        {
-            connector_config.insert(
-                "acw_cookie".to_string(),
-                serde_json::Value::String(challenge.acw_cookie),
-            );
-        }
-    }
     let proxy_snapshot =
         admin_provider_ops_resolve_proxy_snapshot(state, Some(&connector_config)).await;
 

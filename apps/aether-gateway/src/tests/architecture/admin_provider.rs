@@ -939,10 +939,8 @@ fn admin_provider_ops_actions_mod_stays_thin() {
     );
     for pattern in [
         "mod sub2api;",
-        "mod yescode;",
         "pub(super) async fn admin_provider_ops_run_query_balance_action(",
         "parse_query_balance_payload(",
-        "yescode::admin_provider_ops_yescode_balance_payload(",
         "sub2api::admin_provider_ops_sub2api_balance_payload(",
     ] {
         assert!(
@@ -960,7 +958,6 @@ fn admin_provider_ops_actions_mod_stays_thin() {
     for pattern in [
         "pub fn parse_query_balance_payload(",
         "pub fn parse_sub2api_balance_payload(",
-        "pub fn parse_yescode_combined_balance_payload(",
         "pub fn attach_balance_checkin_outcome(",
     ] {
         assert!(
@@ -968,13 +965,11 @@ fn admin_provider_ops_actions_mod_stays_thin() {
             "crates/aether-admin/src/provider/ops/actions.rs should own {pattern}"
         );
     }
-    let actions_query_balance_yescode = read_workspace_file(
-        "apps/aether-gateway/src/handlers/admin/provider/ops/providers/actions/query_balance/yescode.rs",
-    );
     assert!(
-        actions_query_balance_yescode
-            .contains("pub(super) async fn admin_provider_ops_yescode_balance_payload("),
-        "handlers/admin/provider/ops/providers/actions/query_balance/yescode.rs should own yescode balance flow"
+        !workspace_file_exists(
+            "apps/aether-gateway/src/handlers/admin/provider/ops/providers/actions/query_balance/yescode.rs"
+        ),
+        "handlers/admin/provider/ops/providers/actions/query_balance/yescode.rs should be removed with the yescode preset"
     );
     assert!(
         !workspace_file_exists(
@@ -1004,16 +999,10 @@ fn admin_provider_ops_verify_runtime_and_pure_owners_stay_explicit() {
     let verify_proxy = read_workspace_file(
         "apps/aether-gateway/src/handlers/admin/provider/ops/providers/verify/proxy.rs",
     );
-    for pattern in [
-        "struct AdminProviderOpsAnyrouterChallenge",
-        "fn admin_provider_ops_anyrouter_acw_cookie(",
-        "fn admin_provider_ops_resolve_proxy_snapshot(",
-    ] {
-        assert!(
-            verify_proxy.contains(pattern),
-            "handlers/admin/provider/ops/providers/verify/proxy.rs should own {pattern}"
-        );
-    }
+    assert!(
+        verify_proxy.contains("fn admin_provider_ops_resolve_proxy_snapshot("),
+        "handlers/admin/provider/ops/providers/verify/proxy.rs should own proxy resolution"
+    );
 
     let verify_request = read_workspace_file(
         "apps/aether-gateway/src/handlers/admin/provider/ops/providers/verify/request.rs",

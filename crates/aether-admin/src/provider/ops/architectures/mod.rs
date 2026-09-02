@@ -1,12 +1,7 @@
-mod anyrouter;
-mod cubence;
-mod done_hub;
 mod generic_api;
-mod nekocode;
 mod new_api;
 mod sub2api;
 mod usage_api;
-mod yescode;
 
 use serde_json::{json, Map, Value};
 use std::sync::LazyLock;
@@ -20,7 +15,6 @@ pub enum ProviderOpsVerifyMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderOpsBalanceMode {
     SingleRequest,
-    YescodeCombined,
     Sub2ApiDualRequest,
 }
 
@@ -92,15 +86,10 @@ impl ProviderOpsArchitectureSpec {
 static PROVIDER_OPS_ARCHITECTURES: LazyLock<Vec<ProviderOpsArchitectureSpec>> =
     LazyLock::new(|| {
         vec![
-            anyrouter::spec(),
-            cubence::spec(),
-            done_hub::spec(),
             generic_api::spec(),
-            nekocode::spec(),
             new_api::spec(),
             sub2api::spec(),
             usage_api::spec(),
-            yescode::spec(),
         ]
     });
 
@@ -125,11 +114,6 @@ pub fn normalize_architecture_id(architecture_id: &str) -> &'static str {
         "" => "generic_api",
         "generic_api" => "generic_api",
         "new_api" => "new_api",
-        "cubence" => "cubence",
-        "done_hub" => "done_hub",
-        "yescode" => "yescode",
-        "nekocode" => "nekocode",
-        "anyrouter" => "anyrouter",
         "sub2api" => "sub2api",
         "usage_api" => "usage_api",
         _ => "generic_api",
@@ -182,15 +166,10 @@ fn provider_action_config_object<'a>(
 
 fn default_action_config(architecture_id: &str, action_type: &str) -> Option<Map<String, Value>> {
     match architecture_id {
-        "anyrouter" => anyrouter::default_action_config(action_type),
-        "cubence" => cubence::default_action_config(action_type),
-        "done_hub" => done_hub::default_action_config(action_type),
         "generic_api" => generic_api::default_action_config(action_type),
-        "nekocode" => nekocode::default_action_config(action_type),
         "new_api" => new_api::default_action_config(action_type),
         "sub2api" => sub2api::default_action_config(action_type),
         "usage_api" => usage_api::default_action_config(action_type),
-        "yescode" => yescode::default_action_config(action_type),
         _ => None,
     }
 }
@@ -207,48 +186,30 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn list_architectures_hides_generic_api_by_default() {
+    fn list_architectures_keeps_only_supported_presets_visible() {
         let visible = list_architectures(false);
-        assert_eq!(visible.len(), 8);
-        assert!(visible
-            .iter()
-            .all(|item| item.architecture_id != "generic_api"));
+        assert_eq!(visible.len(), 3);
+        assert_eq!(
+            visible
+                .iter()
+                .map(|item| item.architecture_id)
+                .collect::<Vec<_>>(),
+            vec!["new_api", "sub2api", "usage_api"]
+        );
 
         let all = list_architectures(true);
-        assert_eq!(all.len(), 9);
+        assert_eq!(all.len(), 4);
         assert!(all.iter().any(|item| item.architecture_id == "generic_api"));
     }
 
     #[test]
-    fn normalize_architecture_id_falls_back_to_generic_api() {
+    fn normalize_architecture_id_falls_back_to_generic_api_for_removed_presets() {
         assert_eq!(normalize_architecture_id(""), "generic_api");
-        assert_eq!(normalize_architecture_id("done_hub"), "done_hub");
         assert_eq!(normalize_architecture_id("new_api"), "new_api");
         assert_eq!(normalize_architecture_id("usage_api"), "usage_api");
+        assert_eq!(normalize_architecture_id("anyrouter"), "generic_api");
+        assert_eq!(normalize_architecture_id("yescode"), "generic_api");
         assert_eq!(normalize_architecture_id("unknown"), "generic_api");
-    }
-
-    #[test]
-    fn done_hub_uses_profile_balance_without_checkin() {
-        let architecture = get_architecture("done_hub").expect("architecture should exist");
-        assert_eq!(architecture.architecture_id, "done_hub");
-        assert_eq!(architecture.verify_endpoint, "/api/user/profile");
-
-        let resolved = resolve_action_config(
-            "done_hub",
-            &json!({})
-                .as_object()
-                .cloned()
-                .expect("config should be object"),
-            "query_balance",
-            None,
-        )
-        .expect("action config should resolve");
-
-        assert_eq!(resolved.get("endpoint"), Some(&json!("/api/user/profile")));
-        assert_eq!(resolved.get("quota_divisor"), Some(&json!(500000)));
-        assert_eq!(resolved.get("method"), Some(&json!("GET")));
-        assert!(resolved.get("checkin_endpoint").is_none());
     }
 
     #[test]
