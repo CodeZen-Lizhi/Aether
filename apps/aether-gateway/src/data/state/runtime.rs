@@ -419,23 +419,6 @@ impl GatewayDataState {
             .await
     }
 
-    pub(crate) async fn read_admin_user_behavior_event_counts(
-        &self,
-        user_id: &str,
-        cutoff_unix_secs: u64,
-    ) -> Result<std::collections::BTreeMap<String, u64>, DataLayerError> {
-        let Some(repository) = self
-            .backends
-            .as_ref()
-            .and_then(|backends| backends.read().audit_logs())
-        else {
-            return Ok(std::collections::BTreeMap::new());
-        };
-        repository
-            .read_admin_user_behavior_event_counts(user_id, cutoff_unix_secs)
-            .await
-    }
-
     pub(crate) async fn list_user_audit_logs(
         &self,
         user_id: &str,

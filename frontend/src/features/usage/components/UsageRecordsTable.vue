@@ -1160,7 +1160,6 @@ interface UsageRecordColumnOption {
 
 const props = defineProps<{
   records: UsageRecord[]
-  isAdmin: boolean
   showActualCost: boolean
   loading: boolean
   // 时间范围
@@ -1186,6 +1185,9 @@ const props = defineProps<{
   autoRefresh: boolean
   hideUnknownRecords: boolean
 }>()
+
+// 单用户化阶段4：使用记录表仅剩 admin 视角，isAdmin 由 prop 内化为常量 true。
+const isAdmin = true
 
 const emit = defineEmits<{
   'update:timeRange': [value: DateRangeParams]
@@ -1233,17 +1235,6 @@ const DEFAULT_ADMIN_COLUMNS: UsageRecordColumnId[] = [
   'performance',
 ]
 
-const DEFAULT_USER_COLUMNS: UsageRecordColumnId[] = [
-  'time',
-  'key',
-  'model',
-  'api_format',
-  'status',
-  'tokens',
-  'cost',
-  'performance',
-]
-
 // 使用统一 API 格式枚举，避免使用记录筛选项和系统格式列表漂移。
 const availableApiFormats = API_FORMAT_ORDER.map((value) => ({
   value,
@@ -1254,16 +1245,7 @@ const adminVisibleColumnIds = useLocalStorage<UsageRecordColumnId[]>(
   'usage-records-visible-columns-admin',
   DEFAULT_ADMIN_COLUMNS,
 )
-const userVisibleColumnIds = useLocalStorage<UsageRecordColumnId[]>(
-  'usage-records-visible-columns-user',
-  DEFAULT_USER_COLUMNS,
-)
-
-const roleColumnOptions = computed(() => USAGE_RECORD_COLUMN_OPTIONS.filter((column) => {
-  if (column.adminOnly && !props.isAdmin) return false
-  if (column.userOnly && props.isAdmin) return false
-  return true
-}))
+const roleColumnOptions = computed(() => USAGE_RECORD_COLUMN_OPTIONS.filter(column => !column.userOnly))
 
 const roleColumnIds = computed(() => new Set(roleColumnOptions.value.map(column => column.id)))
 
@@ -1286,16 +1268,11 @@ function sanitizeColumnIds(
 
 const visibleColumnIds = computed<UsageRecordColumnId[]>({
   get: () => sanitizeColumnIds(
-    props.isAdmin ? adminVisibleColumnIds.value : userVisibleColumnIds.value,
-    props.isAdmin ? DEFAULT_ADMIN_COLUMNS : DEFAULT_USER_COLUMNS,
+    adminVisibleColumnIds.value,
+    DEFAULT_ADMIN_COLUMNS,
   ),
   set: (value) => {
-    const sanitized = sanitizeColumnIds(value, props.isAdmin ? DEFAULT_ADMIN_COLUMNS : DEFAULT_USER_COLUMNS)
-    if (props.isAdmin) {
-      adminVisibleColumnIds.value = sanitized
-    } else {
-      userVisibleColumnIds.value = sanitized
-    }
+    adminVisibleColumnIds.value = sanitizeColumnIds(value, DEFAULT_ADMIN_COLUMNS)
   },
 })
 
@@ -1309,7 +1286,7 @@ const desktopTableMinWidthClass = computed(() => {
   )).length
   if (metadataColumnCount >= 3) return 'min-w-[1520px]'
   if (metadataColumnCount > 0) return 'min-w-[1320px]'
-  return props.isAdmin ? 'min-w-[1120px]' : 'min-w-[960px]'
+  return 'min-w-[1120px]'
 })
 
 const columnSelectOptions = computed<MultiSelectOption[]>(() => roleColumnOptions.value.map(column => ({
@@ -1489,14 +1466,12 @@ function streamBadgeVariant(isStream: boolean): 'secondary' | 'outline' {
 
 function handleRowMouseDown(event: MouseEvent, id: string) {
   handleMouseDown(event)
-  if (!props.isAdmin) return
   if (event.button !== 0) return
   emit('prefetchDetail', id)
 }
 
 // 处理行点击，排除文本选择操作
 function handleRowClick(event: MouseEvent, id: string) {
-  if (!props.isAdmin) return
   if (!shouldTriggerRowClick(event)) return
   emit('showDetail', id)
 }

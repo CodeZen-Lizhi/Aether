@@ -370,9 +370,9 @@ fn classifies_admin_monitoring_resilience_error_stats_as_admin_proxy_route() {
 }
 
 #[test]
-fn classifies_admin_monitoring_user_behavior_as_admin_proxy_route() {
+fn classifies_admin_monitoring_system_status_as_admin_proxy_route() {
     let headers = headers(&[]);
-    let uri: Uri = "/api/admin/monitoring/user-behavior/user-1"
+    let uri: Uri = "/api/admin/monitoring/system-status"
         .parse()
         .expect("uri should parse");
     let decision =
@@ -380,7 +380,7 @@ fn classifies_admin_monitoring_user_behavior_as_admin_proxy_route() {
 
     assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
     assert_eq!(decision.route_family.as_deref(), Some("monitoring"));
-    assert_eq!(decision.route_kind.as_deref(), Some("user_behavior"));
+    assert_eq!(decision.route_kind.as_deref(), Some("system_status"));
     assert_eq!(
         decision.auth_endpoint_signature.as_deref(),
         Some("admin:monitoring")

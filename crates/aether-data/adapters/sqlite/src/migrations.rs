@@ -696,6 +696,25 @@ ORDER BY id
             .await
             .expect("legacy global_priority_by_format column should be restorable");
 
+        // 20260902 drop 迁移已删除 user_groups；被测的 20260821 历史迁移 SQL
+        // 仍向该表写入，重放前需恢复表以保持幂等性覆盖。
+        sqlx::raw_sql(
+            r#"
+CREATE TABLE user_groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL UNIQUE,
+    allowed_api_formats TEXT,
+    allowed_api_formats_mode TEXT NOT NULL DEFAULT 'inherit',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("legacy user_groups table should be restorable");
+
         sqlx::raw_sql(
             r#"
 INSERT INTO users (

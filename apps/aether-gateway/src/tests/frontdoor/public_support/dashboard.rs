@@ -129,8 +129,15 @@ async fn gateway_dashboard_stats_include_end_of_day_boundary() {
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["today"]["requests"], 1);
-    assert_eq!(payload["monthly_cost"], json!(1.25));
-    assert_eq!(payload["stats"][1]["value"], json!("1"));
+    // 单用户化阶段4：stats 只剩 admin 载荷，用户模式的 monthly_cost 字段已删除。
+    assert_eq!(payload["cost_stats"]["total_cost"], json!(1.25));
+    let stats = payload["stats"].as_array().expect("stats should be array");
+    assert_eq!(stats.len(), 4);
+    let today_request_stats = stats
+        .iter()
+        .find(|item| item["name"] == json!("今日请求 / 费用"))
+        .expect("today request stats card should exist");
+    assert_eq!(today_request_stats["value"], json!("1 / $1.25"));
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();

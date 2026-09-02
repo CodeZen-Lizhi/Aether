@@ -141,7 +141,6 @@ function mountUsageRecordsTable(records: UsageRecord[], overrides: Record<string
 
   const app = createApp(UsageRecordsTable, {
     records,
-    isAdmin: true,
     showActualCost: false,
     loading: false,
     timeRange: { preset: 'today', tz_offset_minutes: 0 },
@@ -342,8 +341,8 @@ describe('UsageRecordsTable', () => {
     expect(root.textContent).not.toContain('等待中')
   })
 
-  it('renders output TPS in the non-admin usage table', () => {
-    const root = mountUsageRecordsTable([buildRecord()], { isAdmin: false })
+  it('renders output TPS in the usage table', () => {
+    const root = mountUsageRecordsTable([buildRecord()])
 
     expect(root.textContent).toContain('100 tps')
     expect(root.textContent).toContain('0.50s / 1.00s')

@@ -489,41 +489,6 @@ async fn dashboard_daily_breakdown_for_unix_range_raw(
     }
 }
 
-async fn dashboard_summary_for_range_raw(
-    state: &AppState,
-    range: DashboardDateRange,
-    user_id: Option<&str>,
-    error_context: &str,
-) -> Result<StoredUsageDashboardSummary, Response<Body>> {
-    let Some((created_from_unix_secs, created_until_unix_secs)) =
-        dashboard_range_bounds_unix(range)
-    else {
-        return Err(build_auth_error_response(
-            http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("{error_context}: invalid time range"),
-            false,
-        ));
-    };
-
-    dashboard_summary_for_unix_range_raw(
-        state,
-        created_from_unix_secs,
-        created_until_unix_secs,
-        user_id,
-        error_context,
-    )
-    .await
-}
-
-async fn dashboard_summary_for_range(
-    state: &AppState,
-    range: DashboardDateRange,
-    user_id: Option<&str>,
-    error_context: &str,
-) -> Result<StoredUsageDashboardSummary, Response<Body>> {
-    dashboard_summary_for_range_raw(state, range, user_id, error_context).await
-}
-
 async fn dashboard_stats_for_range(
     state: &AppState,
     range: DashboardDateRange,
@@ -778,30 +743,17 @@ fn dashboard_usage_totals_from_summary(
     totals
 }
 
-async fn dashboard_load_api_key_counts(
-    state: &AppState,
-    is_admin: bool,
-    user_id: &str,
-) -> Result<(u64, u64), GatewayError> {
+async fn dashboard_load_api_key_counts(state: &AppState) -> Result<(u64, u64), GatewayError> {
     let now_unix_secs = chrono::Utc::now().timestamp().max(0) as u64;
-    let summary = if is_admin {
-        let user_keys = state
-            .summarize_auth_api_key_export_non_standalone_records(now_unix_secs)
-            .await?;
-        let standalone_keys = state
-            .summarize_auth_api_key_export_standalone_records(now_unix_secs)
-            .await?;
-        aether_data::repository::auth::AuthApiKeyExportSummary {
-            total: user_keys.total.saturating_add(standalone_keys.total),
-            active: user_keys.active.saturating_add(standalone_keys.active),
-        }
-    } else {
-        state
-            .summarize_auth_api_key_export_records_by_user_ids(
-                &[user_id.to_string()],
-                now_unix_secs,
-            )
-            .await?
+    let user_keys = state
+        .summarize_auth_api_key_export_non_standalone_records(now_unix_secs)
+        .await?;
+    let standalone_keys = state
+        .summarize_auth_api_key_export_standalone_records(now_unix_secs)
+        .await?;
+    let summary = aether_data::repository::auth::AuthApiKeyExportSummary {
+        total: user_keys.total.saturating_add(standalone_keys.total),
+        active: user_keys.active.saturating_add(standalone_keys.active),
     };
     Ok((summary.total, summary.active))
 }
@@ -875,13 +827,8 @@ pub(super) async fn handle_dashboard_stats_get(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let is_admin = dashboard_role_is_admin(&auth.user.role);
-
-    let cache_identity = if is_admin {
-        "admin"
-    } else {
-        auth.user.id.as_str()
-    };
+    // 单用户化阶段4：/api/dashboard/stats 请求方只剩 admin，用户字段分支已删除。
+    let cache_identity = "admin";
     let query_string = request_context
         .request_query_string
         .as_deref()
@@ -908,66 +855,33 @@ pub(super) async fn handle_dashboard_stats_get(
         end_date: today_date,
         tz_offset_minutes: summary_range.tz_offset_minutes,
     };
-    let user_filter = (!is_admin).then_some(auth.user.id.as_str());
-    let (period_totals, today_totals, admin_cost_savings) = if is_admin {
-        let (period_result, today_result) = tokio::join!(
-            dashboard_stats_for_range(
-                state,
-                summary_range,
-                user_filter,
-                "dashboard stats lookup failed",
-            ),
-            dashboard_stats_for_range(
-                state,
-                today_range,
-                user_filter,
-                "dashboard today stats lookup failed",
-            ),
-        );
-        let period = match period_result {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
-        let today = match today_result {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
-        (
-            dashboard_usage_totals_from_summary(&period.usage),
-            dashboard_usage_totals_from_summary(&today.usage),
-            Some((period.cost_savings, today.cost_savings)),
-        )
-    } else {
-        let period_summary = match dashboard_summary_for_range(
+    let (period_result, today_result) = tokio::join!(
+        dashboard_stats_for_range(
             state,
             summary_range,
-            user_filter,
+            None,
             "dashboard stats lookup failed",
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
-        let today_summary = match dashboard_summary_for_range(
+        ),
+        dashboard_stats_for_range(
             state,
             today_range,
-            user_filter,
-            "dashboard today stats lookup failed",
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
-        (
-            dashboard_usage_totals_from_summary(&period_summary),
-            dashboard_usage_totals_from_summary(&today_summary),
             None,
-        )
+            "dashboard today stats lookup failed",
+        ),
+    );
+    let period = match period_result {
+        Ok(value) => value,
+        Err(response) => return response,
     };
+    let today = match today_result {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let period_totals = dashboard_usage_totals_from_summary(&period.usage);
+    let today_totals = dashboard_usage_totals_from_summary(&today.usage);
+    let admin_cost_savings = (period.cost_savings, today.cost_savings);
 
-    let api_key_counts = match dashboard_load_api_key_counts(state, is_admin, &auth.user.id).await {
+    let api_key_counts = match dashboard_load_api_key_counts(state).await {
         Ok(value) => value,
         Err(err) => {
             return build_auth_error_response(
@@ -1002,162 +916,127 @@ pub(super) async fn handle_dashboard_stats_get(
         "cache_read_tokens": today_totals.cache_read_tokens,
     });
 
-    if is_admin {
-        let now_unix_secs = chrono::Utc::now().timestamp().max(0) as u64;
-        let site_rate_summary = match dashboard_summary_for_unix_range_raw(
-            state,
-            now_unix_secs.saturating_sub(DASHBOARD_SITE_RATE_WINDOW_SECS),
-            now_unix_secs.saturating_add(1),
-            None,
-            "dashboard realtime site stats lookup failed",
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
-        let site_rate_totals = dashboard_usage_totals_from_summary(&site_rate_summary);
-        let online_users = match dashboard_load_online_user_count(state, now_unix_secs).await {
+    let now_unix_secs = chrono::Utc::now().timestamp().max(0) as u64;
+    let site_rate_summary = match dashboard_summary_for_unix_range_raw(
+        state,
+        now_unix_secs.saturating_sub(DASHBOARD_SITE_RATE_WINDOW_SECS),
+        now_unix_secs.saturating_add(1),
+        None,
+        "dashboard realtime site stats lookup failed",
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let site_rate_totals = dashboard_usage_totals_from_summary(&site_rate_summary);
+    let online_users = match dashboard_load_online_user_count(state, now_unix_secs).await {
+        Ok(value) => value,
+        Err(err) => {
+            return build_auth_error_response(
+                http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("dashboard online user stats lookup failed: {err:?}"),
+                false,
+            );
+        }
+    };
+    let (total_users, active_users) =
+        match dashboard_load_user_counts(state, summary_range).await {
             Ok(value) => value,
             Err(err) => {
                 return build_auth_error_response(
                     http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("dashboard online user stats lookup failed: {err:?}"),
+                    format!("dashboard user stats lookup failed: {err:?}"),
                     false,
                 );
             }
         };
-        let (total_users, active_users) =
-            match dashboard_load_user_counts(state, summary_range).await {
-                Ok(value) => value,
-                Err(err) => {
-                    return build_auth_error_response(
-                        http::StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("dashboard user stats lookup failed: {err:?}"),
-                        false,
-                    );
-                }
-            };
-        let success_rate = if today_totals.requests == 0 {
-            0.0
-        } else {
-            (today_totals
-                .requests
-                .saturating_sub(today_totals.error_requests)) as f64
-                / today_totals.requests as f64
-                * 100.0
-        };
-        let (period_cost_savings_summary, today_cost_savings_summary) =
-            admin_cost_savings.unwrap_or_default();
-        let today_cost_savings = dashboard_cache_savings_usd(&today_cost_savings_summary);
-        let period_cost_savings = dashboard_cache_savings_usd(&period_cost_savings_summary);
-        let stats = json!([
-            {
-                "name": "今日请求 / 费用",
-                "value": format!(
-                    "{} / {}",
-                    dashboard_format_integer(today_totals.requests),
-                    dashboard_format_usd(today_totals.total_cost_usd)
-                ),
-                "subValue": format!(
-                    "成功率 {} / 节省 {}",
-                    dashboard_format_percentage(success_rate),
-                    dashboard_format_usd(today_cost_savings.max(0.0))
-                ),
-                "icon": "Activity",
-            },
-            {
-                "name": "今日 Token",
-                "value": dashboard_format_token_compact(today_token_value),
-                "subValue": dashboard_format_today_token_subvalue(&today_totals),
-                "icon": "Zap",
-            },
-            {
-                "name": "全站 RPM / TPM",
-                "value": format!(
-                    "{} / {}",
-                    dashboard_format_integer(site_rate_totals.requests),
-                    dashboard_format_token_compact(site_rate_totals.total_tokens)
-                ),
-                "subValue": "最近 60 秒",
-                "icon": "Activity",
-            },
-            {
-                "name": "在线 / 启用用户",
-                "value": format!(
-                    "{} / {}",
-                    dashboard_format_integer(online_users),
-                    dashboard_format_integer(active_users)
-                ),
-                "subValue": format!(
-                    "最近 5 分钟 / 总用户 {}",
-                    dashboard_format_integer(total_users)
-                ),
-                "icon": "Users",
-            }
-        ]);
-        let payload = json!({
-            "stats": stats,
-            "today": today_payload,
-            "api_keys": {
-                "total": api_key_counts.0,
-                "active": api_key_counts.1,
-            },
-            "tokens": {
-                "month": period_totals.total_tokens,
-            },
-            "system_health": {
-                "avg_response_time": period_totals.avg_response_time_seconds(),
-                "error_rate": if period_totals.requests == 0 { 0.0 } else { dashboard_round_f64(period_totals.error_requests as f64 / period_totals.requests as f64 * 100.0, 4) },
-                "error_requests": period_totals.error_requests,
-                "fallback_count": 0,
-                "total_requests": period_totals.requests,
-            },
-            "cost_stats": {
-                "total_cost": dashboard_round_f64(period_totals.total_cost_usd, 4),
-                "total_actual_cost": dashboard_round_f64(period_totals.actual_total_cost_usd, 4),
-                "cost_savings": period_cost_savings,
-            },
-            "cache_stats": cache_stats,
-            "users": {
-                "total": total_users,
-                "active": active_users,
-                "online": online_users,
-            },
-            "token_breakdown": token_breakdown,
-        });
-        return dashboard_cached_json_response(state, cache_key, cache_ttl, &payload);
-    }
-
+    let success_rate = if today_totals.requests == 0 {
+        0.0
+    } else {
+        (today_totals
+            .requests
+            .saturating_sub(today_totals.error_requests)) as f64
+            / today_totals.requests as f64
+            * 100.0
+    };
+    let (period_cost_savings_summary, today_cost_savings_summary) = admin_cost_savings;
+    let today_cost_savings = dashboard_cache_savings_usd(&today_cost_savings_summary);
+    let period_cost_savings = dashboard_cache_savings_usd(&period_cost_savings_summary);
+    let stats = json!([
+        {
+            "name": "今日请求 / 费用",
+            "value": format!(
+                "{} / {}",
+                dashboard_format_integer(today_totals.requests),
+                dashboard_format_usd(today_totals.total_cost_usd)
+            ),
+            "subValue": format!(
+                "成功率 {} / 节省 {}",
+                dashboard_format_percentage(success_rate),
+                dashboard_format_usd(today_cost_savings.max(0.0))
+            ),
+            "icon": "Activity",
+        },
+        {
+            "name": "今日 Token",
+            "value": dashboard_format_token_compact(today_token_value),
+            "subValue": dashboard_format_today_token_subvalue(&today_totals),
+            "icon": "Zap",
+        },
+        {
+            "name": "全站 RPM / TPM",
+            "value": format!(
+                "{} / {}",
+                dashboard_format_integer(site_rate_totals.requests),
+                dashboard_format_token_compact(site_rate_totals.total_tokens)
+            ),
+            "subValue": "最近 60 秒",
+            "icon": "Activity",
+        },
+        {
+            "name": "在线 / 启用用户",
+            "value": format!(
+                "{} / {}",
+                dashboard_format_integer(online_users),
+                dashboard_format_integer(active_users)
+            ),
+            "subValue": format!(
+                "最近 5 分钟 / 总用户 {}",
+                dashboard_format_integer(total_users)
+            ),
+            "icon": "Users",
+        }
+    ]);
     let payload = json!({
-        "stats": [
-            {
-                "name": "API 密钥",
-                "value": dashboard_format_integer(api_key_counts.0),
-                "subValue": format!("活跃 {}", dashboard_format_integer(api_key_counts.1)),
-                "icon": "Activity",
-            },
-            {
-                "name": "本月请求",
-                "value": dashboard_format_integer(period_totals.requests),
-                "subValue": format!("今日 {}", dashboard_format_integer(today_totals.requests)),
-                "icon": "Users",
-            },
-            {
-                "name": "本月 Token",
-                "value": dashboard_format_integer(period_totals.total_tokens),
-                "subValue": dashboard_format_token_subvalue(&period_totals),
-                "icon": "Zap",
-            }
-        ],
+        "stats": stats,
         "today": today_payload,
         "api_keys": {
             "total": api_key_counts.0,
             "active": api_key_counts.1,
         },
+        "tokens": {
+            "month": period_totals.total_tokens,
+        },
+        "system_health": {
+            "avg_response_time": period_totals.avg_response_time_seconds(),
+            "error_rate": if period_totals.requests == 0 { 0.0 } else { dashboard_round_f64(period_totals.error_requests as f64 / period_totals.requests as f64 * 100.0, 4) },
+            "error_requests": period_totals.error_requests,
+            "fallback_count": 0,
+            "total_requests": period_totals.requests,
+        },
+        "cost_stats": {
+            "total_cost": dashboard_round_f64(period_totals.total_cost_usd, 4),
+            "total_actual_cost": dashboard_round_f64(period_totals.actual_total_cost_usd, 4),
+            "cost_savings": period_cost_savings,
+        },
         "cache_stats": cache_stats,
+        "users": {
+            "total": total_users,
+            "active": active_users,
+            "online": online_users,
+        },
         "token_breakdown": token_breakdown,
-        "monthly_cost": dashboard_round_f64(period_totals.total_cost_usd, 4),
     });
     dashboard_cached_json_response(state, cache_key, cache_ttl, &payload)
 }

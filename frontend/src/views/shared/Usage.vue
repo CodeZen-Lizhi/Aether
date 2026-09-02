@@ -41,15 +41,12 @@
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <UsageModelTable
           :data="enhancedModelStats"
-          :is-admin="authStore.canAccessAdmin"
         />
         <UsageProviderTable
           :data="providerStats"
-          :is-admin="authStore.canAccessAdmin"
         />
         <UsageApiFormatTable
           :data="apiFormatStats"
-          :is-admin="authStore.canAccessAdmin"
         />
       </div>
     </div>
@@ -57,7 +54,6 @@
     <!-- 使用记录 -->
     <UsageRecordsTable
       :records="displayRecords"
-      :is-admin="true"
       :show-actual-cost="authStore.canAccessAdmin"
       :loading="isLoadingRecords"
       :time-range="timeRange"

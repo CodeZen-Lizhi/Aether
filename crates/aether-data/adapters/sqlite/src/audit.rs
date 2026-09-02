@@ -116,32 +116,6 @@ LIMIT 100
             .collect()
     }
 
-    async fn read_admin_user_behavior_event_counts(
-        &self,
-        user_id: &str,
-        cutoff_unix_secs: u64,
-    ) -> Result<std::collections::BTreeMap<String, u64>, DataLayerError> {
-        let rows = sqlx::query(
-            r#"
-SELECT event_type, COUNT(*) AS count
-FROM audit_logs
-WHERE user_id = ?
-  AND created_at >= ?
-GROUP BY event_type
-"#,
-        )
-        .bind(user_id)
-        .bind(cutoff_unix_secs as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_sql_err()?;
-
-        Ok(rows
-            .iter()
-            .filter_map(|row| event_count_from_sqlite_row(row).ok())
-            .collect())
-    }
-
     async fn list_user_audit_logs(
         &self,
         user_id: &str,
@@ -269,12 +243,6 @@ fn map_sqlite_user_audit_log_row(row: &SqliteRow) -> Result<StoredUserAuditLog, 
     })
 }
 
-fn event_count_from_sqlite_row(row: &SqliteRow) -> Result<(String, u64), DataLayerError> {
-    let event_type = row.try_get("event_type").map_sql_err()?;
-    let count = row.try_get::<i64, _>("count").map_sql_err()?.max(0) as u64;
-    Ok((event_type, count))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,13 +289,6 @@ mod tests {
             .expect("suspicious activities should read");
         assert_eq!(suspicious.len(), 1);
         assert_eq!(suspicious[0].event_type, "login_failed");
-
-        let counts = repository
-            .read_admin_user_behavior_event_counts("user-1", 0)
-            .await
-            .expect("user behavior counts should read");
-        assert_eq!(counts.get("login_failed"), Some(&1));
-        assert_eq!(counts.get("request_success"), Some(&1));
 
         let user_page = repository
             .list_user_audit_logs(
