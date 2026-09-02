@@ -26,66 +26,22 @@
           />
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-          <div class="space-y-1.5">
-            <Label>{{ legacyT('提供商类型') }}</Label>
-            <Select
-              v-model="form.provider_type"
-              :disabled="isEditMode"
-            >
-              <SelectTrigger>
-                <SelectValue :placeholder="legacyT('请选择')" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="custom">
-                  {{ legacyT('自定义') }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div class="space-y-1.5">
-            <Label for="website">{{ legacyT('主站链接') }}</Label>
-            <Input
-              id="website"
-              v-model="form.website"
-              :placeholder="legacyT('https://example.com（可选）')"
-            />
-          </div>
+        <div class="space-y-1.5">
+          <Label for="website">{{ legacyT('主站链接') }}</Label>
+          <Input
+            id="website"
+            v-model="form.website"
+            :placeholder="legacyT('https://example.com（可选）')"
+          />
         </div>
       </div>
 
-      <!-- 计费与限流 / 请求配置 -->
+      <!-- 请求配置 -->
       <div class="space-y-3">
+        <h3 class="text-sm font-medium border-b pb-2">
+          {{ legacyT('请求配置') }}
+        </h3>
         <div class="grid grid-cols-2 gap-4">
-          <h3 class="text-sm font-medium border-b pb-2">
-            {{ legacyT('计费与限流') }}
-          </h3>
-          <h3 class="text-sm font-medium border-b pb-2">
-            {{ legacyT('请求配置') }}
-          </h3>
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div class="space-y-1.5">
-            <Label>{{ legacyT('计费类型') }}</Label>
-            <Select
-              v-model="form.billing_type"
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="monthly_quota">
-                  {{ legacyT('月卡额度') }}
-                </SelectItem>
-                <SelectItem value="pay_as_you_go">
-                  {{ legacyT('按量付费') }}
-                </SelectItem>
-                <SelectItem value="free_tier">
-                  {{ legacyT('免费套餐') }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <div class="space-y-1.5">
             <Label>{{ legacyT('最大重试次数') }}</Label>
             <Input
@@ -171,49 +127,6 @@
             />
           </div>
         </div>
-
-        <!-- 月卡配置 -->
-        <div
-          v-if="form.billing_type === 'monthly_quota'"
-          class="grid grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/50"
-        >
-          <div class="space-y-1.5">
-            <Label class="text-xs">{{ legacyT('周期额度 (USD)') }}</Label>
-            <Input
-              :model-value="form.monthly_quota_usd ?? ''"
-              type="number"
-              step="0.01"
-              min="0"
-              @update:model-value="(v) => form.monthly_quota_usd = parseNumberInput(v, { allowFloat: true })"
-            />
-          </div>
-          <div class="space-y-1.5">
-            <Label class="text-xs">{{ legacyT('重置周期 (天)') }}</Label>
-            <Input
-              :model-value="form.quota_reset_day ?? ''"
-              type="number"
-              min="1"
-              max="365"
-              @update:model-value="(v) => form.quota_reset_day = parseNumberInput(v) ?? 30"
-            />
-          </div>
-          <div class="space-y-1.5">
-            <Label class="text-xs">
-              {{ legacyT('周期开始时间') }} <span class="text-red-500">*</span>
-            </Label>
-            <Input
-              v-model="form.quota_last_reset_at"
-              type="datetime-local"
-            />
-          </div>
-          <div class="space-y-1.5">
-            <Label class="text-xs">{{ legacyT('过期时间') }}</Label>
-            <Input
-              v-model="form.quota_expires_at"
-              type="datetime-local"
-            />
-          </div>
-        </div>
       </div>
 
       <!-- 功能开关 -->
@@ -282,11 +195,6 @@ import {
   Button,
   Input,
   Label,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
   Switch,
 } from '@/components/ui'
 import { Server, SquarePen } from 'lucide-vue-next'
@@ -296,12 +204,10 @@ import { useI18n } from '@/i18n'
 import {
   createProvider,
   updateProvider,
-  type ProviderType,
   type ProviderWithEndpointsSummary,
 } from '@/api/endpoints'
 import { parseApiError } from '@/utils/errorParser'
 import { parseNumberInput } from '@/utils/form'
-import { dateTimeLocalToRfc3339, formatDateTimeLocalInput } from '@/utils/date'
 
 const props = defineProps<{
   modelValue: boolean
@@ -331,15 +237,8 @@ const submitLabel = computed(() => {
 // 表单数据
 const form = ref({
   name: '',
-  provider_type: 'custom' as ProviderType,
   description: '',
   website: '',
-  // 计费配置
-  billing_type: 'pay_as_you_go' as 'monthly_quota' | 'pay_as_you_go' | 'free_tier',
-  monthly_quota_usd: undefined as number | undefined,
-  quota_reset_day: 30,
-  quota_last_reset_at: '',  // 周期开始时间
-  quota_expires_at: '',
   // 状态配置
   is_active: true,
   rate_limit: undefined as number | undefined,
@@ -359,14 +258,8 @@ const form = ref({
 function resetForm() {
   form.value = {
     name: '',
-    provider_type: 'custom',
     description: '',
     website: '',
-    billing_type: 'pay_as_you_go',
-    monthly_quota_usd: undefined,
-    quota_reset_day: 30,
-    quota_last_reset_at: '',
-    quota_expires_at: '',
     is_active: true,
     rate_limit: undefined,
     concurrent_limit: undefined,
@@ -387,14 +280,8 @@ function loadProviderData() {
   if (!props.provider) return
   form.value = {
     name: props.provider.name,
-    provider_type: props.provider.provider_type || 'custom',
     description: props.provider.description || '',
     website: props.provider.website || '',
-    billing_type: (props.provider.billing_type as 'monthly_quota' | 'pay_as_you_go' | 'free_tier') || 'pay_as_you_go',
-    monthly_quota_usd: props.provider.monthly_quota_usd || undefined,
-    quota_reset_day: props.provider.quota_reset_day || 30,
-    quota_last_reset_at: formatDateTimeLocalInput(props.provider.quota_last_reset_at),
-    quota_expires_at: formatDateTimeLocalInput(props.provider.quota_expires_at),
     is_active: props.provider.is_active,
     rate_limit: undefined,
     concurrent_limit: undefined,
@@ -422,35 +309,12 @@ const { isEditMode, handleDialogUpdate, handleCancel } = useFormDialog({
 
 // 提交表单
 const handleSubmit = async () => {
-  // 月卡类型必须设置周期开始时间
-  if (form.value.billing_type === 'monthly_quota' && !form.value.quota_last_reset_at) {
-    showError(legacyT('月卡类型必须设置周期开始时间'), legacyT('验证失败'))
-    return
-  }
-
-  const quotaLastResetAt = dateTimeLocalToRfc3339(form.value.quota_last_reset_at)
-  if (form.value.billing_type === 'monthly_quota' && !quotaLastResetAt) {
-    showError(legacyT('周期开始时间必须是合法时间'), legacyT('验证失败'))
-    return
-  }
-  const quotaExpiresAt = dateTimeLocalToRfc3339(form.value.quota_expires_at)
-  if (form.value.quota_expires_at && !quotaExpiresAt) {
-    showError(legacyT('过期时间必须是合法时间'), legacyT('验证失败'))
-    return
-  }
-
   loading.value = true
   try {
     const basePayload = {
       name: form.value.name,
-      provider_type: form.value.provider_type,
       description: form.value.description || undefined,
       website: form.value.website || undefined,
-      billing_type: form.value.billing_type,
-      monthly_quota_usd: form.value.monthly_quota_usd,
-      quota_reset_day: form.value.quota_reset_day,
-      quota_last_reset_at: quotaLastResetAt,
-      quota_expires_at: quotaExpiresAt,
       responses_websocket_enabled: form.value.responses_websocket_enabled,
       is_active: form.value.is_active,
       // 请求配置
