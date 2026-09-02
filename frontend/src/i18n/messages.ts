@@ -523,6 +523,15 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '安装命令已复制到剪贴板': 'Install command copied to clipboard',
   '生成代理节点安装命令失败': 'Failed to generate proxy node install command',
   '读取代理节点详情失败': 'Failed to read proxy node details',
+  '默认代理': 'Default proxy',
+  '保存默认代理': 'Save default proxy',
+  '暂无改动': 'No changes yet',
+  '添加节点': 'Add node',
+  '编辑节点': 'Edit node',
+  '测试连接': 'Test connection',
+  '测试通过': 'Test passed',
+  '删除中...': 'Deleting...',
+  '代理地址必须以 http://、https:// 或 socks5:// 开头': 'Proxy address must start with http://, https://, or socks5://',
   '批量添加失败': 'Batch add failed',
   '批量升级下发失败': 'Failed to dispatch batch upgrade',
   '删除节点': 'Delete node',
@@ -2477,6 +2486,12 @@ const legacyDynamicPatterns: Array<[RegExp, (match: RegExpMatchArray) => string]
   [/^共 (.+) 条$/u, match => `Total ${match[1]} items`],
   [/^共 (.+)$/u, match => `Total ${translateLegacyText(match[1], 'en-US')}`],
   [/^(.+) tokens 命中$/u, match => `${match[1]} tokens hit`],
+  // 网络代理设置卡片（ProxyNodeEditDialog）
+  [/^测试通过：延迟 (\d+)ms · 出口 IP (.+)$/u, match => `Test passed: ${match[1]}ms · Exit IP ${match[2]}`],
+  [/^测试通过：延迟 (\d+)ms$/u, match => `Test passed: ${match[1]}ms`],
+  [/^测试通过：出口 IP (.+)$/u, match => `Test passed: Exit IP ${match[1]}`],
+  [/^测试失败: (.+)$/u, match => `Test failed: ${translateLegacyText(match[1], 'en-US')}`],
+  [/^确定要删除代理节点 "(.+)" \((.+)\) 吗？$/u, match => `Delete proxy node "${match[1]}" (${match[2]})?`],
 ]
 
 const legacyFallbackTokens: Array<[string, string]> = [
