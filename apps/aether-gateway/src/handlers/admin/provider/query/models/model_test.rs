@@ -1156,7 +1156,6 @@ fn provider_query_build_openai_image_test_request_body_for_route(
             .unwrap_or_else(|| DEFAULT_PROVIDER_QUERY_TEST_MESSAGE.to_string()),
         "n": 1,
         "size": "1024x1024",
-        "stream": true,
     })
 }
 

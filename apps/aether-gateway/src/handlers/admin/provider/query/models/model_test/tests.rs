@@ -850,7 +850,7 @@ fn provider_query_image_test_request_body_defaults_generation_prompt() {
 
     assert_eq!(body["model"], json!("gpt-image-1"));
     assert_eq!(body["prompt"], json!("draw a small icon"));
-    assert_eq!(body["stream"], json!(true));
+    assert!(body.get("stream").is_none());
 }
 
 #[test]
