@@ -794,7 +794,6 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
         (promoted, deferred)
     }
 
-
     fn defer_page(
         &mut self,
         candidate_api_format: String,

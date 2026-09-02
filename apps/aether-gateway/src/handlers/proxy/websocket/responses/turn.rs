@@ -1124,7 +1124,6 @@ mod tests {
         assert_eq!(usage.dimensions.get("total_tokens"), Some(&json!(8)));
     }
 
-
     #[test]
     fn an_incomplete_without_a_legitimate_reason_still_projects_a_provider_failure() {
         let raw = r#"{"type":"response.incomplete","response":{"incomplete_details":{"reason":"error"}}}"#;

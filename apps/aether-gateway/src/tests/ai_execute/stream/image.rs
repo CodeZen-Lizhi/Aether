@@ -343,7 +343,6 @@ fn image_bridge_execution_runtime(
     )
 }
 
-
 #[test]
 fn gateway_routes_openai_responses_stream_image_intent_to_openai_image_plan_without_streaming_support(
 ) {

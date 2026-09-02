@@ -1915,28 +1915,487 @@ async fn provider_query_execute_standard_test_candidate(
 
 #[allow(clippy::too_many_arguments)]
 
-pub(crate) async fn build_admin_provider_query_test_model_local_response(
-    _state: &AdminAppState<'_>,
-    payload: &Value,
-) -> Result<Response<Body>, GatewayError> {
-    let provider_id = provider_query_extract_provider_id(payload).unwrap_or_default();
-    let model = provider_query_extract_model(payload).unwrap_or_default();
-    Ok(build_admin_provider_query_test_model_response(
-        provider_id,
-        model,
-    ))
+fn provider_query_select_test_endpoint<'a>(
+    endpoints: &'a [StoredProviderCatalogEndpoint],
+    endpoint_id: Option<&str>,
+    api_format: Option<&str>,
+) -> Result<Option<&'a StoredProviderCatalogEndpoint>, &'static str> {
+    if let Some(endpoint_id) = endpoint_id {
+        let endpoint = endpoints.iter().find(|endpoint| endpoint.id == endpoint_id);
+        return endpoint
+            .ok_or("Endpoint not found")
+            .map(|endpoint| Some(endpoint));
+    }
+
+    if let Some(api_format) = api_format {
+        let endpoint = endpoints.iter().find(|endpoint| {
+            endpoint.is_active && endpoint.api_format.trim().eq_ignore_ascii_case(api_format)
+        });
+        return Ok(endpoint);
+    }
+
+    Ok(endpoints.iter().find(|endpoint| endpoint.is_active))
 }
 
-pub(crate) async fn build_admin_provider_query_test_model_failover_local_response(
-    _state: &AdminAppState<'_>,
+async fn provider_query_build_test_candidates(
+    state: &AdminAppState<'_>,
+    provider: &StoredProviderCatalogProvider,
+    payload: &Value,
+    requested_model_override: Option<&str>,
+) -> Result<Vec<ProviderQueryTestCandidate>, Response<Body>> {
+    let provider_ids = vec![provider.id.clone()];
+    let endpoints = state
+        .app()
+        .list_provider_catalog_endpoints_by_provider_ids(&provider_ids)
+        .await
+        .map_err(|_| {
+            build_admin_provider_query_bad_request_response(
+                ADMIN_PROVIDER_QUERY_NO_ACTIVE_API_KEY_DETAIL,
+            )
+        })?;
+    let all_keys = state
+        .app()
+        .list_provider_catalog_keys_by_provider_ids(&provider_ids)
+        .await
+        .map_err(|_| {
+            build_admin_provider_query_bad_request_response(
+                ADMIN_PROVIDER_QUERY_NO_ACTIVE_API_KEY_DETAIL,
+            )
+        })?;
+    let selected_key_ids = provider_query_extract_api_key_ids(payload);
+    let requested_endpoint_id = provider_query_extract_endpoint_id(payload);
+    let requested_api_format = provider_query_extract_api_format(payload);
+    let endpoint = if requested_endpoint_id.is_none() && requested_api_format.is_none() {
+        provider_query_select_preferred_non_kiro_endpoint(
+            state,
+            provider,
+            &endpoints,
+            &all_keys,
+            selected_key_ids.as_ref(),
+        )
+        .await
+        .ok_or_else(|| {
+            build_admin_provider_query_not_found_response(
+                ADMIN_PROVIDER_QUERY_NO_ACTIVE_API_KEY_DETAIL,
+            )
+        })?
+    } else {
+        match provider_query_select_test_endpoint(
+            &endpoints,
+            requested_endpoint_id.as_deref(),
+            requested_api_format.as_deref(),
+        ) {
+            Ok(Some(endpoint)) => endpoint.clone(),
+            Ok(None) => {
+                return Err(build_admin_provider_query_not_found_response(
+                    ADMIN_PROVIDER_QUERY_NO_ACTIVE_API_KEY_DETAIL,
+                ));
+            }
+            Err("Endpoint not found") => {
+                return Err(build_admin_provider_query_not_found_response(
+                    ADMIN_PROVIDER_QUERY_API_KEY_NOT_FOUND_DETAIL,
+                ));
+            }
+            Err(_) => {
+                return Err(build_admin_provider_query_not_found_response(
+                    ADMIN_PROVIDER_QUERY_NO_ACTIVE_API_KEY_DETAIL,
+                ));
+            }
+        }
+    };
+
+    if let Some(selected_key_ids) = selected_key_ids.as_ref() {
+        if !provider_query_selected_key_ids_all_exist(selected_key_ids, &all_keys) {
+            return Err(build_admin_provider_query_not_found_response(
+                ADMIN_PROVIDER_QUERY_API_KEY_NOT_FOUND_DETAIL,
+            ));
+        }
+    }
+
+    let requested_model = requested_model_override
+        .map(ToOwned::to_owned)
+        .or_else(|| provider_query_extract_model(payload))
+        .or_else(|| {
+            super::super::payload::provider_query_extract_failover_models(payload)
+                .first()
+                .cloned()
+        })
+        .ok_or_else(|| {
+            build_admin_provider_query_bad_request_response(
+                ADMIN_PROVIDER_QUERY_MODEL_REQUIRED_DETAIL,
+            )
+        })?;
+    let test_mode = provider_query_test_mode(payload);
+    let explicit_mapped_model = provider_query_extract_mapped_model_name(payload);
+    let effective_model = if let Some(mapped_model_name) = explicit_mapped_model {
+        if let Some(effective_model) = provider_query_resolve_explicit_mapped_effective_model(
+            state,
+            &provider.id,
+            &provider.provider_type,
+            &requested_model,
+            &endpoint,
+            &mapped_model_name,
+        )
+        .await
+        .map_err(|_| {
+            build_admin_provider_query_bad_request_response(
+                ADMIN_PROVIDER_QUERY_INVALID_MAPPED_MODEL_DETAIL,
+            )
+        })? {
+            effective_model
+        } else {
+            return Err(build_admin_provider_query_bad_request_response(
+                ADMIN_PROVIDER_QUERY_INVALID_MAPPED_MODEL_DETAIL,
+            ));
+        }
+    } else if test_mode.eq_ignore_ascii_case("direct") {
+        requested_model.clone()
+    } else if !provider_query_should_apply_model_mapping(payload) {
+        requested_model.clone()
+    } else {
+        provider_query_resolve_global_effective_model(
+            state,
+            &provider.id,
+            &requested_model,
+            &endpoint,
+        )
+        .await
+        .unwrap_or(requested_model.clone())
+    };
+
+    let now_unix_secs = current_unix_ms() / 1000;
+    let mut keys = Vec::new();
+    let mut model_skipped_candidates = Vec::new();
+
+    for key in all_keys
+        .into_iter()
+        .filter(|key| key.is_active)
+        .filter(|key| provider_query_selected_key_ids_allow_key(selected_key_ids.as_ref(), &key.id))
+        .filter(|key| {
+            provider_query_key_supports_endpoint(key, &provider.provider_type, &endpoint.api_format)
+        })
+    {
+        if provider_query_key_allows_effective_test_model(&key, &requested_model, &effective_model)
+        {
+            keys.push(key);
+        } else {
+            model_skipped_candidates.push(ProviderQueryTestCandidate {
+                endpoint: endpoint.clone(),
+                key,
+                effective_model: effective_model.clone(),
+                scheduler_skip_reason: Some(
+                    PROVIDER_QUERY_KEY_MODEL_NOT_ALLOWED_SKIP_REASON.to_string(),
+                ),
+            });
+        }
+    }
+
+    model_skipped_candidates.sort_by_key(|candidate| {
+        provider_query_test_key_sort_key(
+            provider.provider_type.as_str(),
+            &candidate.key,
+            &endpoint.api_format,
+            now_unix_secs,
+        )
+    });
+
+    // 号池调度已随号池体系裁剪：测试候选一律走直接路径。
+    keys.sort_by_key(|key| {
+        provider_query_test_key_sort_key(
+            provider.provider_type.as_str(),
+            key,
+            &endpoint.api_format,
+            now_unix_secs,
+        )
+    });
+    let scheduled_candidates = keys
+        .into_iter()
+        .map(|key| ProviderQueryTestCandidate {
+            endpoint: endpoint.clone(),
+            key,
+            effective_model: effective_model.clone(),
+            scheduler_skip_reason: None,
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = model_skipped_candidates;
+    candidates.extend(scheduled_candidates);
+
+    if candidates.is_empty() {
+        return Err(build_admin_provider_query_not_found_response(
+            ADMIN_PROVIDER_QUERY_NO_ACTIVE_TEST_CANDIDATE_DETAIL,
+        ));
+    }
+
+    Ok(candidates)
+}
+async fn build_admin_provider_query_test_model_candidates_response(
+    state: &AdminAppState<'_>,
+    payload: &Value,
+    route_path: &str,
+) -> Result<Response<Body>, GatewayError> {
+    let Some(provider_id) = provider_query_extract_provider_id(payload) else {
+        return Ok(build_admin_provider_query_bad_request_response(
+            ADMIN_PROVIDER_QUERY_PROVIDER_ID_REQUIRED_DETAIL,
+        ));
+    };
+    let Some(provider) = state
+        .app()
+        .read_provider_catalog_providers_by_ids(std::slice::from_ref(&provider_id))
+        .await?
+        .into_iter()
+        .find(|item| item.id == provider_id)
+    else {
+        return Ok(build_admin_provider_query_not_found_response(
+            ADMIN_PROVIDER_QUERY_PROVIDER_NOT_FOUND_DETAIL,
+        ));
+    };
+    let failover_models = super::super::payload::provider_query_extract_failover_models(payload);
+    let Some(requested_model) =
+        provider_query_extract_model(payload).or_else(|| failover_models.first().cloned())
+    else {
+        return Ok(build_admin_provider_query_bad_request_response(
+            ADMIN_PROVIDER_QUERY_MODEL_REQUIRED_DETAIL,
+        ));
+    };
+
+    let requested_models = if failover_models.is_empty() {
+        vec![requested_model.clone()]
+    } else {
+        failover_models.clone()
+    };
+    let mut candidates = Vec::new();
+    for requested_failover_model in &requested_models {
+        match provider_query_build_test_candidates(
+            state,
+            &provider,
+            payload,
+            Some(requested_failover_model.as_str()),
+        )
+        .await
+        {
+            Ok(mut built_candidates) => candidates.append(&mut built_candidates),
+            Err(response) => return Ok(response),
+        }
+    }
+    if candidates.is_empty() {
+        return Ok(build_admin_provider_query_test_model_failover_response(
+            provider_id,
+            requested_models,
+        ));
+    }
+    let trace_id = provider_query_extract_request_id(payload)
+        .unwrap_or_else(|| format!("provider-query-test-{}", Uuid::new_v4().simple()));
+    let app_state = state.app();
+    provider_query_seed_test_candidate_traces(app_state, &trace_id, &provider, &candidates).await;
+    let mut attempts = Vec::new();
+    let mut total_attempts = 0usize;
+    let mut success_body = None;
+    let mut success_stream = false;
+    let mut winning_candidate_index = None;
+
+    for (candidate_index, candidate) in candidates.iter().enumerate() {
+        let adapter = provider_query_test_adapter_for_provider_api_format(
+            &provider.provider_type,
+            &candidate.endpoint.api_format,
+        );
+        let execution_result = if let Some(skip_reason) = candidate.scheduler_skip_reason.as_ref() {
+            Ok(provider_query_skipped_execution_outcome(
+                provider_query_build_test_request_body_for_route(
+                    payload,
+                    &candidate.effective_model,
+                    route_path,
+                ),
+                skip_reason.clone(),
+            ))
+        } else {
+            provider_query_mark_pending_test_candidate_trace(
+                app_state,
+                &trace_id,
+                &provider,
+                candidate,
+                candidate_index,
+            )
+            .await;
+            match adapter {
+                Some(ProviderQueryTestAdapter::OpenAiImage) => {
+                    provider_query_execute_openai_image_test_candidate(
+                        state,
+                        &provider,
+                        candidate,
+                        payload,
+                        route_path,
+                        &trace_id,
+                        &requested_model,
+                    )
+                    .await
+                }
+                Some(ProviderQueryTestAdapter::Standard | ProviderQueryTestAdapter::Grok) => {
+                    provider_query_execute_standard_test_candidate(
+                        state, &provider, candidate, payload, route_path, &trace_id,
+                    )
+                    .await
+                }
+                None => Ok(provider_query_skipped_execution_outcome(
+                    provider_query_build_test_request_body_for_route(
+                        payload,
+                        &candidate.effective_model,
+                        route_path,
+                    ),
+                    provider_query_unsupported_test_api_format_message(
+                        &candidate.endpoint.api_format,
+                    ),
+                )),
+            }
+        };
+        let execution = match execution_result {
+            Ok(execution) => execution,
+            Err(error) => {
+                provider_query_persist_test_candidate_trace(
+                    app_state,
+                    &trace_id,
+                    &provider,
+                    candidate,
+                    candidate_index,
+                    RequestCandidateStatus::Failed,
+                    ProviderQueryTestTraceUpdate {
+                        error_message: Some("model test execution failed"),
+                        finished_at_unix_ms: Some(current_unix_ms()),
+                        ..ProviderQueryTestTraceUpdate::default()
+                    },
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        provider_query_finish_test_candidate_trace(
+            app_state,
+            &trace_id,
+            &provider,
+            candidate,
+            candidate_index,
+            &execution,
+        )
+        .await;
+        if execution.status != "skipped" {
+            total_attempts += 1;
+        }
+        let is_success = execution.status == "success";
+        let response_body = execution.response_body.clone();
+        attempts.push(provider_query_test_attempt_payload(
+            candidate_index,
+            candidate,
+            &execution,
+        ));
+        if is_success {
+            success_body = response_body;
+            success_stream = matches!(adapter, Some(ProviderQueryTestAdapter::Grok));
+            winning_candidate_index = Some(candidate_index);
+            break;
+        }
+    }
+    if let Some(winning_candidate_index) = winning_candidate_index {
+        provider_query_mark_unused_test_candidate_traces(
+            app_state,
+            &trace_id,
+            &provider,
+            &candidates,
+            winning_candidate_index.saturating_add(1),
+        )
+        .await;
+    }
+
+    let success = success_body.is_some();
+    let error = if success {
+        Value::Null
+    } else {
+        attempts
+            .iter()
+            .rev()
+            .find_map(|attempt| {
+                attempt
+                    .get("error_message")
+                    .cloned()
+                    .filter(|value| !value.is_null())
+            })
+            .or_else(|| {
+                attempts.iter().rev().find_map(|attempt| {
+                    attempt
+                        .get("skip_reason")
+                        .cloned()
+                        .filter(|value| !value.is_null())
+                })
+            })
+            .unwrap_or_else(|| json!(provider_query_default_local_test_error(route_path)))
+    };
+
+    Ok(Json(json!({
+        "success": success,
+        "model": requested_model,
+        "provider": provider_query_provider_payload(&provider),
+        "attempts": attempts,
+        "total_candidates": candidates.len(),
+        "total_attempts": total_attempts,
+        "candidate_summary": provider_query_candidate_summary_payload(
+            candidates.len(),
+            total_attempts,
+            &attempts,
+        ),
+        "data": success_body.as_ref().map(|body| json!({
+            "stream": success_stream,
+            "response": body,
+        })),
+        "error": error,
+    }))
+    .into_response())
+}
+pub(crate) async fn build_admin_provider_query_test_model_local_response(
+    state: &AdminAppState<'_>,
     payload: &Value,
 ) -> Result<Response<Body>, GatewayError> {
-    let provider_id = provider_query_extract_provider_id(payload).unwrap_or_default();
-    let failover_models = super::super::payload::provider_query_extract_failover_models(payload);
-    Ok(build_admin_provider_query_test_model_failover_response(
-        provider_id,
-        failover_models,
-    ))
+    let response = build_admin_provider_query_test_model_candidates_response(
+        state,
+        payload,
+        "/api/admin/provider-query/test-model",
+    )
+    .await?;
+    if !response.status().is_success() {
+        return Ok(response);
+    }
+    let body = to_bytes(
+        response.into_body(),
+        crate::headers::max_internal_buffered_body_bytes(),
+    )
+    .await
+    .map_err(|err| GatewayError::Internal(err.to_string()))?;
+    let parsed: Value =
+        serde_json::from_slice(&body).map_err(|err| GatewayError::Internal(err.to_string()))?;
+
+    Ok(Json(json!({
+        "success": parsed.get("success").cloned().unwrap_or(Value::Bool(false)),
+        "error": parsed.get("error").cloned().unwrap_or(Value::Null),
+        "data": parsed.get("data").cloned().unwrap_or(Value::Null),
+        "provider": parsed.get("provider").cloned().unwrap_or(Value::Null),
+        "model": parsed.get("model").cloned().unwrap_or(Value::Null),
+        "attempts": parsed.get("attempts").cloned().unwrap_or_else(|| json!([])),
+        "total_candidates": parsed.get("total_candidates").cloned().unwrap_or(json!(0)),
+        "total_attempts": parsed.get("total_attempts").cloned().unwrap_or(json!(0)),
+        "candidate_summary": parsed
+            .get("candidate_summary")
+            .cloned()
+            .unwrap_or_else(|| provider_query_candidate_summary_payload(0, 0, &[])),
+    }))
+    .into_response())
+}
+pub(crate) async fn build_admin_provider_query_test_model_failover_local_response(
+    state: &AdminAppState<'_>,
+    payload: &Value,
+) -> Result<Response<Body>, GatewayError> {
+    build_admin_provider_query_test_model_candidates_response(
+        state,
+        payload,
+        "/api/admin/provider-query/test-model-failover",
+    )
+    .await
 }
 
 pub(crate) fn build_admin_provider_query_test_model_response(

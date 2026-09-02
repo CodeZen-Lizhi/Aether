@@ -309,7 +309,6 @@ async fn gateway_model_fetch_updates_key_and_syncs_provider_model_whitelist_asso
     execution_runtime_handle.abort();
 }
 
-
 #[tokio::test]
 async fn gateway_model_fetch_updates_key_and_syncs_provider_model_whitelist_associations_without_execution_runtime_override(
 ) {

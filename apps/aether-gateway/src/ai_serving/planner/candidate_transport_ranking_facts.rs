@@ -69,7 +69,6 @@ pub(super) async fn resolve_cached_transport_ranking_facts(
     facts
 }
 
-
 async fn resolve_candidate_transport_ranking_facts(
     state: PlannerAppState<'_>,
     cache: &mut CandidateTransportRankingFactsCache,

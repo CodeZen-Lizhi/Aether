@@ -693,8 +693,14 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
     // 供应商侧优先级裁剪后，两候选同秩，先后顺序由带种子的哈希决定：
     // 这里只断言 failover 语义——首个候选 401 失败，随后换下一个候选成功。
     let expected_upstream_credentials: std::collections::BTreeMap<&str, String> = [
-        ("https://api.openai.primary.example/chat/completions", "primary"),
-        ("https://api.openai.backup.example/chat/completions", "backup"),
+        (
+            "https://api.openai.primary.example/chat/completions",
+            "primary",
+        ),
+        (
+            "https://api.openai.backup.example/chat/completions",
+            "backup",
+        ),
     ]
     .into_iter()
     .map(|(url, provider)| (url, format!("Bearer sk-upstream-openai-{provider}")))

@@ -65,7 +65,8 @@ use crate::orchestration::{
     trace_upstream_response_body, with_error_flow_report_context,
     with_upstream_response_report_context, LocalAdaptiveRateLimitEffect,
     LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
-    LocalExecutionEffectContext, LocalHealthFailureEffect, LocalHealthSuccessEffect,
+    LocalExecutionEffectContext, LocalFailoverClassification, LocalHealthFailureEffect,
+    LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::acquire_provider_pool_in_flight_guard;
 use crate::request_candidate_runtime::{
@@ -1859,6 +1860,21 @@ async fn execute_execution_runtime_sync_impl(
                 },
             )
             .await;
+            // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）也计入健康投影与熔断，
+            // 502 为上游不可达语义（Transient 类，走 8 连败 + 成功率窗口）。
+            apply_local_execution_effect(
+                state,
+                LocalExecutionEffectContext {
+                    plan: &plan,
+                    report_context: report_context.as_ref(),
+                },
+                LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                    status_code: 502,
+                    classification: LocalFailoverClassification::UseDefault,
+                    retry_after_secs: None,
+                }),
+            )
+            .await;
             if let Some(response) = maybe_build_sync_transport_error_stop_response(
                 state,
                 &plan,
@@ -1912,6 +1928,21 @@ async fn execute_execution_runtime_sync_impl(
                             started_at_unix_ms: Some(candidate_started_unix_secs),
                             finished_at_unix_ms: Some(terminal_unix_secs),
                         },
+                    )
+                    .await;
+                    // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）也计入健康投影与熔断，
+                    // 502 为上游不可达语义（Transient 类，走 8 连败 + 成功率窗口）。
+                    apply_local_execution_effect(
+                        state,
+                        LocalExecutionEffectContext {
+                            plan: &plan,
+                            report_context: report_context.as_ref(),
+                        },
+                        LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                            status_code: 502,
+                            classification: LocalFailoverClassification::UseDefault,
+                            retry_after_secs: None,
+                        }),
                     )
                     .await;
                     if let Some(response) = maybe_build_sync_transport_error_stop_response(
@@ -1988,6 +2019,21 @@ async fn execute_execution_runtime_sync_impl(
                     },
                 )
                 .await;
+            // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）也计入健康投影与熔断，
+            // 502 为上游不可达语义（Transient 类，走 8 连败 + 成功率窗口）。
+            apply_local_execution_effect(
+                state,
+                LocalExecutionEffectContext {
+                    plan: &plan,
+                    report_context: report_context.as_ref(),
+                },
+                LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                    status_code: 502,
+                    classification: LocalFailoverClassification::UseDefault,
+                    retry_after_secs: None,
+                }),
+            )
+            .await;
                 if let Some(response) = maybe_build_sync_transport_error_stop_response(
                     state,
                     &plan,

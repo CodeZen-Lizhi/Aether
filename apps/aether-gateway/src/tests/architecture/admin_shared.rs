@@ -177,7 +177,10 @@ fn admin_shared_does_not_own_provider_support() {
 
     let provider_paths_mod =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/provider/shared/paths/mod.rs");
-    for pattern in ["pub(crate) use self::crud::{", "pub(crate) use self::ops::{"] {
+    for pattern in [
+        "pub(crate) use self::crud::{",
+        "pub(crate) use self::ops::{",
+    ] {
         assert!(
             provider_paths_mod.contains(pattern),
             "provider/shared/paths/mod.rs should re-export split path owners through {pattern}"

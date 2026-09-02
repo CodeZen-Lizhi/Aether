@@ -64,6 +64,19 @@ pub(crate) async fn install_codex_quota_exhaustion_breaker(
     Ok(true)
 }
 
+/// Bug2 补丁: 手动恢复 Key 健康时清除该 Key 作用域的配额熔断 KV。
+/// 账号作用域的熔断（跨 Key 共享）需要请求头里的 account id 才能定位，
+/// 恢复单个目录 Key 时刻意不动它——账号级配额是否恢复应以账号自身的
+/// 窗口到期为准。
+pub(crate) async fn clear_codex_quota_breaker_for_key(
+    state: &AppState,
+    key_id: &str,
+) -> Result<(), GatewayError> {
+    let key = codex_quota_breaker_runtime_key("key", key_id);
+    state.runtime_kv_del(&key).await?;
+    Ok(())
+}
+
 /// Returns whether a planned Codex request is temporarily blocked by a
 /// definitive account quota signal that has not yet been observed in the
 /// durable provider catalog.

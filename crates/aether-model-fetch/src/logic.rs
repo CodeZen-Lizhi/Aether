@@ -548,7 +548,6 @@ fn model_id_from_openai_like_item(item: &Value) -> Option<String> {
     })
 }
 
-
 fn split_url_query(base_url: &str) -> (&str, Option<&str>) {
     let trimmed = base_url.trim();
     trimmed

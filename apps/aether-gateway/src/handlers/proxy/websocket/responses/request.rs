@@ -661,7 +661,6 @@ mod tests {
         assert!(normalized.get("background").is_none());
     }
 
-
     #[test]
     fn explicit_store_and_previous_response_id_are_forwarded() {
         let event = json!({
@@ -827,8 +826,6 @@ mod tests {
             .is_some_and(Value::is_null));
         assert!(normalized.get("generate").is_some_and(Value::is_null));
     }
-
-
 
     #[test]
     fn deepseek_continuations_preserve_idless_opaque_reasoning_state() {

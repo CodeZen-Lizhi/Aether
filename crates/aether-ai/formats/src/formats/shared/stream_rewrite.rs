@@ -217,7 +217,6 @@ impl AiSurfaceStreamRewriter<'_> {
     }
 }
 
-
 fn rewrite_model_directive_stream_line(
     report_context: &Value,
     line: Vec<u8>,
@@ -326,7 +325,6 @@ fn rewrite_stream_payload_model_from_context(report_context: &Value, value: &mut
     };
     rewrite_stream_payload_model(value, &display_model)
 }
-
 
 fn transform_standard_line(
     standard: &mut StreamingStandardFormatMatrix,

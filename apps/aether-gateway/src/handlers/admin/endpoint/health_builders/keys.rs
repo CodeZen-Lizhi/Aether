@@ -1,3 +1,5 @@
+use tracing::warn;
+
 use crate::handlers::admin::request::AdminAppState;
 use crate::provider_key_auth::provider_key_effective_api_formats;
 use aether_scheduler_core::{
@@ -46,6 +48,8 @@ fn default_key_health_payload() -> serde_json::Value {
         "health_score": 1.0,
         "consecutive_failures": 0,
         "last_failure_at": serde_json::Value::Null,
+        "rate_limit_cooldown_until_unix_secs": serde_json::Value::Null,
+        "consecutive_rate_limits": 0,
     })
 }
 
@@ -124,6 +128,23 @@ pub(crate) async fn recover_admin_key_health(
     if !updated {
         return None;
     }
+    // Bug2 补丁: 恢复动作同步清理 Codex 配额熔断 KV（最长 31 天 TTL，
+    // 原先不清会导致恢复后仍被 key 作用域熔断挡住）。亲和无需清理——
+    // 粘住本 Key 的会话在 Key 恢复健康后继续命中是正确行为。
+    if let Err(err) = crate::orchestration::codex_quota_breaker::clear_codex_quota_breaker_for_key(
+        state.as_ref(),
+        key_id,
+    )
+    .await
+    {
+        warn!(
+            event_name = "admin_key_health_recovery_breaker_clear_failed",
+            log_type = "event",
+            key_id,
+            error = ?err,
+            "failed to clear codex quota breaker during manual key recovery"
+        );
+    }
 
     Some(json!({
         "message": message,
@@ -198,6 +219,22 @@ pub(crate) async fn recover_all_admin_key_health(
             .ok()?;
         if !updated {
             continue;
+        }
+        // Bug2 补丁: 批量恢复同样清理 Codex 配额熔断 KV（失败仅告警）。
+        if let Err(err) =
+            crate::orchestration::codex_quota_breaker::clear_codex_quota_breaker_for_key(
+                state.as_ref(),
+                key.id.as_str(),
+            )
+            .await
+        {
+            warn!(
+                event_name = "admin_key_health_recovery_breaker_clear_failed",
+                log_type = "event",
+                key_id = key.id.as_str(),
+                error = ?err,
+                "failed to clear codex quota breaker during bulk key recovery"
+            );
         }
         let provider = state
             .read_provider_catalog_providers_by_ids(std::slice::from_ref(&key.provider_id))

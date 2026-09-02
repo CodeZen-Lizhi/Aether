@@ -264,7 +264,6 @@ fn classifies_admin_reveal_key_as_admin_proxy_route() {
     assert!(!decision.is_execution_runtime_candidate());
 }
 
-
 #[test]
 fn classifies_admin_update_key_as_admin_proxy_route() {
     let headers = http::HeaderMap::new();
@@ -395,10 +394,6 @@ fn classifies_admin_delete_endpoint_as_admin_proxy_route() {
     assert_eq!(decision.route_kind.as_deref(), Some("delete_endpoint"));
     assert!(!decision.is_execution_runtime_candidate());
 }
-
-
-
-
 
 #[test]
 fn classifies_admin_default_body_rules_as_admin_proxy_route() {

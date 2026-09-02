@@ -204,7 +204,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn candidate_contract_metadata_includes_transport_diagnostics() {
         let metadata = build_local_execution_candidate_contract_metadata_for_candidate(
@@ -252,5 +251,4 @@ mod tests {
             Value::Bool(false)
         );
     }
-
 }

@@ -339,7 +339,6 @@ fn provider_query_model_test_empty_selected_key_ids_keep_default_selection() {
     assert!(provider_query_extract_api_key_ids(&json!({ "api_key_ids": [] })).is_none());
 }
 
-
 #[test]
 fn provider_query_standard_test_reenforces_upstream_stream_body_field() {
     let endpoint_config = json!({"upstream_stream_policy": "force_stream"});

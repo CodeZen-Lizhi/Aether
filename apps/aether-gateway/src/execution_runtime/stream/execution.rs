@@ -107,7 +107,8 @@ use crate::orchestration::{
     with_error_flow_report_context, with_upstream_response_report_context, FailureDisposition,
     FailureTokenAction, LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect,
     LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
-    LocalFailoverAnalysis, LocalHealthFailureEffect, LocalHealthSuccessEffect,
+    LocalFailoverAnalysis, LocalFailoverClassification, LocalHealthFailureEffect,
+    LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::{
     acquire_provider_pool_in_flight_guard, ProviderPoolInFlightGuard,
@@ -3081,6 +3082,21 @@ async fn execute_execution_runtime_stream_inner(
                     },
                 )
                 .await;
+                // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）计入健康投影与熔断（502=上游不可达，Transient）。
+                apply_local_execution_effect(
+                    state,
+                    LocalExecutionEffectContext {
+                        plan: &plan,
+                        report_context: report_context.as_ref(),
+                    },
+                    LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                        status_code: 502,
+                        classification: LocalFailoverClassification::UseDefault,
+                        retry_after_secs: None,
+                    }),
+                )
+                .await;
+
                 if let Some(response) = maybe_build_stream_transport_error_stop_response(
                     state,
                     &plan,
@@ -3221,6 +3237,21 @@ async fn execute_execution_runtime_stream_inner(
                         },
                     )
                     .await;
+                    // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）计入健康投影与熔断（502=上游不可达，Transient）。
+                    apply_local_execution_effect(
+                        state,
+                        LocalExecutionEffectContext {
+                            plan: &plan,
+                            report_context: report_context.as_ref(),
+                        },
+                        LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                            status_code: 502,
+                            classification: LocalFailoverClassification::UseDefault,
+                            retry_after_secs: None,
+                        }),
+                    )
+                    .await;
+
                     if let Some(response) = maybe_build_stream_transport_error_stop_response(
                         state,
                         &plan,
@@ -3344,6 +3375,21 @@ async fn execute_execution_runtime_stream_inner(
                     },
                 )
                 .await;
+                // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）计入健康投影与熔断（502=上游不可达，Transient）。
+                apply_local_execution_effect(
+                    state,
+                    LocalExecutionEffectContext {
+                        plan: &plan,
+                        report_context: report_context.as_ref(),
+                    },
+                    LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                        status_code: 502,
+                        classification: LocalFailoverClassification::UseDefault,
+                        retry_after_secs: None,
+                    }),
+                )
+                .await;
+
                 if let Some(response) = maybe_build_stream_transport_error_stop_response(
                     state,
                     &plan,
@@ -7185,7 +7231,7 @@ mod tests {
             .expect("app state should build")
             .with_data_state_for_tests(data_state);
         let upstream_setup = "event: response.created\ndata: {\"type\":\"response.created\"}\n\n";
-        let upstream_error = "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}}\n\n";
+        let upstream_error = "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}\n\n";
         let frame_stream = stream! {
             yield Ok::<Bytes, std::io::Error>(ndjson_frame(StreamFrame {
                 frame_type: StreamFrameType::Headers,
@@ -8206,10 +8252,10 @@ mod tests {
             b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
         ));
         assert!(stream_chunk_contains_sse_done(
-            b"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{}}\n\n"
+            b"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{}\n\n"
         ));
         assert!(stream_chunk_contains_sse_done(
-            b"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\"}}\n\n"
+            b"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\"}\n\n"
         ));
         assert!(!stream_chunk_contains_sse_done(
             b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\"}\n\n"
@@ -8227,14 +8273,14 @@ mod tests {
         assert!(!tracker.observe_chunk(b"event: response.comp"));
         assert!(!tracker.observe_chunk(b"leted\r\n"));
         assert!(tracker
-            .observe_chunk(b"data: {\"type\":\"response.completed\",\"response\":{}}\r\n\r\n"));
+            .observe_chunk(b"data: {\"type\":\"response.completed\",\"response\":{}\r\n\r\n"));
     }
 
     #[test]
     fn client_visible_terminal_tracker_reports_the_exact_record_boundary() {
         let message_stop = b"event: message_stop\r\ndata: {\"type\":\"message_stop\"}\r\n\r\n";
         let trailing_error =
-            b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\"}}\n\n";
+            b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\"}\n\n";
         let chunk = [message_stop.as_slice(), trailing_error.as_slice()].concat();
         let mut tracker = ClientVisibleStreamCompletionTracker::default();
 
@@ -8365,9 +8411,9 @@ mod tests {
     fn provider_error_inspection_detects_response_failed_at_every_chunk_boundary() {
         let body = concat!(
             "event: response.created\n",
-            "data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\"}}\n\n",
+            "data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\"}\n\n",
             "event: response.failed\n",
-            "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}}\n\n",
+            "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}\n\n",
         )
         .as_bytes();
 
@@ -8753,7 +8799,7 @@ mod tests {
     #[tokio::test]
     async fn native_anthropic_error_before_semantic_event_allows_failover() {
         let unknown = "event: future_event\ndata: {\"type\":\"future_event\",\"value\":1}\n\n";
-        let upstream_error = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n";
+        let upstream_error = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}\n\n";
         let outcome = execute_native_anthropic_prefetch_stream(
             "req-anthropic-precommit-error",
             vec![unknown.to_string(), upstream_error.to_string()],
@@ -8801,7 +8847,7 @@ mod tests {
     async fn native_anthropic_auth_error_moves_to_the_next_credential() {
         let upstream_error = concat!(
             "event: error\n",
-            "data: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid credential\"}}\n\n",
+            "data: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid credential\"}\n\n",
         );
         let outcome = execute_native_anthropic_prefetch_stream(
             "req-anthropic-precommit-auth-error",
@@ -8827,9 +8873,9 @@ mod tests {
     async fn native_anthropic_semantic_event_commits_before_later_error() {
         let raw = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
             "event: error\n",
-            "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"late\"}}\n\n",
+            "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"late\"}\n\n",
         );
         let outcome = execute_native_anthropic_prefetch_stream(
             "req-anthropic-postcommit-error",
@@ -8850,7 +8896,7 @@ mod tests {
     async fn native_anthropic_frame_error_after_commit_emits_anthropic_terminal_event() {
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let original_error = "upstream disconnected after message_start";
         let outcome = execute_native_anthropic_prefetch_stream_with_terminal_error(
@@ -8878,7 +8924,7 @@ mod tests {
     async fn native_anthropic_eof_after_commit_emits_anthropic_terminal_event() {
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let outcome = execute_native_anthropic_prefetch_stream(
             "req-anthropic-postcommit-eof",
@@ -8903,7 +8949,7 @@ mod tests {
     async fn native_anthropic_done_marker_does_not_replace_message_stop() {
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let done = "data: [DONE]\n\n";
         let outcome = execute_native_anthropic_prefetch_stream(
@@ -8946,7 +8992,7 @@ mod tests {
             });
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let message_stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         let stream_dropped = Arc::new(AtomicBool::new(false));
@@ -9071,7 +9117,7 @@ mod tests {
             });
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let message_stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         let stream_dropped = Arc::new(AtomicBool::new(false));
@@ -9189,7 +9235,7 @@ mod tests {
     async fn native_anthropic_frame_error_after_message_stop_is_ignored() {
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let message_stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         let outcome = execute_native_anthropic_prefetch_stream_with_terminal_error(
@@ -9215,12 +9261,12 @@ mod tests {
     async fn native_anthropic_same_chunk_stops_at_message_stop_record() {
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let message_stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         let trailing_error = concat!(
             "event: error\n",
-            "data: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"after stop\"}}\n\n",
+            "data: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"after stop\"}\n\n",
         );
         let outcome = execute_native_anthropic_prefetch_stream(
             "req-anthropic-same-chunk-message-stop",
@@ -9243,12 +9289,12 @@ mod tests {
     #[tokio::test]
     async fn direct_anthropic_stops_at_message_stop_and_ignores_teardown_error() {
         let message_start = Bytes::from_static(
-            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let message_stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         let trailing_error = concat!(
             "event: error\n",
-            "data: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"after stop\"}}\n\n",
+            "data: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"after stop\"}\n\n",
         );
         let state = direct_anthropic_inline_state(
             "req-direct-anthropic-message-stop",
@@ -9275,7 +9321,7 @@ mod tests {
     #[tokio::test]
     async fn direct_anthropic_clean_eof_after_message_start_emits_one_error() {
         let message_start = Bytes::from_static(
-            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let state = direct_anthropic_inline_state(
             "req-direct-anthropic-premature-eof",
@@ -9301,10 +9347,10 @@ mod tests {
     #[tokio::test]
     async fn direct_anthropic_provider_error_is_not_duplicated() {
         let message_start = Bytes::from_static(
-            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let provider_error = Bytes::from_static(
-            b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"busy\"}}\n\n",
+            b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"busy\"}\n\n",
         );
         let state = direct_anthropic_inline_state(
             "req-direct-anthropic-provider-error",
@@ -9351,7 +9397,7 @@ mod tests {
         let unknown = "event: future_event\ndata: {\"type\":\"future_event\",\"value\":1}\n\n";
         let message_start = concat!(
             "event: message_start\n",
-            "data: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: {\"type\":\"message_start\",\"message\":{}\n\n",
         );
         let message_stop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         let expected = format!("{unknown}{message_start}{message_stop}");
@@ -9903,9 +9949,9 @@ mod tests {
         };
         let upstream_chunk = concat!(
             "event: response.created\n",
-            "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_midstream_error\",\"model\":\"gpt-5.5\",\"status\":\"in_progress\"}}\n\n",
+            "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_midstream_error\",\"model\":\"gpt-5.5\",\"status\":\"in_progress\"}\n\n",
             "event: response.output_item.added\n",
-            "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":\"lookup\",\"arguments\":\"\",\"status\":\"in_progress\"}}\n\n",
+            "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":\"lookup\",\"arguments\":\"\",\"status\":\"in_progress\"}\n\n",
             "event: response.function_call_arguments.delta\n",
             "data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"item_id\":\"fc_1\",\"call_id\":\"call_1\",\"delta\":\"{\\\"query\\\":\\\"abc\"}\n\n"
         );
@@ -10051,7 +10097,7 @@ mod tests {
         .with_execution_runtime_candidate(true);
         let frame_stream = stream! {
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}}\n",
+                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}\n",
             ));
             std::future::pending::<()>().await;
         }
@@ -10140,14 +10186,14 @@ mod tests {
         let terminal_frame_drained_for_stream = Arc::clone(&terminal_frame_drained);
         let frame_stream = stream! {
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}}\n",
+                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}\n",
             ));
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"first\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{\\\"content\\\":\\\"hello\\\"}}]}\\n\\n\"}}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"first\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{\\\"content\\\":\\\"hello\\\"}]}\\n\\n\"}\n",
             ));
             release_terminal_for_stream.notified().await;
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"terminal\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{},\\\"finish_reason\\\":\\\"stop\\\"}],\\\"usage\\\":{\\\"prompt_tokens\\\":7,\\\"completion_tokens\\\":11,\\\"total_tokens\\\":18}}\\n\\ndata: [DONE]\\n\\n\"}}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"terminal\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{},\\\"finish_reason\\\":\\\"stop\\\"}],\\\"usage\\\":{\\\"prompt_tokens\\\":7,\\\"completion_tokens\\\":11,\\\"total_tokens\\\":18}\\n\\ndata: [DONE]\\n\\n\"}\n",
             ));
             terminal_frame_drained_for_stream.notify_one();
         }
@@ -10196,7 +10242,7 @@ mod tests {
         .expect("first business chunk should arrive");
         assert_eq!(
             first.as_ref(),
-            b"data: {\"id\":\"first\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\n"
+            b"data: {\"id\":\"first\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}]}\n\n"
         );
         tokio::time::sleep(Duration::from_millis(30)).await;
         drop(body_stream);
@@ -10316,19 +10362,19 @@ mod tests {
         let release_eof_for_stream = Arc::clone(&release_eof);
         let frame_stream = stream! {
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}}\n",
+                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}\n",
             ));
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"first\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{\\\"content\\\":\\\"hi\\\"},\\\"finish_reason\\\":null}]}\\n\\n\"}}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"first\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{\\\"content\\\":\\\"hi\\\"},\\\"finish_reason\\\":null}]}\\n\\n\"}\n",
             ));
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"terminal\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{},\\\"finish_reason\\\":\\\"stop\\\"}],\\\"usage\\\":{\\\"prompt_tokens\\\":7,\\\"completion_tokens\\\":11,\\\"total_tokens\\\":18}}\\n\\n\"}}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"terminal\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{},\\\"finish_reason\\\":\\\"stop\\\"}],\\\"usage\\\":{\\\"prompt_tokens\\\":7,\\\"completion_tokens\\\":11,\\\"total_tokens\\\":18}\\n\\n\"}\n",
             ));
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: [DO\"}}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: [DO\"}\n",
             ));
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"NE]\\n\\n\"}}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"NE]\\n\\n\"}\n",
             ));
             release_eof_for_stream.notified().await;
         }
@@ -10462,10 +10508,10 @@ mod tests {
         };
         let frame_stream = stream! {
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}}\n",
+                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}\n",
             ));
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"event: response.output_item.done\\ndata: {\\\"type\\\":\\\"response.output_item.done\\\",\\\"output_index\\\":0,\\\"item\\\":{\\\"id\\\":\\\"ig_1\\\",\\\"type\\\":\\\"image_generation_call\\\",\\\"result\\\":\\\"aGVsbG8=\\\"}}\\n\\nevent: response.completed\\ndata: {\\\"type\\\":\\\"response.completed\\\",\\\"response\\\":{\\\"id\\\":\\\"resp_1\\\",\\\"model\\\":\\\"gpt-image-2\\\",\\\"status\\\":\\\"completed\\\",\\\"usage\\\":null}}\\n\\n\"}}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"event: response.output_item.done\\ndata: {\\\"type\\\":\\\"response.output_item.done\\\",\\\"output_index\\\":0,\\\"item\\\":{\\\"id\\\":\\\"ig_1\\\",\\\"type\\\":\\\"image_generation_call\\\",\\\"result\\\":\\\"aGVsbG8=\\\"}\\n\\nevent: response.completed\\ndata: {\\\"type\\\":\\\"response.completed\\\",\\\"response\\\":{\\\"id\\\":\\\"resp_1\\\",\\\"model\\\":\\\"gpt-image-2\\\",\\\"status\\\":\\\"completed\\\",\\\"usage\\\":null}\\n\\n\"}\n",
             ));
             std::future::pending::<()>().await;
         }
@@ -10577,19 +10623,19 @@ mod tests {
                     async move {
                         let frames = stream! {
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}}\n",
+                                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}\n",
                             ));
                             tokio::time::sleep(Duration::from_millis(10)).await;
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"event: response.output_text.delta\\ndata: {\\\"type\\\":\\\"response.output_text.delta\\\",\\\"delta\\\":\\\"hi\\\"}\\n\\n\"}}\n",
+                                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"event: response.output_text.delta\\ndata: {\\\"type\\\":\\\"response.output_text.delta\\\",\\\"delta\\\":\\\"hi\\\"}\\n\\n\"}\n",
                             ));
                             first_data_seen.notify_one();
                             release_terminal.notified().await;
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"ttfb_ms\":123,\"elapsed_ms\":456}}}\n",
+                                b"{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"ttfb_ms\":123,\"elapsed_ms\":456}}\n",
                             ));
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n",
+                                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}\n",
                             ));
                         };
                         let mut response = axum::http::Response::new(Body::from_stream(frames));
@@ -10735,26 +10781,26 @@ mod tests {
                     async move {
                         let frames = stream! {
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}}\n",
+                                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}\n",
                             ));
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"\"}}\n",
+                                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"\"}\n",
                             ));
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"ttfb_ms\":11,\"elapsed_ms\":12}}}\n",
+                                b"{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"ttfb_ms\":11,\"elapsed_ms\":12}}\n",
                             ));
                             first_event_seen.notify_one();
                             release_text.notified().await;
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"choices\\\":[{\\\"delta\\\":{\\\"content\\\":\\\"hello\\\"}}]}\\n\\n\"}}\n",
+                                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"choices\\\":[{\\\"delta\\\":{\\\"content\\\":\\\"hello\\\"}]}\\n\\n\"}\n",
                             ));
                             text_seen.notify_one();
                             release_terminal.notified().await;
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"elapsed_ms\":50}}}\n",
+                                b"{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"elapsed_ms\":50}}\n",
                             ));
                             yield Ok::<Bytes, Infallible>(Bytes::from_static(
-                                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n",
+                                b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}\n",
                             ));
                         };
                         let mut response = axum::http::Response::new(Body::from_stream(frames));
@@ -10887,10 +10933,10 @@ mod tests {
                 "/v1/execute/stream",
                 any(|_request: Request| async move {
                     let frames = concat!(
-                        "{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"application/json\"}}}\n",
-                        "{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"{\\\"id\\\":\\\"resp-remote-runtime-sync-json-123\\\",\\\"object\\\":\\\"response\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"status\\\":\\\"completed\\\",\\\"output\\\":[{\\\"type\\\":\\\"message\\\",\\\"id\\\":\\\"msg-remote-runtime-sync-json-123\\\",\\\"role\\\":\\\"assistant\\\",\\\"content\\\":[{\\\"type\\\":\\\"output_text\\\",\\\"text\\\":\\\"Hello from remote runtime sync json\\\",\\\"annotations\\\":[]}]}],\\\"usage\\\":{\\\"input_tokens\\\":1,\\\"output_tokens\\\":2,\\\"total_tokens\\\":3}}\"}}\n",
-                        "{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"elapsed_ms\":41}}}\n",
-                        "{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n"
+                        "{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"application/json\"}}\n",
+                        "{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"{\\\"id\\\":\\\"resp-remote-runtime-sync-json-123\\\",\\\"object\\\":\\\"response\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"status\\\":\\\"completed\\\",\\\"output\\\":[{\\\"type\\\":\\\"message\\\",\\\"id\\\":\\\"msg-remote-runtime-sync-json-123\\\",\\\"role\\\":\\\"assistant\\\",\\\"content\\\":[{\\\"type\\\":\\\"output_text\\\",\\\"text\\\":\\\"Hello from remote runtime sync json\\\",\\\"annotations\\\":[]}]}],\\\"usage\\\":{\\\"input_tokens\\\":1,\\\"output_tokens\\\":2,\\\"total_tokens\\\":3}\"}\n",
+                        "{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"elapsed_ms\":41}}\n",
+                        "{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}\n"
                     );
                     let mut response = axum::http::Response::new(Body::from(frames));
                     response.headers_mut().insert(
@@ -10995,8 +11041,8 @@ mod tests {
                 "/v1/execute/stream",
                 any(|_request: Request| async move {
                     let frames = concat!(
-                        "{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":302,\"headers\":{\"location\":\"/\",\"content-type\":\"text/html\",\"content-length\":\"0\"}}}\n",
-                        "{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n"
+                        "{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":302,\"headers\":{\"location\":\"/\",\"content-type\":\"text/html\",\"content-length\":\"0\"}}\n",
+                        "{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}\n"
                     );
                     let mut response = axum::http::Response::new(Body::from(frames));
                     response.headers_mut().insert(
@@ -11203,10 +11249,10 @@ mod tests {
                 "/v1/execute/stream",
                 any(|_request: Request| async move {
                     let frames = concat!(
-                        "{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"application/json\"}}}\n",
-                        "{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"{\\\"created\\\":1776972364,\\\"data\\\":[{\\\"b64_json\\\":\\\"aGVsbG8=\\\"}],\\\"usage\\\":{\\\"total_tokens\\\":100,\\\"input_tokens\\\":50,\\\"output_tokens\\\":50,\\\"input_tokens_details\\\":{\\\"text_tokens\\\":10,\\\"image_tokens\\\":40}}}\"}}\n",
-                        "{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"elapsed_ms\":41}}}\n",
-                        "{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n"
+                        "{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"application/json\"}}\n",
+                        "{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"{\\\"created\\\":1776972364,\\\"data\\\":[{\\\"b64_json\\\":\\\"aGVsbG8=\\\"}],\\\"usage\\\":{\\\"total_tokens\\\":100,\\\"input_tokens\\\":50,\\\"output_tokens\\\":50,\\\"input_tokens_details\\\":{\\\"text_tokens\\\":10,\\\"image_tokens\\\":40}}\"}\n",
+                        "{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"elapsed_ms\":41}}\n",
+                        "{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}\n"
                     );
                     let mut response = axum::http::Response::new(Body::from(frames));
                     response.headers_mut().insert(

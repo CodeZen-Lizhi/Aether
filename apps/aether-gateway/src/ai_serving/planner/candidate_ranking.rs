@@ -439,7 +439,6 @@ mod tests {
         assert_eq!(overlaid.key_global_priority_for_format, Some(2));
     }
 
-
     fn sample_provider() -> StoredProviderCatalogProvider {
         sample_provider_with_config("provider-1", None)
     }
@@ -822,8 +821,6 @@ mod tests {
         assert_eq!(ranked[0].endpoint_id, "endpoint-same");
         assert_eq!(ranked[1].endpoint_id, "endpoint-cross");
     }
-
-
 
     #[tokio::test]
     async fn local_execution_ranking_uses_provider_priority_mode_when_configured() {
