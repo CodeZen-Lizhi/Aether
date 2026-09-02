@@ -60,3 +60,46 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: 单用户化分支合并收尾
+<!-- trellis-session: v=2 fp=278d1663eb9b0807 -->
+
+**Date**: 2026-09-02
+**Task**: 单用户化分支合并收尾
+**Branch**: `slim-personal`
+
+### Summary
+
+将 task/single-user-cleanup 的 7 个独有提交合并回 slim-personal，完成 8 提交合并范围的收尾；cargo check -p aether-gateway --lib 与 --tests 均通过；归档 Trellis 任务 09-01-single-user-cleanup。保留其他质量债任务的并行未提交改动。
+
+### Main Changes
+
+- 合并 task/single-user-cleanup 到 slim-personal
+- 归档 Trellis 任务 09-01-single-user-cleanup
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e938d84e6` | refactor(slim): 单用户化阶段1 — 前端用户侧下线 |
+| `5ee921633` | refactor(slim): 单用户化阶段2 — 后端用户端点收缩 |
+| `1e7e74a02` | wip(baseline): 基线编译修复进行中 — lib 全绿，测试目标还剩约530个错误 |
+| `2dae5afd5` | fix(baseline): 测试目标编译清零 — 迁移 slim 删除的字段/家族测试 |
+| `75f7dd1b2` | fix(baseline): cargo test 全绿 — 2494 passed / 0 failed |
+| `0578bfcb5` | refactor(slim): 单用户化阶段3 — 删 users_manage 后端组与角色体系瘦身 |
+| `37c02ed11` | refactor(slim): 单用户化阶段4 — DB清理迁移与收尾 |
+| `9ce8221f2` | fix(frontend): 预存类型错误清理第一批 — 请求追踪/认证表单/模型页/散点图 |
+
+### Testing
+
+- [OK] cargo check -p aether-gateway --lib
+- [OK] cargo check -p aether-gateway --tests
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续处理 09-02-fix-preexisting-quality-debts 的剩余质量问题
