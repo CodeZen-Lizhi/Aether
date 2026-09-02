@@ -10,25 +10,9 @@ use crate::data::GatewayDataState;
 use super::{
     system_config_string, WalletDailyUsageAggregationTarget, DB_MAINTENANCE_HOUR,
     DB_MAINTENANCE_MINUTE, DB_MAINTENANCE_WEEKDAY, DB_MAINTENANCE_WEEKLY_INTERVAL,
-    MAINTENANCE_DEFAULT_TIMEZONE, PROVIDER_CHECKIN_DEFAULT_TIME, STATS_DAILY_AGGREGATION_HOUR,
-    STATS_DAILY_AGGREGATION_MINUTE, STATS_HOURLY_AGGREGATION_MINUTE,
+    MAINTENANCE_DEFAULT_TIMEZONE, STATS_DAILY_AGGREGATION_HOUR, STATS_DAILY_AGGREGATION_MINUTE,
+    STATS_HOURLY_AGGREGATION_MINUTE,
 };
-
-pub(super) async fn provider_checkin_schedule(
-    data: &GatewayDataState,
-) -> Result<(u32, u32), DataLayerError> {
-    let configured =
-        system_config_string(data, "provider_checkin_time", PROVIDER_CHECKIN_DEFAULT_TIME).await?;
-    Ok(parse_hhmm_time(&configured).unwrap_or_else(|| {
-        warn!(
-            value = %configured,
-            fallback = PROVIDER_CHECKIN_DEFAULT_TIME,
-            "gateway provider checkin time invalid; falling back"
-        );
-        parse_hhmm_time(PROVIDER_CHECKIN_DEFAULT_TIME)
-            .expect("default provider checkin time should parse")
-    }))
-}
 
 pub(super) fn maintenance_timezone() -> Tz {
     let configured = std::env::var("APP_TIMEZONE")

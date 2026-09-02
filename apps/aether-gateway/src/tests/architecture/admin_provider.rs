@@ -795,10 +795,7 @@ fn admin_provider_ops_providers_mod_stays_thin() {
         );
     }
 
-    for path in [
-        "apps/aether-gateway/src/maintenance/runtime.rs",
-        "apps/aether-gateway/src/maintenance/runtime/provider_checkin.rs",
-    ] {
+    for path in ["apps/aether-gateway/src/maintenance/runtime.rs"] {
         let contents = read_workspace_file(path);
         assert!(
             (contents.contains("admin_api::admin_provider_ops_local_action_response")

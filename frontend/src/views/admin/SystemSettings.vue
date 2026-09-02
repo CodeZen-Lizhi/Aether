@@ -122,14 +122,6 @@
             @update:proxy-node-metrics-cleanup-batch-size="systemConfig.proxy_node_metrics_cleanup_batch_size = $event"
           />
 
-          <!-- 定时任务 -->
-          <ScheduledTasksSection
-            id="section-scheduled"
-            collapsible
-            :default-open="false"
-            :scheduled-tasks="scheduledTasks"
-          />
-
           <!-- 系统版本信息 -->
           <SystemInfoSection
             id="section-sysinfo"
@@ -214,7 +206,6 @@ import { PageHeader, PageContainer } from '@/components/layout'
 // Composables
 import { useSystemConfig } from './system-settings/composables/useSystemConfig'
 import { useConfigExportImport } from './system-settings/composables/useConfigExportImport'
-import { useScheduledTasks } from './system-settings/composables/useScheduledTasks'
 
 // Section components
 import SiteInfoSection from './system-settings/SiteInfoSection.vue'
@@ -223,7 +214,6 @@ import ProxyConfigSection from './system-settings/ProxyConfigSection.vue'
 import BasicConfigSection from './system-settings/BasicConfigSection.vue'
 import RequestLogSection from './system-settings/RequestLogSection.vue'
 import CleanupPolicySection from './system-settings/CleanupPolicySection.vue'
-import ScheduledTasksSection from './system-settings/ScheduledTasksSection.vue'
 import SystemInfoSection from './system-settings/SystemInfoSection.vue'
 
 // Dialog components
@@ -238,7 +228,6 @@ const tocItems = [
   { id: 'section-basic', label: '基础配置' },
   { id: 'section-request-log', label: '请求记录' },
   { id: 'section-cleanup', label: '记录清理策略' },
-  { id: 'section-scheduled', label: '定时任务' },
   { id: 'section-sysinfo', label: '系统信息' },
 ]
 
@@ -361,19 +350,11 @@ function handleDataFileSelect(kind: DataManagementKind, event: Event) {
   }
 }
 
-// Scheduled tasks composable
-const {
-  scheduledTasks,
-  initPreviousValues,
-} = useScheduledTasks(systemConfig)
-
 onMounted(async () => {
   await Promise.all([
     loadSystemConfig(),
     loadSystemVersion(),
   ])
-  // 配置加载完成后初始化定时任务的原始值
-  initPreviousValues()
   await nextTick()
   setupScrollSpy()
 })

@@ -18,11 +18,11 @@ use super::{
     cleanup_proxy_node_metrics_once, cleanup_stale_proxy_nodes_once, inspect_proxy_upgrade_rollout,
     next_daily_run_after, next_db_maintenance_run_after, next_stats_aggregation_run_after,
     next_stats_hourly_aggregation_run_after, pending_cleanup_batch_size,
-    pending_cleanup_timeout_minutes, plan_pending_cleanup_batch, provider_checkin_schedule,
+    pending_cleanup_timeout_minutes, plan_pending_cleanup_batch,
     run_db_maintenance_with, run_proxy_upgrade_rollout_once, spawn_pending_cleanup_worker,
     spawn_pool_monitor_worker,
     proxy_node_metrics_cleanup_settings, record_proxy_upgrade_traffic_success,
-    spawn_db_maintenance_worker, spawn_provider_checkin_worker,
+    spawn_db_maintenance_worker,
     spawn_proxy_node_stale_cleanup_worker, spawn_proxy_upgrade_rollout_worker,
     spawn_stats_aggregation_worker, spawn_stats_hourly_aggregation_worker,
     spawn_usage_cleanup_worker, spawn_wallet_daily_usage_aggregation_worker,
@@ -558,15 +558,6 @@ async fn spawn_wallet_daily_usage_aggregation_worker_skips_when_wallet_daily_usa
         .expect("gateway state should build")
         .with_data_state_for_tests(GatewayDataState::disabled());
     assert!(spawn_wallet_daily_usage_aggregation_worker(state).is_none());
-}
-
-#[tokio::test]
-async fn spawn_provider_checkin_worker_skips_when_provider_catalog_unavailable() {
-    let state = AppState::new()
-        .expect("gateway state should build")
-        .with_data_state_for_tests(GatewayDataState::disabled());
-
-    assert!(spawn_provider_checkin_worker(state).is_none());
 }
 
 #[tokio::test]
@@ -1173,22 +1164,8 @@ fn wallet_daily_usage_aggregation_target_uses_previous_local_day_window() {
     );
 }
 
-#[tokio::test]
-async fn provider_checkin_schedule_uses_default_for_invalid_value() {
-    let data = GatewayDataState::disabled().with_system_config_values_for_tests([(
-        "provider_checkin_time".to_string(),
-        json!("25:99"),
-    )]);
-
-    let schedule = provider_checkin_schedule(&data)
-        .await
-        .expect("provider checkin schedule should resolve");
-
-    assert_eq!(schedule, (1, 5));
-}
-
 #[test]
-fn next_provider_checkin_run_aligns_to_same_day_when_before_slot() {
+fn next_daily_run_aligns_to_same_day_when_before_slot() {
     let timezone: Tz = "Asia/Shanghai".parse().expect("timezone should parse");
     let now_utc = "2026-03-31T16:59:00Z"
         .parse::<DateTime<Utc>>()
@@ -1200,7 +1177,7 @@ fn next_provider_checkin_run_aligns_to_same_day_when_before_slot() {
 }
 
 #[test]
-fn next_provider_checkin_run_rolls_to_next_day_after_slot() {
+fn next_daily_run_rolls_to_next_day_after_slot() {
     let timezone: Tz = "Asia/Shanghai".parse().expect("timezone should parse");
     let now_utc = "2026-03-31T17:05:01Z"
         .parse::<DateTime<Utc>>()

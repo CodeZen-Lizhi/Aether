@@ -12,12 +12,11 @@ use super::{
     cleanup_expired_gemini_file_mappings_once, cleanup_proxy_node_metrics_once,
     cleanup_request_candidates_once, cleanup_stale_pending_requests_once,
     cleanup_stale_proxy_nodes_once, collect_proxy_upgrade_rollout_probes, now_unix_secs,
-    perform_db_maintenance_once, perform_manual_usage_cleanup_once, perform_provider_checkin_once,
-    perform_stats_aggregation_once, perform_stats_hourly_aggregation_once,
-    perform_usage_cleanup_once, perform_wallet_daily_usage_aggregation_once,
-    record_admin_cleanup_run, record_completed_cleanup_run, record_failed_cleanup_run,
-    record_proxy_upgrade_traffic_success, summarize_database_pool, AdminCleanupRunRecord,
-    ManualUsageCleanupOptions,
+    perform_db_maintenance_once, perform_manual_usage_cleanup_once, perform_stats_aggregation_once,
+    perform_stats_hourly_aggregation_once, perform_usage_cleanup_once,
+    perform_wallet_daily_usage_aggregation_once, record_admin_cleanup_run,
+    record_completed_cleanup_run, record_failed_cleanup_run, record_proxy_upgrade_traffic_success,
+    summarize_database_pool, AdminCleanupRunRecord, ManualUsageCleanupOptions,
 };
 
 pub(super) async fn run_audit_cleanup_once(data: &GatewayDataState) -> Result<(), DataLayerError> {
@@ -634,21 +633,4 @@ pub(super) async fn run_stats_hourly_aggregation_once(
         "gateway aggregated stats hourly tables"
     );
     Ok(true)
-}
-
-pub(super) async fn run_provider_checkin_once(state: &AppState) -> Result<(), GatewayError> {
-    let summary = perform_provider_checkin_once(state).await?;
-    if summary.attempted > 0 {
-        info!(
-            event_name = "provider_checkin_completed",
-            log_type = "ops",
-            worker = "provider_checkin",
-            attempted = summary.attempted,
-            succeeded = summary.succeeded,
-            failed = summary.failed,
-            skipped = summary.skipped,
-            "gateway finished provider checkin"
-        );
-    }
-    Ok(())
 }

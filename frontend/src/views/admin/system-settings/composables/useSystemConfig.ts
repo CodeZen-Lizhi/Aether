@@ -38,10 +38,6 @@ export interface SystemConfig {
   proxy_node_metrics_1m_retention_days: number
   proxy_node_metrics_1h_retention_days: number
   proxy_node_metrics_cleanup_batch_size: number
-  // 定时任务
-  enable_provider_checkin: boolean
-  provider_checkin_time: string
-  enable_oauth_token_refresh: boolean
 }
 
 const CONFIG_KEYS = [
@@ -78,10 +74,6 @@ const CONFIG_KEYS = [
   'proxy_node_metrics_1m_retention_days',
   'proxy_node_metrics_1h_retention_days',
   'proxy_node_metrics_cleanup_batch_size',
-  // 定时任务
-  'enable_provider_checkin',
-  'provider_checkin_time',
-  'enable_oauth_token_refresh',
 ]
 
 function createDefaultConfig(): SystemConfig {
@@ -119,10 +111,6 @@ function createDefaultConfig(): SystemConfig {
     proxy_node_metrics_1m_retention_days: 30,
     proxy_node_metrics_1h_retention_days: 180,
     proxy_node_metrics_cleanup_batch_size: 5000,
-    // 定时任务
-    enable_provider_checkin: true,
-    provider_checkin_time: '01:05',
-    enable_oauth_token_refresh: true,
   }
 }
 

@@ -11,19 +11,17 @@ use super::{
     cleanup_processed_usage_counter_deltas_once, duration_until_next_daily_run,
     duration_until_next_db_maintenance_run, duration_until_next_stats_aggregation_run,
     duration_until_next_stats_hourly_aggregation_run, maintenance_timezone, parse_hhmm_time,
-    perform_provider_quota_alert_once, provider_checkin_schedule, run_db_maintenance_once,
+    perform_provider_quota_alert_once, run_db_maintenance_once,
     run_gemini_file_mapping_cleanup_once, run_pending_cleanup_once, run_pool_monitor_once,
-    run_provider_checkin_once, run_proxy_node_metrics_cleanup_once,
-    run_proxy_node_stale_cleanup_once, run_proxy_upgrade_rollout_once,
-    run_request_candidate_cleanup_once, run_stats_aggregation_once,
+    run_proxy_node_metrics_cleanup_once, run_proxy_node_stale_cleanup_once,
+    run_proxy_upgrade_rollout_once, run_request_candidate_cleanup_once, run_stats_aggregation_once,
     run_stats_hourly_aggregation_once, run_usage_cleanup_once, run_usage_counter_flush_once,
     run_wallet_daily_usage_aggregation_once, GEMINI_FILE_MAPPING_CLEANUP_INTERVAL,
-    PENDING_CLEANUP_INTERVAL, POOL_MONITOR_INTERVAL, PROVIDER_CHECKIN_DEFAULT_TIME,
-    PROVIDER_QUOTA_ALERT_INTERVAL, PROXY_NODE_METRICS_CLEANUP_HOUR,
-    PROXY_NODE_METRICS_CLEANUP_MINUTE, PROXY_NODE_STALE_SWEEP_INTERVAL,
-    PROXY_UPGRADE_ROLLOUT_INTERVAL, REQUEST_CANDIDATE_CLEANUP_INTERVAL, USAGE_CLEANUP_HOUR,
-    USAGE_CLEANUP_MINUTE, WALLET_DAILY_USAGE_AGGREGATION_HOUR,
-    WALLET_DAILY_USAGE_AGGREGATION_MINUTE,
+    PENDING_CLEANUP_INTERVAL, POOL_MONITOR_INTERVAL, PROVIDER_QUOTA_ALERT_INTERVAL,
+    PROXY_NODE_METRICS_CLEANUP_HOUR, PROXY_NODE_METRICS_CLEANUP_MINUTE,
+    PROXY_NODE_STALE_SWEEP_INTERVAL, PROXY_UPGRADE_ROLLOUT_INTERVAL,
+    REQUEST_CANDIDATE_CLEANUP_INTERVAL, USAGE_CLEANUP_HOUR, USAGE_CLEANUP_MINUTE,
+    WALLET_DAILY_USAGE_AGGREGATION_HOUR, WALLET_DAILY_USAGE_AGGREGATION_MINUTE,
 };
 use super::{UsageCounterFlushRuntimeMetrics, UsageCounterFlushWorkerConfig};
 
@@ -403,62 +401,6 @@ async fn run_usage_counter_flush_worker_loop(
 
         interval.tick().await;
     }
-}
-
-pub(crate) fn spawn_provider_checkin_worker(
-    state: AppState,
-) -> Option<tokio::task::JoinHandle<()>> {
-    if !state.has_provider_catalog_data_reader() {
-        return None;
-    }
-
-    let timezone = maintenance_timezone();
-    Some(crate::task_runtime::spawn_singleton_worker(
-        state,
-        crate::task_runtime::TASK_KEY_PROVIDER_CHECKIN,
-        move |state| async move {
-            let mut deferred_since = None;
-            loop {
-                let (hour, minute) = match provider_checkin_schedule(&state.data).await {
-                    Ok(schedule) => schedule,
-                    Err(err) => {
-                        warn!(
-                            event_name = "maintenance_schedule_lookup_failed",
-                            log_type = "ops",
-                            worker = "provider_checkin",
-                            phase = "schedule_lookup",
-                            error = %err,
-                            fallback = PROVIDER_CHECKIN_DEFAULT_TIME,
-                            "gateway provider checkin schedule lookup failed; falling back"
-                        );
-                        parse_hhmm_time(PROVIDER_CHECKIN_DEFAULT_TIME)
-                            .expect("default provider checkin time should parse")
-                    }
-                };
-                tokio::time::sleep(duration_until_next_daily_run(
-                    Utc::now(),
-                    timezone,
-                    hour,
-                    minute,
-                ))
-                .await;
-                loop {
-                    if should_defer_for_database_pressure(
-                        &state.data,
-                        "provider_checkin",
-                        &mut deferred_since,
-                    ) {
-                        tokio::time::sleep(MAINTENANCE_PRESSURE_RETRY_INTERVAL).await;
-                        continue;
-                    }
-                    break;
-                }
-                if let Err(err) = run_provider_checkin_once(&state).await {
-                    log_maintenance_worker_failure("provider_checkin", "tick", &err);
-                }
-            }
-        },
-    ))
 }
 
 pub(crate) fn spawn_provider_quota_alert_worker(
