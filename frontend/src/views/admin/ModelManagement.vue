@@ -29,6 +29,23 @@
               <!-- 操作按钮 -->
               <ExternalModelsAccessControl />
               <Button
+                size="sm"
+                class="h-8"
+                :disabled="priceSyncButtonDisabled"
+                :title="priceSyncButtonTitle"
+                @click="handleSyncPricesClick"
+              >
+                <Loader2
+                  v-if="batchAction === 'sync-prices' || batchOnlineLoading"
+                  class="w-3.5 h-3.5 mr-1 animate-spin"
+                />
+                <RefreshCw
+                  v-else
+                  class="w-3.5 h-3.5 mr-1"
+                />
+                {{ priceSyncButtonLabel }}
+              </Button>
+              <Button
                 variant="ghost"
                 size="icon"
                 class="h-8 w-8"
@@ -50,23 +67,8 @@
           v-if="selectedModelIds.size > 0"
           class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2"
         >
-          <span class="text-sm font-medium">{{ batchSelectionSummary }}</span>
+          <span class="text-sm font-medium">已选 {{ selectedModelIds.size }} 个</span>
           <div class="flex-1" />
-          <Button
-            size="sm"
-            :disabled="batchPriceSyncPlan.syncable.length === 0 || submittingBatch"
-            @click="confirmBatchSyncPrices"
-          >
-            <Loader2
-              v-if="batchAction === 'sync-prices'"
-              class="w-4 h-4 mr-1 animate-spin"
-            />
-            <RefreshCw
-              v-else
-              class="w-4 h-4 mr-1"
-            />
-            {{ batchAction === 'sync-prices' ? '同步中...' : `同步在线价格 (${batchPriceSyncPlan.syncable.length})` }}
-          </Button>
           <Button
             size="sm"
             variant="destructive"
@@ -529,7 +531,6 @@
       @update:open="handleEditProviderDialogUpdate"
       @saved="handleEditProviderSaved"
     />
-
   </div>
 </template>
 
@@ -1192,20 +1193,44 @@ const selectedModels = computed(() =>
   globalModels.value.filter(model => selectedModelIds.value.has(model.id))
 )
 
+// 头部常驻同步按钮的作用范围：有勾选时仅同步勾选的模型，否则同步全部
+const priceSyncTargetModels = computed(() => (
+  selectedModelIds.value.size > 0 ? selectedModels.value : globalModels.value
+))
+
 const batchPriceSyncPlan = computed(() => (
   buildGlobalModelPriceSyncPlan(
-    selectedModels.value,
+    priceSyncTargetModels.value,
     batchOnlineModels.value,
     rememberedBatchPricingProviderIds.value,
   )
 ))
 
-const batchSelectionSummary = computed(() => {
-  const selectedCount = selectedModelIds.value.size
-  if (selectedCount === 0) return ''
-  const plan = batchPriceSyncPlan.value
-  return `已选 ${selectedCount} 个 · 可更新 ${plan.syncable.length} · 已一致 ${plan.unchanged.length} · 不兼容 ${plan.unsupported.length} · 无在线价格 ${plan.unavailable.length}`
+const priceSyncButtonLabel = computed(() => {
+  if (batchAction.value === 'sync-prices') return '同步中...'
+  if (!batchOnlineLoaded.value) return '同步在线价格'
+  return `同步在线价格 (${batchPriceSyncPlan.value.syncable.length})`
 })
+
+const priceSyncButtonDisabled = computed(() => (
+  batchOnlineLoading.value
+  || submittingBatch.value
+  || batchAction.value === 'sync-prices'
+  || (batchOnlineLoaded.value && batchPriceSyncPlan.value.syncable.length === 0)
+))
+
+const priceSyncButtonTitle = computed(() => (
+  selectedModelIds.value.size > 0
+    ? `同步选中的 ${selectedModelIds.value.size} 个模型价格`
+    : '同步全部模型价格'
+))
+
+async function handleSyncPricesClick() {
+  if (!batchOnlineLoaded.value && !batchOnlineLoading.value) {
+    await loadBatchOnlineModels()
+  }
+  await confirmBatchSyncPrices()
+}
 
 // 列表批量操作 - 选择（全选范围为当前筛选/搜索结果）
 const isAllModelsSelected = computed(() => {
@@ -1278,10 +1303,11 @@ async function runBatchTasksWithConcurrency(
 async function confirmBatchSyncPrices() {
   const plan = batchPriceSyncPlan.value
   if (plan.syncable.length === 0) return
+  const hadSelection = selectedModelIds.value.size > 0
   const skippedCount = plan.unchanged.length + plan.unsupported.length + plan.unavailable.length
   const confirmed = await confirm({
     title: '批量同步模型价格',
-    message: `将根据各模型上次选择的提供商的在线定价更新 ${plan.syncable.length} 个模型。${skippedCount > 0 ? `另有 ${skippedCount} 个模型因价格一致、计价不兼容或无在线价格而跳过。` : ''}\n\n仅更新模型价格，不修改名称、能力或其他配置。`,
+    message: `将根据各模型上次选择的提供商的在线定价更新${hadSelection ? '选中的' : '全部'} ${plan.syncable.length} 个模型。${skippedCount > 0 ? `另有 ${skippedCount} 个模型因价格一致、计价不兼容或无在线价格而跳过。` : ''}\n\n仅更新模型价格，不修改名称、能力或其他配置。`,
     confirmText: '同步价格',
     variant: 'info',
   })
@@ -1319,7 +1345,8 @@ async function confirmBatchSyncPrices() {
       showError(`${failureMessages.length} 个模型同步失败：${failureMessages.slice(0, 2).join('；')}`, '部分失败')
     }
     await loadGlobalModels()
-    selectedModelIds.value = failedIds
+    // 点击时无勾选（全量同步）则保持无勾选状态；有勾选时保留失败的模型以便重试
+    selectedModelIds.value = hadSelection ? failedIds : new Set()
   } finally {
     batchAction.value = null
     submittingBatch.value = false
