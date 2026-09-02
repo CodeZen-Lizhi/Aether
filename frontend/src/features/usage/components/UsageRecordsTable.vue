@@ -1186,9 +1186,6 @@ const props = defineProps<{
   hideUnknownRecords: boolean
 }>()
 
-// 单用户化阶段4：使用记录表仅剩 admin 视角，isAdmin 由 prop 内化为常量 true。
-const isAdmin = true
-
 const emit = defineEmits<{
   'update:timeRange': [value: DateRangeParams]
   'update:filterSearch': [value: string]
@@ -1206,6 +1203,9 @@ const emit = defineEmits<{
   'showDetail': [id: string]
   'prefetchDetail': [id: string]
 }>()
+
+// 单用户化阶段4：使用记录表仅剩 admin 视角，isAdmin 由 prop 内化为常量 true。
+const isAdmin = true
 
 const USAGE_RECORD_COLUMN_OPTIONS: UsageRecordColumnOption[] = [
   { id: 'time', label: '时间' },

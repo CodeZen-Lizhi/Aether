@@ -125,7 +125,6 @@ const loading = ref(false)
 const users = ref<UserOption[]>([])
 const knownUsers = ref(new Map<string, UserOption>())
 const searchText = ref('')
-let requestId = 0
 let loadedInitialBatch = false
 
 const selectedUser = computed(() => knownUsers.value.get(props.modelValue))

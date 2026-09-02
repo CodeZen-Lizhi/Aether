@@ -2,12 +2,24 @@
   <div class="min-h-screen flex items-center justify-center bg-background px-4">
     <div class="w-full max-w-sm">
       <div class="flex flex-col items-center mb-8">
-        <img src="/aether_adaptive.svg" alt="Aether" class="w-16 h-16 mb-4" />
-        <h1 class="text-2xl font-semibold text-foreground">{{ siteName }}</h1>
-        <p class="text-sm text-muted-foreground mt-1">{{ siteSubtitle }}</p>
+        <img
+          src="/aether_adaptive.svg"
+          alt="Aether"
+          class="w-16 h-16 mb-4"
+        >
+        <h1 class="text-2xl font-semibold text-foreground">
+          {{ siteName }}
+        </h1>
+        <p class="text-sm text-muted-foreground mt-1">
+          {{ siteSubtitle }}
+        </p>
       </div>
 
-      <form ref="loginFormEl" class="space-y-4" @submit.prevent="handleLogin">
+      <form
+        ref="loginFormEl"
+        class="space-y-4"
+        @submit.prevent="handleLogin"
+      >
         <div class="space-y-2">
           <Label for="username">{{ t('auth.login.usernameEmail') }}</Label>
           <Input
@@ -32,7 +44,11 @@
             required
           />
         </div>
-        <Button type="submit" class="w-full" :disabled="authStore.loading">
+        <Button
+          type="submit"
+          class="w-full"
+          :disabled="authStore.loading"
+        >
           {{ authStore.loading ? t('auth.login.submitting') : t('auth.login.submit') }}
         </Button>
       </form>
