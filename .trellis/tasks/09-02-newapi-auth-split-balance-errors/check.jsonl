@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/aether-admin/backend/quality-guidelines.md", "reason": "aether-admin 质量规范"}
+{"file": ".trellis/tasks/09-02-newapi-auth-split-balance-errors/research/upstream-newapi-auth.md", "reason": "核对实现是否符合上游鉴权事实与代码位置清单"}

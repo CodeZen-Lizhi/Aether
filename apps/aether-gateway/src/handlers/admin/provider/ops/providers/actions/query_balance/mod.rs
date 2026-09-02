@@ -104,42 +104,51 @@ pub(super) async fn admin_provider_ops_run_query_balance_action(
             http::StatusCode::UNAUTHORIZED => admin_provider_ops_action_error(
                 "auth_failed",
                 "query_balance",
-                if cookie_auth {
-                    "Cookie 已失效，请重新配置"
-                } else {
-                    "认证失败"
-                },
+                admin_provider_ops_balance_error_message(
+                    if cookie_auth {
+                        "Cookie 已失效，请重新配置"
+                    } else {
+                        "认证失败"
+                    },
+                    &response_json,
+                ),
                 response_time_ms,
             ),
             http::StatusCode::FORBIDDEN => admin_provider_ops_action_error(
                 "auth_failed",
                 "query_balance",
-                if cookie_auth {
-                    "Cookie 已失效或无权限"
-                } else {
-                    "无权限访问"
-                },
+                admin_provider_ops_balance_error_message(
+                    if cookie_auth {
+                        "Cookie 已失效或无权限"
+                    } else {
+                        "无权限访问"
+                    },
+                    &response_json,
+                ),
                 response_time_ms,
             ),
             http::StatusCode::NOT_FOUND => admin_provider_ops_action_error(
                 "not_supported",
                 "query_balance",
-                "功能未开放",
+                admin_provider_ops_balance_error_message("功能未开放", &response_json),
                 response_time_ms,
             ),
             http::StatusCode::TOO_MANY_REQUESTS => admin_provider_ops_action_error(
                 "rate_limited",
                 "query_balance",
-                "请求频率限制",
+                admin_provider_ops_balance_error_message("请求频率限制", &response_json),
                 response_time_ms,
             ),
             _ => admin_provider_ops_action_error(
                 "unknown_error",
                 "query_balance",
-                format!(
-                    "HTTP {}: {}",
-                    status.as_u16(),
-                    status.canonical_reason().unwrap_or("Unknown")
+                admin_provider_ops_balance_error_message(
+                    &format!(
+                        "HTTP {}: {}",
+                        status.as_u16(),
+                        status.canonical_reason().unwrap_or("Unknown")
+                    ),
+                    &response_json,
                 ),
                 response_time_ms,
             ),
@@ -187,4 +196,24 @@ fn admin_provider_ops_network_error_message(error: &str) -> String {
         return "请求超时".to_string();
     }
     format!("网络错误: {normalized}")
+}
+
+/// 提取上游返回的业务错误信息（如 New API 的 `message` 字段），无则返回 None。
+fn admin_provider_ops_upstream_error_message(response_json: &serde_json::Value) -> Option<&str> {
+    response_json
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+}
+
+/// 拼接固定文案与上游错误信息；上游无 message 时保持原固定文案。
+fn admin_provider_ops_balance_error_message(
+    fallback: &str,
+    response_json: &serde_json::Value,
+) -> String {
+    match admin_provider_ops_upstream_error_message(response_json) {
+        Some(upstream) => format!("{fallback}：{upstream}"),
+        None => fallback.to_string(),
+    }
 }

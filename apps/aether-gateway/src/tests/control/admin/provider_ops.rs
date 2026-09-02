@@ -106,7 +106,32 @@ fn assert_provider_ops_architectures_payload(payload: &serde_json::Value) {
         .iter()
         .find(|item| item["architecture_id"] == "new_api")
         .expect("new_api architecture should exist");
-    assert_eq!(new_api["supported_auth_types"][0]["type"], "api_key");
+    let new_api_auth_types = new_api["supported_auth_types"]
+        .as_array()
+        .expect("supported_auth_types should be array")
+        .iter()
+        .map(|item| item["type"].as_str().expect("type should be string"))
+        .collect::<Vec<_>>();
+    assert_eq!(new_api_auth_types, vec!["api_key", "cookie"]);
+    assert_eq!(new_api["default_connector"], "api_key");
+    assert_eq!(
+        new_api["supported_auth_types"][0]["display_name"], "访问令牌",
+        "默认项应为「访问令牌」"
+    );
+    assert_eq!(
+        new_api["supported_auth_types"][0]["credentials_schema"]["required"],
+        json!(["api_key", "user_id"])
+    );
+    assert_eq!(
+        new_api["supported_auth_types"][1]["credentials_schema"]["required"],
+        json!(["cookie", "user_id"])
+    );
+    assert_eq!(
+        new_api["supported_auth_types"][1]["credentials_schema"]["x-field-hooks"]["cookie"]
+            ["action"],
+        "parse_new_api_user_id",
+        "Cookie 方式应保留粘贴 Cookie 解析用户 ID 的 field hook"
+    );
 }
 
 #[test]
@@ -3552,6 +3577,164 @@ async fn gateway_handles_admin_provider_ops_batch_balance_locally_with_trusted_a
     gateway_handle.abort();
     upstream_handle.abort();
     ops_handle.abort();
+}
+
+#[test]
+fn gateway_handles_admin_provider_ops_balance_auth_failure_passes_through_upstream_message() {
+    run_provider_ops_test(
+        "gateway_handles_admin_provider_ops_balance_auth_failure_passes_through_upstream_message",
+        gateway_handles_admin_provider_ops_balance_auth_failure_passes_through_upstream_message_impl,
+    );
+}
+
+async fn gateway_handles_admin_provider_ops_balance_auth_failure_passes_through_upstream_message_impl(
+) {
+    let ops_with_message = Router::new().route(
+        "/api/user/self",
+        get(|headers: axum::http::HeaderMap| async move {
+            assert_eq!(
+                headers
+                    .get(axum::http::header::AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok()),
+                Some("Bearer access-token-123")
+            );
+            assert_eq!(
+                headers
+                    .get("New-Api-User")
+                    .and_then(|value| value.to_str().ok()),
+                Some("42")
+            );
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "message": "无权进行此操作，未提供 New-Api-User",
+                })),
+            )
+        }),
+    );
+    let ops_without_message = Router::new().route(
+        "/api/user/self",
+        get(|| async move { (StatusCode::UNAUTHORIZED, Json(json!({ "success": false }))) }),
+    );
+
+    let (ops_with_message_url, ops_with_message_handle) = start_server(ops_with_message).await;
+    let (ops_without_message_url, ops_without_message_handle) =
+        start_server(ops_without_message).await;
+    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![
+            sample_provider("provider-newapi-message", "openai", 10).with_transport_fields(
+                true,
+                true,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(json!({
+                    "provider_ops": {
+                        "architecture_id": "new_api",
+                        "base_url": ops_with_message_url,
+                        "connector": {
+                            "auth_type": "api_key",
+                            "config": {},
+                            "credentials": {
+                                "api_key": encrypt_python_fernet_plaintext(
+                                    DEVELOPMENT_ENCRYPTION_KEY,
+                                    "access-token-123",
+                                ).expect("api key should encrypt"),
+                                "user_id": "42"
+                            }
+                        }
+                    }
+                })),
+            ),
+            sample_provider("provider-newapi-plain", "openai", 20).with_transport_fields(
+                true,
+                true,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(json!({
+                    "provider_ops": {
+                        "architecture_id": "new_api",
+                        "base_url": ops_without_message_url,
+                        "connector": {
+                            "auth_type": "api_key",
+                            "config": {},
+                            "credentials": {
+                                "api_key": encrypt_python_fernet_plaintext(
+                                    DEVELOPMENT_ENCRYPTION_KEY,
+                                    "access-token-456",
+                                ).expect("api key should encrypt"),
+                                "user_id": "42"
+                            }
+                        }
+                    }
+                })),
+            ),
+        ],
+        vec![],
+        vec![],
+    ));
+
+    let gateway = build_router_with_state(
+        AppState::new()
+            .expect("gateway should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_provider_catalog_repository_for_tests(
+                    provider_catalog_repository,
+                ),
+            ),
+    );
+    let (gateway_url, gateway_handle) = start_server(gateway).await;
+
+    let response = reqwest::Client::new()
+        .get(format!(
+            "{gateway_url}/api/admin/provider-ops/providers/provider-newapi-message/balance"
+        ))
+        .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .send()
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: serde_json::Value = response.json().await.expect("json body should parse");
+    assert_eq!(payload["status"], "auth_failed");
+    assert_eq!(payload["action_type"], "query_balance");
+    assert_eq!(
+        payload["message"], "认证失败：无权进行此操作，未提供 New-Api-User",
+        "上游 message 应拼入返回给前端的错误信息"
+    );
+
+    let response = reqwest::Client::new()
+        .get(format!(
+            "{gateway_url}/api/admin/provider-ops/providers/provider-newapi-plain/balance"
+        ))
+        .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .send()
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: serde_json::Value = response.json().await.expect("json body should parse");
+    assert_eq!(payload["status"], "auth_failed");
+    assert_eq!(
+        payload["message"], "认证失败",
+        "上游 body 无 message 时应保持原固定文案"
+    );
+
+    gateway_handle.abort();
+    ops_with_message_handle.abort();
+    ops_without_message_handle.abort();
 }
 
 #[test]

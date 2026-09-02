@@ -183,7 +183,7 @@ mod tests {
     use super::{
         get_architecture, list_architectures, normalize_architecture_id, resolve_action_config,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[test]
     fn list_architectures_keeps_only_supported_presets_visible() {
@@ -217,6 +217,93 @@ mod tests {
         let architecture = get_architecture("unknown").expect("architecture should exist");
         assert_eq!(architecture.architecture_id, "generic_api");
         assert!(architecture.hidden);
+    }
+
+    #[test]
+    fn new_api_splits_auth_types_into_access_token_and_cookie() {
+        let architecture = get_architecture("new_api").expect("architecture should exist");
+        assert_eq!(
+            architecture
+                .supported_auth_types
+                .iter()
+                .map(|item| item.auth_type)
+                .collect::<Vec<_>>(),
+            vec!["api_key", "cookie"]
+        );
+        assert_eq!(architecture.default_connector, Some("api_key"));
+        assert_eq!(
+            architecture.credentials_schema.get("x-auth-type"),
+            Some(&json!("api_key")),
+            "顶层 credentials_schema 应指向默认项（访问令牌）"
+        );
+
+        let access_token = &architecture.supported_auth_types[0].credentials_schema;
+        assert_eq!(access_token.get("x-auth-type"), Some(&json!("api_key")));
+        assert_eq!(
+            access_token.get("required"),
+            Some(&json!(["api_key", "user_id"])),
+        );
+        assert!(
+            access_token.pointer("/properties/cookie").is_none(),
+            "访问令牌 schema 不应包含 cookie 字段"
+        );
+        assert_eq!(
+            access_token.pointer("/x-validation"),
+            Some(&json!([{
+                "type": "required",
+                "fields": ["api_key", "user_id"],
+                "message": "请填写访问令牌和用户 ID"
+            }])),
+        );
+
+        let cookie = &architecture.supported_auth_types[1].credentials_schema;
+        assert_eq!(cookie.get("x-auth-type"), Some(&json!("cookie")));
+        assert_eq!(cookie.get("required"), Some(&json!(["cookie", "user_id"])),);
+        assert!(
+            cookie.pointer("/properties/api_key").is_none(),
+            "Cookie schema 不应包含 api_key 字段"
+        );
+        assert_eq!(
+            cookie.pointer("/x-field-hooks/cookie"),
+            Some(&json!({
+                "action": "parse_new_api_user_id",
+                "target": "user_id"
+            })),
+            "粘贴 Cookie 自动解析用户 ID 的 field hook 应保留"
+        );
+        assert_eq!(
+            cookie.pointer("/x-validation"),
+            Some(&json!([{
+                "type": "required",
+                "fields": ["cookie", "user_id"],
+                "message": "请填写 Cookie 和用户 ID"
+            }])),
+        );
+    }
+
+    #[test]
+    fn new_api_schemas_only_use_explicit_required_validation() {
+        let architecture = get_architecture("new_api").expect("architecture should exist");
+        for auth_type in &architecture.supported_auth_types {
+            let validations = auth_type
+                .credentials_schema
+                .get("x-validation")
+                .and_then(Value::as_array)
+                .expect("x-validation should be array");
+            assert!(
+                !validations.is_empty(),
+                "auth_type {} 应保留校验规则",
+                auth_type.auth_type
+            );
+            for rule in validations {
+                assert_eq!(
+                    rule.get("type").and_then(Value::as_str),
+                    Some("required"),
+                    "auth_type {} 应使用显式 required 校验，不再是 any_required/conditional_required",
+                    auth_type.auth_type
+                );
+            }
+        }
     }
 
     #[test]
