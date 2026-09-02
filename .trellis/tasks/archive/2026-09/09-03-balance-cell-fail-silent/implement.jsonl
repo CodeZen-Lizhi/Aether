@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范：i18n 中文源文案 + 字典映射机制，删除文案时必须同步清理 messages.ts 条目"}
