@@ -1,0 +1,6 @@
+{"file": "docs/requirements-backlog.md", "reason": "需求口径唯一来源：4 项需求的描述、现状、已确认结论与删除范围"}
+{"file": ".trellis/spec/aether-scheduler-core/backend/index.md", "reason": "第 2 项删除调度匹配分支，需遵循调度核心层规范"}
+{"file": ".trellis/spec/aether-billing/backend/index.md", "reason": "第 1 项结算链路改动（StoredBillingModelContext/pricing），需遵循计费层规范"}
+{"file": ".trellis/spec/aether-data-sqlite/backend/database-guidelines.md", "reason": "第 1 项新增 sqlite 迁移与 provider_api_keys 读写，需遵循数据库迁移规范"}
+{"file": ".trellis/spec/aether-gateway/backend/index.md", "reason": "第 1/2 项涉及 apps/aether-gateway 处理器（keys DTO/normalize/routing 预览）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "三项改动均横跨 contracts/adapters/处理层/前端，需跨层一致性检查"}

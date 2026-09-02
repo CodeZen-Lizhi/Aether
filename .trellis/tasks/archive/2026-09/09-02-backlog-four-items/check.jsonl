@@ -1,0 +1,5 @@
+{"file": "docs/requirements-backlog.md", "reason": "验收对照：每项的确认口径与验收标准"}
+{"file": ".trellis/spec/aether-scheduler-core/backend/quality-guidelines.md", "reason": "检查调度核心测试更新质量"}
+{"file": ".trellis/spec/aether-billing/backend/quality-guidelines.md", "reason": "检查计费改动与结算测试覆盖"}
+{"file": ".trellis/spec/aether-data-sqlite/backend/database-guidelines.md", "reason": "检查迁移 SQL 与 schema 一致性"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查跨层字段/语义一致性（contracts→adapters→handlers→前端）"}
