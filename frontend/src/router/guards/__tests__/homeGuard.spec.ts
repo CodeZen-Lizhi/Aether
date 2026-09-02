@@ -35,19 +35,18 @@ describe('resolveHomeRedirect', () => {
   })
 
   it('allows authenticated users to return to the public home from the app shell', () => {
-    expect(resolveHomeRedirect(route('/'), route('/dashboard'), authStore({ isAuthenticated: true }))).toBe('')
-    expect(resolveHomeRedirect(route('/', { returnTo: '/guide' }), route('/external'), authStore({ isAuthenticated: true }))).toBe('')
+    expect(resolveHomeRedirect(route('/'), route('/admin/dashboard'), authStore({ isAuthenticated: true }))).toBe('')
+    expect(resolveHomeRedirect(route('/', { returnTo: '/admin/keys' }), route('/external'), authStore({ isAuthenticated: true }))).toBe('')
   })
 
-  it('consumes stored redirect path before falling back to dashboard defaults', () => {
-    sessionStorage.setItem('redirectPath', '/dashboard/api-keys')
+  it('consumes stored redirect path before falling back to the admin dashboard', () => {
+    sessionStorage.setItem('redirectPath', '/admin/keys')
 
-    expect(resolveHomeRedirect(route('/'), route('/external'), authStore({ isAuthenticated: true }))).toBe('/dashboard/api-keys')
+    expect(resolveHomeRedirect(route('/'), route('/external'), authStore({ isAuthenticated: true }))).toBe('/admin/keys')
     expect(sessionStorage.getItem('redirectPath')).toBeNull()
   })
 
-  it('routes authenticated users to the correct dashboard by role', () => {
-    expect(resolveHomeRedirect(route('/'), route('/external'), authStore({ isAuthenticated: true }))).toBe('/dashboard')
-    expect(resolveHomeRedirect(route('/'), route('/external'), authStore({ isAuthenticated: true, canAccessAdmin: true }))).toBe('/admin/dashboard')
+  it('routes authenticated users to the admin dashboard', () => {
+    expect(resolveHomeRedirect(route('/'), route('/external'), authStore({ isAuthenticated: true }))).toBe('/admin/dashboard')
   })
 })

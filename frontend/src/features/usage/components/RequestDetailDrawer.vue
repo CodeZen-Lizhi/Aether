@@ -1411,7 +1411,7 @@ const TIMELINE_MOUNT_DELAY_MS = 120
 let loadDetailRequestId = 0
 let bodyLoadRequestId = 0
 let loadDetailInFlight = false
-let timelineMountTimer: ReturnType<typeof setTimeout> | null = null
+let timelineMountTimer: number | null = null
 
 const fullRequestId = computed(() => detail.value?.request_id || detail.value?.id || '-')
 const displayRequestId = computed(() => formatShortRequestId(fullRequestId.value))
@@ -1834,19 +1834,19 @@ const currentResponseBodyApiFormat = computed(() => {
 })
 
 // 获取当前数据源的请求头数据
-const currentHeaderData = computed(() => {
+const currentHeaderData = computed<Record<string, unknown> | null>(() => {
   if (!detail.value) return null
   if (dataSource.value === 'client' && hasContent(detail.value.request_headers)) {
-    return detail.value.request_headers
+    return detail.value.request_headers ?? null
   }
   if (dataSource.value === 'provider' && hasContent(detail.value.provider_request_headers)) {
-    return detail.value.provider_request_headers
+    return detail.value.provider_request_headers ?? null
   }
   // 回退：优先 client，再 provider
   if (hasContent(detail.value.request_headers)) {
-    return detail.value.request_headers
+    return detail.value.request_headers ?? null
   }
-  return detail.value.provider_request_headers
+  return detail.value.provider_request_headers ?? null
 })
 
 const activeJsonPanelData = computed(() => {
@@ -1989,7 +1989,7 @@ const effectiveCacheCreationCost = computed(() => {
     getNestedNumber(billingCostBreakdown.value, 'cache_creation_uncategorized_cost'),
     getNestedNumber(billingCostBreakdown.value, 'cache_creation_ephemeral_5m_cost'),
     getNestedNumber(billingCostBreakdown.value, 'cache_creation_ephemeral_1h_cost'),
-  ].reduce((sum, value) => sum + (value ?? 0), 0)
+  ].reduce<number>((sum, value) => sum + (value ?? 0), 0)
   if (snapshotCost > 0) return snapshotCost
   return toNumber(detail.value?.cache_creation_cost) ?? 0
 })
@@ -2533,19 +2533,19 @@ function getDefaultDataSourceForTab(tab: string): 'client' | 'provider' {
 }
 
 // 获取当前数据源的响应头数据
-const currentResponseHeaderData = computed(() => {
+const currentResponseHeaderData = computed<Record<string, unknown> | null>(() => {
   if (!detail.value) return null
   if (dataSource.value === 'client' && hasContent(detail.value.client_response_headers)) {
-    return detail.value.client_response_headers
+    return detail.value.client_response_headers ?? null
   }
   if (dataSource.value === 'provider' && hasContent(detail.value.response_headers)) {
-    return detail.value.response_headers
+    return detail.value.response_headers ?? null
   }
   // 回退：优先 client，再 provider
   if (hasContent(detail.value.client_response_headers)) {
-    return detail.value.client_response_headers
+    return detail.value.client_response_headers ?? null
   }
-  return detail.value.response_headers
+  return detail.value.response_headers ?? null
 })
 
 // 根据实际数据决定显示哪些 Tab

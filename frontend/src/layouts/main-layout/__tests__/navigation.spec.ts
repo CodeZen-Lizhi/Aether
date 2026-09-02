@@ -21,29 +21,8 @@ function route(path: string, name?: string, meta: Record<string, unknown> = {}):
 }
 
 describe('main layout navigation builder', () => {
-  it('builds user navigation from translation keys', () => {
-    const navigation = buildNavigation({
-      canAccessAdmin: false,
-      t: translate,
-    })
-
-    expect(navigation.map(group => group.title)).toEqual([
-      'tx:nav.group.overview',
-      'tx:nav.group.resources',
-    ])
-    expect(navigation.flatMap(group => group.items.map(item => item.name))).toEqual([
-      'tx:nav.dashboard',
-      'tx:nav.modelCatalog',
-      'tx:nav.apiKeys',
-      'tx:nav.usageStats',
-    ])
-  })
-
   it('builds admin navigation', () => {
-    const navigation = buildNavigation({
-      canAccessAdmin: true,
-      t: translate,
-    })
+    const navigation = buildNavigation({ t: translate })
 
     expect(navigation.map(group => group.title)).toEqual([
       'tx:nav.group.overview',
@@ -59,21 +38,8 @@ describe('main layout navigation builder', () => {
     ])
   })
 
-  it('builds translated breadcrumbs for settings and routing detail pages', () => {
-    const navigation = buildNavigation({
-      canAccessAdmin: true,
-      t: translate,
-    })
-
-    expect(buildBreadcrumbs({
-      route: route('/dashboard/settings'),
-      navigation,
-      isNavActive: () => false,
-      t: translate,
-    })).toEqual([
-      { label: 'tx:nav.group.account' },
-      { label: 'tx:breadcrumb.personalSettings' },
-    ])
+  it('builds translated breadcrumbs for routing detail pages', () => {
+    const navigation = buildNavigation({ t: translate })
 
     expect(buildBreadcrumbs({
       route: route('/admin/routing/new', 'RoutingProfileCreate'),

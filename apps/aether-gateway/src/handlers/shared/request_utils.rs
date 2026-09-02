@@ -352,21 +352,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("proxy_nodes_manage"), http::Method::POST, Some("batch_upgrade_nodes"))
                 | (Some("proxy_nodes_manage"), http::Method::PATCH, Some("update_manual_node"))
                 | (Some("proxy_nodes_manage"), http::Method::PUT, Some("update_node_config"))
-                | (Some("users_manage"), http::Method::POST, Some("create_user"))
-                | (Some("users_manage"), http::Method::POST, Some("resolve_user_selection"))
-                | (Some("users_manage"), http::Method::POST, Some("batch_action_users"))
-                | (Some("users_manage"), http::Method::POST, Some("grant_user_billing_plan"))
-                | (Some("users_manage"), http::Method::PUT, Some("update_user"))
-                | (Some("users_manage"), http::Method::POST, Some("create_user_group"))
-                | (Some("users_manage"), http::Method::PUT, Some("update_user_group"))
-                | (
-                    Some("users_manage"),
-                    http::Method::PUT,
-                    Some("replace_user_group_members" | "set_default_user_group"),
-                )
-                | (Some("users_manage"), http::Method::POST, Some("create_user_api_key"))
-                | (Some("users_manage"), http::Method::PUT, Some("update_user_api_key"))
-                | (Some("users_manage"), http::Method::PATCH, Some("lock_user_api_key"))
                 | (Some("pool_manage"), http::Method::POST, Some("batch_import_keys"))
                 | (Some("pool_manage"), http::Method::POST, Some("batch_action_keys"))
                 | (Some("pool_manage"), http::Method::PATCH, Some("batch_update_keys"))

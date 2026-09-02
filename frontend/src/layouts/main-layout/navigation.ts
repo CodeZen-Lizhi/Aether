@@ -1,7 +1,6 @@
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import {
   BarChart3,
-  Box,
   Cog,
   FolderTree,
   Home,
@@ -20,30 +19,9 @@ export interface BreadcrumbItem {
 type Translate = (key: MessageKey) => string
 
 export function buildNavigation(options: {
-  canAccessAdmin: boolean
   t?: Translate
 }): NavigationGroup[] {
-  const { canAccessAdmin } = options
   const t = options.t ?? ((key: MessageKey) => key)
-
-  if (!canAccessAdmin) {
-    return [
-      {
-        title: t('nav.group.overview'),
-        items: [
-          { name: t('nav.dashboard'), href: '/dashboard', icon: Home },
-        ]
-      },
-      {
-        title: t('nav.group.resources'),
-        items: [
-          { name: t('nav.modelCatalog'), href: '/dashboard/models', icon: Box },
-          { name: t('nav.apiKeys'), href: '/dashboard/api-keys', icon: Key },
-          { name: t('nav.usageStats'), href: '/dashboard/usage', icon: BarChart3 },
-        ]
-      }
-    ]
-  }
 
   return [
     {
@@ -79,13 +57,6 @@ export function buildBreadcrumbs(options: {
 }): BreadcrumbItem[] {
   const { route, navigation, isNavActive } = options
   const t = options.t ?? ((key: MessageKey) => key)
-
-  if (route.path === '/dashboard/settings') {
-    return [
-      { label: t('nav.group.account') },
-      { label: t('breadcrumb.personalSettings') }
-    ]
-  }
 
   if (route.path.startsWith('/admin/routing/') && route.path !== '/admin/routing') {
     return [

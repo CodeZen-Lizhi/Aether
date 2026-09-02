@@ -888,7 +888,7 @@ async fn selects_next_candidate_when_first_provider_quota_is_exhausted() {
     first.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-primary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
+        api_formats: None,
         endpoint_ids: None,
         operations: None,
     }]);
@@ -903,7 +903,7 @@ async fn selects_next_candidate_when_first_provider_quota_is_exhausted() {
     second.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-secondary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
+        api_formats: None,
         endpoint_ids: None,
         operations: None,
     }]);
@@ -959,7 +959,7 @@ async fn cooled_down_when_recent_failures_are_recorded_for_same_key() {
     first.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-primary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
+        api_formats: None,
         endpoint_ids: None,
         operations: None,
     }]);
@@ -974,7 +974,7 @@ async fn cooled_down_when_recent_failures_are_recorded_for_same_key() {
     second.model_provider_model_mappings = Some(vec![StoredProviderModelMapping {
         name: "gpt-4.1-secondary".to_string(),
         priority: 1,
-        api_formats: Some(vec!["openai:chat".to_string()]),
+        api_formats: None,
         endpoint_ids: None,
         operations: None,
     }]);

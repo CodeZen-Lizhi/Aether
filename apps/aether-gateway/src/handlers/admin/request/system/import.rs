@@ -11,11 +11,13 @@ use crate::handlers::admin::shared::{
     normalize_json_array, normalize_json_object, normalize_string_list,
 };
 use crate::handlers::admin::system::shared::configs::apply_admin_system_config_update;
-use crate::handlers::admin::users::{
-    hash_admin_user_api_key, normalize_admin_feature_settings, normalize_admin_list_policy_mode,
-    normalize_admin_rate_limit_policy_mode, normalize_admin_user_api_formats,
-    normalize_admin_user_ip_rules, normalize_admin_user_string_list,
+use crate::handlers::admin::auth::hash_admin_user_api_key;
+use crate::handlers::admin::shared::{
+    normalize_admin_list_policy_mode, normalize_admin_rate_limit_policy_mode,
+    normalize_admin_user_api_formats, normalize_admin_user_ip_rules,
+    normalize_admin_user_string_list,
 };
+use crate::handlers::shared::normalize_feature_settings as normalize_admin_feature_settings;
 use crate::handlers::public::normalize_admin_base_url;
 use crate::GatewayError;
 use aether_admin::provider::endpoints as admin_provider_endpoints_pure;

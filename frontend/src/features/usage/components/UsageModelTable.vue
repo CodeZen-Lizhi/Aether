@@ -61,7 +61,7 @@
               <div class="flex flex-col items-end text-xs gap-0.5">
                 <span class="text-primary font-medium">{{ formatCurrency(model.total_cost) }}</span>
                 <span
-                  v-if="isAdmin && model.actual_cost !== undefined"
+                  v-if="model.actual_cost !== undefined"
                   class="text-muted-foreground text-[10px]"
                 >
                   {{ formatCurrency(model.actual_cost) }}
@@ -94,6 +94,5 @@ import type { EnhancedModelStatsItem } from '../types'
 
 defineProps<{
   data: EnhancedModelStatsItem[]
-  isAdmin: boolean
 }>()
 </script>

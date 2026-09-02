@@ -25,7 +25,6 @@ const AI_POST_ROUTE_PATTERNS: &[&str] = &[
     "/v1/rerank",
     "/v1/responses",
     "/v1/responses/compact",
-    "/v1/live",
     "/v1/realtime/calls",
     "/v1/alpha/search",
     "/v1/images/generations",
@@ -144,8 +143,6 @@ pub(crate) fn admin_default_body_rules_for_signature(
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{HeaderMap, HeaderValue};
-
     use super::{
         admin_endpoint_signature_parts, public_api_format_local_path, AI_POST_ROUTE_PATTERNS,
     };

@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 const { logoutMock, getTokenMock, getCurrentUserMock } = vi.hoisted(() => ({
-  logoutMock: vi.fn(),
-  getTokenMock: vi.fn(() => null),
-  getCurrentUserMock: vi.fn(),
+  logoutMock: vi.fn<() => Promise<void>>(),
+  getTokenMock: vi.fn<() => string | null>(() => null),
+  getCurrentUserMock: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -217,22 +217,5 @@ describe('auth store logout', () => {
     await store.checkAuth()
 
     expect(getCurrentUserMock).not.toHaveBeenCalled()
-  })
-
-  it('separates admin access from admin operations for audit administrators', () => {
-    const store = useAuthStore()
-
-    store.user = {
-      id: 'audit-1',
-      username: 'auditor',
-      role: 'audit_admin',
-      is_active: true,
-      created_at: '2026-03-16T00:00:00Z',
-    }
-
-    expect(store.isAdmin).toBe(false)
-    expect(store.isAuditAdmin).toBe(true)
-    expect(store.canAccessAdmin).toBe(true)
-    expect(store.canOperateAdmin).toBe(false)
   })
 })

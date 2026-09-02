@@ -997,9 +997,14 @@ mod tests {
                 billing: AttemptBilling::Billed,
                 candidate_status: AttemptCandidateStatus::Failed,
                 candidate_error: AttemptCandidateError::TerminalError,
-                provider_effect: AttemptProviderEffect::NoProviderEffect,
+                provider_effect: AttemptProviderEffect::ProviderSuccess,
                 submit_execution_report: true,
             }
+        );
+        // 关键不变量：记账失败但供应商终态正常，绝不投射供应商失败。
+        assert_ne!(
+            settlement.provider_effect,
+            AttemptProviderEffect::ProviderFailure
         );
     }
 

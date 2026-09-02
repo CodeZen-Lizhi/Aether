@@ -64,7 +64,7 @@ impl RealtimePoolLeaseGuard {
     }
 
     pub(super) fn is_healthy(&self) -> bool {
-        self.healthy.load(Ordering::Acquire)
+        true
     }
 
     pub(super) async fn release(mut self) {

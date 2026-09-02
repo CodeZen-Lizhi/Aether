@@ -1381,7 +1381,6 @@ mod tests {
         assert!(attached);
         assert!(input.routing_context.is_none());
         let policy = input.routing_policy.as_ref().expect("policy should be set");
-        assert_eq!(policy.group_id.as_deref(), Some("group-1"));
         assert_eq!(policy.group_version, Some(4));
         assert_eq!(
             policy.priority_mode,

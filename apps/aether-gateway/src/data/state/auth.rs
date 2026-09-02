@@ -270,20 +270,6 @@ impl GatewayDataState {
             .await
     }
 
-    pub(crate) async fn create_oauth_auth_user(
-        &self,
-        email: Option<String>,
-        username: String,
-        created_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Option<StoredUserAuthRecord>, DataLayerError> {
-        let Some(repository) = self.user_reader.as_ref() else {
-            return Ok(None);
-        };
-        repository
-            .create_oauth_auth_user(email, username, created_at)
-            .await
-    }
-
     pub(crate) async fn find_oauth_link_owner(
         &self,
         provider_type: &str,
@@ -609,44 +595,6 @@ impl GatewayDataState {
             .await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn get_or_create_ldap_auth_user(
-        &self,
-        email: String,
-        username: String,
-        ldap_dn: Option<String>,
-        ldap_username: Option<String>,
-        logged_in_at: chrono::DateTime<chrono::Utc>,
-        initial_gift_usd: f64,
-        unlimited: bool,
-    ) -> Result<Option<StoredUserAuthRecord>, DataLayerError> {
-        let Some(repository) = self.user_reader.as_ref() else {
-            return Ok(None);
-        };
-        let Some(outcome) = repository
-            .get_or_create_ldap_auth_user(email, username, ldap_dn, ldap_username, logged_in_at)
-            .await?
-        else {
-            return Ok(None);
-        };
-        if outcome.created {
-            match self
-                .initialize_auth_user_wallet(&outcome.user.id, initial_gift_usd, unlimited)
-                .await
-            {
-                Ok(Some(_wallet)) => {}
-                Ok(None) => {
-                    let _ = self.delete_local_auth_user(&outcome.user.id).await;
-                    return Ok(None);
-                }
-                Err(err) => {
-                    let _ = self.delete_local_auth_user(&outcome.user.id).await;
-                    return Err(err);
-                }
-            }
-        }
-        Ok(Some(outcome.user))
-    }
 
     #[allow(dead_code)]
     pub(crate) async fn initialize_auth_user_wallet(
@@ -821,38 +769,6 @@ impl GatewayDataState {
             return Ok(false);
         };
         repository.delete_local_auth_user(user_id).await
-    }
-
-    pub(crate) async fn register_local_auth_user(
-        &self,
-        email: Option<String>,
-        email_verified: bool,
-        username: String,
-        password_hash: String,
-        initial_gift_usd: f64,
-        unlimited: bool,
-    ) -> Result<Option<(StoredUserAuthRecord, StoredWalletSnapshot)>, DataLayerError> {
-        let Some(user) = self
-            .create_local_auth_user(email, email_verified, username, password_hash)
-            .await?
-        else {
-            return Ok(None);
-        };
-
-        match self
-            .initialize_auth_user_wallet(&user.id, initial_gift_usd, unlimited)
-            .await
-        {
-            Ok(Some(wallet)) => Ok(Some((user, wallet))),
-            Ok(None) => {
-                let _ = self.delete_local_auth_user(&user.id).await;
-                Ok(None)
-            }
-            Err(err) => {
-                let _ = self.delete_local_auth_user(&user.id).await;
-                Err(err)
-            }
-        }
     }
 
     pub(crate) async fn touch_user_session(

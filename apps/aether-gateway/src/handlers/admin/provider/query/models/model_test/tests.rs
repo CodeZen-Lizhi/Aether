@@ -709,15 +709,15 @@ fn provider_query_test_adapter_routes_fixed_provider_endpoint_types() {
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "openai:chat"),
-        Some(ProviderQueryTestAdapter::Grok)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "openai:responses"),
-        Some(ProviderQueryTestAdapter::Grok)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "claude:messages"),
-        Some(ProviderQueryTestAdapter::Grok)
+        Some(ProviderQueryTestAdapter::Standard)
     );
     assert_eq!(
         provider_query_test_adapter_for_provider_api_format("grok", "openai:image"),

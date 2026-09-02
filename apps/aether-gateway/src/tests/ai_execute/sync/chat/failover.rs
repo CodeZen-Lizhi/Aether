@@ -195,7 +195,7 @@ async fn gateway_surfaces_local_execution_runtime_miss_reason_when_all_openai_ch
         .expect("auth config should encrypt"),
     );
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![unsupported_provider],
+        vec![sample_provider_catalog_provider()],
         vec![sample_provider_catalog_endpoint()],
         vec![unsupported_key],
     ));
@@ -684,6 +684,27 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         .expect("mutex should lock")
         .clone();
     assert_eq!(seen_execution_runtime_requests.len(), 2);
+    assert!(seen_execution_runtime_requests
+        .iter()
+        .all(|request| request.trace_id == "trace-openai-chat-local-failover-123"));
+    // With key/provider priorities removed by the single-user slim, either
+    // candidate may be attempted first; the first attempt must fail over and
+    // the second must succeed with the other candidate's credentials.
+    let primary_url = "https://api.openai.primary.example/chat/completions";
+    let backup_url = "https://api.openai.backup.example/chat/completions";
+    let (failed_request, succeeded_request) =
+        if seen_execution_runtime_requests[0].url == primary_url {
+            (
+                &seen_execution_runtime_requests[0],
+                &seen_execution_runtime_requests[1],
+            )
+        } else {
+            (
+                &seen_execution_runtime_requests[1],
+                &seen_execution_runtime_requests[0],
+            )
+        };
+    assert_eq!(failed_request.url, primary_url);
     assert_eq!(
         seen_execution_runtime_requests[0].trace_id,
         "trace-openai-chat-local-failover-123"
@@ -728,6 +749,7 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         expected_upstream_credentials[second.url.as_str()],
         "retry should use the other candidate's own credentials"
     );
+    assert_eq!(succeeded_request.url, backup_url);
     assert_eq!(
         second.model,
         expected_upstream_models[second.url.as_str()],
@@ -738,26 +760,27 @@ async fn gateway_retries_next_local_openai_chat_sync_candidate_after_auth_failur
         .await
         .expect("request candidate trace should read");
     assert_eq!(stored_candidates.len(), 2);
-    assert_eq!(stored_candidates[0].candidate_index, 0);
-    assert_eq!(stored_candidates[0].status, RequestCandidateStatus::Failed);
-    assert_eq!(stored_candidates[0].status_code, Some(401));
-    assert_eq!(
-        stored_candidates[0].error_message.as_deref(),
-        Some("invalid auth token")
-    );
-    let failed_upstream_response = stored_candidates[0]
-        .extra_data
-        .as_ref()
+    assert!(stored_candidates
+        .iter()
+        .any(|candidate| candidate.status == RequestCandidateStatus::Failed
+            && candidate.status_code == Some(401)
+            && candidate.error_message.as_deref() == Some("invalid auth token")));
+    let failed_upstream_response = stored_candidates
+        .iter()
+        .find(|candidate| candidate.status == RequestCandidateStatus::Failed)
+        .and_then(|candidate| candidate.extra_data.as_ref())
         .and_then(|value| value.get("upstream_response"))
-        .expect("failed candidate should keep its upstream response");
+        .expect("failed candidate should keep its upstream response")
+        .clone();
     assert_eq!(failed_upstream_response["status_code"], json!(401));
     assert_eq!(
         failed_upstream_response["body"]["error"]["message"],
         json!("invalid auth token")
     );
-    assert_eq!(stored_candidates[1].candidate_index, 1);
-    assert_eq!(stored_candidates[1].status, RequestCandidateStatus::Success);
-    assert_eq!(stored_candidates[1].status_code, Some(200));
+    assert!(stored_candidates
+        .iter()
+        .any(|candidate| candidate.status == RequestCandidateStatus::Success
+            && candidate.status_code == Some(200)));
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(

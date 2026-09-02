@@ -18,19 +18,20 @@ export function resolveHomeRedirect(
     return null
   }
 
-  // 已登录用户如果是从dashboard返回首页、刷新首页、或者有returnTo参数,允许访问首页
+  // 已登录用户如果是从管理台返回首页、刷新首页、或者有returnTo参数,允许访问首页
   const isFromApp =
-    from.path.startsWith('/dashboard') || from.path.startsWith('/admin') || from.path.startsWith('/guide') || from.path === '/'
+    from.path.startsWith('/admin') || from.path === '/'
+
   if (to.query.returnTo || isFromApp) {
     return ''
   }
 
-  // 已登录用户首次访问首页(非返回/刷新场景),根据角色跳转到对应仪表盘
+  // 已登录用户首次访问首页(非返回/刷新场景),跳转到管理台仪表盘
   const redirectPath = sessionStorage.getItem('redirectPath')
   if (redirectPath && redirectPath !== '/') {
     sessionStorage.removeItem('redirectPath')
     return redirectPath
   }
 
-  return authStore.canAccessAdmin ? '/admin/dashboard' : '/dashboard'
+  return '/admin/dashboard'
 }

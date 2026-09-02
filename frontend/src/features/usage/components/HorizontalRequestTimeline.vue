@@ -678,7 +678,7 @@ const proxyTimingBreakdown = (proxy: Record<string, unknown>): string => {
   if (t.dns_ms != null && (t.dns_ms as number) > 0) {
     parts.push(`DNS ${formatLatency(t.dns_ms as number)}`)
   }
-  if (t.connection_reused === true) {
+  if ((t.connection_reused as unknown) === true) {
     parts.push('复用连接')
   }
   if (t.connect_ms != null && (t.connect_ms as number) > 0) {
@@ -798,7 +798,7 @@ const buildProviderGroups = (items: CandidateRecord[]): NodeGroup[] => {
       return
     }
 
-    currentGroup = {
+    const newGroup: NodeGroup = {
       id: providerKey,
       providerName: getProviderDisplayName(candidate),
       primary: candidate,
@@ -811,7 +811,8 @@ const buildProviderGroups = (items: CandidateRecord[]): NodeGroup[] => {
       hasConversion: candidate.extra_data?.needs_conversion === true,
       providerApiFormat: candidate.extra_data?.provider_api_format || null,
     }
-    groups.push(currentGroup)
+    currentGroup = newGroup
+    groups.push(newGroup)
   })
 
   return groups
@@ -1867,6 +1868,7 @@ const navigateAttempt = (direction: number) => {
 const isSilentRefresh = ref(false)
 const loadTrace = async (silent = false) => {
   if (!props.requestId || props.traceData) return
+  const requestId = props.requestId
   if (traceLoadInFlight) return traceLoadInFlight
 
   traceLoadInFlight = (async () => {
@@ -1879,7 +1881,7 @@ const loadTrace = async (silent = false) => {
     error.value = null
 
     try {
-      internalTrace.value = await requestTraceApi.getRequestTrace(props.requestId, { attemptedOnly: true })
+      internalTrace.value = await requestTraceApi.getRequestTrace(requestId, { attemptedOnly: true })
     } catch (err: unknown) {
       if (isAxiosError(err) && err.response?.status === 404) {
         internalTrace.value = null

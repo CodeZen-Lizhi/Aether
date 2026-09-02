@@ -27,6 +27,8 @@ mod video_tasks;
 
 impl GatewayDataState {
     #[cfg(test)]
+
+    #[cfg(test)]
     pub(crate) fn with_user_preferences_for_tests(
         mut self,
         preferences: impl IntoIterator<Item = StoredUserPreferenceRecord>,
@@ -2881,5 +2883,4 @@ impl GatewayDataState {
             system_config_value_cache: Default::default(),
             billing_model_context_cache: Default::default(),
         }
-    }
-}
+    }}

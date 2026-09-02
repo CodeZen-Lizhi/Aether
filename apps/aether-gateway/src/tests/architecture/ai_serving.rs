@@ -2035,15 +2035,8 @@ fn ai_serving_owns_pure_planner_diagnostics_and_execution_labels() {
         );
     }
 }
-
 #[test]
 fn ai_serving_report_context_owns_local_execution_context_shape() {
-    let planner_mod = read_workspace_file("apps/aether-gateway/src/ai_serving/planner/mod.rs");
-    assert!(
-        planner_mod.contains("mod report_context;"),
-        "planner/mod.rs should wire report_context helper module"
-    );
-
     let serving_report_context =
         read_workspace_file("crates/aether-ai/serving/src/report_context.rs");
     for pattern in [

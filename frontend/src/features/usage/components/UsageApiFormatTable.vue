@@ -61,7 +61,7 @@
               <div class="flex flex-col items-end text-xs gap-0.5">
                 <span class="text-primary font-medium">{{ formatCurrency(item.total_cost) }}</span>
                 <span
-                  v-if="isAdmin && item.actual_cost !== undefined"
+                  v-if="item.actual_cost !== undefined"
                   class="text-muted-foreground text-[10px]"
                 >
                   {{ formatCurrency(item.actual_cost) }}
@@ -95,6 +95,5 @@ import type { ApiFormatStatsItem } from '../types'
 
 defineProps<{
   data: ApiFormatStatsItem[]
-  isAdmin: boolean
 }>()
 </script>

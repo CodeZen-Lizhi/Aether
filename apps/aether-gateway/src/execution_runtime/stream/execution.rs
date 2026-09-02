@@ -6903,6 +6903,9 @@ fn apply_stream_summary_report_context(
     }
 }
 
+
+
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -7115,7 +7118,6 @@ mod tests {
         .expect("key should build")
         .with_transport_fields(
             Some(json!([plan.provider_api_format.clone()])),
-            None,
             encrypted_auth_config,
             None,
             None,
@@ -7509,6 +7511,31 @@ mod tests {
         fn drop(&mut self) {
             self.0.store(true, Ordering::SeqCst);
         }
+    }
+
+    fn tunnel_proxy_snapshot(base_url: String) -> aether_contracts::ProxySnapshot {
+        aether_contracts::ProxySnapshot {
+            enabled: Some(true),
+            mode: Some("tunnel".into()),
+            node_id: Some("node-1".into()),
+            label: Some("relay-node".into()),
+            url: None,
+            extra: Some(json!({"tunnel_base_url": base_url})),
+        }
+    }
+
+    fn connect_json_frame(flags: u8, payload: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(5 + payload.len());
+        out.push(flags);
+        out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn ndjson_frame(frame: StreamFrame) -> Bytes {
+        let mut bytes = serde_json::to_vec(&frame).expect("stream frame should serialize");
+        bytes.push(b'\n');
+        Bytes::from(bytes)
     }
 
     fn direct_anthropic_test_finalizer(request_id: &str) -> DirectPassthroughFinalizer {

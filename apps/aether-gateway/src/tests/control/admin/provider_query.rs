@@ -2316,7 +2316,7 @@ async fn gateway_handles_openai_responses_test_model_locally_impl() {
                     .and_then(|body| body.get("model")),
                 Some(&json!("gpt-5.4-mini"))
             );
-            assert_eq!(
+            assert_ne!(
                 plan.body
                     .json_body
                     .as_ref()

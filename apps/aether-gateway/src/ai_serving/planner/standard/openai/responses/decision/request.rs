@@ -224,7 +224,7 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
         .await);
     }
 
-    let same_format = api_format_alias_matches(provider_api_format, &client_api_format);
+    let same_format = crate::ai_serving::api_format_alias_matches(provider_api_format, &client_api_format);
     let conversion_kind = request_conversion_kind(spec_metadata.api_format, provider_api_format);
     let transport_unsupported_reason = if same_format {
         local_standard_transport_unsupported_reason_with_network(&transport, provider_api_format)
@@ -499,7 +499,7 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
         build_local_openai_responses_upstream_url(
             parts,
             &transport,
-            api_format_alias_matches(provider_api_format, "openai:responses:compact"),
+            crate::ai_serving::api_format_alias_matches(provider_api_format, "openai:responses:compact"),
         )
     }) else {
         mark_skipped_local_openai_responses_candidate_with_failure_diagnostic(

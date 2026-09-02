@@ -284,8 +284,8 @@ export interface RequestDetail {
   provider_request_body?: Record<string, unknown>
   response_headers?: Record<string, unknown>
   client_response_headers?: Record<string, unknown>
-  response_body?: Record<string, unknown>
-  client_response_body?: Record<string, unknown>
+  response_body?: Record<string, unknown> | null
+  client_response_body?: Record<string, unknown> | null
   has_request_body?: boolean
   has_provider_request_body?: boolean
   has_response_body?: boolean

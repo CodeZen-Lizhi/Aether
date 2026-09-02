@@ -9,8 +9,9 @@ export function checkAdminAccess(
   authStore: ReturnType<typeof useAuthStore>
 ): string | null {
   if (!authStore.canAccessAdmin) {
-    log.warn('Non-admin user attempted to access admin page, redirecting to user dashboard')
-    return '/dashboard'
+    // 单用户版兜底：token 缺失或脏数据时回管理台登录。
+    log.warn('Non-admin attempted to access admin page, redirecting to admin dashboard')
+    return '/admin/dashboard'
   }
 
   return null

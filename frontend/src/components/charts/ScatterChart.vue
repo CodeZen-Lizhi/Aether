@@ -57,6 +57,7 @@ import {
   Tooltip,
   Legend,
   type ChartData,
+  type ChartDataset,
   type ChartOptions,
   type Plugin,
   type Scale
@@ -138,7 +139,7 @@ const crosshairStats = computed<CrosshairStats | null>(() => {
     let dsTotal = 0
 
     for (const point of dataset.data) {
-      const p = point as { x: string; y: number }
+      const p = point as unknown as { x: string; y: number }
       if (typeof p.y === 'number') {
         dsTotal++
         totalCount++
@@ -213,7 +214,7 @@ function compressTimeGaps(data: ChartData<'scatter'>): {
   // 收集所有数据点的时间戳并排序
   const allTimestamps: number[] = []
   for (const dataset of data.datasets) {
-    for (const point of dataset.data as Array<{ x: string; y: number }>) {
+    for (const point of dataset.data as unknown as Array<{ x: string; y: number }>) {
       allTimestamps.push(new Date(point.x).getTime())
     }
   }
@@ -269,7 +270,7 @@ function compressTimeGaps(data: ChartData<'scatter'>): {
     ...data,
     datasets: data.datasets.map(dataset => ({
       ...dataset,
-      data: (dataset.data as Array<{ x: string; y: number }>).map(point => {
+      data: (dataset.data as unknown as Array<{ x: string; y: number }>).map(point => {
         const originalTs = new Date(point.x).getTime()
         const compressedTs = timeMapping.get(originalTs) ?? originalTs
         return {
@@ -278,7 +279,7 @@ function compressTimeGaps(data: ChartData<'scatter'>): {
           _originalX: point.x // 保存原始时间
         }
       })
-    }))
+    }) as unknown as ChartDataset<'scatter'>)
   }
 
   return { data: compressedData, gaps, timeMapping }
@@ -290,12 +291,12 @@ function transformData(data: ChartData<'scatter'>): ChartData<'scatter'> {
     ...data,
     datasets: data.datasets.map(dataset => ({
       ...dataset,
-      data: (dataset.data as Array<{ x: string; y: number; _originalX?: string; _originalY?: number }>).map(point => ({
+      data: (dataset.data as unknown as Array<{ x: string; y: number; _originalX?: string; _originalY?: number }>).map(point => ({
         ...point,
         y: toDisplayValue(Math.min(point.y, 120)),
         _originalY: point._originalY ?? point.y  // 保存原始值用于 tooltip
       }))
-    }))
+    }) as unknown as ChartDataset<'scatter'>)
   }
 }
 

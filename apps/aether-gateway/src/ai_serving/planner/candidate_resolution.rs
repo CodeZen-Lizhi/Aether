@@ -553,6 +553,7 @@ mod tests {
             provider_id: "provider-1".to_string(),
             provider_name: "provider".to_string(),
             provider_type: "custom".to_string(),
+            provider_priority: 0,
             endpoint_id: "endpoint-1".to_string(),
             endpoint_api_format: "claude:messages".to_string(),
             key_id: "key-1".to_string(),

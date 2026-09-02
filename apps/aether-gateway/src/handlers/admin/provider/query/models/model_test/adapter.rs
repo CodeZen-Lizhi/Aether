@@ -138,19 +138,10 @@ pub(super) fn provider_query_normalize_api_format_alias(value: &str) -> String {
 }
 
 pub(super) fn provider_query_test_adapter_for_provider_api_format(
-    provider_type: &str,
+    _provider_type: &str,
     api_format: &str,
 ) -> Option<ProviderQueryTestAdapter> {
     let normalized_api_format = provider_query_normalize_api_format_alias(api_format);
-    if provider_type.trim().eq_ignore_ascii_case("grok") {
-        return match normalized_api_format.as_str() {
-            "openai:chat" | "openai:responses" | "openai:responses:compact" | "claude:messages" => {
-                Some(ProviderQueryTestAdapter::Grok)
-            }
-            "openai:image" => Some(ProviderQueryTestAdapter::OpenAiImage),
-            _ => None,
-        };
-    }
     if normalized_api_format == "openai:image" {
         return Some(ProviderQueryTestAdapter::OpenAiImage);
     }

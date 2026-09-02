@@ -447,18 +447,30 @@ function hasRequestPricing(model: Model): boolean {
   return requestPrice != null && requestPrice > 0
 }
 
+// 从 config 对象中读取视频分辨率计费配置
+function readVideoPriceByResolution(config: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  const billing = config?.billing
+  if (typeof billing !== 'object' || billing === null) return null
+  const video = (billing as Record<string, unknown>).video
+  if (typeof video !== 'object' || video === null) return null
+  const priceByResolution = (video as Record<string, unknown>).price_per_second_by_resolution
+  return typeof priceByResolution === 'object' && priceByResolution !== null
+    ? (priceByResolution as Record<string, unknown>)
+    : null
+}
+
 // 检查是否有视频分辨率计费配置
 function hasVideoPricing(model: Model): boolean {
-  const priceByResolution = model.effective_config?.billing?.video?.price_per_second_by_resolution
-    || model.config?.billing?.video?.price_per_second_by_resolution
-  return priceByResolution && typeof priceByResolution === 'object' && Object.keys(priceByResolution).length > 0
+  const priceByResolution = readVideoPriceByResolution(model.effective_config)
+    ?? readVideoPriceByResolution(model.config)
+  return priceByResolution !== null && Object.keys(priceByResolution).length > 0
 }
 
 // 获取视频计费的显示文本
 function getVideoPricingDisplay(model: Model): string {
-  const priceByResolution = model.effective_config?.billing?.video?.price_per_second_by_resolution
-    || model.config?.billing?.video?.price_per_second_by_resolution
-  if (!priceByResolution || typeof priceByResolution !== 'object') return ''
+  const priceByResolution = readVideoPriceByResolution(model.effective_config)
+    ?? readVideoPriceByResolution(model.config)
+  if (!priceByResolution) return ''
   const entries = sortResolutionEntries(Object.entries(priceByResolution))
   if (entries.length === 0) return ''
   // 获取最低分辨率和价格
@@ -472,9 +484,9 @@ function getVideoPricingDisplay(model: Model): string {
 
 // 获取视频计费详情的 tooltip
 function getVideoPricingTooltip(model: Model): string {
-  const priceByResolution = model.effective_config?.billing?.video?.price_per_second_by_resolution
-    || model.config?.billing?.video?.price_per_second_by_resolution
-  if (!priceByResolution || typeof priceByResolution !== 'object') return ''
+  const priceByResolution = readVideoPriceByResolution(model.effective_config)
+    ?? readVideoPriceByResolution(model.config)
+  if (!priceByResolution) return ''
   const entries = sortResolutionEntries(Object.entries(priceByResolution))
   return entries.map(([res, price]) => `${res}: $${(price as number).toFixed(4)}/s`).join('\n')
 }

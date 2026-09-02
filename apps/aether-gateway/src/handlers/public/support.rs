@@ -27,8 +27,6 @@ mod support_auth;
 mod support_dashboard;
 #[path = "support/models.rs"]
 mod support_models;
-#[path = "support/monitoring.rs"]
-mod support_monitoring;
 #[path = "support/test_connection.rs"]
 mod support_test_connection;
 #[path = "support/user_me.rs"]
@@ -50,7 +48,6 @@ use self::support_dashboard::maybe_build_local_dashboard_response;
 use self::support_models::{
     build_models_auth_error_response, maybe_build_local_models_response, models_api_format,
 };
-use self::support_monitoring::maybe_build_local_user_monitoring_response;
 use self::support_test_connection::maybe_build_local_test_connection_response;
 use self::support_user_me::maybe_build_local_users_me_response;
 
@@ -98,10 +95,6 @@ pub(crate) async fn maybe_build_local_public_support_response(
 
     if decision.route_family.as_deref() == Some("dashboard") {
         return Some(maybe_build_local_dashboard_response(state, request_context, headers).await);
-    }
-
-    if decision.route_family.as_deref() == Some("monitoring_user") {
-        return maybe_build_local_user_monitoring_response(state, request_context, headers).await;
     }
 
     if decision.route_family.as_deref() == Some("users_me") {

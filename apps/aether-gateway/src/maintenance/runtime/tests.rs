@@ -19,6 +19,8 @@ use super::{
     next_daily_run_after, next_db_maintenance_run_after, next_stats_aggregation_run_after,
     next_stats_hourly_aggregation_run_after, pending_cleanup_batch_size,
     pending_cleanup_timeout_minutes, plan_pending_cleanup_batch, provider_checkin_schedule,
+    run_db_maintenance_with, run_proxy_upgrade_rollout_once, spawn_pending_cleanup_worker,
+    spawn_pool_monitor_worker,
     proxy_node_metrics_cleanup_settings, record_proxy_upgrade_traffic_success,
     run_db_maintenance_with, run_proxy_upgrade_rollout_once, spawn_db_maintenance_worker,
     spawn_pending_cleanup_worker, spawn_pool_monitor_worker, spawn_provider_checkin_worker,

@@ -153,7 +153,7 @@
                 :class="sidebarCollapsed ? 'flex-col' : ''"
               >
                 <RouterLink
-                  to="/dashboard/settings"
+                  to="/admin/settings"
                   class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                   :aria-label="sidebarCollapsed ? t('common.settings') : undefined"
                   :title="t('common.settings')"
@@ -291,7 +291,7 @@
                   </div>
                   <div class="flex items-center gap-1">
                     <RouterLink
-                      to="/dashboard/settings"
+                      to="/admin/settings"
                       class="p-2 hover:bg-muted/50 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
                       :title="t('common.settings')"
                       @click="mobileMenuOpen = false"
@@ -444,7 +444,7 @@ async function handleLogout() {
 }
 
 function isNavActive(href: string) {
-  if (href === '/dashboard' || href === '/admin/dashboard') {
+  if (href === '/admin/dashboard') {
     return route.path === href
   }
   return route.path === href || route.path.startsWith(`${href}/`)
@@ -455,17 +455,10 @@ function prefetchNavigationItem(href: string) {
 }
 
 const navigation = computed(() => {
-  return buildNavigation({
-    canAccessAdmin: authStore.canAccessAdmin,
-    t,
-  })
+  return buildNavigation({ t })
 })
 
-const currentRoleLabel = computed(() => {
-  if (authStore.isAdmin) return t('auth.role.admin')
-  if (authStore.isAuditAdmin) return t('auth.role.auditAdmin')
-  return t('auth.role.user')
-})
+const currentRoleLabel = computed(() => t('auth.role.admin'))
 
 const breadcrumbs = computed(() => buildBreadcrumbs({
   route,

@@ -23,7 +23,7 @@ use crate::ai_serving::planner::standard::{
 use crate::ai_serving::transport::{
     build_openai_image_headers, build_openai_image_upstream_url,
     build_standard_provider_request_headers, openai_image_transport_unsupported_reason,
-    resolve_openai_image_auth, ProviderOpenAiImageHeadersInput,
+    request_pair_direct_auth, resolve_openai_image_auth, ProviderOpenAiImageHeadersInput,
     StandardProviderRequestHeadersInput,
 };
 use crate::ai_serving::{

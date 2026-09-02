@@ -41,6 +41,11 @@ export const adminRoutes: RouteRecordRaw[] = [
         path: 'system',
         name: 'SystemSettings',
         component: view(() => import('@/views/admin/SystemSettings.vue'))
+      },
+      {
+        path: 'settings',
+        name: 'ProfileSettings',
+        component: view(() => import('@/views/admin/ProfileSettings.vue'))
       }
     ]
   }

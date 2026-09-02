@@ -144,32 +144,6 @@ fn validate_users_me_preference_theme(theme: &str) -> Result<(), String> {
     }
 }
 
-pub(super) async fn handle_users_me_model_capabilities_get(
-    state: &AppState,
-    request_context: &GatewayPublicRequestContext,
-    headers: &http::HeaderMap,
-) -> Response<Body> {
-    let auth = match resolve_authenticated_local_user(state, request_context, headers).await {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let settings = match state
-        .read_user_model_capability_settings(&auth.user.id)
-        .await
-    {
-        Ok(Some(value)) => value,
-        Ok(None) => serde_json::Value::Object(serde_json::Map::new()),
-        Err(err) => {
-            return build_auth_error_response(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("user model capability lookup failed: {err:?}"),
-                false,
-            )
-        }
-    };
-    Json(json!({ "model_capability_settings": settings })).into_response()
-}
-
 pub(super) async fn handle_users_me_preferences_get(
     state: &AppState,
     request_context: &GatewayPublicRequestContext,
@@ -360,62 +334,4 @@ pub(super) async fn handle_users_me_preferences_put(
             false,
         ),
     }
-}
-
-pub(super) async fn handle_users_me_model_capabilities_put(
-    state: &AppState,
-    request_context: &GatewayPublicRequestContext,
-    headers: &http::HeaderMap,
-    request_body: Option<&axum::body::Bytes>,
-) -> Response<Body> {
-    let auth = match resolve_authenticated_local_user(state, request_context, headers).await {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let Some(request_body) = request_body else {
-        return build_auth_error_response(http::StatusCode::BAD_REQUEST, "缺少请求体", false);
-    };
-    let payload = match serde_json::from_slice::<serde_json::Value>(request_body) {
-        Ok(value) => value,
-        Err(_) => {
-            return build_auth_error_response(http::StatusCode::BAD_REQUEST, "输入验证失败", false)
-        }
-    };
-    let Some(payload) = payload.as_object() else {
-        return build_auth_error_response(http::StatusCode::BAD_REQUEST, "输入验证失败", false);
-    };
-    let settings = match validate_user_model_capability_settings(
-        payload.get("model_capability_settings").cloned(),
-    ) {
-        Ok(value) => value,
-        Err(detail) => {
-            return build_auth_error_response(http::StatusCode::BAD_REQUEST, detail, false)
-        }
-    };
-    let persisted = match state
-        .update_user_model_capability_settings(&auth.user.id, settings)
-        .await
-    {
-        Ok(Some(value)) => value,
-        Ok(None) => {
-            return build_auth_error_response(
-                http::StatusCode::SERVICE_UNAVAILABLE,
-                USERS_ME_MODEL_CAPABILITIES_STORAGE_UNAVAILABLE_DETAIL,
-                false,
-            )
-        }
-        Err(err) => {
-            return build_auth_error_response(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("user model capability update failed: {err:?}"),
-                false,
-            )
-        }
-    };
-
-    Json(json!({
-        "message": "模型能力配置已更新",
-        "model_capability_settings": persisted,
-    }))
-    .into_response()
 }

@@ -41,11 +41,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
         .map(|provider| {
             (
                 provider.id.clone(),
-                (
-                    provider.name.clone(),
-                    provider.is_active,
-                    provider.provider_type.clone(),
-                ),
+                (provider.name.clone(), provider.is_active),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -99,8 +95,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
 
     let mut grouped = BTreeMap::<String, Vec<serde_json::Value>>::new();
     for key in keys {
-        let Some((provider_name, provider_is_active, provider_type)) =
-            provider_metadata_by_id.get(&key.provider_id)
+        let Some((provider_name, provider_is_active)) = provider_metadata_by_id.get(&key.provider_id)
         else {
             continue;
         };
@@ -159,7 +154,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
                 "provider_id": key.provider_id,
                 "name": key.name,
                 "auth_type": key.auth_type,
-                "api_key_masked": grouped_key_masked_label(state, &key, provider_type),
+                "api_key_masked": grouped_key_masked_label(state, &key, provider_name),
                 "rate_multipliers": key.rate_multipliers,
                 "default_rate_multiplier": key.default_rate_multiplier,
                 "is_active": key.is_active,

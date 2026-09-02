@@ -5,7 +5,6 @@ pub(super) mod observability;
 pub(super) mod provider;
 mod routing;
 mod system;
-mod users;
 
 pub(super) mod request;
 pub(super) mod routes;

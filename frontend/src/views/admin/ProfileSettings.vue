@@ -1,7 +1,7 @@
 <template>
   <div class="container mx-auto px-4 py-8">
     <h2 class="text-2xl font-bold text-foreground mb-6">
-      个人设置
+      账号设置
     </h2>
 
     <div class="max-w-3xl space-y-6">

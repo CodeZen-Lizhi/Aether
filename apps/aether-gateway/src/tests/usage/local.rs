@@ -1143,7 +1143,7 @@ async fn gateway_records_failed_usage_for_claude_runtime_miss_without_execution_
             "user".to_string(),
             "local".to_string(),
             true,
-            false,
+        false, // user_is_deleted
             Some(serde_json::json!(["claude"])),
             Some(serde_json::json!(["claude:messages"])),
             Some(serde_json::json!(["claude-sonnet-4-5"])),
@@ -1706,8 +1706,7 @@ fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_skipped
 
 async fn gateway_records_failed_usage_when_all_local_claude_cli_candidates_are_skipped_impl() {
     fn sample_auth_snapshot(api_key_id: &str, user_id: &str) -> StoredAuthApiKeySnapshot {
-        StoredAuthApiKeySnapshot::new(
-            user_id.to_string(),
+        StoredAuthApiKeySnapshot::new(user_id.to_string(),
             "alice".to_string(),
             Some("alice@example.com".to_string()),
             "user".to_string(),

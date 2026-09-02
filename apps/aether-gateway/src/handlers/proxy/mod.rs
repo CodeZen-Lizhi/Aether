@@ -107,7 +107,6 @@ const AUTH_API_KEY_CONCURRENCY_LIMIT_REACHED_DETAIL: &str =
 const LOCAL_EXECUTION_PLANNING_TIMEOUT_DETAIL: &str =
     "当前 AI 请求在本地执行规划阶段超时，请稍后重试";
 const EXECUTION_PATH_TUNNEL_AFFINITY_FORWARD: &str = "tunnel_affinity_forward";
-const EXECUTION_PATH_CODEX_LIVE_CALL: &str = "codex_live_call";
 fn finalize_request_body_buffer_rejection(
     state: &AppState,
     request_context: &GatewayPublicRequestContext,

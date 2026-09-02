@@ -8,7 +8,7 @@
         class="flex-1 min-w-0 flex flex-col"
       >
         <Badge
-          :variant="authStore.isAdmin ? 'default' : 'secondary'"
+          variant="default"
           class="mb-4 self-start uppercase tracking-[0.45em]"
         >
           {{ dashboardModeLabel }}
@@ -132,9 +132,9 @@
           </template>
         </div>
 
-        <!-- 管理员：系统健康摘要 -->
+        <!-- 系统健康摘要 -->
         <div
-          v-if="isAdmin && systemHealth"
+          v-if="systemHealth"
           class="mt-6"
         >
           <div class="mb-3 flex items-center justify-between">
@@ -234,109 +234,6 @@
             </Card>
           </div>
         </div>
-
-        <!-- 普通用户：月度统计 -->
-        <div
-          v-else-if="
-            !isAdmin &&
-              (hasCacheData || (userMonthlyCost !== null && userMonthlyCost > 0))
-          "
-          class="mt-6"
-        >
-          <div class="mb-3 flex items-center justify-between">
-            <h3 class="text-sm font-medium text-foreground">
-              本月统计
-            </h3>
-            <Badge
-              variant="outline"
-              class="uppercase tracking-[0.3em] text-[10px]"
-            >
-              Monthly
-            </Badge>
-          </div>
-          <div class="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
-            <Card
-              v-if="cacheStats"
-              class="relative p-3 sm:p-4 border-book-cloth/30"
-            >
-              <Database
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  缓存命中率
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-foreground"
-                >
-                  {{ cacheStats.cache_hit_rate || 0 }}%
-                </p>
-              </div>
-            </Card>
-            <Card
-              v-if="cacheStats"
-              class="relative p-3 sm:p-4 border-kraft/30"
-            >
-              <Hash
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  缓存读取
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-foreground"
-                >
-                  {{ formatTokens(cacheStats.cache_read_tokens) }}
-                </p>
-              </div>
-            </Card>
-            <Card
-              v-if="cacheStats"
-              class="relative p-3 sm:p-4 border-book-cloth/25"
-            >
-              <Database
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  缓存创建
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-foreground"
-                >
-                  {{ formatTokens(cacheStats.cache_creation_tokens) }}
-                </p>
-              </div>
-            </Card>
-            <Card
-              v-if="userMonthlyCost !== null"
-              class="relative p-3 sm:p-4 border-manilla/40"
-            >
-              <DollarSign
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  本月费用
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-foreground"
-                >
-                  {{ formatCurrency(userMonthlyCost) }}
-                </p>
-              </div>
-            </Card>
-          </div>
-        </div>
       </div>
 
     </div>
@@ -356,48 +253,8 @@
 
     <!-- 趋势图表区域 -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <!-- 每日使用趋势（折线图）- 普通用户可见 -->
-      <Card
-        v-if="!isAdmin"
-        class="p-5"
-      >
-        <h4
-          class="mb-3 text-xs font-semibold text-foreground uppercase tracking-wider"
-        >
-          每日使用趋势
-        </h4>
-        <div
-          v-if="loadingDaily"
-          class="flex items-center justify-center h-[280px]"
-        >
-          <Skeleton class="h-full w-full" />
-        </div>
-        <div
-          v-else
-          style="height: 280px"
-        >
-          <LineChart
-            v-if="
-              dailyUsageTrendChartData.labels &&
-                dailyUsageTrendChartData.labels.length > 0
-            "
-            :data="dailyUsageTrendChartData"
-            :options="dailyUsageTrendChartOptions"
-          />
-          <div
-            v-else
-            class="flex h-full items-center justify-center text-xs text-muted-foreground"
-          >
-            暂无数据
-          </div>
-        </div>
-      </Card>
-
-      <!-- 每日模型成本（堆叠柱状图）- 仅管理员可见 -->
-      <Card
-        v-if="isAdmin"
-        class="p-5"
-      >
+      <!-- 每日模型成本（堆叠柱状图） -->
+      <Card class="p-5">
         <h4
           class="mb-3 text-xs font-semibold text-foreground uppercase tracking-wider"
         >
@@ -430,11 +287,8 @@
         </div>
       </Card>
 
-      <!-- 提供商成本分布（环形图）- 仅管理员可见 -->
-      <Card
-        v-if="isAdmin"
-        class="p-5"
-      >
+      <!-- 提供商成本分布（环形图） -->
+      <Card class="p-5">
         <h4
           class="mb-3 text-xs font-semibold text-foreground uppercase tracking-wider"
         >
@@ -457,43 +311,6 @@
             "
             :data="providerCostChartData"
             :options="providerCostChartOptions"
-          />
-          <div
-            v-else
-            class="flex h-full items-center justify-center text-xs text-muted-foreground"
-          >
-            暂无数据
-          </div>
-        </div>
-      </Card>
-
-      <!-- 每日模型成本（堆叠柱状图）- 普通用户可见 -->
-      <Card
-        v-if="!isAdmin"
-        class="p-5"
-      >
-        <h4
-          class="mb-3 text-xs font-semibold text-foreground uppercase tracking-wider"
-        >
-          每日模型成本
-        </h4>
-        <div
-          v-if="loadingDaily"
-          class="flex items-center justify-center h-[280px]"
-        >
-          <Skeleton class="h-full w-full" />
-        </div>
-        <div
-          v-else
-          style="height: 280px"
-        >
-          <BarChart
-            v-if="
-              dailyModelCostChartData.labels &&
-                dailyModelCostChartData.labels.length > 0
-            "
-            :data="dailyModelCostChartData"
-            :options="dailyModelCostChartOptions"
           />
           <div
             v-else
@@ -591,10 +408,7 @@
             <TableHead class="text-center">
               使用模型
             </TableHead>
-            <TableHead
-              v-if="isAdmin"
-              class="text-center"
-            >
+            <TableHead class="text-center">
               使用提供商
             </TableHead>
           </TableRow>
@@ -602,7 +416,7 @@
         <TableBody>
           <TableRow v-if="loadingDaily">
             <TableCell
-              :colspan="isAdmin ? 7 : 6"
+              colspan="7"
               class="text-center py-8"
             >
               <div class="flex items-center justify-center gap-2">
@@ -613,7 +427,7 @@
           </TableRow>
           <TableRow v-else-if="dailyStats.length === 0">
             <TableCell
-              :colspan="isAdmin ? 7 : 6"
+              colspan="7"
               class="text-center py-8 text-muted-foreground text-xs"
             >
               暂无数据
@@ -657,10 +471,7 @@
               <TableCell class="text-center text-xs">
                 {{ stat.unique_models }}
               </TableCell>
-              <TableCell
-                v-if="isAdmin"
-                class="text-center text-xs"
-              >
+              <TableCell class="text-center text-xs">
                 {{ stat.unique_providers }}
               </TableCell>
             </TableRow>
@@ -723,7 +534,6 @@ import {
   markRaw,
 } from "vue";
 import type { Component } from "vue";
-import { useAuthStore } from "@/stores/auth";
 import {
   dashboardApi,
   type DashboardStat,
@@ -748,7 +558,6 @@ import {
 import { TimeRangePicker } from "@/components/common";
 import BarChart from "@/components/charts/BarChart.vue";
 import DoughnutChart from "@/components/charts/DoughnutChart.vue";
-import LineChart from "@/components/charts/LineChart.vue";
 import {
   Users,
   Activity,
@@ -778,8 +587,6 @@ import type {
   TooltipItem,
 } from "chart.js";
 
-const authStore = useAuthStore();
-
 type DashboardStatCard = Omit<DashboardStat, "icon"> & {
   icon: Component;
 };
@@ -807,12 +614,7 @@ function setupResizeObserver() {
   statsPanelObserver.observe(panel);
 }
 
-const isAdmin = computed(() => authStore.canAccessAdmin);
-const dashboardModeLabel = computed(() => {
-  if (authStore.isAdmin) return "ADMIN MODE";
-  if (authStore.isAuditAdmin) return "AUDIT MODE";
-  return "PERSONAL MODE";
-});
+const dashboardModeLabel = computed(() => "ADMIN MODE");
 
 const statCardBorders = [
   "border-book-cloth/30 dark:border-book-cloth/25",
@@ -857,28 +659,6 @@ const costStats = ref<{
   cost_savings: number;
 } | null>(null);
 
-const cacheStats = ref<{
-  cache_creation_tokens: number;
-  cache_read_tokens: number;
-  cache_creation_cost?: number;
-  cache_read_cost?: number;
-  cache_hit_rate?: number;
-  total_cache_tokens: number;
-} | null>(null);
-
-const userMonthlyCost = ref<number | null>(null);
-
-const hasCacheData = computed(
-  () => cacheStats.value && cacheStats.value.total_cache_tokens > 0,
-);
-
-const tokenBreakdown = ref<{
-  input: number;
-  output: number;
-  cache_creation: number;
-  cache_read: number;
-} | null>(null);
-
 const activeUsers = ref(0);
 const dailyStats = ref<DailyStat[]>([]);
 const providerSummary = ref<ProviderSummary[]>([]);
@@ -909,19 +689,11 @@ const iconMap: Record<string, Component> = {
 
 // 空状态占位卡片
 const emptyStatPlaceholders = computed(() => {
-  if (isAdmin.value) {
-    return [
-      { name: "今日请求 / 今日费用", icon: Activity },
-      { name: "今日 Tokens", icon: Hash },
-      { name: "全站 RPM / 全站 TPM", icon: Activity },
-      { name: "在线用户 / 启用用户", icon: Users },
-    ];
-  }
   return [
-    { name: "今日请求", icon: Activity },
+    { name: "今日请求 / 今日费用", icon: Activity },
     { name: "今日 Tokens", icon: Hash },
-    { name: "API Keys", icon: Key },
-    { name: "今日费用", icon: DollarSign },
+    { name: "全站 RPM / 全站 TPM", icon: Activity },
+    { name: "在线用户 / 启用用户", icon: Users },
   ];
 });
 
@@ -1120,101 +892,6 @@ const providerCostChartOptions = computed<ChartOptions<"doughnut">>(() => ({
   },
 }));
 
-// 每日使用趋势（折线图）- 普通用户
-const dailyUsageTrendChartData = computed<ChartData<"line">>(() => {
-  // 管理员不需要此图表，直接返回空数据
-  if (isAdmin.value || dailyStats.value.length === 0) {
-    return { labels: [], datasets: [] };
-  }
-
-  return {
-    labels: dailyStats.value.map((stat) => formatDateForChart(stat.date)),
-    datasets: [
-      {
-        label: "请求数",
-        data: dailyStats.value.map((stat) => stat.requests),
-        borderColor: "rgba(59, 130, 246, 0.8)",
-        backgroundColor: "rgba(59, 130, 246, 0.1)",
-        fill: true,
-        tension: 0.3,
-        yAxisID: "y",
-      },
-      {
-        label: "Tokens (K)",
-        data: dailyStats.value.map((stat) => stat.tokens / 1000),
-        borderColor: "rgba(16, 185, 129, 0.8)",
-        backgroundColor: "rgba(16, 185, 129, 0.1)",
-        fill: true,
-        tension: 0.3,
-        yAxisID: "y1",
-      },
-    ],
-  };
-});
-
-const dailyUsageTrendChartOptions = computed<ChartOptions<"line">>(() => {
-  // 管理员不需要此图表
-  if (isAdmin.value) {
-    return {} as ChartOptions<"line">;
-  }
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: {
-      mode: "index",
-      intersect: false,
-    },
-    scales: {
-      x: {
-        ticks: { font: { size: 10 } },
-      },
-      y: {
-        type: "linear",
-        display: true,
-        position: "left",
-        title: {
-          display: true,
-          text: "请求数",
-          color: "rgb(107, 114, 128)",
-          font: { size: 10 },
-        },
-        ticks: { font: { size: 10 } },
-      },
-      y1: {
-        type: "linear",
-        display: true,
-        position: "right",
-        title: {
-          display: true,
-          text: "Tokens (K)",
-          color: "rgb(107, 114, 128)",
-          font: { size: 10 },
-        },
-        ticks: { font: { size: 10 } },
-        grid: { drawOnChartArea: false },
-      },
-    },
-    plugins: {
-      legend: {
-        display: true,
-        position: "bottom",
-        labels: { font: { size: 10 }, boxWidth: 12, padding: 8 },
-      },
-      tooltip: {
-        callbacks: {
-          label: (context) => {
-            const value = context.raw as number;
-            if (context.dataset.label === "Tokens (K)") {
-              return `${context.dataset.label}: ${value.toFixed(1)}K`;
-            }
-            return `${context.dataset.label}: ${value}`;
-          },
-        },
-      },
-    },
-  };
-});
-
 onMounted(async () => {
   checkScreenSize();
   setupResizeObserver();
@@ -1258,20 +935,9 @@ async function loadDashboardData() {
       icon: markRaw(iconMap[stat.icon] || Activity),
     }));
     if (statsData.today) todayStats.value = statsData.today;
-    if (isAdmin.value) {
-      if (statsData.system_health) systemHealth.value = statsData.system_health;
-      if (statsData.cost_stats) costStats.value = statsData.cost_stats;
-      if (statsData.cache_stats) cacheStats.value = statsData.cache_stats;
-      if (statsData.token_breakdown)
-        tokenBreakdown.value = statsData.token_breakdown;
-      if (statsData.users) activeUsers.value = statsData.users.active;
-    } else {
-      if (statsData.cache_stats) cacheStats.value = statsData.cache_stats;
-      if (statsData.token_breakdown)
-        tokenBreakdown.value = statsData.token_breakdown;
-      if (statsData.monthly_cost !== undefined)
-        userMonthlyCost.value = statsData.monthly_cost;
-    }
+    if (statsData.system_health) systemHealth.value = statsData.system_health;
+    if (statsData.cost_stats) costStats.value = statsData.cost_stats;
+    if (statsData.users) activeUsers.value = statsData.users.active;
   } finally {
     loading.value = false;
   }

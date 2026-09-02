@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
 
 const {
   getAllUsageRecordsMock,
@@ -8,7 +7,6 @@ const {
   getUsageByModelMock,
   getUsageByProviderMock,
   getUsageByApiFormatMock,
-  meGetUsageMock,
 } = vi.hoisted(() => ({
   getAllUsageRecordsMock: vi.fn(),
   getAllUsageRecordTotalMock: vi.fn(),
@@ -16,7 +14,6 @@ const {
   getUsageByModelMock: vi.fn(),
   getUsageByProviderMock: vi.fn(),
   getUsageByApiFormatMock: vi.fn(),
-  meGetUsageMock: vi.fn(),
 }))
 
 vi.mock('@/api/usage', () => ({
@@ -27,12 +24,6 @@ vi.mock('@/api/usage', () => ({
     getUsageByModel: getUsageByModelMock,
     getUsageByProvider: getUsageByProviderMock,
     getUsageByApiFormat: getUsageByApiFormatMock,
-  },
-}))
-
-vi.mock('@/api/me', () => ({
-  meApi: {
-    getUsage: meGetUsageMock,
   },
 }))
 
@@ -98,12 +89,10 @@ describe('useUsageData', () => {
     getUsageByModelMock.mockResolvedValue([])
     getUsageByProviderMock.mockResolvedValue([])
     getUsageByApiFormatMock.mockResolvedValue([])
-    meGetUsageMock.mockResolvedValue({})
   })
 
   it('keeps admin records when stats refresh fails', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, loadStats, currentRecords, totalRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, loadStats, currentRecords, totalRecords } = useUsageData()
     const dateRange = { preset: 'last7days', tz_offset_minutes: 0 }
 
     await loadRecords({ page: 1, pageSize: 20 }, undefined, dateRange)
@@ -122,8 +111,7 @@ describe('useUsageData', () => {
   })
 
   it('sends the WebSocket type filter to the admin records endpoint', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords } = useUsageData({ isAdminPage })
+    const { loadRecords } = useUsageData()
 
     await loadRecords(
       { page: 1, pageSize: 20 },
@@ -137,27 +125,8 @@ describe('useUsageData', () => {
     }))
   })
 
-  it('sends the WebSocket type filter to the user records endpoint before pagination', async () => {
-    const isAdminPage = ref(false)
-    const { loadRecords } = useUsageData({ isAdminPage })
-
-    await loadRecords(
-      { page: 2, pageSize: 20 },
-      { api_format: 'codex:live', status: 'websocket' },
-      { preset: 'today', tz_offset_minutes: 0 },
-    )
-
-    expect(meGetUsageMock).toHaveBeenCalledWith(expect.objectContaining({
-      api_format: 'codex:live',
-      status: 'websocket',
-      limit: 20,
-      offset: 20,
-    }))
-  })
-
   it('keeps locally resolved failure fields when a stale active record refreshes', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, currentRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, currentRecords } = useUsageData()
     const dateRange = { preset: 'today', tz_offset_minutes: 0 }
 
     getAllUsageRecordsMock.mockResolvedValueOnce({
@@ -197,8 +166,7 @@ describe('useUsageData', () => {
   })
 
   it('clears a failed candidate Cyber snapshot when the final candidate completes', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, currentRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, currentRecords } = useUsageData()
     const dateRange = { preset: 'today', tz_offset_minutes: 0 }
     const cyberMessage = 'This content was flagged for possible cybersecurity risk. https://chatgpt.com/cyber'
 
@@ -237,8 +205,7 @@ describe('useUsageData', () => {
   })
 
   it('rejects an older same-rank terminal snapshot as a unit', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, currentRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, currentRecords } = useUsageData()
     const dateRange = { preset: 'today', tz_offset_minutes: 0 }
     const cyberMessage = 'This content was flagged for possible cybersecurity risk. https://chatgpt.com/cyber'
 
@@ -277,8 +244,7 @@ describe('useUsageData', () => {
   })
 
   it('keeps live response duration and its anchor atomic across stale refreshes', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, currentRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, currentRecords } = useUsageData()
     const dateRange = { preset: 'today', tz_offset_minutes: 0 }
 
     getAllUsageRecordsMock.mockResolvedValueOnce({
@@ -336,8 +302,7 @@ describe('useUsageData', () => {
   })
 
   it('preserves client/detail metrics but clears stale final-provider facts from the next list snapshot', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, currentRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, currentRecords } = useUsageData()
     const dateRange = { preset: 'today', tz_offset_minutes: 0 }
 
     getAllUsageRecordsMock.mockResolvedValueOnce({
@@ -465,8 +430,7 @@ describe('useUsageData', () => {
   })
 
   it('allows finalized list metrics to replace larger detail estimates', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, currentRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, currentRecords } = useUsageData()
     const dateRange = { preset: 'today', tz_offset_minutes: 0 }
 
     getAllUsageRecordsMock.mockResolvedValueOnce({
@@ -511,8 +475,7 @@ describe('useUsageData', () => {
   })
 
   it('refreshes exact admin record totals after an estimated first page', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, totalRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, totalRecords } = useUsageData()
     const dateRange = { preset: 'last7days', tz_offset_minutes: 0 }
 
     getAllUsageRecordsMock.mockResolvedValueOnce({
@@ -540,8 +503,7 @@ describe('useUsageData', () => {
   })
 
   it('keeps the exact admin record total while a later page returns an estimate', async () => {
-    const isAdminPage = ref(true)
-    const { loadRecords, totalRecords } = useUsageData({ isAdminPage })
+    const { loadRecords, totalRecords } = useUsageData()
     const dateRange = { preset: 'last7days', tz_offset_minutes: 0 }
 
     getAllUsageRecordsMock.mockResolvedValueOnce({
@@ -579,7 +541,6 @@ describe('useUsageData', () => {
   })
 
   it('continues loading admin breakdowns when the summary request fails', async () => {
-    const isAdminPage = ref(true)
     const {
       loadStats,
       stats,
@@ -588,7 +549,7 @@ describe('useUsageData', () => {
       apiFormatStats,
       availableModels,
       availableProviders,
-    } = useUsageData({ isAdminPage })
+    } = useUsageData()
     const dateRange = { preset: 'last7days', tz_offset_minutes: 0 }
 
     getUsageStatsMock.mockRejectedValueOnce({
@@ -649,8 +610,7 @@ describe('useUsageData', () => {
   })
 
   it('filters placeholder providers from admin provider stats', async () => {
-    const isAdminPage = ref(true)
-    const { loadStats, providerStats, availableProviders } = useUsageData({ isAdminPage })
+    const { loadStats, providerStats, availableProviders } = useUsageData()
     const dateRange = { preset: 'last7days', tz_offset_minutes: 0 }
 
     getUsageStatsMock.mockResolvedValueOnce({
@@ -705,8 +665,7 @@ describe('useUsageData', () => {
   })
 
   it('keeps previous admin provider stats when a background refresh fails', async () => {
-    const isAdminPage = ref(true)
-    const { loadStats, providerStats, availableProviders } = useUsageData({ isAdminPage })
+    const { loadStats, providerStats, availableProviders } = useUsageData()
     const dateRange = { preset: 'last7days', tz_offset_minutes: 0 }
 
     getUsageStatsMock.mockResolvedValueOnce({

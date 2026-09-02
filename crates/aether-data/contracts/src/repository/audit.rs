@@ -101,12 +101,6 @@ pub trait AuditLogReadRepository: Send + Sync {
         cutoff_unix_secs: u64,
     ) -> Result<Vec<StoredSuspiciousActivity>, crate::DataLayerError>;
 
-    async fn read_admin_user_behavior_event_counts(
-        &self,
-        user_id: &str,
-        cutoff_unix_secs: u64,
-    ) -> Result<std::collections::BTreeMap<String, u64>, crate::DataLayerError>;
-
     async fn list_user_audit_logs(
         &self,
         user_id: &str,

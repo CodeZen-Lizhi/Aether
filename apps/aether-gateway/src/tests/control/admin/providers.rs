@@ -84,7 +84,7 @@ async fn local_admin_providers_response(
         body_bytes.as_ref(),
     ))
     .await
-    .expect("local providers response should build")
+    .expect("local admin response should build")
     .expect("providers route should resolve locally")
 }
 

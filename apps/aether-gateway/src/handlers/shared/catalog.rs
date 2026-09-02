@@ -1916,7 +1916,6 @@ pub(crate) fn sync_provider_key_quota_status_snapshot(
         "chatgpt_web" => build_chatgpt_web_quota_status_snapshot(upstream_metadata, source),
         "windsurf" => build_windsurf_quota_status_snapshot(upstream_metadata, source),
         "antigravity" => build_antigravity_quota_status_snapshot(upstream_metadata, source),
-        "grok" => build_grok_quota_status_snapshot(upstream_metadata, source),
         "gemini_cli" => build_gemini_cli_quota_status_snapshot(upstream_metadata, source),
         _ => None,
     }?;
@@ -2542,8 +2541,7 @@ mod tests {
         .expect("key should build")
         .with_transport_fields(
             Some(json!(["openai:chat"])),
-            encrypted_api_key,
-            None,
+            Some(encrypted_api_key),
             None,
             None,
             None,
@@ -2829,69 +2827,6 @@ mod tests {
         assert_eq!(window.get("remaining_value"), Some(&json!(19.0)));
         assert_eq!(window.get("limit_value"), Some(&json!(19.0)));
         assert_eq!(window.get("used_value"), Some(&json!(0.0)));
-    }
-
-    #[test]
-    fn provider_key_status_snapshot_payload_backfills_grok_model_quota() {
-        let mut key = sample_catalog_key();
-        key.upstream_metadata = Some(json!({
-            "grok": {
-                "updated_at": 1_778_067_246u64,
-                "pool_tier": "heavy",
-                "plan_type": "heavy",
-                "quota_by_model": {
-                    "quota_auto": {
-                        "display_name": "auto",
-                        "remaining_fraction": 0.4,
-                        "used_percent": 60.0,
-                        "remaining": 60.0,
-                        "total": 150.0,
-                        "reset_at": 1_778_157_172u64,
-                        "is_exhausted": false
-                    },
-                    "quota_heavy": {
-                        "display_name": "heavy",
-                        "remaining_fraction": 0.0,
-                        "used_percent": 100.0,
-                        "reset_at": 1_778_157_172u64,
-                        "is_exhausted": true
-                    }
-                }
-            }
-        }));
-
-        let payload = provider_key_status_snapshot_payload(&key, "grok");
-        let quota = payload
-            .get("quota")
-            .and_then(Value::as_object)
-            .expect("quota snapshot should be object");
-        let windows = quota
-            .get("windows")
-            .and_then(Value::as_array)
-            .expect("grok quota windows should exist");
-
-        assert_eq!(quota.get("provider_type"), Some(&json!("grok")));
-        assert_eq!(quota.get("code"), Some(&json!("ok")));
-        assert_eq!(quota.get("plan_type"), Some(&json!("heavy")));
-        assert_eq!(quota.get("pool_tier"), Some(&json!("heavy")));
-        assert_eq!(quota.get("exhausted"), Some(&json!(false)));
-        assert_eq!(quota.get("usage_ratio"), Some(&json!(1.0)));
-        assert_eq!(quota.get("reset_at"), Some(&json!(1_778_157_172u64)));
-        assert_eq!(windows.len(), 2);
-        assert!(windows.iter().any(|window| {
-            window
-                .get("code")
-                .and_then(Value::as_str)
-                .is_some_and(|code| code == "model:quota_auto")
-        }));
-        let auto = windows
-            .iter()
-            .filter_map(Value::as_object)
-            .find(|window| window.get("code") == Some(&json!("model:quota_auto")))
-            .expect("auto quota window should exist");
-        assert_eq!(auto.get("remaining_value"), Some(&json!(60.0)));
-        assert_eq!(auto.get("limit_value"), Some(&json!(150.0)));
-        assert_eq!(auto.get("used_value"), Some(&json!(90.0)));
     }
 
     #[test]

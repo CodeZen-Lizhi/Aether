@@ -417,7 +417,7 @@ const SUPPORTED_ARCHITECTURE_IDS = new Set(['new_api', 'sub2api', 'usage_api'])
 // 当前选择
 const selectedArchitectureId = ref('new_api')
 const selectedAuthType = ref('')
-const formData = ref<Record<string, unknown>>({})
+const formData = ref<Record<string, any>>({})
 const quotaAlert = ref<QuotaAlertConfig>({
   enabled: false,
   threshold_amount: 0,
@@ -440,11 +440,11 @@ const currentSchema = computed<CredentialsSchema | null>(() => {
   if (selectedAuthType.value && arch.supported_auth_types.length > 1) {
     const authType = arch.supported_auth_types.find((t) => t.type === selectedAuthType.value)
     if (authType?.credentials_schema) {
-      return authType.credentials_schema as CredentialsSchema
+      return authType.credentials_schema as unknown as CredentialsSchema
     }
   }
 
-  return (arch?.credentials_schema as CredentialsSchema) ?? null
+  return (arch?.credentials_schema as unknown as CredentialsSchema) ?? null
 })
 
 // 表单是否可以验证（必填字段已填写）
@@ -534,7 +534,7 @@ function resetFormData() {
   // 初始化表单数据
   const data: Record<string, unknown> = {}
   for (const [key, prop] of Object.entries(schema.properties)) {
-    data[key] = (prop as Record<string, unknown>)['x-default-value'] ?? ''
+    data[key] = (prop as unknown as Record<string, unknown>)['x-default-value'] ?? ''
   }
   // 代理相关默认值
   data.proxy_enabled = false

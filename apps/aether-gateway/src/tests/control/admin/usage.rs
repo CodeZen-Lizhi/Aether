@@ -90,7 +90,7 @@ async fn local_admin_usage_response(
         body_bytes.as_ref(),
     ))
     .await
-    .expect("local usage response should build")
+    .expect("local admin response should build")
     .expect("usage route should resolve locally")
 }
 

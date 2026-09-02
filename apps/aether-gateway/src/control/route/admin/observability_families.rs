@@ -429,19 +429,18 @@ pub(super) fn classify_admin_observability_family_route(
             false,
         ))
     } else if method == http::Method::GET
-        && (matches!(
+        && matches!(
             normalized_path,
             "/api/admin/monitoring/system-status"
                 | "/api/admin/monitoring/system-status/"
                 | "/api/admin/monitoring/suspicious-activities"
                 | "/api/admin/monitoring/suspicious-activities/"
-                | "/api/admin/monitoring/user-behavior"
-        ) || normalized_path.starts_with("/api/admin/monitoring/user-behavior/"))
+        )
     {
         Some(classified(
             "admin_proxy",
             "monitoring",
-            "user_behavior",
+            "system_status",
             "admin:monitoring",
             false,
         ))

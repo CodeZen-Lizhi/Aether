@@ -118,7 +118,7 @@ async function syncExternalAuthState(nextToken: string | null): Promise<void> {
   }
 
   if (router.currentRoute.value.path.startsWith('/admin') && !authStore.canAccessAdmin) {
-    await router.replace('/dashboard')
+    await router.replace('/admin/dashboard')
   }
 }
 

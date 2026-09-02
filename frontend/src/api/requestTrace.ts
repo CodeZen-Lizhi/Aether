@@ -67,6 +67,17 @@ export interface CandidateRecord {
   extra_data?: Record<string, unknown> & {
     upstream_response?: CandidateResponseBoundary
     image_progress?: ImageProgress | null
+    first_byte_time_ms?: number | null
+    needs_conversion?: boolean
+    provider_api_format?: string | null
+    proxy?: {
+      node_name?: string | null
+      url?: string | null
+      source?: string | null
+      ttfb_ms?: number | null
+      node_id?: string | null
+      timing?: Record<string, unknown> | null
+    } | null
   }
   created_at: string
   started_at?: string

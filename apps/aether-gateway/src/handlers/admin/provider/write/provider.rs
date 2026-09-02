@@ -1,6 +1,4 @@
 mod create;
-mod endpoint;
-mod template;
 mod update;
 
 fn normalize_provider_request_timeout(value: Option<f64>) -> Result<Option<f64>, String> {

@@ -134,7 +134,6 @@ async fn required_capability_without_model_uses_session_scoped_affinity() {
     fallback.key_api_formats = Some(vec!["gemini:generate_content".to_string()]);
     fallback.key_id = "key-a".to_string();
     fallback.key_name = "alpha".to_string();
-    fallback.global_model_name = "gemini-2.5-pro".to_string();
     fallback.key_capabilities = Some(serde_json::json!({"gemini_files": true}));
 
     let mut session_target = fallback.clone();
