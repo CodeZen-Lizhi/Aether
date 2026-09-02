@@ -162,6 +162,46 @@
         </div>
       </div>
 
+      <!-- 成本倍率 -->
+      <div class="space-y-1.5">
+        <Label for="default_rate_multiplier">{{ legacyT('默认成本倍率') }}</Label>
+        <Input
+          id="default_rate_multiplier"
+          v-model.number="form.default_rate_multiplier"
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          class="h-8 w-32"
+        />
+        <p class="text-xs text-muted-foreground">
+          {{ legacyT('未单独配置倍率的请求按默认倍率计费，1 表示不调整。') }}
+        </p>
+        <div
+          v-if="form.api_formats.length > 0"
+          class="space-y-1 pt-1"
+        >
+          <Label class="text-xs text-muted-foreground">{{ legacyT('按 API 格式覆盖倍率') }}</Label>
+          <div
+            v-for="format in form.api_formats"
+            :key="`multiplier-${format}`"
+            class="flex items-center justify-between gap-2"
+          >
+            <span class="text-xs text-muted-foreground truncate">{{ formatApiFormat(format) }}</span>
+            <Input
+              class="h-7 w-24 text-xs"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              :model-value="form.rate_multipliers[format] ?? ''"
+              :placeholder="legacyT('按默认')"
+              @update:model-value="(value) => setFormatMultiplier(format, value as string | number)"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- 配置项 -->
       <div class="grid grid-cols-4 gap-3">
         <div>
@@ -595,6 +635,7 @@ const form = ref({
   allow_auth_channel_mismatch_formats: [] as string[],
   api_formats: [] as string[],  // 支持的 API 格式列表
   rate_multipliers: {} as Record<string, number>,  // 按 API 格式的成本倍率
+  default_rate_multiplier: 1 as number,  // Key 级默认成本倍率
   rpm_limit: undefined as number | null | undefined,  // RPM 限制（null=自适应，undefined=保持原值）
   concurrent_limit: undefined as number | null | undefined,  // 并发请求上限（null/0=不限制，undefined=保持原值）
   cache_ttl_minutes: 5,
@@ -668,6 +709,18 @@ function toggleApiFormat(format: string) {
 }
 
 
+// 设置按格式覆盖倍率；清空输入表示回落到默认倍率
+function setFormatMultiplier(format: string, value: string | number) {
+  const raw = typeof value === 'number' ? value : Number(String(value).trim())
+  if (String(value).trim() === '' || !Number.isFinite(raw)) {
+    delete form.value.rate_multipliers[format]
+    form.value.rate_multipliers = { ...form.value.rate_multipliers }
+    return
+  }
+  const clamped = Math.min(100, Math.max(0, raw))
+  form.value.rate_multipliers = { ...form.value.rate_multipliers, [format]: clamped }
+}
+
 // 重置表单
 function resetForm() {
   formNonce.value = createFieldNonce()
@@ -681,6 +734,7 @@ function resetForm() {
       getDefaultAllowAuthChannelMismatchFormats(defaultApiFormats),
     api_formats: defaultApiFormats,
     rate_multipliers: {},
+    default_rate_multiplier: 1,
     rpm_limit: undefined,
     concurrent_limit: undefined,
     cache_ttl_minutes: 5,
@@ -728,6 +782,7 @@ function loadKeyData() {
       )
       : [],  // 编辑模式下保持原有选择，不默认全选
     rate_multipliers: { ...(props.editingKey.rate_multipliers || {}) },
+    default_rate_multiplier: props.editingKey.default_rate_multiplier ?? 1,
     // 保留原始的 null/undefined 状态，null 表示自适应模式
     rpm_limit: props.editingKey.rpm_limit ?? undefined,
     concurrent_limit: props.editingKey.concurrent_limit ?? undefined,
@@ -797,6 +852,12 @@ async function handleSave() {
       ? filteredMultipliers
       : null
 
+    const defaultRateMultiplier = Number(form.value.default_rate_multiplier)
+    if (!Number.isFinite(defaultRateMultiplier) || defaultRateMultiplier < 0 || defaultRateMultiplier > 100) {
+      showError(legacyT('默认成本倍率必须是 0-100 之间的数值'), legacyT('验证失败'))
+      return
+    }
+
     // 准备认证相关数据
     const authTypeByFormat = buildAuthTypeByFormatPayload()
     const allowAuthChannelMismatchFormats = buildAllowAuthChannelMismatchFormatsPayload()
@@ -813,6 +874,7 @@ async function handleSave() {
         auth_type_by_format: authTypeByFormat,
         allow_auth_channel_mismatch_formats: allowAuthChannelMismatchFormats,
         rate_multipliers: rateMultipliersData,
+        default_rate_multiplier: defaultRateMultiplier,
         rpm_limit: form.value.rpm_limit,
         concurrent_limit: form.value.concurrent_limit,
         cache_ttl_minutes: form.value.cache_ttl_minutes,
@@ -843,6 +905,7 @@ async function handleSave() {
         allow_auth_channel_mismatch_formats: allowAuthChannelMismatchFormats,
         name: form.value.name,
         rate_multipliers: rateMultipliersData,
+        default_rate_multiplier: defaultRateMultiplier,
         rpm_limit: form.value.rpm_limit,
         concurrent_limit: form.value.concurrent_limit,
         cache_ttl_minutes: form.value.cache_ttl_minutes,

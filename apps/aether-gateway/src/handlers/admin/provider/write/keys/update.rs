@@ -2,8 +2,8 @@ use crate::handlers::admin::provider::shared::payloads::AdminProviderKeyUpdatePa
 use crate::handlers::admin::provider::write::normalize::{
     normalize_allow_auth_channel_mismatch_formats, normalize_api_format_json_object_keys,
     normalize_api_format_list, normalize_auth_type, normalize_auth_type_by_format,
-    normalize_max_probe_interval_minutes, normalize_rate_multipliers,
-    reconcile_allow_auth_channel_mismatch_formats,
+    normalize_default_rate_multiplier, normalize_max_probe_interval_minutes,
+    normalize_rate_multipliers, reconcile_allow_auth_channel_mismatch_formats,
 };
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::admin::shared::{
@@ -243,6 +243,10 @@ pub(crate) fn build_admin_update_provider_key_record_with_existing_keys(
     }
     if fields.contains("rate_multipliers") {
         updated.rate_multipliers = normalize_rate_multipliers(payload.rate_multipliers)?;
+    }
+    if fields.contains("default_rate_multiplier") {
+        updated.default_rate_multiplier =
+            normalize_default_rate_multiplier(payload.default_rate_multiplier)?.unwrap_or(1.0);
     }
     if fields.contains("rpm_limit") {
         updated.rpm_limit = payload.rpm_limit;

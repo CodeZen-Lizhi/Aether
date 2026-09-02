@@ -20,6 +20,11 @@ pub(crate) struct AdminProviderKeyCreateRequest {
     pub(crate) name: String,
     #[serde(default)]
     pub(crate) rate_multipliers: Option<serde_json::Value>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_f64_from_number_or_string"
+    )]
+    pub(crate) default_rate_multiplier: Option<f64>,
     #[serde(default)]
     pub(crate) rpm_limit: Option<u32>,
     #[serde(default)]
@@ -64,6 +69,11 @@ pub(crate) struct AdminProviderKeyUpdateRequest {
     pub(crate) name: Option<String>,
     #[serde(default)]
     pub(crate) rate_multipliers: Option<serde_json::Value>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_f64_from_number_or_string"
+    )]
+    pub(crate) default_rate_multiplier: Option<f64>,
     #[serde(default)]
     pub(crate) rpm_limit: Option<u32>,
     #[serde(default)]

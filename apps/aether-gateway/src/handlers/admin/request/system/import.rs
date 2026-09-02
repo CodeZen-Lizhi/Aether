@@ -3364,6 +3364,7 @@ mod tests {
             api_formats: Some(vec!["claude:cli".to_string(), "openai:compact".to_string()]),
             supported_endpoints: None,
             rate_multipliers: None,
+            default_rate_multiplier: None,
             auth_type_by_format: None,
             allow_auth_channel_mismatch_formats: None,
             rpm_limit: None,

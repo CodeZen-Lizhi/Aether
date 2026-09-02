@@ -827,6 +827,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn settlement_applies_key_default_rate_multiplier_when_format_mapping_missing() {
+        let lookup = TestLookup {
+            name_context: Some(
+                StoredBillingModelContext::new(
+                    "provider-1".to_string(),
+                    Some("pay_as_you_go".to_string()),
+                    Some("key-1".to_string()),
+                    None,
+                    Some(60),
+                    "global-model-1".to_string(),
+                    "gpt-5".to_string(),
+                    None,
+                    Some(0.02),
+                    Some(json!({"tiers":[{"up_to":null,"input_price_per_1m":3.0,"output_price_per_1m":15.0,"cache_creation_price_per_1m":3.75,"cache_read_price_per_1m":0.30}]})),
+                    Some("model-1".to_string()),
+                    Some("gpt-5-upstream".to_string()),
+                    None,
+                    None,
+                    None,
+                )
+                .expect("billing context should build")
+                .with_provider_api_key_default_rate_multiplier(Some(1.5)),
+            ),
+            model_id_context: None,
+        };
+        let mut event = UsageEvent::new(
+            UsageEventType::Completed,
+            "req-billing-default-multiplier",
+            UsageEventData {
+                provider_name: "OpenAI".to_string(),
+                model: "gpt-5".to_string(),
+                provider_id: Some("provider-1".to_string()),
+                provider_api_key_id: Some("key-1".to_string()),
+                request_type: Some("chat".to_string()),
+                api_format: Some("openai:chat".to_string()),
+                endpoint_api_format: Some("openai:chat".to_string()),
+                input_tokens: Some(1_000),
+                output_tokens: Some(500),
+                status_code: Some(200),
+                ..UsageEventData::default()
+            },
+        );
+
+        enrich_usage_event_with_billing(&lookup, &mut event)
+            .await
+            .expect("billing should succeed");
+
+        let request_metadata = event
+            .data
+            .request_metadata
+            .as_ref()
+            .expect("request metadata should exist");
+        assert_eq!(
+            request_metadata
+                .get("rate_multiplier")
+                .and_then(Value::as_f64),
+            Some(1.5)
+        );
+        let total_cost = event.data.total_cost_usd.expect("total cost should exist");
+        let actual_cost = event
+            .data
+            .actual_total_cost_usd
+            .expect("actual total cost should exist");
+        assert!(
+            actual_cost > total_cost,
+            "默认倍率 1.5 应放大最终费用：actual={actual_cost}, total={total_cost}"
+        );
+    }
+
+    #[tokio::test]
     async fn openai_fast_usage_without_overlay_inherits_global_model_pricing() {
         let lookup = TestLookup {
             name_context: Some(

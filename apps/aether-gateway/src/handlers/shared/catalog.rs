@@ -2297,6 +2297,7 @@ pub(crate) fn build_admin_provider_key_response(
     );
     payload.insert("name".to_string(), json!(key.name));
     payload.insert("rate_multipliers".to_string(), json!(key.rate_multipliers));
+    payload.insert("default_rate_multiplier".to_string(), json!(key.default_rate_multiplier));
     payload.insert("rpm_limit".to_string(), json!(key.rpm_limit));
     payload.insert("concurrent_limit".to_string(), json!(key.concurrent_limit));
     payload.insert(

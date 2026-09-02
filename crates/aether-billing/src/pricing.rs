@@ -85,6 +85,7 @@ pub struct BillingModelPricingSnapshot {
     pub provider_billing_type: Option<String>,
     pub provider_api_key_id: Option<String>,
     pub provider_api_key_rate_multipliers: Option<Value>,
+    pub provider_api_key_default_rate_multiplier: Option<f64>,
     pub provider_api_key_cache_ttl_minutes: Option<i64>,
     pub global_model_id: String,
     pub global_model_name: String,
@@ -440,8 +441,12 @@ impl BillingModelPricingSnapshot {
     }
 
     pub fn rate_multiplier_for_api_format(&self, api_format: Option<&str>) -> f64 {
+        let default_multiplier = self
+            .provider_api_key_default_rate_multiplier
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .unwrap_or(1.0);
         let Some(api_format) = api_format.map(str::trim).filter(|value| !value.is_empty()) else {
-            return 1.0;
+            return default_multiplier;
         };
         let normalized = api_format.to_ascii_lowercase();
         let Some(mapping) = self
@@ -449,12 +454,12 @@ impl BillingModelPricingSnapshot {
             .as_ref()
             .and_then(Value::as_object)
         else {
-            return 1.0;
+            return default_multiplier;
         };
         mapping
             .get(&normalized)
             .and_then(|value| value.as_f64())
-            .unwrap_or(1.0)
+            .unwrap_or(default_multiplier)
     }
 }
 
@@ -465,6 +470,7 @@ impl From<&StoredBillingModelContext> for BillingModelPricingSnapshot {
             provider_billing_type: context.provider_billing_type.clone(),
             provider_api_key_id: context.provider_api_key_id.clone(),
             provider_api_key_rate_multipliers: context.provider_api_key_rate_multipliers.clone(),
+            provider_api_key_default_rate_multiplier: context.provider_api_key_default_rate_multiplier,
             provider_api_key_cache_ttl_minutes: context.provider_api_key_cache_ttl_minutes,
             global_model_id: context.global_model_id.clone(),
             global_model_name: context.global_model_name.clone(),
@@ -487,6 +493,7 @@ impl From<StoredBillingModelContext> for BillingModelPricingSnapshot {
             provider_billing_type: context.provider_billing_type,
             provider_api_key_id: context.provider_api_key_id,
             provider_api_key_rate_multipliers: context.provider_api_key_rate_multipliers,
+            provider_api_key_default_rate_multiplier: context.provider_api_key_default_rate_multiplier,
             provider_api_key_cache_ttl_minutes: context.provider_api_key_cache_ttl_minutes,
             global_model_id: context.global_model_id,
             global_model_name: context.global_model_name,
@@ -777,6 +784,7 @@ mod tests {
             provider_billing_type: None,
             provider_api_key_id: None,
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             provider_api_key_cache_ttl_minutes: None,
             global_model_id: "global-model-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -811,6 +819,48 @@ mod tests {
         assert_eq!(
             resolution.tiered_pricing_source,
             Some(BillingPricingSource::GlobalDefault)
+        );
+    }
+
+    #[test]
+    fn rate_multiplier_falls_back_to_key_default_when_format_mapping_missing() {
+        let mut pricing = snapshot(None, None);
+        pricing.provider_api_key_default_rate_multiplier = Some(1.5);
+        assert_eq!(
+            pricing.rate_multiplier_for_api_format(Some("openai:search")),
+            1.5
+        );
+        assert_eq!(pricing.rate_multiplier_for_api_format(None), 1.5);
+        assert_eq!(pricing.rate_multiplier_for_api_format(Some("  ")), 1.5);
+    }
+
+    #[test]
+    fn rate_multiplier_format_mapping_overrides_key_default() {
+        let mut pricing = snapshot(None, None);
+        pricing.provider_api_key_rate_multipliers = Some(json!({"openai:chat": 0.5}));
+        pricing.provider_api_key_default_rate_multiplier = Some(1.5);
+        assert_eq!(
+            pricing.rate_multiplier_for_api_format(Some("openai:chat")),
+            0.5
+        );
+        assert_eq!(
+            pricing.rate_multiplier_for_api_format(Some("openai:search")),
+            1.5
+        );
+    }
+
+    #[test]
+    fn rate_multiplier_invalid_key_default_falls_back_to_one() {
+        let mut pricing = snapshot(None, None);
+        pricing.provider_api_key_default_rate_multiplier = Some(-0.5);
+        assert_eq!(
+            pricing.rate_multiplier_for_api_format(Some("openai:chat")),
+            1.0
+        );
+        pricing.provider_api_key_default_rate_multiplier = Some(f64::NAN);
+        assert_eq!(
+            pricing.rate_multiplier_for_api_format(None),
+            1.0
         );
     }
 

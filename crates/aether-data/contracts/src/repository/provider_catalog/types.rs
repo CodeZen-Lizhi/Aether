@@ -417,6 +417,7 @@ pub struct StoredProviderCatalogKey {
     pub encrypted_auth_config: Option<String>,
     pub note: Option<String>,
     pub rate_multipliers: Option<serde_json::Value>,
+    pub default_rate_multiplier: f64,
     pub allowed_models: Option<serde_json::Value>,
     pub expires_at_unix_secs: Option<u64>,
     pub cache_ttl_minutes: i32,
@@ -499,6 +500,7 @@ impl StoredProviderCatalogKey {
             encrypted_auth_config: None,
             note: None,
             rate_multipliers: None,
+            default_rate_multiplier: 1.0,
             allowed_models: None,
             expires_at_unix_secs: None,
             cache_ttl_minutes: 5,
@@ -571,6 +573,12 @@ impl StoredProviderCatalogKey {
         self.proxy = proxy;
         self.fingerprint = fingerprint;
         Ok(self)
+    }
+
+    /// Key 级默认成本倍率：格式级 rate_multipliers 未命中时结算回落到该值。
+    pub fn with_default_rate_multiplier(mut self, default_rate_multiplier: f64) -> Self {
+        self.default_rate_multiplier = default_rate_multiplier;
+        self
     }
 
     #[allow(clippy::too_many_arguments)]

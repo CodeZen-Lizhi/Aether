@@ -350,6 +350,11 @@ type = "json"
 nullable = true
 
 [[table.provider_api_keys.columns]]
+name = "default_rate_multiplier"
+type = "float64"
+default = 1
+
+[[table.provider_api_keys.columns]]
 name = "global_priority_by_format"
 type = "json"
 nullable = true

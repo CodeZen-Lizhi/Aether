@@ -234,6 +234,7 @@ export interface EndpointAPIKey {
   runtime_auth_kind?: 'api_key' | 'bearer' | 'service_account' | 'mixed' | 'unknown' | string | null
   name: string  // 密钥名称（必填，用于识别）
   rate_multipliers?: Record<string, number> | null  // 按 endpoint signature 的成本倍率
+  default_rate_multiplier?: number | null  // Key 级默认成本倍率
   rpm_limit?: number | null  // RPM 速率限制 (1-10000)，null 表示自适应模式
   concurrent_limit?: number | null  // 并发请求上限，null/0 表示不限制
   allowed_models?: AllowedModels  // 允许使用的模型列表（null=不限制）
@@ -327,6 +328,7 @@ export interface EndpointAPIKeyUpdate {
   allow_auth_channel_mismatch_formats?: string[] | null
   auth_config?: Record<string, unknown>  // 认证配置（Vertex AI Service Account JSON）
   rate_multipliers?: Record<string, number> | null  // 按 API 格式的成本倍率
+  default_rate_multiplier?: number | null  // Key 级默认成本倍率
   rpm_limit?: number | null  // RPM 速率限制 (1-10000)，null 表示切换为自适应模式
   concurrent_limit?: number | null  // 并发请求上限，null/0 表示不限制
   allowed_models?: AllowedModels

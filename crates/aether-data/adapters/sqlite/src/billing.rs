@@ -18,6 +18,7 @@ SELECT
   p.billing_type AS provider_billing_type,
   pak.id AS provider_api_key_id,
   pak.rate_multipliers AS provider_api_key_rate_multipliers,
+  COALESCE(pak.default_rate_multiplier, 1.0) AS provider_api_key_default_rate_multiplier,
   pak.cache_ttl_minutes AS provider_api_key_cache_ttl_minutes,
   gm.id AS global_model_id,
   gm.name AS global_model_name,
@@ -1010,7 +1011,7 @@ fn json_mapping_matches(value: &serde_json::Value, requested_model: &str) -> boo
 }
 
 fn map_row(row: &SqliteRow) -> Result<StoredBillingModelContext, DataLayerError> {
-    StoredBillingModelContext::new(
+    Ok(StoredBillingModelContext::new(
         row.try_get("provider_id").map_sql_err()?,
         row.try_get("provider_billing_type").map_sql_err()?,
         row.try_get("provider_api_key_id").map_sql_err()?,
@@ -1031,7 +1032,11 @@ fn map_row(row: &SqliteRow) -> Result<StoredBillingModelContext, DataLayerError>
         parse_json(row.try_get("model_config").ok().flatten())?,
         sqlite_optional_real(row, "model_price_per_request")?,
         parse_json(row.try_get("model_tiered_pricing").ok().flatten())?,
-    )
+    )?
+    .with_provider_api_key_default_rate_multiplier(
+        row.try_get::<Option<f64>, _>("provider_api_key_default_rate_multiplier")
+            .map_sql_err()?,
+    ))
 }
 
 fn parse_json(value: Option<String>) -> Result<Option<serde_json::Value>, DataLayerError> {

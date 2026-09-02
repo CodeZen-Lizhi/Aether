@@ -19,6 +19,7 @@ const BATCH_EDITABLE_KEY_FIELDS: &[&str] = &[
     "note",
     "proxy",
     "rate_multipliers",
+    "default_rate_multiplier",
     "rpm_limit",
 ];
 

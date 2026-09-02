@@ -114,6 +114,7 @@ SELECT
   auth_config,
   note,
   rate_multipliers,
+  default_rate_multiplier,
   allowed_models,
   expires_at AS expires_at_unix_secs,
   cache_ttl_minutes,
@@ -171,6 +172,7 @@ SELECT
   auth_config,
   note,
   rate_multipliers,
+  default_rate_multiplier,
   allowed_models,
   expires_at AS expires_at_unix_secs,
   cache_ttl_minutes,
@@ -231,6 +233,7 @@ SELECT
   END AS auth_config,
   NULL AS note,
   NULL AS rate_multipliers,
+  NULL AS default_rate_multiplier,
   NULL AS allowed_models,
   NULL AS expires_at_unix_secs,
   NULL AS cache_ttl_minutes,
@@ -951,6 +954,7 @@ WHERE id = ?
                 &key.rate_multipliers,
                 "provider_api_keys.rate_multipliers",
             )?)
+            .bind(key.default_rate_multiplier)
             .bind(optional_json_to_string(
                 &key.allowed_models,
                 "provider_api_keys.allowed_models",
@@ -2722,7 +2726,7 @@ fn key_insert_sql() -> &'static str {
 INSERT INTO provider_api_keys (
   id, provider_id, name, api_key, auth_type, capabilities,
   is_active, api_formats, auth_type_by_format, allow_auth_channel_mismatch_formats, auth_config, note,
-  rate_multipliers, allowed_models, expires_at, cache_ttl_minutes, max_probe_interval_minutes, proxy,
+  rate_multipliers, default_rate_multiplier, allowed_models, expires_at, cache_ttl_minutes, max_probe_interval_minutes, proxy,
   fingerprint, rpm_limit, concurrent_limit, learned_rpm_limit, concurrent_429_count, rpm_429_count,
   last_429_at, last_429_type, adjustment_history, utilization_samples, last_probe_increase_at, last_rpm_peak,
   request_count, total_tokens, total_cost_usd, success_count, error_count, total_response_time_ms,
@@ -2731,7 +2735,7 @@ INSERT INTO provider_api_keys (
   circuit_breaker_by_format, created_at, updated_at
 )
 VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 "#
 }
@@ -2752,6 +2756,7 @@ SET
   auth_config = ?,
   note = ?,
   rate_multipliers = ?,
+  default_rate_multiplier = ?,
   allowed_models = ?,
   expires_at = ?,
   cache_ttl_minutes = ?,
@@ -2805,6 +2810,7 @@ fn key_update_query(
             &key.rate_multipliers,
             "provider_api_keys.rate_multipliers",
         )?)
+        .bind(key.default_rate_multiplier)
         .bind(optional_json_to_string(
             &key.allowed_models,
             "provider_api_keys.allowed_models",
@@ -2890,6 +2896,8 @@ fn push_admin_key_assignments<'args>(
             &key.rate_multipliers,
             "provider_api_keys.rate_multipliers",
         )?)
+        .push(", default_rate_multiplier = ")
+        .push_bind(key.default_rate_multiplier)
         .push(", allowed_models = ")
         .push_bind(optional_json_to_string(
             &key.allowed_models,
@@ -3180,6 +3188,11 @@ fn map_key_row(row: &SqliteRow) -> Result<StoredProviderCatalogKey, DataLayerErr
     )
     .map(|key| {
         let mut key = key
+            .with_default_rate_multiplier(
+                row.try_get::<Option<f64>, _>("default_rate_multiplier")
+                    .map_sql_err()?
+                    .unwrap_or(1.0),
+            )
             .with_rate_limit_fields(
                 optional_u32(
                     row.try_get("rpm_limit").map_sql_err()?,

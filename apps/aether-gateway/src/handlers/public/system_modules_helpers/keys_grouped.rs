@@ -161,6 +161,7 @@ pub(crate) async fn build_admin_keys_grouped_by_format_payload(
                 "auth_type": key.auth_type,
                 "api_key_masked": grouped_key_masked_label(state, &key, provider_type),
                 "rate_multipliers": key.rate_multipliers,
+                "default_rate_multiplier": key.default_rate_multiplier,
                 "is_active": key.is_active,
                 "provider_active": provider_is_active,
                 "provider_name": provider_name,

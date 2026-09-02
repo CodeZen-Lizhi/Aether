@@ -7,6 +7,7 @@ pub struct StoredBillingModelContext {
     pub provider_billing_type: Option<String>,
     pub provider_api_key_id: Option<String>,
     pub provider_api_key_rate_multipliers: Option<Value>,
+    pub provider_api_key_default_rate_multiplier: Option<f64>,
     pub provider_api_key_cache_ttl_minutes: Option<i64>,
     pub global_model_id: String,
     pub global_model_name: String,
@@ -59,6 +60,7 @@ impl StoredBillingModelContext {
             provider_billing_type,
             provider_api_key_id,
             provider_api_key_rate_multipliers,
+            provider_api_key_default_rate_multiplier: None,
             provider_api_key_cache_ttl_minutes,
             global_model_id,
             global_model_name,
@@ -71,6 +73,15 @@ impl StoredBillingModelContext {
             model_price_per_request,
             model_tiered_pricing,
         })
+    }
+
+    /// 结算链路注入 Key 级默认倍率（格式级映射未命中时回落）。
+    pub fn with_provider_api_key_default_rate_multiplier(
+        mut self,
+        value: Option<f64>,
+    ) -> Self {
+        self.provider_api_key_default_rate_multiplier = value;
+        self
     }
 }
 

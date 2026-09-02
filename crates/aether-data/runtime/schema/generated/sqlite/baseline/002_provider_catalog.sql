@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS provider_api_keys (
     auth_type_by_format TEXT,
     allow_auth_channel_mismatch_formats TEXT,
     rate_multipliers TEXT,
+    default_rate_multiplier REAL NOT NULL DEFAULT 1,
     global_priority_by_format TEXT,
     allowed_models TEXT,
     expires_at INTEGER,

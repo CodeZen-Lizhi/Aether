@@ -201,6 +201,7 @@ pub(super) async fn build_admin_monitoring_cache_affinities_response(
             "key_name": key_name,
             "key_prefix": key_prefix,
             "rate_multipliers": key.and_then(|item| item.rate_multipliers.clone()),
+            "default_rate_multiplier": key.and_then(|item| Some(item.default_rate_multiplier)),
             "global_model_id": affinity.model_name,
             "model_name": affinity.model_name,
             "model_display_name": serde_json::Value::Null,

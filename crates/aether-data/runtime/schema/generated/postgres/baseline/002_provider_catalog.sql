@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS public.provider_api_keys (
     auth_type_by_format jsonb,
     allow_auth_channel_mismatch_formats jsonb,
     rate_multipliers jsonb,
+    default_rate_multiplier double precision DEFAULT 1 NOT NULL,
     global_priority_by_format jsonb,
     allowed_models jsonb,
     expires_at bigint,

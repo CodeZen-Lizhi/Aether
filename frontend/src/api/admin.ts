@@ -310,6 +310,7 @@ export interface ProviderKeyExport {
   api_formats: string[]
   supported_endpoints?: string[]
   rate_multipliers?: Record<string, number> | null
+  default_rate_multiplier?: number | null
   auth_type_by_format?: Record<string, 'api_key' | 'bearer'> | null
   allow_auth_channel_mismatch_formats?: string[] | null
   rpm_limit?: number | null

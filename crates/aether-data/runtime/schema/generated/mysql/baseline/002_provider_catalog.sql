@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS provider_api_keys (
     `auth_type_by_format` JSON,
     `allow_auth_channel_mismatch_formats` JSON,
     `rate_multipliers` JSON,
+    `default_rate_multiplier` DOUBLE NOT NULL DEFAULT 1,
     `global_priority_by_format` JSON,
     `allowed_models` JSON,
     `expires_at` BIGINT,

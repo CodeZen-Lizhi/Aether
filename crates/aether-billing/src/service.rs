@@ -919,6 +919,7 @@ mod tests {
             provider_billing_type: Some("pay_as_you_go".to_string()),
             provider_api_key_id: Some("key-1".to_string()),
             provider_api_key_rate_multipliers: Some(json!({"openai:chat": 0.5})),
+            provider_api_key_default_rate_multiplier: None,
             provider_api_key_cache_ttl_minutes: Some(60),
             global_model_id: "global-model-1".to_string(),
             global_model_name: "gpt-5".to_string(),
@@ -944,6 +945,7 @@ mod tests {
     fn processing_pricing() -> BillingModelPricingSnapshot {
         BillingModelPricingSnapshot {
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             default_price_per_request: None,
             default_tiered_pricing: Some(json!({
                 "tiers": [
@@ -1222,6 +1224,7 @@ mod tests {
     fn processing_multiplier_is_settled_and_authorized_from_standard_prices() {
         let pricing = BillingModelPricingSnapshot {
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             default_price_per_request: Some(0.02),
             default_tiered_pricing: Some(json!({
                 "tiers": [{
@@ -1279,6 +1282,7 @@ mod tests {
     fn invalid_processing_multiplier_fails_closed_at_settlement_and_authorization() {
         let pricing = BillingModelPricingSnapshot {
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             default_price_per_request: None,
             default_tiered_pricing: Some(json!({
                 "tiers": [{"up_to": null, "input_price_per_1m": 2.0}],
@@ -1561,6 +1565,7 @@ mod tests {
     fn authorization_estimate_uses_known_request_cache_ttl() {
         let pricing = BillingModelPricingSnapshot {
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             default_price_per_request: None,
             default_tiered_pricing: Some(json!({
                 "tiers": [{
@@ -1722,6 +1727,7 @@ mod tests {
             default_tiered_pricing: None,
             default_price_per_request: Some(0.02),
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             ..pricing()
         };
         assert_eq!(
@@ -2216,6 +2222,7 @@ mod tests {
             provider_billing_type: Some("pay_as_you_go".to_string()),
             provider_api_key_id: Some("key-1".to_string()),
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             provider_api_key_cache_ttl_minutes: Some(5),
             global_model_id: "global-model-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),
@@ -2291,6 +2298,7 @@ mod tests {
             provider_billing_type: Some("pay_as_you_go".to_string()),
             provider_api_key_id: Some("key-1".to_string()),
             provider_api_key_rate_multipliers: None,
+            provider_api_key_default_rate_multiplier: None,
             provider_api_key_cache_ttl_minutes: Some(60),
             global_model_id: "global-model-1".to_string(),
             global_model_name: "gpt-5.4".to_string(),

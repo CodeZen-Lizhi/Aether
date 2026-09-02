@@ -63,6 +63,16 @@ pub(crate) fn normalize_rate_multipliers(
     }
 }
 
+pub(crate) fn normalize_default_rate_multiplier(
+    value: Option<f64>,
+) -> Result<Option<f64>, String> {
+    match value {
+        None => Ok(None),
+        Some(value) if value.is_finite() && value >= 0.0 => Ok(Some(value)),
+        Some(_) => Err("default_rate_multiplier 必须是大于或等于 0 的有限数值".to_string()),
+    }
+}
+
 pub(crate) fn normalize_auth_type_by_format(
     value: Option<serde_json::Value>,
     field_name: &str,

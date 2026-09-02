@@ -193,6 +193,7 @@ export async function addProviderKey(
     auth_config?: Record<string, unknown>  // 认证配置（Vertex AI Service Account JSON）
     name: string
     rate_multipliers?: Record<string, number> | null  // 按 API 格式的成本倍率
+    default_rate_multiplier?: number  // Key 级默认成本倍率（未配置格式的请求按此计费）
     rpm_limit?: number | null  // RPM 限制（留空=自适应模式）
     concurrent_limit?: number | null  // 并发请求上限（留空或 0=不限制）
     cache_ttl_minutes?: number
@@ -225,6 +226,7 @@ export async function updateProviderKey(
     auth_config: Record<string, unknown>  // 认证配置（Vertex AI Service Account JSON）
     name: string
     rate_multipliers: Record<string, number> | null  // 按 API 格式的成本倍率
+    default_rate_multiplier: number  // Key 级默认成本倍率
     rpm_limit: number | null  // RPM 限制（留空=自适应模式）
     concurrent_limit: number | null  // 并发请求上限（留空或 0=不限制）
     cache_ttl_minutes: number
@@ -257,6 +259,7 @@ export interface GroupedEndpointKey {
   auth_type: string
   api_key_masked?: string | null
   rate_multipliers: Record<string, number> | null
+  default_rate_multiplier?: number | null
   is_active: boolean
   provider_active: boolean
   provider_name?: string | null

@@ -165,6 +165,16 @@
                         <span v-else>{{ key.rpm_limit }} RPM</span>
                       </template>
                       <span class="text-muted-foreground/40">|</span>
+                      <!-- Key 默认倍率（非 1 时展示） -->
+                      <span
+                        v-if="key.default_rate_multiplier != null && key.default_rate_multiplier !== 1"
+                        class="text-primary/80"
+                        :title="legacyT('Key 默认成本倍率：未单独配置倍率的格式按此计费')"
+                      >{{ legacyT('默认') }} {{ key.default_rate_multiplier }}x</span>
+                      <span
+                        v-if="key.default_rate_multiplier != null && key.default_rate_multiplier !== 1"
+                        class="text-muted-foreground/40"
+                      >|</span>
                       <!-- API 格式：展开显示每个格式、倍率、熔断状态 -->
                       <template
                         v-for="(format, idx) in getKeyApiFormats(key, endpoint)"
@@ -1128,7 +1138,7 @@ function getKeyRateMultiplier(key: EndpointAPIKey, format: string): number {
   if (key.rate_multipliers && key.rate_multipliers[format] !== undefined) {
     return key.rate_multipliers[format]
   }
-  return 1.0
+  return key.default_rate_multiplier ?? 1.0
 }
 
 // OAuth 订阅类型格式化
