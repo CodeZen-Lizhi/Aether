@@ -3,8 +3,6 @@ use aether_data_contracts::repository::candidates::{
 };
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 
-const FAILURE_COOLDOWN_WINDOW_SECS: u64 = 60;
-const FAILURE_COOLDOWN_THRESHOLD: usize = 8;
 const ACTIVE_REQUEST_WINDOW_SECS: u64 = 300;
 pub const PROVIDER_KEY_RPM_WINDOW_SECS: u64 = 60;
 const PROBE_PHASE_REQUESTS: u32 = 100;
@@ -43,50 +41,6 @@ impl ProviderKeyHealthBucket {
     }
 }
 
-pub fn is_candidate_in_recent_failure_cooldown(
-    recent_candidates: &[StoredRequestCandidate],
-    provider_id: &str,
-    endpoint_id: &str,
-    key_id: &str,
-    now_unix_secs: u64,
-) -> bool {
-    let mut recent_failures = 0usize;
-
-    for candidate in recent_candidates {
-        if candidate.provider_id.as_deref() != Some(provider_id)
-            || candidate.endpoint_id.as_deref() != Some(endpoint_id)
-            || candidate.key_id.as_deref() != Some(key_id)
-        {
-            continue;
-        }
-
-        let observed_at_unix_secs = candidate
-            .finished_at_unix_ms
-            .or(candidate.started_at_unix_ms)
-            .map(|ms| ms / 1000)
-            .unwrap_or(candidate.created_at_unix_ms / 1000);
-        if now_unix_secs.saturating_sub(observed_at_unix_secs) > FAILURE_COOLDOWN_WINDOW_SECS {
-            continue;
-        }
-
-        match candidate.status {
-            RequestCandidateStatus::Success => return false,
-            RequestCandidateStatus::Failed | RequestCandidateStatus::Cancelled => {
-                recent_failures += 1;
-                if recent_failures >= FAILURE_COOLDOWN_THRESHOLD {
-                    return true;
-                }
-            }
-            RequestCandidateStatus::Available
-            | RequestCandidateStatus::Unused
-            | RequestCandidateStatus::Pending
-            | RequestCandidateStatus::Streaming
-            | RequestCandidateStatus::Skipped => {}
-        }
-    }
-
-    false
-}
 
 pub fn count_recent_active_requests_for_provider(
     recent_candidates: &[StoredRequestCandidate],
@@ -822,7 +776,7 @@ mod tests {
         count_recent_active_requests_for_provider, count_recent_active_requests_for_provider_key,
         count_recent_rpm_requests_for_provider_key,
         count_recent_rpm_requests_for_provider_key_since, effective_provider_key_health_score,
-        effective_provider_key_rpm_limit, is_candidate_in_recent_failure_cooldown,
+        effective_provider_key_rpm_limit,
         is_provider_key_circuit_open, is_provider_key_circuit_open_at, provider_key_health_bucket,
         provider_key_health_score, provider_key_rpm_allows_request,
         provider_key_rpm_allows_request_since, ProviderKeyHealthBucket,
@@ -873,44 +827,6 @@ mod tests {
             true,
         )
         .expect("provider key should build")
-    }
-
-    #[test]
-    fn cooldown_triggers_after_eight_recent_failures() {
-        let recent_candidates = (0..8)
-            .map(|index| {
-                stored_candidate(
-                    &format!("failed-{index}"),
-                    RequestCandidateStatus::Failed,
-                    92 + index,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        assert!(is_candidate_in_recent_failure_cooldown(
-            &recent_candidates,
-            "provider-a",
-            "endpoint-a",
-            "key-a",
-            100,
-        ));
-    }
-
-    #[test]
-    fn recent_success_clears_cooldown() {
-        let recent_candidates = vec![
-            stored_candidate("one", RequestCandidateStatus::Failed, 95),
-            stored_candidate("two", RequestCandidateStatus::Success, 99),
-            stored_candidate("three", RequestCandidateStatus::Cancelled, 98),
-        ];
-
-        assert!(!is_candidate_in_recent_failure_cooldown(
-            &recent_candidates,
-            "provider-a",
-            "endpoint-a",
-            "key-a",
-            100,
-        ));
     }
 
     #[test]

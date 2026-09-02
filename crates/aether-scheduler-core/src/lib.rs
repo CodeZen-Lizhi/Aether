@@ -33,7 +33,7 @@ pub use health::{
     count_recent_active_requests_for_api_key, count_recent_active_requests_for_provider,
     count_recent_active_requests_for_provider_key, count_recent_rpm_requests_for_provider_key,
     count_recent_rpm_requests_for_provider_key_since, effective_provider_key_health_score,
-    effective_provider_key_rpm_limit, is_candidate_in_recent_failure_cooldown,
+    effective_provider_key_rpm_limit,
     is_provider_key_circuit_open, is_provider_key_circuit_open_at,
     provider_key_circuit_payload_is_active_open_at, provider_key_health_bucket,
     provider_key_health_score, provider_key_rate_limit_cooldown,
