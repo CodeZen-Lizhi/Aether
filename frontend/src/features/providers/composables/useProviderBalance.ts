@@ -73,7 +73,7 @@ export function useProviderBalance() {
 
       const pendingProviderIds: string[] = []
       for (const [providerId, result] of Object.entries(results)) {
-        // 保留全部状态，余额列才能显示认证和上游查询错误。
+        // 保留全部状态：失败态让余额列显示横杠，而不是回落到 monthly_quota 等展示分支。
         balanceCache.value[providerId] = result
         if (result.status === 'pending') {
           pendingProviderIds.push(providerId)
@@ -192,20 +192,6 @@ export function useProviderBalance() {
     }
   }
 
-  function getProviderCookieExpired(providerId: string): { expired: boolean; message: string } | null {
-    const result = balanceCache.value[providerId]
-    if (!result || (result.status !== 'success' && result.status !== 'auth_expired')) return null
-
-    const data = asRecord(result.data)
-    const extra = data && asRecord(data.extra)
-    if (!extra?.cookie_expired) return null
-
-    return {
-      expired: true,
-      message: typeof extra.cookie_expired_message === 'string' ? extra.cookie_expired_message : 'Cookie 已失效',
-    }
-  }
-
   function formatBalanceDisplay(balance: { available: number | null; currency: string } | null): string {
     if (!balance || balance.available === null) return '-'
     const symbol = balance.currency === 'USD' ? '$' : balance.currency
@@ -269,7 +255,6 @@ export function useProviderBalance() {
     getProviderBalanceError,
     isBalanceLoading,
     getProviderCheckin,
-    getProviderCookieExpired,
     formatBalanceDisplay,
     formatResetCountdown,
     getProviderBalanceExtra,

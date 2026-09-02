@@ -43,6 +43,19 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
+## Convention: 汇总列表单元格不渲染报错文字（失败态静默为横杠）
+
+**What**: 面向汇总的列表列（如供应商列表的余额监控列 `features/providers/components/ProviderBalanceCell.vue`）在查询失败、关联动作失败时只渲染横杠 `-`，不渲染报错 message、不挂 tooltip；具体报错只在交互入口展示（供应商「测试」、用户认证「验证」弹窗）。批量查询返回的失败状态数据仍要保留在缓存里，用于决定渲染 `-`，而不是回落到其他展示分支（如 monthly_quota）。
+
+**Why**: 列表是汇总视图，把上游报错（如「连接失败: xxx」「签到失败」「签到 Cookie 已失效」）直接渲染进单元格会污染整个列表；成功态的短标识（如「已签到」）可以保留。原实现曾刻意把错误 message 打进余额列（注释称"保留全部状态，余额列才能显示认证和上游查询错误"），2026-09 按用户要求移除。
+
+**Checklist（给汇总列表列新增状态展示时）**:
+
+- [ ] 失败/异常态 → `-`；报错文字只出现在弹窗、详情抽屉等交互入口。
+- [ ] 新增失败分支时不要把 message 或 title tooltip 挂到列表单元格上。
+
+---
+
 ## Convention: 前后端口径对齐——代理 URL scheme 校验
 
 **What**: 前端对 `proxy_url` 的前缀校验为 `/^(https?|socks5h?):\/\//i`；后端权威校验在 `apps/aether-gateway/src/state/proxy.rs`（`url::Url::parse` + scheme 以 `socks` 开头放行）。前端只做前缀级提示性校验，完整解析以后端为准。

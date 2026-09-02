@@ -33,7 +33,7 @@
       </span>
     </template>
     <div
-      v-if="getProviderBalanceExtra(provider.id, provider.ops_architecture_id).length > 0 || getProviderCheckin(provider.id) || getProviderCookieExpired(provider.id)"
+      v-if="getProviderBalanceExtra(provider.id, provider.ops_architecture_id).length > 0 || (getProviderCheckin(provider.id) && getProviderCheckin(provider.id)?.success !== false)"
       class="text-muted-foreground/70 space-y-0.5"
     >
       <template
@@ -63,38 +63,20 @@
         </div>
       </template>
       <div
-        v-if="getProviderCookieExpired(provider.id)"
-        class="flex items-center gap-1"
-      >
-        <span
-          class="text-[10px] text-amber-600 dark:text-amber-500"
-          :title="getProviderCookieExpired(provider.id)?.message"
-        >{{ legacyT('签到 Cookie 已失效') }}</span>
-      </div>
-      <div
-        v-else-if="getProviderCheckin(provider.id)"
+        v-if="getProviderCheckin(provider.id) && getProviderCheckin(provider.id)?.success !== false"
         class="flex items-center gap-1.5"
       >
         <span
-          v-if="getProviderCheckin(provider.id)?.success !== false"
           class="text-[10px] text-muted-foreground/60"
           :title="getProviderCheckin(provider.id)?.message"
         >{{ legacyT('已签到') }}</span>
-        <span
-          v-else
-          class="text-[10px] text-destructive/70"
-          :title="getProviderCheckin(provider.id)?.message"
-        >{{ legacyT('签到失败') }}</span>
       </div>
     </div>
   </div>
-  <div
+  <span
     v-else-if="provider.ops_configured && getProviderBalanceError(provider.id)"
-    class="text-xs text-destructive/80"
-    :title="getProviderBalanceError(provider.id)?.message"
-  >
-    {{ getProviderBalanceError(provider.id)?.message }}
-  </div>
+    class="text-xs text-muted-foreground/50"
+  >-</span>
   <div
     v-else-if="provider.billing_type === 'monthly_quota'"
     class="space-y-0.5 text-xs"
@@ -133,7 +115,6 @@ defineProps<{
   getProviderBalanceBreakdown: (providerId: string) => { balance: number; points: number; currency: string } | null
   getProviderBalanceError: (providerId: string) => { status: string; message: string } | null
   getProviderCheckin: (providerId: string) => { success: boolean | null; message: string } | null
-  getProviderCookieExpired: (providerId: string) => { expired: boolean; message: string } | null
   getProviderBalanceExtra: (providerId: string, architectureId?: string) => BalanceExtraItem[]
   formatBalanceDisplay: (balance: { available: number | null; currency: string } | null) => string
   formatResetCountdown: (resetsAt: number) => string

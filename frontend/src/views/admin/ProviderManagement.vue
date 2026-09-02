@@ -136,7 +136,6 @@
               :get-provider-balance-breakdown="getProviderBalanceBreakdown"
               :get-provider-balance-error="getProviderBalanceError"
               :get-provider-checkin="getProviderCheckin"
-              :get-provider-cookie-expired="getProviderCookieExpired"
               :get-provider-balance-extra="getProviderBalanceExtra"
               :format-balance-display="formatBalanceDisplay"
               :format-reset-countdown="formatResetCountdown"
@@ -432,7 +431,6 @@ const {
   getProviderBalanceError,
   isBalanceLoading,
   getProviderCheckin,
-  getProviderCookieExpired,
   formatBalanceDisplay,
   formatResetCountdown,
   getProviderBalanceExtra,

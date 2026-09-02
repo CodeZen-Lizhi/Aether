@@ -70,7 +70,6 @@
         :get-provider-balance-breakdown="getProviderBalanceBreakdown"
         :get-provider-balance-error="getProviderBalanceError"
         :get-provider-checkin="getProviderCheckin"
-        :get-provider-cookie-expired="getProviderCookieExpired"
         :get-provider-balance-extra="getProviderBalanceExtra"
         :format-balance-display="formatBalanceDisplay"
         :format-reset-countdown="formatResetCountdown"
@@ -223,7 +222,6 @@ const props = defineProps<{
   getProviderBalanceBreakdown: (providerId: string) => { balance: number; points: number; currency: string } | null
   getProviderBalanceError: (providerId: string) => { status: string; message: string } | null
   getProviderCheckin: (providerId: string) => { success: boolean | null; message: string } | null
-  getProviderCookieExpired: (providerId: string) => { expired: boolean; message: string } | null
   getProviderBalanceExtra: (providerId: string, architectureId?: string) => BalanceExtraItem[]
   formatBalanceDisplay: (balance: { available: number | null; currency: string } | null) => string
   formatResetCountdown: (resetsAt: number) => string
