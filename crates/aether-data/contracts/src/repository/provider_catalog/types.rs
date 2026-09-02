@@ -575,7 +575,8 @@ impl StoredProviderCatalogKey {
         Ok(self)
     }
 
-    /// Key 级默认成本倍率：格式级 rate_multipliers 未命中时结算回落到该值。
+    /// Key 级成本倍率：该密钥所有请求按此计费（格式级 rate_multipliers 已废弃，
+    /// 计费不再读取该映射）。
     pub fn with_default_rate_multiplier(mut self, default_rate_multiplier: f64) -> Self {
         self.default_rate_multiplier = default_rate_multiplier;
         self

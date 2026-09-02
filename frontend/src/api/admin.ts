@@ -308,7 +308,7 @@ export interface ProviderKeyExport {
   note?: string | null
   api_formats: string[]
   supported_endpoints?: string[]
-  rate_multipliers?: Record<string, number> | null
+  rate_multipliers?: Record<string, number> | null  // 遗留字段：按格式覆盖倍率已废弃，计费只读 default_rate_multiplier
   default_rate_multiplier?: number | null
   auth_type_by_format?: Record<string, 'api_key' | 'bearer'> | null
   allow_auth_channel_mismatch_formats?: string[] | null
