@@ -440,26 +440,15 @@ impl BillingModelPricingSnapshot {
             .unwrap_or(false)
     }
 
-    pub fn rate_multiplier_for_api_format(&self, api_format: Option<&str>) -> f64 {
-        let default_multiplier = self
-            .provider_api_key_default_rate_multiplier
+    pub fn rate_multiplier_for_api_format(&self, _api_format: Option<&str>) -> f64 {
+        // The key-level `default_rate_multiplier` is the single source of truth.
+        // The legacy per-format override map (`provider_api_key_rate_multipliers`)
+        // is no longer consulted; the `api_format` parameter is kept only for
+        // signature compatibility with existing callers. Invalid defaults
+        // (negative / non-finite / missing) fall back to 1.0.
+        self.provider_api_key_default_rate_multiplier
             .filter(|value| value.is_finite() && *value >= 0.0)
-            .unwrap_or(1.0);
-        let Some(api_format) = api_format.map(str::trim).filter(|value| !value.is_empty()) else {
-            return default_multiplier;
-        };
-        let normalized = api_format.to_ascii_lowercase();
-        let Some(mapping) = self
-            .provider_api_key_rate_multipliers
-            .as_ref()
-            .and_then(Value::as_object)
-        else {
-            return default_multiplier;
-        };
-        mapping
-            .get(&normalized)
-            .and_then(|value| value.as_f64())
-            .unwrap_or(default_multiplier)
+            .unwrap_or(1.0)
     }
 }
 
@@ -835,18 +824,30 @@ mod tests {
     }
 
     #[test]
-    fn rate_multiplier_format_mapping_overrides_key_default() {
+    fn rate_multiplier_format_mapping_is_ignored_in_favor_of_key_default() {
         let mut pricing = snapshot(None, None);
         pricing.provider_api_key_rate_multipliers = Some(json!({"openai:chat": 0.5}));
         pricing.provider_api_key_default_rate_multiplier = Some(1.5);
+        // Legacy per-format overrides must not participate in billing anymore.
         assert_eq!(
             pricing.rate_multiplier_for_api_format(Some("openai:chat")),
-            0.5
+            1.5
         );
         assert_eq!(
             pricing.rate_multiplier_for_api_format(Some("openai:search")),
             1.5
         );
+    }
+
+    #[test]
+    fn rate_multiplier_uses_key_default_value() {
+        let mut pricing = snapshot(None, None);
+        pricing.provider_api_key_default_rate_multiplier = Some(0.15);
+        assert_eq!(
+            pricing.rate_multiplier_for_api_format(Some("openai:chat")),
+            0.15
+        );
+        assert_eq!(pricing.rate_multiplier_for_api_format(None), 0.15);
     }
 
     #[test]

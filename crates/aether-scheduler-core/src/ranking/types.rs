@@ -49,9 +49,10 @@ pub struct SchedulerRankableCandidate {
     /// the minimum are treated as absent so cold keys are not penalized.
     /// Lower is better.
     pub latency_ewma_ms: Option<LatencyEwma>,
-    /// R10: this candidate's rate multiplier for the request's api format
-    /// (from the key's `rate_multipliers` map). Only participates when the
-    /// ranking mode is cost-based. Absent defaults to 1.0 (neutral).
+    /// R10: this candidate's cost multiplier (the key-level
+    /// `default_rate_multiplier`; the legacy per-format `rate_multipliers`
+    /// map is no longer consulted). Only participates when the ranking mode
+    /// is cost-based. Absent defaults to 1.0 (neutral).
     pub rate_multiplier: f64,
     pub original_index: usize,
 }

@@ -136,11 +136,14 @@ impl AiCandidateRankingPort for GatewayLocalCandidateRankingPort<'_> {
                 rankable.latency_ewma_ms = latency.get(&routing_overlaid_candidate.key_id).copied();
             }
         }
-        // R10 cost-based: attach this key's per-format rate multiplier. Only the
+        // R10 cost-based: attach this key's default rate multiplier. Only the
         // CostBased mode consults it, but attaching unconditionally keeps the
         // ranking port free of mode-specific branches; the DB read is one
         // small key-row lookup and the ordering config cache already dedups
-        // system-config reads.
+        // system-config reads. The legacy per-format `rate_multipliers` map
+        // is no longer consulted — the key-level `default_rate_multiplier`
+        // (invalid values treated as absent, i.e. neutral 1.0) is the single
+        // source of truth.
         if self.ordering_config.scheduling_mode == SchedulerSchedulingMode::CostBased {
             if let Ok(keys) = self
                 .state
@@ -150,14 +153,11 @@ impl AiCandidateRankingPort for GatewayLocalCandidateRankingPort<'_> {
                 ))
                 .await
             {
-                let api_format = candidate.provider_api_format.as_str();
-                if let Some(multiplier) = keys
+                let multiplier = keys
                     .first()
-                    .and_then(|key| key.rate_multipliers.as_ref())
-                    .and_then(serde_json::Value::as_object)
-                    .and_then(|mapping| mapping.get(api_format))
-                    .and_then(serde_json::Value::as_f64)
-                {
+                    .map(|key| key.default_rate_multiplier)
+                    .filter(|value| value.is_finite() && *value >= 0.0);
+                if let Some(multiplier) = multiplier {
                     rankable = rankable.with_rate_multiplier(multiplier);
                 }
             }

@@ -192,8 +192,8 @@ export async function addProviderKey(
     allow_auth_channel_mismatch_formats?: string[] | null
     auth_config?: Record<string, unknown>  // 认证配置（Vertex AI Service Account JSON）
     name: string
-    rate_multipliers?: Record<string, number> | null  // 按 API 格式的成本倍率
-    default_rate_multiplier?: number  // Key 级默认成本倍率（未配置格式的请求按此计费）
+    rate_multipliers?: Record<string, number> | null  // 遗留字段：按 API 格式覆盖倍率已废弃，计费只读 default_rate_multiplier
+    default_rate_multiplier?: number  // Key 级成本倍率（该密钥所有请求按此计费）
     rpm_limit?: number | null  // RPM 限制（留空=自适应模式）
     concurrent_limit?: number | null  // 并发请求上限（留空或 0=不限制）
     cache_ttl_minutes?: number
@@ -225,8 +225,8 @@ export async function updateProviderKey(
     allow_auth_channel_mismatch_formats: string[] | null
     auth_config: Record<string, unknown>  // 认证配置（Vertex AI Service Account JSON）
     name: string
-    rate_multipliers: Record<string, number> | null  // 按 API 格式的成本倍率
-    default_rate_multiplier: number  // Key 级默认成本倍率
+    rate_multipliers: Record<string, number> | null  // 遗留字段：传 null 清空存量覆盖值；计费已不读取
+    default_rate_multiplier: number  // Key 级成本倍率（该密钥所有请求按此计费）
     rpm_limit: number | null  // RPM 限制（留空=自适应模式）
     concurrent_limit: number | null  // 并发请求上限（留空或 0=不限制）
     cache_ttl_minutes: number
@@ -258,7 +258,7 @@ export interface GroupedEndpointKey {
   name: string
   auth_type: string
   api_key_masked?: string | null
-  rate_multipliers: Record<string, number> | null
+  rate_multipliers: Record<string, number> | null  // 遗留字段：按格式覆盖倍率已废弃
   default_rate_multiplier?: number
   is_active: boolean
   provider_active: boolean

@@ -1015,7 +1015,50 @@ mod tests {
         assert_eq!(result.cost_result.status, BillingSnapshotStatus::Complete);
         assert!(result.cost_result.cost > 0.0);
         assert!(result.actual_total_cost > 0.0);
-        assert_eq!(result.rate_multiplier, 0.5);
+        // Legacy per-format mapping {"openai:chat": 0.5} must be ignored; the
+        // absent key-level default falls back to 1.0.
+        assert_eq!(result.rate_multiplier, 1.0);
+    }
+
+    #[test]
+    fn provider_key_default_rate_multiplier_applies_and_format_mapping_is_ignored() {
+        let pricing = BillingModelPricingSnapshot {
+            provider_api_key_rate_multipliers: Some(json!({"openai:chat": 2.0})),
+            provider_api_key_default_rate_multiplier: Some(0.15),
+            ..pricing()
+        };
+
+        let result = BillingService::new()
+            .calculate(
+                &pricing,
+                &BillingUsageInput {
+                    task_type: "chat".to_string(),
+                    api_format: Some("openai:chat".to_string()),
+                    requested_processing_tier: None,
+                    actual_processing_tier: None,
+                    request_count: 1,
+                    input_tokens: 1_000,
+                    output_tokens: 500,
+                    cache_creation_tokens: 0,
+                    cache_creation_ephemeral_5m_tokens: 0,
+                    cache_creation_ephemeral_1h_tokens: 0,
+                    cache_read_tokens: 0,
+                    image_count: 0,
+                    image_size: None,
+                    image_quality: None,
+                    image_output_format: None,
+                    cache_ttl_minutes: Some(60),
+                },
+            )
+            .expect("billing should calculate");
+
+        // The key-level default (0.15) wins even though the legacy format
+        // mapping carries a conflicting 2.0 for the same api format.
+        assert_eq!(result.rate_multiplier, 0.15);
+        assert_eq!(
+            result.actual_total_cost,
+            crate::quantize_cost(result.cost_result.cost * 0.15)
+        );
     }
 
     #[test]

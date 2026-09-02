@@ -165,11 +165,11 @@
                         <span v-else>{{ key.rpm_limit }} RPM</span>
                       </template>
                       <span class="text-muted-foreground/40">|</span>
-                      <!-- Key 默认倍率（非 1 时展示） -->
+                      <!-- Key 成本倍率（非 1 时展示） -->
                       <span
                         v-if="key.default_rate_multiplier != null && key.default_rate_multiplier !== 1"
                         class="text-primary/80"
-                        :title="legacyT('Key 默认成本倍率：未单独配置倍率的格式按此计费')"
+                        :title="legacyT('Key 成本倍率：该密钥所有请求按此计费')"
                       >{{ legacyT('默认') }} {{ key.default_rate_multiplier }}x</span>
                       <span
                         v-if="key.default_rate_multiplier != null && key.default_rate_multiplier !== 1"
@@ -193,7 +193,7 @@
                           class="cursor-pointer hover:text-primary hover:underline"
                           :class="{ 'text-destructive': isFormatCircuitOpen(key, format) }"
                           @click="startEditMultiplier(key, format)"
-                        >{{ getKeyRateMultiplier(key, format) }}x</span>
+                        >{{ getKeyRateMultiplier(key) }}x</span>
                         <input
                           v-else
                           ref="multiplierInputRef"
@@ -202,8 +202,8 @@
                           inputmode="decimal"
                           pattern="[0-9]*\.?[0-9]*"
                           class="w-10 h-5 px-1 text-[11px] text-center border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary font-medium text-foreground/80"
-                          @keydown="(e) => handleMultiplierKeydown(e, key, format)"
-                          @blur="handleMultiplierBlur(key, format)"
+                          @keydown="(e) => handleMultiplierKeydown(e, key)"
+                          @blur="handleMultiplierBlur(key)"
                         >
                         <span
                           v-if="getFormatProbeCountdown(key, format)"
@@ -1035,7 +1035,7 @@ async function handleModelSaved() {
 function startEditMultiplier(key: EndpointAPIKey, format: string) {
   editingMultiplierKey.value = key.id
   editingMultiplierFormat.value = format
-  editingMultiplierValue.value = getKeyRateMultiplier(key, format)
+  editingMultiplierValue.value = getKeyRateMultiplier(key)
   multiplierSaving.value = false
   nextTick(() => {
     const input = Array.isArray(multiplierInputRef.value) ? multiplierInputRef.value[0] : multiplierInputRef.value
@@ -1049,11 +1049,11 @@ function cancelEditMultiplier() {
   editingMultiplierFormat.value = null
 }
 
-function handleMultiplierKeydown(e: KeyboardEvent, key: EndpointAPIKey, format: string) {
+function handleMultiplierKeydown(e: KeyboardEvent, key: EndpointAPIKey) {
   if (e.key === 'Enter') {
     e.preventDefault()
     e.stopPropagation()
-    saveMultiplier(key, format)
+    saveMultiplier(key)
   } else if (e.key === 'Escape') {
     e.preventDefault()
     multiplierSaving.value = true // 阻止 blur 触发保存
@@ -1061,12 +1061,12 @@ function handleMultiplierKeydown(e: KeyboardEvent, key: EndpointAPIKey, format: 
   }
 }
 
-function handleMultiplierBlur(key: EndpointAPIKey, format: string) {
+function handleMultiplierBlur(key: EndpointAPIKey) {
   if (multiplierSaving.value) return
-  saveMultiplier(key, format)
+  saveMultiplier(key)
 }
 
-async function saveMultiplier(key: EndpointAPIKey, format: string) {
+async function saveMultiplier(key: EndpointAPIKey) {
   // 防止重复调用（Enter 触发后阻止 blur 再次进入）
   if (multiplierSaving.value) return
   multiplierSaving.value = true
@@ -1091,7 +1091,7 @@ async function saveMultiplier(key: EndpointAPIKey, format: string) {
   }
 
   // 如果倍率没有变化,直接取消编辑（使用精度容差比较浮点数）
-  const currentMultiplier = getKeyRateMultiplier(key, format)
+  const currentMultiplier = getKeyRateMultiplier(key)
   if (Math.abs(currentMultiplier - newMultiplier) < 0.0001) {
     cancelEditMultiplier()
     multiplierSaving.value = false
@@ -1101,17 +1101,14 @@ async function saveMultiplier(key: EndpointAPIKey, format: string) {
   cancelEditMultiplier()
 
   try {
-    // 构建 rate_multipliers 对象
-    const rateMultipliers = { ...(key.rate_multipliers || {}) }
-    rateMultipliers[format] = newMultiplier
-
-    await updateProviderKey(keyId, { rate_multipliers: rateMultipliers })
+    // 成本倍率统一走 Key 级 default_rate_multiplier（与编辑弹窗同一字段）
+    await updateProviderKey(keyId, { default_rate_multiplier: newMultiplier })
     showSuccess(legacyT('倍率已更新'))
 
     // 更新本地数据
     const keyToUpdate = providerKeys.value.find(k => k.id === keyId)
     if (keyToUpdate) {
-      keyToUpdate.rate_multipliers = rateMultipliers
+      keyToUpdate.default_rate_multiplier = newMultiplier
     }
     emit('refresh')
   } catch (err: unknown) {
@@ -1133,11 +1130,8 @@ function getKeyApiFormats(key: EndpointAPIKey, endpoint?: ProviderEndpointWithKe
   return sortApiFormats(formats)
 }
 
-// 获取密钥在指定 API 格式下的成本倍率
-function getKeyRateMultiplier(key: EndpointAPIKey, format: string): number {
-  if (key.rate_multipliers && key.rate_multipliers[format] !== undefined) {
-    return key.rate_multipliers[format]
-  }
+// 获取密钥的 Key 级成本倍率（与编辑弹窗共用 default_rate_multiplier 字段）
+function getKeyRateMultiplier(key: EndpointAPIKey): number {
   return key.default_rate_multiplier ?? 1.0
 }
 
