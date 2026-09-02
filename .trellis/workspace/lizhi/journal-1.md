@@ -268,3 +268,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: 移除遗留定时任务
+<!-- trellis-session: v=2 fp=e8d9d9a79cd33529 -->
+
+**Date**: 2026-09-03
+**Task**: 移除遗留定时任务
+**Branch**: `slim-personal`
+
+### Summary
+
+删除 Provider 自动签到后台任务及系统设置入口，移除无运行时消费者的 OAuth Token 自动刷新开关；保留手动签到和按需 OAuth 刷新。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `00360b645` | chore(settings): remove obsolete scheduled tasks |
+
+### Status
+
+[OK] **Completed**
