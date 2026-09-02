@@ -52,10 +52,10 @@
 
 ## 未完成（明确遗留）
 
-- R11-8 前端 UI 重设计（单页重画、模式三选一、供应商拖拽、Key 行内展开）——需要前端栈动手，本次仅后端。
-- R11-7 策略单份化的存量多组归并迁移（resolver 已按"读默认组"运行，多组 CRUD 入口删除属前端/admin 路由层）。
-- gateway 侧新增的 p0_failure_class_tests / latency_tracker tests 已写入源码但 lib test 编译被用户 slim 既有坏测试阻塞，待其修复后即生效。
+- R11-7 策略单份化的存量多组归并迁移（resolver 已按"读默认组"运行，存量多组数据未归并）。
 - PRD R8（上下文超限 fallback）/R9（尝试轨迹可视化）按计划不做。
+
+> 归档订正（2026-09-02）：R11-8 前端 UI 与 R11-7 入口移除已于第二批完成（见上节）；gateway 侧 p0_failure_class_tests / latency_tracker tests 的编译阻塞已由 09-02 预存质量债修复解除，测试已生效。
 
 ## 本次触碰文件
 
