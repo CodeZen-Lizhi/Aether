@@ -323,3 +323,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 11: 供应商列表余额列失败态静默为横杠
+<!-- trellis-session: v=2 fp=0b7bad45a2e95822 -->
+
+**Date**: 2026-09-03
+**Task**: 供应商列表余额列失败态静默为横杠
+**Branch**: `slim-personal`
+
+### Summary
+
+定位供应商列表余额列把报错（连接失败/签到失败/Cookie失效）直接渲染进单元格的问题，按用户规则改为失败态一律显示横杠，报错详情只保留在测试/用户认证验证弹窗；清理 getProviderCookieExpired 全链路与 i18n 条目，spec 新增「汇总列表单元格不渲染报错文字」约定。type-check/636 单测/改动文件 lint 通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13a0560f2` | fix(frontend): 供应商列表余额列失败态静默为横杠 |
+
+### Status
+
+[OK] **Completed**

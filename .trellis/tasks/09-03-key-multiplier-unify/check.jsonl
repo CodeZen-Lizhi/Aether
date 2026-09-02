@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范：验证 i18n 字典清理与文案一致性时参照"}
+{"file": ".trellis/spec/aether-billing/backend/index.md", "reason": "验证计费倍率语义改动与测试覆盖时参照"}

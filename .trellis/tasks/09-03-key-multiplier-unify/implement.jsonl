@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范：i18n 中文源文案 + 字典映射机制，删除文案时必须先 grep 确认无引用再清理 messages.ts 条目"}
+{"file": ".trellis/spec/aether-billing/backend/index.md", "reason": "计费 crate 规范：rate_multiplier_for_api_format 的语义与单测约定，改动倍率优先级前必读"}

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
+- **Total Sessions**: 11
 - **Last Active**: 2026-09-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~325 | Active |
+| `journal-1.md` | ~347 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-09-03 | 供应商列表余额列失败态静默为横杠 | `13a0560f2` | `slim-personal` |
 | 10 | 2026-09-03 | 供应商列表恢复余额监控 | `55921620a` | `slim-personal` |
 | 9 | 2026-09-03 | 移除遗留定时任务 | `00360b645` | `slim-personal` |
 | 8 | 2026-09-02 | 系统设置-网络代理 UI 重构为节点列表+编辑弹窗 | `ac32e6749`, `bbcde7024` | `slim-personal` |
