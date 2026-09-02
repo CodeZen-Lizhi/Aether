@@ -1,9 +1,3 @@
-use super::super::users::{
-    default_admin_user_api_key_name, format_optional_unix_secs_iso8601,
-    generate_admin_user_api_key_plaintext, hash_admin_user_api_key, masked_user_api_key_display,
-    normalize_admin_optional_api_key_name, normalize_admin_user_api_formats,
-    normalize_admin_user_string_list,
-};
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::{
     decrypt_catalog_secret_with_fallbacks, encrypt_catalog_secret_with_fallbacks, query_param_bool,
@@ -18,10 +12,17 @@ use axum::{
 };
 use serde_json::json;
 
+mod helpers;
 mod mutation_routes;
 mod read_routes;
 mod routes;
 mod shared;
+
+pub(crate) use self::helpers::{
+    default_admin_user_api_key_name, format_optional_unix_secs_iso8601,
+    generate_admin_user_api_key_plaintext, hash_admin_user_api_key, masked_user_api_key_display,
+    normalize_admin_optional_api_key_name,
+};
 
 use self::mutation_routes::{
     build_admin_create_api_key_response, build_admin_delete_api_key_response,

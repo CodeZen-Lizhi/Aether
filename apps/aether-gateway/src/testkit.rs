@@ -136,7 +136,7 @@ fn openai_chat_pressure_provider() -> StoredProviderCatalogProvider {
         "custom".to_string(),
     )
     .expect("pressure provider should build")
-    .with_transport_fields(true, false, false, None, None, None, Some(20.0), None, None)
+    .with_transport_fields(true, false, None, None, None, Some(20.0), None, None)
 }
 
 fn openai_chat_pressure_endpoints(
@@ -198,7 +198,6 @@ fn openai_chat_pressure_keys(
                 encrypted,
                 None,
                 None,
-                Some(serde_json::json!({"openai:chat": 1})),
                 None,
                 None,
                 None,
@@ -220,7 +219,6 @@ fn openai_chat_pressure_candidates(
             provider_id: "provider-openai-chat-pressure".to_string(),
             provider_name: "openai".to_string(),
             provider_type: "custom".to_string(),
-            provider_priority: 10,
             provider_is_active: true,
             endpoint_id: pressure_endpoint_id(index),
             endpoint_api_format: "openai:chat".to_string(),
@@ -234,8 +232,6 @@ fn openai_chat_pressure_candidates(
             key_api_formats: Some(vec!["openai:chat".to_string()]),
             key_allowed_models: None,
             key_capabilities: None,
-            key_internal_priority: 5,
-            key_global_priority_by_format: Some(serde_json::json!({"openai:chat": 1})),
             model_id: pressure_model_id(index),
             global_model_id: "global-model-openai-chat-pressure".to_string(),
             global_model_name: config.requested_model.clone(),

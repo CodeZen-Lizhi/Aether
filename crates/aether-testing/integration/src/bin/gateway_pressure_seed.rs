@@ -259,7 +259,6 @@ async fn seed_provider_catalog(
     .with_transport_fields(
         true,
         false,
-        false,
         None,
         Some(0),
         None,
@@ -267,7 +266,6 @@ async fn seed_provider_catalog(
         Some(30.0),
         provider_config,
     )
-    .with_routing_fields(0)
     .with_description(Some(
         "Local OpenAI-compatible mock provider for gateway pressure tests".to_string(),
     ));
@@ -323,7 +321,6 @@ async fn seed_provider_catalog(
     .with_transport_fields(
         Some(json!(["openai:chat"])),
         Some(config.provider_api_key.clone()),
-        None,
         None,
         None,
         Some(json!([config.model.clone()])),

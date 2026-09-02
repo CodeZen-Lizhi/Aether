@@ -88,7 +88,6 @@ mod admin_proxy_nodes;
 mod admin_routing;
 mod admin_stats;
 mod admin_usage;
-mod admin_users;
 mod admin_video_tasks;
 mod ai;
 mod internal;

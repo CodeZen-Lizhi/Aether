@@ -810,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn extracts_trusted_audit_admin_headers() {
+    fn rejects_trusted_audit_admin_headers() {
         let mut headers = http::HeaderMap::new();
         headers.insert(
             crate::constants::GATEWAY_HEADER,
@@ -834,15 +834,7 @@ mod tests {
             &uri("/api/admin/endpoints/health/api-formats"),
             "admin:endpoints_health",
         );
-        assert_eq!(
-            extracted.trusted_admin_headers,
-            Some(GatewayTrustedAdminHeaders {
-                user_id: "audit-admin-1".to_string(),
-                user_role: "audit_admin".to_string(),
-                session_id: Some("sess-audit-1".to_string()),
-                management_token_id: None,
-            })
-        );
+        assert_eq!(extracted.trusted_admin_headers, None);
     }
 
     #[test]

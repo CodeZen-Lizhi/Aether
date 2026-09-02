@@ -1,8 +1,6 @@
+use super::helpers::{format_optional_unix_secs_iso8601, masked_user_api_key_display};
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::{query_param_value, AdminTypedObjectPatch};
-use crate::handlers::admin::users::{
-    format_optional_unix_secs_iso8601, masked_user_api_key_display,
-};
 use crate::handlers::shared::deserialize_optional_string_list_patch;
 use aether_admin::system::serialize_admin_system_users_export_wallet;
 use axum::{
@@ -210,4 +208,37 @@ pub(super) fn build_admin_api_key_detail_payload(
         "feature_settings": record.feature_settings,
         "wallet": serialize_admin_system_users_export_wallet(wallet),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AdminStandaloneApiKeyUpdateRequest;
+    use serde_json::json;
+
+    #[test]
+    fn admin_update_api_key_distinguishes_missing_null_and_present_ip_rules() {
+        let missing = serde_json::from_value::<AdminStandaloneApiKeyUpdateRequest>(json!({
+            "name": "unchanged-ip-rules",
+        }))
+        .expect("missing ip_rules should deserialize");
+        assert_eq!(missing.ip_rules, None);
+
+        let cleared = serde_json::from_value::<AdminStandaloneApiKeyUpdateRequest>(json!({
+            "ip_rules": null,
+        }))
+        .expect("null ip_rules should deserialize");
+        assert_eq!(cleared.ip_rules, Some(None));
+
+        let updated = serde_json::from_value::<AdminStandaloneApiKeyUpdateRequest>(json!({
+            "ip_rules": ["203.0.113.10", "10.0.0.0/24"],
+        }))
+        .expect("present ip_rules should deserialize");
+        assert_eq!(
+            updated.ip_rules,
+            Some(Some(vec![
+                "203.0.113.10".to_string(),
+                "10.0.0.0/24".to_string(),
+            ])),
+        );
+    }
 }

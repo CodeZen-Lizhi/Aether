@@ -4,15 +4,17 @@ use super::shared::{
     build_admin_api_keys_not_found_response, AdminStandaloneApiKeyCreateRequest,
     AdminStandaloneApiKeyToggleRequest, AdminStandaloneApiKeyUpdatePatch,
 };
-use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
-use crate::handlers::admin::shared::attach_admin_audit_response;
-use crate::handlers::admin::users::{
+use super::helpers::{
     default_admin_user_api_key_name, format_optional_unix_secs_iso8601,
     generate_admin_user_api_key_plaintext, hash_admin_user_api_key, masked_user_api_key_display,
-    normalize_admin_feature_settings, normalize_admin_optional_api_key_name,
-    normalize_admin_user_api_formats, normalize_admin_user_ip_rules,
+    normalize_admin_optional_api_key_name,
+};
+use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
+use crate::handlers::admin::shared::{
+    attach_admin_audit_response, normalize_admin_user_api_formats, normalize_admin_user_ip_rules,
     normalize_admin_user_string_list,
 };
+use crate::handlers::shared::normalize_feature_settings as normalize_admin_feature_settings;
 use crate::handlers::shared::normalize_optional_api_key_concurrent_limit;
 use crate::GatewayError;
 use aether_admin::system::serialize_admin_system_users_export_wallet;

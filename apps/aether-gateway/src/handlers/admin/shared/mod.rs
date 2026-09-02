@@ -1,10 +1,16 @@
 mod control_errors;
+mod normalize;
 mod paths;
 mod payloads;
 mod proxy_errors;
 mod usage_counter;
 
 pub(crate) use self::control_errors::build_internal_control_error_response;
+pub(crate) use self::normalize::{
+    normalize_admin_list_policy_mode, normalize_admin_rate_limit_policy_mode,
+    normalize_admin_user_api_formats, normalize_admin_user_ip_rules,
+    normalize_admin_user_string_list,
+};
 pub(crate) use self::paths::*;
 pub(crate) use self::payloads::*;
 pub(crate) use self::proxy_errors::build_proxy_error_response;
