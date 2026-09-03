@@ -1,4 +1,5 @@
--- 单用户化收尾：drop 纯用户侧旧表（含数据，破坏性；回滚只能还原执行前的 db 备份）
+-- 单用户化收尾：drop 纯用户侧旧表（含数据，破坏性；回滚只能还原执行前的 db 备份）。
+-- 使用独立版本号，避免与已发布的默认成本倍率迁移冲突。
 -- 保留 auth_modules（/api/auth/settings 本地登录开关仍在用）。
 -- users/api_keys/wallets/user_sessions/user_preferences/management_tokens 与 audit/usage/stats 表结构不动。
 
