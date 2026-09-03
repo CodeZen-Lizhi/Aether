@@ -368,3 +368,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 13: 供应商列表按调度优先级排序
+<!-- trellis-session: v=2 fp=48447ee2e95f2066 -->
+
+**Date**: 2026-09-03
+**Task**: 供应商列表按调度优先级排序
+**Branch**: `slim-personal`
+
+### Summary
+
+供应商管理列表排序改为 启用状态→调度优先级→创建时间：新增 providerPrioritySort.ts 纯函数+单测，ProviderManagement.vue 读系统默认分组 ui_provider_priority overlay（listRoutingGroups→findSystemDefaultRoutingGroup→parseSchedulingStrategy，与调度策略页同源），未配置缀尾、辅助请求失败静默退化；check 全过（type-check/641 tests/eslint）；沉淀 frontend spec 约定。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `574298a68` | feat(frontend): 供应商列表按调度优先级排序 |
+
+### Status
+
+[OK] **Completed**

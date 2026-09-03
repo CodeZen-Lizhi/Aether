@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-09-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~370 | Active |
+| `journal-1.md` | ~392 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-09-03 | 供应商列表按调度优先级排序 | `574298a68` | `slim-personal` |
 | 12 | 2026-09-03 | 收尾密钥倍率统一任务并归档 | `36f752cca`, `0dde53292` | `slim-personal` |
 | 11 | 2026-09-03 | 供应商列表余额列失败态静默为横杠 | `13a0560f2` | `slim-personal` |
 | 10 | 2026-09-03 | 供应商列表恢复余额监控 | `55921620a` | `slim-personal` |

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/aether-gateway/backend/quality-guidelines.md", "reason": "检查改动是否满足 gateway 质量规范（测试覆盖、错误处理）"}
+{"file": ".trellis/spec/aether-provider-transport/backend/index.md", "reason": "核对 policy.rs 现有函数语义未被修改，正式链路无回归"}
