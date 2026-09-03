@@ -1,3 +1,5 @@
+name: aether-personal
+
 services:
   app:
     build:
@@ -25,10 +27,13 @@ services:
     ports:
       - "${APP_PORT:-8084}:${APP_PORT:-8084}"
     volumes:
-      - ./data:/opt/aether/data
+      - aether-data:/opt/aether/data
     logging:
       driver: json-file
       options:
         max-size: "100m"
         max-file: "10"
     restart: unless-stopped
+
+volumes:
+  aether-data:

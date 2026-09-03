@@ -53,7 +53,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-应用监听 `0.0.0.0:${APP_PORT:-8084}`，SQLite 数据落在 `./data/aether.db`。登录后台后先配置渠道（Provider），再创建 API Key 即可通过 `http://<host>:8084/v1/messages`（Claude 格式）或 `/v1/chat/completions`（OpenAI 格式）代理请求。
+应用监听 `0.0.0.0:${APP_PORT:-8084}`，SQLite 数据保存在 Docker named volume `aether-personal_aether-data` 中，而非宿主机目录。`docker compose down` 会保留该数据卷；请勿在需要保留数据时使用 `docker compose down -v`。登录后台后先配置渠道（Provider），再创建 API Key 即可通过 `http://<host>:8084/v1/messages`（Claude 格式）或 `/v1/chat/completions`（OpenAI 格式）代理请求。
 
 ### 源码直跑
 
