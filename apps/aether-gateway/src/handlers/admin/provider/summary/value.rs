@@ -89,11 +89,16 @@ pub(crate) fn build_admin_provider_summary_value(
                 .get(&endpoint.id)
                 .cloned()
                 .unwrap_or_default();
-            let health_score = if endpoint_keys.is_empty() {
+            let active_endpoint_keys = endpoint_keys
+                .iter()
+                .copied()
+                .filter(|key| key.is_active)
+                .collect::<Vec<_>>();
+            let health_score = if active_endpoint_keys.is_empty() {
                 1.0
             } else {
                 let mut scores = Vec::new();
-                for key in &endpoint_keys {
+                for key in &active_endpoint_keys {
                     let score = key
                         .health_by_format
                         .as_ref()
@@ -111,7 +116,7 @@ pub(crate) fn build_admin_provider_summary_value(
                 "health_score": health_score,
                 "is_active": endpoint.is_active,
                 "total_keys": endpoint_keys.len(),
-                "active_keys": endpoint_keys.iter().filter(|key| key.is_active).count(),
+                "active_keys": active_endpoint_keys.len(),
             })
         })
         .collect::<Vec<_>>();

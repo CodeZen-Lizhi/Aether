@@ -211,7 +211,7 @@ async fn gateway_handles_admin_providers_locally_with_local_503_when_catalog_rea
     upstream_handle.abort();
 }
 #[tokio::test]
-async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_principal() {
+async fn gateway_provider_summary_excludes_inactive_keys_from_endpoint_health() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
     let upstream = Router::new().route(
@@ -244,6 +244,14 @@ async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_princ
                 "provider_ops": {"architecture_id": "anyrouter"}
             })),
         );
+    let mut inactive_chat_key = sample_key(
+        "key-openai-chat-disabled",
+        "provider-openai",
+        "openai:chat",
+        "sk-test-chat-disabled",
+    )
+    .with_health_fields(Some(json!({"openai:chat": {"health_score": 1.0}})), None);
+    inactive_chat_key.is_active = false;
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider.with_timestamps(Some(1_711_000_000), Some(1_711_000_100))],
         vec![
@@ -290,6 +298,7 @@ async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_princ
                 Some(json!({"openai:responses": {"health_score": 0.75}})),
                 None,
             ),
+            inactive_chat_key,
         ],
     ));
     let global_model_repository = Arc::new(
@@ -342,7 +351,7 @@ async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_princ
     assert_eq!(payload["max_transfer_timeout_seconds"], 0);
     assert_eq!(payload["total_endpoints"], 2);
     assert_eq!(payload["active_endpoints"], 2);
-    assert_eq!(payload["total_keys"], 2);
+    assert_eq!(payload["total_keys"], 3);
     assert_eq!(payload["active_keys"], 2);
     assert_eq!(payload["total_models"], 5);
     assert_eq!(payload["active_models"], 3);
@@ -364,7 +373,7 @@ async fn gateway_handles_admin_provider_summary_locally_with_trusted_admin_princ
                 "api_format": "openai:chat",
                 "health_score": 0.25,
                 "is_active": true,
-                "total_keys": 1,
+                "total_keys": 2,
                 "active_keys": 1
             },
             {
