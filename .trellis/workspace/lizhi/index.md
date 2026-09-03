@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-09-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~436 | Active |
+| `journal-1.md` | ~471 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-09-03 | 修复熔断 Key 的候选预选 | `2ecd95580` | `slim-personal` |
 | 15 | 2026-09-03 | 恢复 Provider Key 调度优先级 | `9eec53d27` | `slim-personal` |
 | 14 | 2026-09-03 | 模型测试绕过供应商与密钥开关校验 | `5f6095bdb` | `slim-personal` |
 | 13 | 2026-09-03 | 供应商列表按调度优先级排序 | `574298a68` | `slim-personal` |

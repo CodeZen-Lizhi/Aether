@@ -434,3 +434,38 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 16: 修复熔断 Key 的候选预选
+<!-- trellis-session: v=2 fp=40b07bda84344160 -->
+
+**Date**: 2026-09-03
+**Task**: 修复熔断 Key 的候选预选
+**Branch**: `slim-personal`
+
+### Summary
+
+修复候选预选将分布随机种子误作当前时间，导致熔断 Key 被探测并产生 503 后才回退的问题。
+
+### Main Changes
+
+- 正常与分页预选改用真实 Unix 当前时间判断熔断探测窗口。
+- 新增两个 Key 同时熔断时仅选择备用供应商的回归测试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2ecd95580` | fix: skip circuit-open keys during preselection |
+
+### Testing
+
+- [OK] cargo test -p aether-gateway ai_serving::planner::candidate_source::tests --lib（11/11 通过）
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 当前全仓遗留功能与性能审查任务仍处于 planning，待完成审查后另行归档。
