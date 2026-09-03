@@ -113,6 +113,7 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         api_formats: Some(api_formats.clone()),
                         supported_endpoints: Some(api_formats),
                         rate_multipliers: key.rate_multipliers.clone(),
+                        internal_priority: Some(key.internal_priority),
                         default_rate_multiplier: Some(key.default_rate_multiplier),
                         auth_type_by_format: key.auth_type_by_format.clone(),
                         allow_auth_channel_mismatch_formats: key

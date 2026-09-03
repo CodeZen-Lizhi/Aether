@@ -417,6 +417,8 @@ pub struct StoredProviderCatalogKey {
     pub encrypted_auth_config: Option<String>,
     pub note: Option<String>,
     pub rate_multipliers: Option<serde_json::Value>,
+    /// 同一供应商内 Key 的调度优先级，数值越小越优先。
+    pub internal_priority: i32,
     pub default_rate_multiplier: f64,
     pub allowed_models: Option<serde_json::Value>,
     pub expires_at_unix_secs: Option<u64>,
@@ -500,6 +502,7 @@ impl StoredProviderCatalogKey {
             encrypted_auth_config: None,
             note: None,
             rate_multipliers: None,
+            internal_priority: 50,
             default_rate_multiplier: 1.0,
             allowed_models: None,
             expires_at_unix_secs: None,
@@ -579,6 +582,11 @@ impl StoredProviderCatalogKey {
     /// 计费不再读取该映射）。
     pub fn with_default_rate_multiplier(mut self, default_rate_multiplier: f64) -> Self {
         self.default_rate_multiplier = default_rate_multiplier;
+        self
+    }
+
+    pub fn with_internal_priority(mut self, internal_priority: i32) -> Self {
+        self.internal_priority = internal_priority;
         self
     }
 

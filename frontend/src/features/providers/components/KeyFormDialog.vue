@@ -183,6 +183,22 @@
       <div class="grid grid-cols-4 gap-3">
         <div>
           <Label
+            for="internal_priority"
+            class="text-xs"
+          >{{ legacyT('优先级') }}</Label>
+          <Input
+            id="internal_priority"
+            v-model.number="form.internal_priority"
+            type="number"
+            min="0"
+            class="h-8"
+          />
+          <p class="text-xs text-muted-foreground mt-0.5">
+            {{ legacyT('越小越优先') }}
+          </p>
+        </div>
+        <div>
+          <Label
             for="rpm_limit"
             class="text-xs"
           >{{ legacyT('RPM 限制') }}</Label>
@@ -612,6 +628,7 @@ const form = ref({
   allow_auth_channel_mismatch_formats: [] as string[],
   api_formats: [] as string[],  // 支持的 API 格式列表
   default_rate_multiplier: 1 as number,  // Key 级成本倍率
+  internal_priority: 10,
   rpm_limit: undefined as number | null | undefined,  // RPM 限制（null=自适应，undefined=保持原值）
   concurrent_limit: undefined as number | null | undefined,  // 并发请求上限（null/0=不限制，undefined=保持原值）
   cache_ttl_minutes: 5,
@@ -698,6 +715,7 @@ function resetForm() {
       getDefaultAllowAuthChannelMismatchFormats(defaultApiFormats),
     api_formats: defaultApiFormats,
     default_rate_multiplier: 1,
+    internal_priority: 10,
     rpm_limit: undefined,
     concurrent_limit: undefined,
     cache_ttl_minutes: 5,
@@ -745,6 +763,7 @@ function loadKeyData() {
       )
       : [],  // 编辑模式下保持原有选择，不默认全选
     default_rate_multiplier: props.editingKey.default_rate_multiplier ?? 1,
+    internal_priority: props.editingKey.internal_priority ?? 10,
     // 保留原始的 null/undefined 状态，null 表示自适应模式
     rpm_limit: props.editingKey.rpm_limit ?? undefined,
     concurrent_limit: props.editingKey.concurrent_limit ?? undefined,
@@ -808,6 +827,11 @@ async function handleSave() {
       showError(legacyT('默认成本倍率必须是 0-100 之间的数值'), legacyT('验证失败'))
       return
     }
+    const internalPriority = Number(form.value.internal_priority)
+    if (!Number.isInteger(internalPriority) || internalPriority < 0) {
+      showError(legacyT('优先级必须是大于或等于 0 的整数'), legacyT('验证失败'))
+      return
+    }
 
     // 准备认证相关数据
     const authTypeByFormat = buildAuthTypeByFormatPayload()
@@ -827,6 +851,7 @@ async function handleSave() {
         // 按格式覆盖倍率已废弃：更新时显式清空存量覆盖值
         rate_multipliers: null,
         default_rate_multiplier: defaultRateMultiplier,
+        internal_priority: internalPriority,
         rpm_limit: form.value.rpm_limit,
         concurrent_limit: form.value.concurrent_limit,
         cache_ttl_minutes: form.value.cache_ttl_minutes,
@@ -857,6 +882,7 @@ async function handleSave() {
         allow_auth_channel_mismatch_formats: allowAuthChannelMismatchFormats,
         name: form.value.name,
         default_rate_multiplier: defaultRateMultiplier,
+        internal_priority: internalPriority,
         rpm_limit: form.value.rpm_limit,
         concurrent_limit: form.value.concurrent_limit,
         cache_ttl_minutes: form.value.cache_ttl_minutes,

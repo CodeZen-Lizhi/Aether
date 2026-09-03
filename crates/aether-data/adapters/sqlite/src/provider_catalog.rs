@@ -114,6 +114,7 @@ SELECT
   auth_config,
   note,
   rate_multipliers,
+  internal_priority,
   default_rate_multiplier,
   allowed_models,
   expires_at AS expires_at_unix_secs,
@@ -172,6 +173,7 @@ SELECT
   auth_config,
   note,
   rate_multipliers,
+  internal_priority,
   default_rate_multiplier,
   allowed_models,
   expires_at AS expires_at_unix_secs,
@@ -233,6 +235,7 @@ SELECT
   END AS auth_config,
   NULL AS note,
   NULL AS rate_multipliers,
+  50 AS internal_priority,
   NULL AS default_rate_multiplier,
   NULL AS allowed_models,
   NULL AS expires_at_unix_secs,
@@ -954,6 +957,7 @@ WHERE id = ?
                 &key.rate_multipliers,
                 "provider_api_keys.rate_multipliers",
             )?)
+            .bind(key.internal_priority)
             .bind(key.default_rate_multiplier)
             .bind(optional_json_to_string(
                 &key.allowed_models,
@@ -2679,6 +2683,11 @@ fn validate_key(key: &StoredProviderCatalogKey) -> Result<(), DataLayerError> {
     validate_non_empty(&key.provider_id, "provider catalog key.provider_id")?;
     validate_non_empty(&key.name, "provider catalog key.name")?;
     validate_non_empty(&key.auth_type, "provider catalog key.auth_type")?;
+    if key.internal_priority < 0 {
+        return Err(DataLayerError::InvalidInput(
+            "provider catalog key.internal_priority must be non-negative".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -2726,7 +2735,7 @@ fn key_insert_sql() -> &'static str {
 INSERT INTO provider_api_keys (
   id, provider_id, name, api_key, auth_type, capabilities,
   is_active, api_formats, auth_type_by_format, allow_auth_channel_mismatch_formats, auth_config, note,
-  rate_multipliers, default_rate_multiplier, allowed_models, expires_at, cache_ttl_minutes, max_probe_interval_minutes, proxy,
+  rate_multipliers, internal_priority, default_rate_multiplier, allowed_models, expires_at, cache_ttl_minutes, max_probe_interval_minutes, proxy,
   fingerprint, rpm_limit, concurrent_limit, learned_rpm_limit, concurrent_429_count, rpm_429_count,
   last_429_at, last_429_type, adjustment_history, utilization_samples, last_probe_increase_at, last_rpm_peak,
   request_count, total_tokens, total_cost_usd, success_count, error_count, total_response_time_ms,
@@ -2735,7 +2744,7 @@ INSERT INTO provider_api_keys (
   circuit_breaker_by_format, created_at, updated_at
 )
 VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 "#
 }
@@ -2756,6 +2765,7 @@ SET
   auth_config = ?,
   note = ?,
   rate_multipliers = ?,
+  internal_priority = ?,
   default_rate_multiplier = ?,
   allowed_models = ?,
   expires_at = ?,
@@ -2810,6 +2820,7 @@ fn key_update_query(
             &key.rate_multipliers,
             "provider_api_keys.rate_multipliers",
         )?)
+        .bind(key.internal_priority)
         .bind(key.default_rate_multiplier)
         .bind(optional_json_to_string(
             &key.allowed_models,
@@ -2896,6 +2907,8 @@ fn push_admin_key_assignments<'args>(
             &key.rate_multipliers,
             "provider_api_keys.rate_multipliers",
         )?)
+        .push(", internal_priority = ")
+        .push_bind(key.internal_priority)
         .push(", default_rate_multiplier = ")
         .push_bind(key.default_rate_multiplier)
         .push(", allowed_models = ")
@@ -3188,6 +3201,7 @@ fn map_key_row(row: &SqliteRow) -> Result<StoredProviderCatalogKey, DataLayerErr
     )
     .map(|key| {
         let mut key = key
+            .with_internal_priority(row.try_get("internal_priority").map_sql_err()?)
             .with_default_rate_multiplier(
                 row.try_get::<Option<f64>, _>("default_rate_multiplier")
                     .map_sql_err()?
@@ -3631,6 +3645,7 @@ mod tests {
         assert_eq!(keys[0].total_tokens, 1234);
         assert_eq!(keys[0].total_response_time_ms, Some(u32::MAX as u64 + 1));
         assert_eq!(keys[0].concurrent_limit, Some(3));
+        assert_eq!(keys[0].internal_priority, 50);
 
         let page = repository
             .list_keys_page(&ProviderCatalogKeyListQuery {
@@ -4488,6 +4503,7 @@ mod tests {
             Some(json!({"openai:chat":{"score":1}})),
             Some(json!({"openai:chat":{"open":false}})),
         );
+        key.internal_priority = 7;
         key.last_models_fetch_at_unix_secs = Some(1_730_000_100);
         key.last_models_fetch_error = Some("stale models fetch error".to_string());
         let created_key = repository
@@ -4495,6 +4511,7 @@ mod tests {
             .await
             .expect("key should create");
         assert_eq!(created_key.concurrent_limit, Some(3));
+        assert_eq!(created_key.internal_priority, 7);
         assert_eq!(created_key.total_tokens, 1234);
         assert_eq!(
             created_key.total_response_time_ms,
@@ -4515,6 +4532,7 @@ mod tests {
         let mut updated_key = created_key.clone();
         updated_key.name = "Updated Key".to_string();
         updated_key.is_active = false;
+        updated_key.internal_priority = 3;
         updated_key.upstream_metadata = Some(json!({"models":["gpt-4.1"]}));
         updated_key.last_models_fetch_at_unix_secs = Some(1_730_000_200);
         updated_key.last_models_fetch_error = None;
@@ -4523,6 +4541,7 @@ mod tests {
             .await
             .expect("key should update");
         assert_eq!(updated_key.name, "Updated Key");
+        assert_eq!(updated_key.internal_priority, 3);
         assert!(!updated_key.is_active);
         assert_eq!(
             updated_key.last_models_fetch_at_unix_secs,

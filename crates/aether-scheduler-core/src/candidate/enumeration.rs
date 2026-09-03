@@ -80,7 +80,7 @@ fn enumerate_minimal_candidate_selection_inner(
             provider_id: row.provider_id,
             provider_name: row.provider_name,
             provider_type: row.provider_type,
-            // 数据层已裁剪优先级列：基础优先级恒为中性值，调度由 routing_groups 策略覆盖
+            // Provider 优先级由调度策略决定；Key 优先级在候选筛选阶段从目录配置补充。
             provider_priority: 0,
             endpoint_id: row.endpoint_id,
             endpoint_api_format: row.endpoint_api_format,

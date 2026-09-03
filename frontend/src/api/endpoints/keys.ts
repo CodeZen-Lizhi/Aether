@@ -193,6 +193,7 @@ export async function addProviderKey(
     auth_config?: Record<string, unknown>  // 认证配置（Vertex AI Service Account JSON）
     name: string
     rate_multipliers?: Record<string, number> | null  // 遗留字段：按 API 格式覆盖倍率已废弃，计费只读 default_rate_multiplier
+    internal_priority?: number  // 同一供应商内调度优先级，数值越小越优先
     default_rate_multiplier?: number  // Key 级成本倍率（该密钥所有请求按此计费）
     rpm_limit?: number | null  // RPM 限制（留空=自适应模式）
     concurrent_limit?: number | null  // 并发请求上限（留空或 0=不限制）
@@ -226,6 +227,7 @@ export async function updateProviderKey(
     auth_config: Record<string, unknown>  // 认证配置（Vertex AI Service Account JSON）
     name: string
     rate_multipliers: Record<string, number> | null  // 遗留字段：传 null 清空存量覆盖值；计费已不读取
+    internal_priority: number  // 同一供应商内调度优先级，数值越小越优先
     default_rate_multiplier: number  // Key 级成本倍率（该密钥所有请求按此计费）
     rpm_limit: number | null  // RPM 限制（留空=自适应模式）
     concurrent_limit: number | null  // 并发请求上限（留空或 0=不限制）

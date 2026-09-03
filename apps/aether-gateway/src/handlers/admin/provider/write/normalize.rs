@@ -71,6 +71,14 @@ pub(crate) fn normalize_default_rate_multiplier(value: Option<f64>) -> Result<Op
     }
 }
 
+pub(crate) fn normalize_internal_priority(value: Option<i32>) -> Result<Option<i32>, String> {
+    match value {
+        None => Ok(None),
+        Some(value) if value >= 0 => Ok(Some(value)),
+        Some(_) => Err("internal_priority 必须是大于或等于 0 的整数".to_string()),
+    }
+}
+
 pub(crate) fn normalize_auth_type_by_format(
     value: Option<serde_json::Value>,
     field_name: &str,

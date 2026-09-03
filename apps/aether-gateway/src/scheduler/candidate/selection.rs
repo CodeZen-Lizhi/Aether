@@ -221,6 +221,14 @@ pub(super) async fn collect_selectable_enumerated_candidates_with_skip_reasons(
         now_unix_secs,
     )
     .await?;
+    for candidate in &mut candidates {
+        if let Some(key) = runtime_snapshot
+            .provider_key_rpm_states
+            .get(candidate.key_id.as_str())
+        {
+            candidate.key_internal_priority = key.internal_priority;
+        }
+    }
     let affinity_cache_key = build_scheduler_affinity_cache_key(
         auth_snapshot,
         api_format,

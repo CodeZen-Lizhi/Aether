@@ -2,8 +2,8 @@ use crate::handlers::admin::provider::shared::payloads::AdminProviderKeyCreateRe
 use crate::handlers::admin::provider::write::normalize::{
     normalize_allow_auth_channel_mismatch_formats, normalize_api_format_json_object_keys,
     normalize_api_format_list, normalize_auth_type, normalize_auth_type_by_format,
-    normalize_default_rate_multiplier, normalize_max_probe_interval_minutes,
-    normalize_rate_multipliers,
+    normalize_default_rate_multiplier, normalize_internal_priority,
+    normalize_max_probe_interval_minutes, normalize_rate_multipliers,
 };
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::admin::shared::{
@@ -161,6 +161,7 @@ pub(crate) async fn build_admin_create_provider_key_record(
     .map_err(|err| err.to_string())?;
     key.default_rate_multiplier =
         normalize_default_rate_multiplier(payload.default_rate_multiplier)?.unwrap_or(1.0);
+    key.internal_priority = normalize_internal_priority(payload.internal_priority)?.unwrap_or(50);
     key.note = payload
         .note
         .map(|value| value.trim().to_string())

@@ -415,6 +415,8 @@ pub struct AdminSystemConfigProviderKey {
     #[serde(default)]
     pub rate_multipliers: Option<Value>,
     #[serde(default)]
+    pub internal_priority: Option<i32>,
+    #[serde(default)]
     pub default_rate_multiplier: Option<f64>,
     #[serde(default)]
     pub auth_type_by_format: Option<Value>,
