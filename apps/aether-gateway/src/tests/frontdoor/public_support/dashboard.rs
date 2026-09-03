@@ -206,6 +206,7 @@ async fn gateway_handles_admin_dashboard_stats_locally_without_proxying_upstream
     openai_usage.cache_creation_ephemeral_1h_input_tokens = 600;
     openai_usage.cache_read_input_tokens = 800;
     openai_usage.cache_read_cost_usd = 0.01;
+    openai_usage.actual_total_cost_usd = 0.25;
     openai_usage.output_price_per_1m = Some(100.0);
     openai_usage.request_metadata = Some(json!({ "input_price_per_1m": 20.0 }));
 
@@ -228,6 +229,7 @@ async fn gateway_handles_admin_dashboard_stats_locally_without_proxying_upstream
     claude_usage.cache_creation_ephemeral_1h_input_tokens = 30;
     claude_usage.cache_read_input_tokens = 200;
     claude_usage.cache_read_cost_usd = 0.005;
+    claude_usage.actual_total_cost_usd = 0.125;
     claude_usage.output_price_per_1m = Some(100.0);
     claude_usage.request_metadata = Some(json!({ "input_price_per_1m": 20.0 }));
 
@@ -248,6 +250,7 @@ async fn gateway_handles_admin_dashboard_stats_locally_without_proxying_upstream
     prior_usage.cache_creation_ephemeral_1h_input_tokens = 0;
     prior_usage.cache_read_input_tokens = 1_000;
     prior_usage.cache_read_cost_usd = 0.01;
+    prior_usage.actual_total_cost_usd = 0.0625;
     prior_usage.output_price_per_1m = Some(100.0);
     prior_usage.request_metadata = Some(json!({ "input_price_per_1m": 30.0 }));
 
@@ -413,6 +416,8 @@ async fn gateway_handles_admin_dashboard_stats_locally_without_proxying_upstream
     assert_eq!(payload["today"]["requests"], 2);
     assert_eq!(payload["today"]["tokens"], 16_250);
     assert_eq!(payload["today"]["cost"], json!(2.5));
+    assert_eq!(payload["today"]["actual_cost"], json!(0.375));
+    assert_eq!(payload["cost_stats"]["total_actual_cost"], json!(0.4375));
     assert_eq!(payload["cost_stats"]["cost_savings"], json!(0.025));
     let stats = payload["stats"].as_array().expect("stats should be array");
     assert_eq!(stats.len(), 4);
@@ -445,7 +450,8 @@ async fn gateway_handles_admin_dashboard_stats_locally_without_proxying_upstream
         .find(|item| item["name"] == json!("今日费用"))
         .expect("today cost stats card should exist");
     assert_eq!(today_cost_stats["value"], json!("$2.50"));
-    assert_eq!(today_cost_stats["subValue"], json!("节省 $0.01"));
+    assert_eq!(today_cost_stats["subValue"], json!("$0.38"));
+    assert_eq!(today_cost_stats["extraBadge"], json!("节省 $0.01"));
     assert_eq!(payload["api_keys"]["total"], 3);
     assert_eq!(payload["api_keys"]["active"], 2);
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
@@ -507,6 +513,7 @@ async fn gateway_handles_dashboard_daily_stats_locally_without_proxying_upstream
         now - chrono::Duration::hours(1),
     );
     today_openai_usage.total_tokens = 160;
+    today_openai_usage.actual_total_cost_usd = 0.125;
     let mut today_claude_usage = sample_user_usage_audit(
         "usage-dashboard-daily-2",
         "req-dashboard-daily-2",
@@ -517,6 +524,7 @@ async fn gateway_handles_dashboard_daily_stats_locally_without_proxying_upstream
         now - chrono::Duration::hours(2),
     );
     today_claude_usage.total_tokens = 160;
+    today_claude_usage.actual_total_cost_usd = 0.25;
     let mut today_bailian_usage = sample_user_usage_audit(
         "usage-dashboard-daily-4",
         "req-dashboard-daily-4",
@@ -527,6 +535,7 @@ async fn gateway_handles_dashboard_daily_stats_locally_without_proxying_upstream
         now - chrono::Duration::hours(3),
     );
     today_bailian_usage.total_tokens = 160;
+    today_bailian_usage.actual_total_cost_usd = 0.5;
     let mut prior_usage = sample_user_usage_audit(
         "usage-dashboard-daily-3",
         "req-dashboard-daily-3",
@@ -537,6 +546,7 @@ async fn gateway_handles_dashboard_daily_stats_locally_without_proxying_upstream
         now - chrono::Duration::days(1) - chrono::Duration::hours(2),
     );
     prior_usage.total_tokens = 160;
+    prior_usage.actual_total_cost_usd = 0.75;
     let usage_repository = Arc::new(InMemoryUsageReadRepository::seed(vec![
         today_openai_usage,
         today_claude_usage,
@@ -586,10 +596,12 @@ async fn gateway_handles_dashboard_daily_stats_locally_without_proxying_upstream
         json!((now - chrono::Duration::days(1)).date_naive().to_string())
     );
     assert_eq!(daily_stats[0]["requests"], 1);
+    assert_eq!(daily_stats[0]["actual_cost"], json!(0.75));
     assert_eq!(daily_stats[0]["unique_providers"], 1);
     assert_eq!(daily_stats[1]["date"], json!(now.date_naive().to_string()));
     assert_eq!(daily_stats[1]["requests"], 3);
     assert_eq!(daily_stats[1]["tokens"], 480);
+    assert_eq!(daily_stats[1]["actual_cost"], json!(0.875));
     assert_eq!(daily_stats[1]["unique_models"], 3);
     assert_eq!(daily_stats[1]["unique_providers"], 3);
     let today_model_breakdown = daily_stats[1]["model_breakdown"]
@@ -725,6 +737,7 @@ async fn gateway_handles_user_dashboard_daily_stats_locally_without_proxying_ups
     assert_eq!(daily_stats.len(), 2);
     assert_eq!(daily_stats[0]["requests"], 1);
     assert_eq!(daily_stats[1]["requests"], 1);
+    assert_eq!(daily_stats[1]["actual_cost"], json!(1.25));
     assert_eq!(
         daily_stats[1]["model_breakdown"].as_array().map(Vec::len),
         Some(1)

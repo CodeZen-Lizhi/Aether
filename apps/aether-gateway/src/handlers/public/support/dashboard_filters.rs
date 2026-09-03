@@ -625,6 +625,7 @@ fn dashboard_build_daily_stats_payload(
                 "requests": aggregate.totals.requests,
                 "tokens": aggregate.totals.total_tokens,
                 "cost": dashboard_round_f64(aggregate.totals.total_cost_usd, 4),
+                "actual_cost": dashboard_round_f64(aggregate.totals.actual_total_cost_usd, 4),
                 "avg_response_time": aggregate.totals.avg_response_time_seconds(),
                 "unique_models": aggregate.models.len(),
                 "model_breakdown": model_breakdown,
@@ -639,6 +640,7 @@ fn dashboard_build_daily_stats_payload(
                 "requests": 0,
                 "tokens": 0,
                 "cost": 0.0,
+                "actual_cost": 0.0,
                 "avg_response_time": 0.0,
                 "unique_models": 0,
                 "model_breakdown": [],
@@ -895,14 +897,14 @@ pub(super) async fn handle_dashboard_stats_get(
     let success_requests = today_totals
         .requests
         .saturating_sub(today_totals.error_requests);
-    // dashboard_cache_savings_usd 已保证结果 >= 0，节省为 0 时不展示副行。
     let mut today_cost_stats = json!({
         "name": "今日费用",
         "value": dashboard_format_usd(today_totals.total_cost_usd),
+        "subValue": dashboard_format_usd(today_totals.actual_total_cost_usd),
         "icon": "DollarSign",
     });
     if today_cost_savings > 0.0 {
-        today_cost_stats["subValue"] =
+        today_cost_stats["extraBadge"] =
             json!(format!("节省 {}", dashboard_format_usd(today_cost_savings)));
     }
     let stats = json!([
@@ -973,6 +975,7 @@ fn dashboard_daily_aggregate_record(
         .total_tokens
         .saturating_add(row.total_tokens);
     aggregate.totals.total_cost_usd += row.total_cost_usd;
+    aggregate.totals.actual_total_cost_usd += row.actual_total_cost_usd;
     aggregate.totals.response_time_sum_ms += row.response_time_sum_ms;
     aggregate.totals.response_time_samples = aggregate
         .totals

@@ -186,6 +186,20 @@ afterEach(() => {
 })
 
 describe('UsageRecordsTable', () => {
+  it('shows original and multiplier-adjusted costs to six decimal places in both layouts', () => {
+    const root = mountUsageRecordsTable([buildRecord({
+      cost: 0.0411234,
+      actual_cost: 0.00411234,
+      rate_multiplier: 0.1,
+    })], { showActualCost: true })
+
+    const displayedCosts = [...root.querySelectorAll<HTMLElement>('span')]
+      .map(element => element.textContent?.trim())
+
+    expect(displayedCosts.filter(value => value === '$0.041123')).toHaveLength(2)
+    expect(displayedCosts.filter(value => value === '$0.004112')).toHaveLength(2)
+  })
+
   it('shows output TPS after the request completes', () => {
     const root = mountUsageRecordsTable([buildRecord()])
 

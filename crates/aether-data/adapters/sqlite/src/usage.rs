@@ -2269,6 +2269,7 @@ SELECT
   COALESCE(SUM(total_requests), 0) AS requests,
   COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) AS total_tokens,
   COALESCE(SUM(COALESCE(CAST(total_cost AS REAL), 0)), 0) AS total_cost_usd,
+  COALESCE(SUM(COALESCE(CAST(actual_total_cost AS REAL), 0)), 0) AS actual_total_cost_usd,
   0.0 AS response_time_sum_ms,
   0 AS response_time_samples
 FROM stats_user_daily
@@ -2296,6 +2297,7 @@ SELECT
   COALESCE(SUM(total_requests), 0) AS requests,
   COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) AS total_tokens,
   COALESCE(SUM(COALESCE(CAST(total_cost AS REAL), 0)), 0) AS total_cost_usd,
+  COALESCE(SUM(COALESCE(CAST(actual_total_cost AS REAL), 0)), 0) AS actual_total_cost_usd,
   0.0 AS response_time_sum_ms,
   0 AS response_time_samples
 FROM stats_daily
@@ -2322,6 +2324,7 @@ ORDER BY "date" ASC
                     requests: sqlite_aggregate_u64(row, "requests")?,
                     total_tokens: sqlite_aggregate_u64(row, "total_tokens")?,
                     total_cost_usd: sqlite_real(row, "total_cost_usd")?,
+                    actual_total_cost_usd: sqlite_real(row, "actual_total_cost_usd")?,
                     response_time_sum_ms: sqlite_real(row, "response_time_sum_ms")?,
                     response_time_samples: sqlite_aggregate_u64(row, "response_time_samples")?,
                 })
@@ -2791,6 +2794,7 @@ SELECT
   COUNT(*) AS requests,
   COALESCE(SUM({total_tokens_expr}), 0) AS total_tokens,
   COALESCE(SUM(COALESCE(CAST(total_cost_usd AS REAL), 0)), 0) AS total_cost_usd,
+  COALESCE(SUM(COALESCE(CAST(actual_total_cost_usd AS REAL), 0)), 0) AS actual_total_cost_usd,
   COALESCE(SUM(CASE WHEN response_time_ms IS NOT NULL THEN MAX(COALESCE(response_time_ms, 0), 0) ELSE 0 END), 0)
     AS response_time_sum_ms,
   COALESCE(SUM(CASE WHEN response_time_ms IS NOT NULL THEN 1 ELSE 0 END), 0)
@@ -2832,6 +2836,7 @@ ORDER BY date ASC, total_cost_usd DESC, model ASC, provider ASC
                     requests: sqlite_aggregate_u64(row, "requests")?,
                     total_tokens: sqlite_aggregate_u64(row, "total_tokens")?,
                     total_cost_usd: sqlite_real(row, "total_cost_usd")?,
+                    actual_total_cost_usd: sqlite_real(row, "actual_total_cost_usd")?,
                     response_time_sum_ms: sqlite_real(row, "response_time_sum_ms")?,
                     response_time_samples: sqlite_aggregate_u64(row, "response_time_samples")?,
                 })

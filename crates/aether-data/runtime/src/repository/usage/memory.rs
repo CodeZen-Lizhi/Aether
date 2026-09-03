@@ -1625,6 +1625,7 @@ impl UsageReadRepository for InMemoryUsageReadRepository {
             requests: u64,
             total_tokens: u64,
             total_cost_usd: f64,
+            actual_total_cost_usd: f64,
             response_time_sum_ms: f64,
             response_time_samples: u64,
         }
@@ -1647,6 +1648,7 @@ impl UsageReadRepository for InMemoryUsageReadRepository {
             bucket.requests = bucket.requests.saturating_add(1);
             bucket.total_tokens = bucket.total_tokens.saturating_add(item.total_tokens);
             bucket.total_cost_usd += item.total_cost_usd;
+            bucket.actual_total_cost_usd += item.actual_total_cost_usd;
             if let Some(response_time_ms) = item.response_time_ms {
                 bucket.response_time_sum_ms += response_time_ms as f64;
                 bucket.response_time_samples = bucket.response_time_samples.saturating_add(1);
@@ -1663,6 +1665,7 @@ impl UsageReadRepository for InMemoryUsageReadRepository {
                     requests: bucket.requests,
                     total_tokens: bucket.total_tokens,
                     total_cost_usd: bucket.total_cost_usd,
+                    actual_total_cost_usd: bucket.actual_total_cost_usd,
                     response_time_sum_ms: bucket.response_time_sum_ms,
                     response_time_samples: bucket.response_time_samples,
                 },

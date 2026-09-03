@@ -383,6 +383,7 @@ export interface DailyStat {
   requests: number
   tokens: number
   cost: number
+  actual_cost: number
   avg_response_time: number // in seconds
   unique_models: number
   unique_providers?: number // 仅管理员返回

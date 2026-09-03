@@ -2006,6 +2006,7 @@ INSERT INTO stats_daily (
     assert_eq!(rows[0].model, "aggregate");
     assert_eq!(rows[0].requests, 9);
     assert_eq!(rows[0].total_tokens, 37);
+    assert_eq!(rows[0].actual_total_cost_usd, 1.0);
 }
 
 #[tokio::test]

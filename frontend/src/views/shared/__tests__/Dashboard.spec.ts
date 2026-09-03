@@ -149,4 +149,47 @@ describe('Dashboard refresh controls', () => {
       vi.useRealTimers()
     }
   })
+
+  it('shows original costs as primary values and settled costs as muted secondary values', async () => {
+    dashboardApiMocks.getStats.mockResolvedValue({
+      stats: [{ name: '今日费用', value: '$0.7500', subValue: '$0.0750', icon: 'DollarSign' }],
+      system_health: {
+        avg_response_time: 0.5,
+        error_rate: 0,
+        error_requests: 0,
+        fallback_count: 0,
+        total_requests: 1,
+      },
+      cost_stats: {
+        total_cost: 0.75,
+        total_actual_cost: 0.075,
+        cost_savings: 0,
+      },
+    })
+    dashboardApiMocks.getDailyStats.mockResolvedValue({
+      daily_stats: [{
+        date: '2026-05-15',
+        requests: 1,
+        tokens: 20,
+        cost: 0.3,
+        actual_cost: 0.03,
+        avg_response_time: 0.5,
+        unique_models: 1,
+        model_breakdown: [],
+      }],
+      model_summary: [],
+      period: { start_date: '2026-05-15', end_date: '2026-05-15', days: 1 },
+    })
+
+    const root = mountDashboard()
+    await settle()
+
+    const primaryCosts = [...root.querySelectorAll<HTMLElement>('.text-primary')]
+      .map(element => element.textContent?.trim())
+    const settledCosts = [...root.querySelectorAll<HTMLElement>('.text-muted-foreground')]
+      .map(element => element.textContent?.trim())
+
+    expect(primaryCosts).toEqual(expect.arrayContaining(['$0.7500', '$0.3000']))
+    expect(settledCosts).toEqual(expect.arrayContaining(['$0.0750', '$0.0300']))
+  })
 })

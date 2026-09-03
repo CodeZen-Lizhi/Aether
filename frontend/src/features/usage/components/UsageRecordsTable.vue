@@ -315,7 +315,7 @@
             <span
               v-if="record.usage_available !== false && record.usage_pricing_available !== false"
               class="text-sm text-primary font-semibold leading-5"
-            >{{ formatCurrency(record.cost || 0) }}</span>
+            >{{ formatRecordCost(record.cost) }}</span>
             <span
               v-else-if="record.usage_available === false"
               data-usage-unavailable="cost"
@@ -331,7 +331,7 @@
             <span
               v-if="record.usage_available !== false && record.usage_pricing_available !== false && showActualCost && record.actual_cost !== undefined && record.rate_multiplier && record.rate_multiplier !== 1.0"
               class="text-[10px] text-muted-foreground"
-            >{{ formatCurrency(record.actual_cost) }}</span>
+            >{{ formatRecordCost(record.actual_cost) }}</span>
           </div>
         </div>
 
@@ -962,12 +962,12 @@
               v-if="record.usage_available !== false && record.usage_pricing_available !== false"
               class="flex flex-col items-end text-xs gap-0.5"
             >
-              <span class="text-primary font-medium">{{ formatCurrency(record.cost || 0) }}</span>
+              <span class="text-primary font-medium">{{ formatRecordCost(record.cost) }}</span>
               <span
                 v-if="showActualCost && record.actual_cost !== undefined && record.rate_multiplier && record.rate_multiplier !== 1.0"
                 class="text-muted-foreground"
               >
-                {{ formatCurrency(record.actual_cost) }}
+                {{ formatRecordCost(record.actual_cost) }}
               </span>
             </div>
             <div
@@ -1094,7 +1094,7 @@ import {
   TableFilterMenu,
 } from '@/components/ui'
 import { EyeOff, RefreshCcw, Search, Shuffle } from 'lucide-vue-next'
-import { formatTokens, formatCurrency } from '@/utils/format'
+import { formatTokens } from '@/utils/format'
 import { getCacheCreationTokens, getCacheReadTokens, getEffectiveInputTokens } from '../token-normalization'
 import {
   formatOutputRate,
@@ -1494,6 +1494,11 @@ function hasPositiveTokens(value: number | null | undefined): boolean {
 
 function formatOptionalTokens(value: number | null | undefined): string {
   return hasPositiveTokens(value) ? formatTokens(value) : '-'
+}
+
+function formatRecordCost(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '$0.000000'
+  return `$${value.toFixed(6)}`
 }
 
 function hasRecordCacheTokens(record: UsageRecord): boolean {

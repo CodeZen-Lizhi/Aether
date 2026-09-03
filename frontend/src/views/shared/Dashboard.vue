@@ -58,7 +58,8 @@
                   {{ stat.name }}
                 </p>
                 <p
-                  class="mt-2 sm:mt-4 text-xl sm:text-3xl font-semibold text-foreground"
+                  class="mt-2 sm:mt-4 text-xl sm:text-3xl font-semibold"
+                  :class="stat.isCost ? 'text-primary' : 'text-foreground'"
                 >
                   {{ stat.value }}
                 </p>
@@ -219,9 +220,14 @@
                   本月费用
                 </p>
                 <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-foreground"
+                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-primary"
                 >
                   {{ formatCurrency(costStats.total_cost) }}
+                </p>
+                <p
+                  class="mt-0.5 text-[10px] sm:text-xs text-muted-foreground tabular-nums"
+                >
+                  {{ formatCurrency(costStats.total_actual_cost) }}
                 </p>
                 <Badge
                   v-if="costStats.cost_savings > 0"
@@ -356,12 +362,16 @@
               <span class="font-medium text-sm">{{
                 formatDate(stat.date)
               }}</span>
-              <Badge
-                variant="success"
-                class="text-[10px]"
+              <div
+                class="flex flex-col items-end gap-0.5 text-[10px] leading-tight tabular-nums"
               >
-                ${{ stat.cost.toFixed(4) }}
-              </Badge>
+                <span class="font-semibold text-primary">
+                  {{ formatDashboardCost(stat.cost) }}
+                </span>
+                <span class="text-muted-foreground">
+                  {{ formatDashboardCost(stat.actual_cost) }}
+                </span>
+              </div>
             </div>
             <div class="grid grid-cols-2 gap-2 text-xs">
               <div class="flex justify-between">
@@ -452,12 +462,16 @@
                 </Badge>
               </TableCell>
               <TableCell class="text-center">
-                <Badge
-                  variant="success"
-                  class="text-[10px]"
+                <div
+                  class="flex flex-col items-center gap-0.5 text-[10px] leading-tight tabular-nums"
                 >
-                  ${{ stat.cost.toFixed(4) }}
-                </Badge>
+                  <span class="font-semibold text-primary">
+                    {{ formatDashboardCost(stat.cost) }}
+                  </span>
+                  <span class="text-muted-foreground">
+                    {{ formatDashboardCost(stat.actual_cost) }}
+                  </span>
+                </div>
               </TableCell>
               <TableCell class="text-center">
                 <Badge
@@ -504,8 +518,15 @@
             <div class="text-muted-foreground text-[10px]">
               总费用
             </div>
-            <div class="font-semibold text-amber-600 dark:text-amber-400">
-              ${{ totalStats.cost.toFixed(4) }}
+            <div
+              class="flex flex-col items-center gap-0.5 leading-tight tabular-nums"
+            >
+              <span class="font-semibold text-primary">
+                {{ formatDashboardCost(totalStats.cost) }}
+              </span>
+              <span class="text-[10px] text-muted-foreground">
+                {{ formatDashboardCost(totalStats.actualCost) }}
+              </span>
             </div>
           </div>
           <div class="text-center">
@@ -587,6 +608,7 @@ import type {
 
 type DashboardStatCard = Omit<DashboardStat, "icon"> & {
   icon: Component;
+  isCost: boolean;
 };
 
 const statsPanelRef = ref<HTMLElement | null>(null);
@@ -697,22 +719,36 @@ const statSkeletonCount = computed(() => emptyStatPlaceholders.value.length);
 
 const totalStats = computed(() => {
   if (dailyStats.value.length === 0) {
-    return { requests: 0, tokens: 0, cost: 0, avgResponseTime: 0 };
+    return {
+      requests: 0,
+      tokens: 0,
+      cost: 0,
+      actualCost: 0,
+      avgResponseTime: 0,
+    };
   }
   const totals = dailyStats.value.reduce(
     (acc, stat) => {
       acc.requests += stat.requests;
       acc.tokens += stat.tokens;
       acc.cost += stat.cost;
+      acc.actualCost += stat.actual_cost;
       acc.totalResponseTime += stat.avg_response_time * stat.requests;
       return acc;
     },
-    { requests: 0, tokens: 0, cost: 0, totalResponseTime: 0 },
+    {
+      requests: 0,
+      tokens: 0,
+      cost: 0,
+      actualCost: 0,
+      totalResponseTime: 0,
+    },
   );
   return {
     requests: totals.requests,
     tokens: totals.tokens,
     cost: totals.cost,
+    actualCost: totals.actualCost,
     avgResponseTime:
       totals.requests > 0 ? totals.totalResponseTime / totals.requests : 0,
   };
@@ -929,6 +965,7 @@ async function loadDashboardData() {
     stats.value = statsData.stats.map((stat) => ({
       ...stat,
       icon: markRaw(iconMap[stat.icon] || Activity),
+      isCost: stat.name === "今日费用",
     }));
     if (statsData.today) todayStats.value = statsData.today;
     if (statsData.system_health) systemHealth.value = statsData.system_health;
@@ -936,6 +973,10 @@ async function loadDashboardData() {
   } finally {
     loading.value = false;
   }
+}
+
+function formatDashboardCost(value: number): string {
+  return Number.isFinite(value) ? `$${value.toFixed(4)}` : "$0.0000";
 }
 
 async function loadDailyStats() {

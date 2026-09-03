@@ -1238,6 +1238,7 @@ pub struct StoredUsageDashboardDailyBreakdownRow {
     pub requests: u64,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
+    pub actual_total_cost_usd: f64,
     pub response_time_sum_ms: f64,
     pub response_time_samples: u64,
 }
