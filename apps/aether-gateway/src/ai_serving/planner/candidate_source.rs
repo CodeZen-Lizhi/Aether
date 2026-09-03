@@ -27,7 +27,7 @@ use crate::cache::{
     record_candidate_row_page_cache_miss, record_candidate_row_page_cache_none, CacheLoadObserver,
     CandidatePageCacheKey, CandidatePageSnapshot, CandidateRowPageCacheKey,
 };
-use crate::clock::request_distribution_seed;
+use crate::clock::current_unix_secs;
 use crate::data::candidate_selection::{
     read_api_format_rows_fallback_page, read_requested_model_rows_fast_path_page,
     requested_model_candidate_names, MinimalCandidateSelectionRowSource,
@@ -68,7 +68,6 @@ struct GatewayLocalCandidatePreselectionPort<'a> {
     key_mode: LocalCandidatePreselectionKeyMode,
     candidate_api_formats: Vec<String>,
     model_directive_routing_models: BTreeMap<String, String>,
-    ranking_seed: u64,
 }
 
 impl GatewayLocalCandidatePreselectionPort<'_> {
@@ -171,7 +170,7 @@ impl AiCandidatePreselectionPort for GatewayLocalCandidatePreselectionPort<'_> {
                     .is_none()
                     .then_some(self.client_session_affinity)
                     .flatten(),
-                self.ranking_seed,
+                current_unix_secs(),
                 false,
                 self.request_operation,
             )
@@ -334,7 +333,6 @@ pub(crate) async fn preselect_local_execution_candidates_for_api_formats_with_se
         key_mode,
         candidate_api_formats,
         model_directive_routing_models,
-        ranking_seed: request_distribution_seed(),
     };
 
     run_ai_candidate_preselection(&port).await
@@ -359,7 +357,6 @@ pub(crate) struct LocalCandidatePreselectionPageCursor<'a> {
     model_directive_routing_models: BTreeMap<String, String>,
     model_directive_policy_cache_key: String,
     ordering_config: SchedulerOrderingConfig,
-    ranking_seed: u64,
     priority_page_emitted: bool,
     deferred_pages_by_format: BTreeMap<
         String,
@@ -450,7 +447,6 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
             model_directive_routing_models,
             model_directive_policy_cache_key: model_directive_policy.cache_key().to_string(),
             ordering_config,
-            ranking_seed: request_distribution_seed(),
             priority_page_emitted: false,
             deferred_pages_by_format: BTreeMap::new(),
             format_index: 0,
@@ -1248,7 +1244,7 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
                     .is_none()
                     .then_some(self.client_session_affinity.as_ref())
                     .flatten(),
-                self.ranking_seed,
+                current_unix_secs(),
             )
             .await?;
         let skipped_candidates = skipped_candidates
@@ -1431,11 +1427,17 @@ mod tests {
     use super::*;
     use crate::data::GatewayDataState;
     use crate::AppState;
-    use aether_data::repository::candidate_selection::InMemoryMinimalCandidateSelectionReadRepository;
     use aether_data::DataLayerError;
+    use aether_data::repository::candidate_selection::InMemoryMinimalCandidateSelectionReadRepository;
+    use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
+    use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
+    use aether_data::repository::quota::InMemoryProviderQuotaRepository;
     use aether_data_contracts::repository::candidate_selection::{
         MinimalCandidateSelectionReadRepository, StoredApiFormatCandidateRowsQuery,
         StoredProviderModelMapping, StoredRequestedModelCandidateRowsQuery,
+    };
+    use aether_data_contracts::repository::provider_catalog::{
+        StoredProviderCatalogKey, StoredProviderCatalogProvider,
     };
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1966,6 +1968,118 @@ mod tests {
             model_is_active: true,
             model_is_available: true,
         }
+    }
+
+    fn catalog_provider(provider_id: &str) -> StoredProviderCatalogProvider {
+        StoredProviderCatalogProvider::new(
+            provider_id.to_string(),
+            provider_id.to_string(),
+            Some("https://example.com".to_string()),
+            "custom".to_string(),
+        )
+        .expect("provider should build")
+    }
+
+    fn catalog_key(
+        key_id: &str,
+        provider_id: &str,
+        circuit_breaker_by_format: Option<serde_json::Value>,
+    ) -> StoredProviderCatalogKey {
+        StoredProviderCatalogKey::new(
+            key_id.to_string(),
+            provider_id.to_string(),
+            key_id.to_string(),
+            "api_key".to_string(),
+            None,
+            true,
+        )
+        .expect("key should build")
+        .with_health_fields(None, circuit_breaker_by_format)
+    }
+
+    #[tokio::test]
+    async fn preselection_skips_circuit_open_provider_keys_before_their_probe_time() {
+        let next_probe_at_unix_secs = crate::clock::current_unix_secs().saturating_add(3_600);
+        let mut provider_a_first = standard_candidate_row("provider-a", "openai:chat");
+        provider_a_first.key_id = "key-a-1".to_string();
+        let mut provider_a_second = standard_candidate_row("provider-a", "openai:chat");
+        provider_a_second.key_id = "key-a-2".to_string();
+        let provider_b = standard_candidate_row("provider-b", "openai:chat");
+        let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed([
+            provider_a_first,
+            provider_a_second,
+            provider_b,
+        ]));
+        let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+            vec![
+                catalog_provider("provider-a"),
+                catalog_provider("provider-b"),
+            ],
+            Vec::new(),
+            vec![
+                catalog_key(
+                    "key-a-1",
+                    "provider-a",
+                    Some(serde_json::json!({
+                        "openai:chat": {
+                            "open": true,
+                            "next_probe_at_unix_secs": next_probe_at_unix_secs,
+                        }
+                    })),
+                ),
+                catalog_key(
+                    "key-a-2",
+                    "provider-a",
+                    Some(serde_json::json!({
+                        "openai:chat": {
+                            "open": true,
+                            "next_probe_at_unix_secs": next_probe_at_unix_secs,
+                        }
+                    })),
+                ),
+                catalog_key("key-provider-b", "provider-b", None),
+            ],
+        ));
+        let state = AppState::new()
+            .expect("state should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
+                    candidates,
+                    provider_catalog,
+                    Arc::new(InMemoryProviderQuotaRepository::seed(Vec::new())),
+                    Arc::new(InMemoryRequestCandidateRepository::seed(Vec::new())),
+                ),
+            );
+        let auth_snapshot = unrestricted_auth_snapshot();
+        let model_directive_policy =
+            crate::system_features::ModelDirectivePolicySnapshot::load(&state).await;
+
+        let outcome = preselect_local_execution_candidates_with_serving(
+            PlannerAppState::new(&state),
+            &model_directive_policy,
+            "openai:chat",
+            "gpt-5",
+            None,
+            false,
+            None,
+            &auth_snapshot,
+            None,
+            None,
+            false,
+            LocalCandidatePreselectionKeyMode::ProviderEndpointKeyModel,
+        )
+        .await
+        .expect("preselection should succeed");
+
+        assert_eq!(outcome.candidates.len(), 1);
+        assert_eq!(outcome.candidates[0].provider_id, "provider-b");
+        assert_eq!(outcome.skipped_candidates.len(), 2);
+        assert!(
+            outcome
+                .skipped_candidates
+                .iter()
+                .all(|candidate| candidate.skip_reason == "key_circuit_open")
+        );
     }
 
     fn opg_deepseek_row(
