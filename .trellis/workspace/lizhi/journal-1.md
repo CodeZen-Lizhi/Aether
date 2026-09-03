@@ -390,3 +390,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 14: 模型测试绕过供应商与密钥开关校验
+<!-- trellis-session: v=2 fp=6d7ac0a45ca0b033 -->
+
+**Date**: 2026-09-03
+**Task**: 模型测试绕过供应商与密钥开关校验
+**Branch**: `slim-personal`
+
+### Summary
+
+模型测试改为诊断通道：不校验供应商/端点/Key 的启用状态与健康状态，只要求存在格式兼容的 Key（无 Key 返回 404 'No usable API key found for this provider'）。测试路径通过克隆快照抹平 is_active 后复用 transport policy 能力检查，policy.rs 语义未动、正式链路不受影响；顺带修复了既有的 openai:responses 测试体 stream:false 回归用例。trellis-check 子代理验证 7/7 AC 通过；provider_query 套件 81/81 通过，aether-provider-transport 199/199 通过；全量套件仍有 27 个改动前既存失败（execution_runtime/auth/orchestration 组），与本任务无关。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5f6095bdb` | feat(gateway): 模型测试忽略供应商/端点/Key 启用状态 |
+
+### Status
+
+[OK] **Completed**
