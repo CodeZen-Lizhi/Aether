@@ -2435,6 +2435,7 @@ const legacyDynamicPatterns: Array<[RegExp, (match: RegExpMatchArray) => string]
   [/^(.+)月$/u, match => `${match[1]}/`],
   [/^总可用：(.+)$/u, match => `Total available: ${match[1]}`],
   [/^余额：(.+)$/u, match => `Balance: ${match[1]}`],
+  [/^现金 \$(.+) · 积分 \$(.+)$/u, match => `Cash $${match[1]} · Points $${match[2]}`],
   [/^(.+) 秒$/u, match => `${translateLegacyText(match[1], 'en-US')}s`],
   [/^(.+) 分钟$/u, match => `${translateLegacyText(match[1], 'en-US')} min`],
   [/^(.+) 小时$/u, match => `${translateLegacyText(match[1], 'en-US')} h`],

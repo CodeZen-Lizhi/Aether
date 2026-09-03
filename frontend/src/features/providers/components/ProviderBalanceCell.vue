@@ -17,12 +17,10 @@
       <div
         v-if="balanceBreakdown"
         class="min-w-[4.5rem] tabular-nums leading-tight"
+        :title="balanceBreakdownTitle(balanceBreakdown)"
       >
         <div class="font-semibold text-foreground/90">
-          ${{ balanceBreakdown.balance.toFixed(2) }}
-        </div>
-        <div class="text-muted-foreground/70 text-[10px]">
-          ${{ balanceBreakdown.points.toFixed(2) }}
+          ${{ (balanceBreakdown.balance + balanceBreakdown.points).toFixed(2) }}
         </div>
       </div>
       <span
@@ -122,4 +120,9 @@ defineProps<{
 }>()
 
 const { legacyT } = useI18n()
+
+function balanceBreakdownTitle(breakdown: { balance: number; points: number }): string | undefined {
+  if (breakdown.points <= 0) return undefined
+  return `现金 $${breakdown.balance.toFixed(2)} · 积分 $${breakdown.points.toFixed(2)}`
+}
 </script>
