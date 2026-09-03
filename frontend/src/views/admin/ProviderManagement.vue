@@ -247,6 +247,12 @@ import {
   getGlobalModels,
   type ProviderWithEndpointsSummary,
 } from '@/api/endpoints'
+import { listRoutingGroups } from '@/api/routing-profiles'
+import {
+  findSystemDefaultRoutingGroup,
+  parseSchedulingStrategy,
+} from '@/features/routing/utils/schedulingStrategy'
+import { sortProvidersByActiveAndPriority } from '@/features/providers/utils/providerPrioritySort'
 import { parseApiError } from '@/utils/errorParser'
 import { useI18n } from '@/i18n'
 
@@ -442,16 +448,24 @@ const {
 // 内联编辑备注
 const editingDescriptionId = ref<string | null>(null)
 
-function sortProvidersByActiveAndPriority(items: ProviderWithEndpointsSummary[]) {
-  return [...items].sort((a, b) => {
-    if (a.is_active !== b.is_active) {
-      return a.is_active ? -1 : 1
-    }
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  })
+// 系统默认路由分组的供应商调度优先级（provider_id -> priority，1 起越小越靠前）；
+// 加载失败或无配置时保持空表，排序退化为「启用状态 → 创建时间」
+const providerPriorities = ref<Record<string, number>>({})
+
+// 独立于供应商列表加载，失败时静默降级，不影响列表本身
+async function loadProviderPriorities() {
+  try {
+    const groupsResponse = await listRoutingGroups()
+    const group = findSystemDefaultRoutingGroup(groupsResponse.items)
+    const state = parseSchedulingStrategy(group?.config_json ?? null)
+    providerPriorities.value = state.providerPriorities
+  } catch {
+    providerPriorities.value = {}
+  }
 }
 
-const displayedProviders = computed(() => sortProvidersByActiveAndPriority(providers.value))
+const displayedProviders = computed(() =>
+  sortProvidersByActiveAndPriority(providers.value, providerPriorities.value))
 
 function startEditDescription(_event: Event, provider: ProviderWithEndpointsSummary) {
   editingDescriptionId.value = provider.id
@@ -694,6 +708,7 @@ onMounted(() => {
   void loadProviders({ cacheTtlMs: PROVIDER_SUMMARY_CACHE_TTL_MS })
   void loadGlobalModelList({ cacheTtlMs: PROVIDER_MODEL_FILTER_CACHE_TTL_MS })
   void loadArchitectureSchemas()
+  void loadProviderPriorities()
   document.addEventListener('click', handleGlobalClick, true)
   startTick()
 })

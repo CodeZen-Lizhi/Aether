@@ -56,6 +56,24 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
+## Convention: 供应商列表排序口径与调度策略对齐
+
+**What**: 供应商管理列表（`views/admin/ProviderManagement.vue`）的排序固定为三级：启用状态（启用在前）→ 调度优先级升序 → `created_at` 升序兜底。优先级只读系统默认分组：`listRoutingGroups()` → `findSystemDefaultRoutingGroup` → `parseSchedulingStrategy(group?.config_json).providerPriorities`（1 起越小越靠前），未配置的供应商用 `Number.MAX_SAFE_INTEGER` 缀尾。排序实现抽在 `features/providers/utils/providerPrioritySort.ts` 纯函数（含单测），桌面表格与移动端卡片共用同一 computed。
+
+**Why**: 优先级不是供应商实体的属性，而是每个路由分组一份的 overlay 配置（`ui_provider_priority` 规则）；列表页没有分组上下文，取系统默认分组口径与调度策略页编辑的是同一份数据，两边顺序才会一致（2026-09 用户明确要求对齐）。
+
+**Example**:
+
+```ts
+// features/providers/utils/providerPrioritySort.ts
+const leftPriority = providerPriorities[a.id] ?? UNCONFIGURED_PROVIDER_PRIORITY
+// UNCONFIGURED_PROVIDER_PRIORITY = Number.MAX_SAFE_INTEGER，与调度策略页 RoutingProfiles.vue 的 fallback 字面量同口径
+```
+
+**Related**: 列表页加载时，辅助配置请求（路由分组等）必须独立于列表请求触发（不要放进同一个 Promise.all 连坐 reject），失败静默置空、排序退化为「启用状态 → 创建时间」，不得阻塞供应商列表本身加载。
+
+---
+
 ## Convention: 前后端口径对齐——代理 URL scheme 校验
 
 **What**: 前端对 `proxy_url` 的前缀校验为 `/^(https?|socks5h?):\/\//i`；后端权威校验在 `apps/aether-gateway/src/state/proxy.rs`（`url::Url::parse` + scheme 以 `socks` 开头放行）。前端只做前缀级提示性校验，完整解析以后端为准。
