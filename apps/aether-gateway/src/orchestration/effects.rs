@@ -1288,11 +1288,18 @@ async fn record_health_success_effect(
         {
             return;
         }
+        let clears_rate_limit_probe = current_key
+            .health_by_format
+            .as_ref()
+            .and_then(|health| health.get(api_format))
+            .and_then(Value::as_object)
+            .and_then(|entry| entry.get("rate_limit_probe_until_unix_secs"))
+            .is_some_and(|value| !value.is_null());
         if !persist_gate_checked {
             if !provider_key_health_success_persist_gate_allows(
                 &context.plan.key_id,
                 api_format,
-                circuit_breaker_update_owned.is_some(),
+                circuit_breaker_update_owned.is_some() || clears_rate_limit_probe,
             ) {
                 return;
             }
@@ -1334,9 +1341,9 @@ async fn record_health_success_effect(
 fn provider_key_health_success_persist_gate_allows(
     key_id: &str,
     api_format: &str,
-    closes_circuit: bool,
+    force_persist: bool,
 ) -> bool {
-    if closes_circuit {
+    if force_persist {
         return true;
     }
     let min_interval = *HEALTH_SUCCESS_PERSIST_MIN_INTERVAL;
@@ -1432,8 +1439,8 @@ mod tests {
         RequestCandidateStatus, StoredRequestCandidate,
     };
     use aether_data_contracts::repository::provider_catalog::{
-        ProviderCatalogKeyAdaptiveState, StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
-        StoredProviderCatalogProvider,
+        ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyHealthStateUpdate,
+        StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,
     };
     use aether_test_support::ManagedRedisServer;
     use aether_usage_runtime::GatewaySyncReportRequest;
@@ -2654,6 +2661,79 @@ mod tests {
             Some(0)
         );
     }
+
+    #[tokio::test]
+    async fn health_success_clears_rate_limit_probe_despite_success_persist_gate() {
+        let mut key = sample_health_key();
+        key.id = "rate-limit-probe-gate-key".to_string();
+        let state = health_state_with_key(key);
+        let mut plan = sample_plan();
+        plan.key_id = "rate-limit-probe-gate-key".to_string();
+
+        apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: None,
+            },
+            LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+        )
+        .await;
+
+        let current = state
+            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&plan.key_id))
+            .await
+            .expect("provider catalog keys should load")
+            .into_iter()
+            .next()
+            .expect("stored key should exist");
+        let mut health_by_format = current
+            .health_by_format
+            .clone()
+            .expect("success should create format health state");
+        health_by_format["openai:chat"]["rate_limit_probe_until_unix_secs"] =
+            json!(4_102_444_800u64);
+        assert!(state
+            .compare_and_update_provider_catalog_key_health_state(
+                &ProviderCatalogKeyHealthStateUpdate {
+                    key_id: plan.key_id.clone(),
+                    expected_encrypted_auth_config: current.encrypted_auth_config.clone(),
+                    expected_health_by_format: current.health_by_format,
+                    expected_circuit_breaker_by_format: current.circuit_breaker_by_format.clone(),
+                    health_by_format: Some(health_by_format),
+                    circuit_breaker_by_format: current.circuit_breaker_by_format,
+                },
+            )
+            .await
+            .expect("probe marker should be seeded"));
+
+        apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: None,
+            },
+            LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+        )
+        .await;
+
+        let stored_key = state
+            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&plan.key_id))
+            .await
+            .expect("provider catalog keys should load")
+            .into_iter()
+            .next()
+            .expect("stored key should exist");
+        assert_eq!(
+            stored_key
+                .health_by_format
+                .as_ref()
+                .and_then(|health| health.get("openai:chat"))
+                .and_then(|entry| entry.get("rate_limit_probe_until_unix_secs")),
+            Some(&Value::Null)
+        );
+    }
+
     #[tokio::test]
     async fn health_success_projection_closes_key_circuit_for_format() {
         let mut key = sample_health_key();

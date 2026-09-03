@@ -8,9 +8,10 @@ use aether_scheduler_core::{
     candidate_is_selectable_with_runtime_state, candidate_runtime_skip_reason_with_state,
     effective_provider_key_rpm_limit, CandidateRuntimeSelectabilityInput,
 };
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::data::auth::GatewayAuthApiKeySnapshot;
+use crate::stage_metrics::observe_gateway_stage_ms;
 use crate::GatewayError;
 
 use super::{SchedulerMinimalCandidateSelectionCandidate, SchedulerRuntimeState};
@@ -206,7 +207,17 @@ pub(super) async fn read_provider_key_rpm_states(
         return Ok(BTreeMap::new());
     }
 
-    let keys = state.read_provider_catalog_keys_by_ids(&key_ids).await?;
+    // One deduplicated strong read keeps shared 429 cooldown/probe state fresh
+    // across Gateway instances without turning selection into per-key reads.
+    let key_state_read_started_at = Instant::now();
+    let keys = state
+        .read_provider_catalog_keys_by_ids_strong(&key_ids)
+        .await;
+    observe_gateway_stage_ms(
+        "scheduler_candidate_key_runtime_state_strong",
+        key_state_read_started_at.elapsed().as_millis() as u64,
+    );
+    let keys = keys?;
     Ok(keys
         .into_iter()
         .map(|key| (key.id.clone(), key))

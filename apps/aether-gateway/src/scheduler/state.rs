@@ -29,6 +29,15 @@ pub(crate) trait SchedulerRuntimeState {
         key_ids: &[String],
     ) -> Result<Vec<StoredProviderCatalogKey>, GatewayError>;
 
+    /// Reads current key state without relying on a local catalog-cache entry.
+    ///
+    /// Gateway selection uses this for shared health markers such as
+    /// rate-limit cooldowns and recovery probes.
+    async fn read_provider_catalog_keys_by_ids_strong(
+        &self,
+        key_ids: &[String],
+    ) -> Result<Vec<StoredProviderCatalogKey>, GatewayError>;
+
     async fn read_recent_request_candidates(
         &self,
         limit: usize,

@@ -1090,6 +1090,7 @@ mod tests {
             key_name: "provider-key-1".to_string(),
             key_auth_type: "api_key".to_string(),
             key_internal_priority: 0,
+            rate_limit_probe_required: false,
             key_global_priority_for_format: Some(0),
             key_capabilities: Some(json!({"provider_only_capability": true})),
             model_id: "model-1".to_string(),

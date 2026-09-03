@@ -984,6 +984,16 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
+    pub(crate) async fn read_provider_catalog_keys_by_ids_strong(
+        &self,
+        key_ids: &[String],
+    ) -> Result<Vec<provider_catalog::StoredProviderCatalogKey>, GatewayError> {
+        self.data
+            .list_provider_catalog_keys_by_ids_strong(key_ids)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
     pub(crate) async fn update_provider_catalog_key_format_health(
         &self,
         key_id: &str,

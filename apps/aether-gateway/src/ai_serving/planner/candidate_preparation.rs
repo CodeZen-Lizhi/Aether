@@ -138,6 +138,7 @@ mod tests {
             key_name: "key".to_string(),
             key_auth_type: "api_key".to_string(),
             key_internal_priority: 1,
+            rate_limit_probe_required: false,
             key_global_priority_for_format: None,
             key_capabilities: None,
             model_id: "model-1".to_string(),

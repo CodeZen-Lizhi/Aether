@@ -13,6 +13,7 @@ mod effects;
 mod health;
 mod oauth_error;
 mod policy;
+mod rate_limit_probe;
 mod recovery;
 mod report_effects;
 
@@ -53,7 +54,7 @@ pub(crate) use self::health::{
     project_local_key_circuit_closed_with_ramp, project_local_key_circuit_failure,
     project_local_key_circuit_failure_with_success_rate, project_local_key_circuit_open,
     project_local_ramp_success_health, project_local_rate_limit_cooldown,
-    project_local_success_health,
+    project_local_rate_limit_probe_reservation, project_local_success_health,
 };
 pub(crate) use self::oauth_error::{
     oauth_status_may_be_invalid, oauth_status_proves_access_token_invalid,
@@ -64,6 +65,9 @@ pub(crate) use self::policy::{
     local_failover_policy_from_transport, resolve_local_failover_policy,
     responses_websocket_adapter, LocalFailoverPolicy, LocalFailoverRegexRule,
     ResponsesWebSocketAdapter, CYBER_CONTINUE_FAILOVER_CONFIG_KEY, RESPONSES_WEBSOCKET_CONFIG_KEY,
+};
+pub(crate) use self::rate_limit_probe::{
+    try_claim_local_rate_limit_probe, LocalRateLimitProbeClaim,
 };
 pub(crate) use self::recovery::{
     analyze_local_failover, analyze_local_transport_error, apply_provider_failure_disposition,

@@ -665,7 +665,8 @@ impl UpstreamFailureClass {
 /// A 429 sets `rate_limit_cooldown_until_unix_secs`; until then the key is
 /// skipped by selection. `consecutive_rate_limits` drives the exponential
 /// fallback (30s → 1m → 2m → 4m, capped at 10m) when the upstream omits
-/// `Retry-After`. Any non-429 outcome clears both fields.
+/// `Retry-After`. A successful outcome resets the ladder; unrelated failures
+/// preserve it so they cannot erase an active backoff window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderKeyRateLimitCooldown {
     pub until_unix_secs: u64,
@@ -674,6 +675,10 @@ pub struct ProviderKeyRateLimitCooldown {
 
 pub const RATE_LIMIT_COOLDOWN_BASE_SECS: u64 = 30;
 pub const RATE_LIMIT_COOLDOWN_MAX_SECS: u64 = 600;
+/// An expired rate-limit window admits at most one probe during this bounded
+/// reservation window across Gateway instances. Terminal 429/success clears
+/// the marker; TTL recovery handles cancellation or process loss before that.
+pub const RATE_LIMIT_PROBE_RESERVATION_SECS: u64 = 60;
 
 impl ProviderKeyRateLimitCooldown {
     /// Project the next cooldown after a 429 observed at `observed_at_unix_secs`.
@@ -710,11 +715,15 @@ impl ProviderKeyRateLimitCooldown {
         let payload = payload.as_object()?;
         let until = payload
             .get("rate_limit_cooldown_until_unix_secs")
-            .and_then(serde_json::Value::as_u64)?;
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
         let consecutive = payload
             .get("consecutive_rate_limits")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
+        if until == 0 {
+            return None;
+        }
         Some(Self {
             until_unix_secs: until,
             consecutive_rate_limits: consecutive,
@@ -762,6 +771,45 @@ pub fn provider_key_rate_limit_cooldown_payload(
     payload: &serde_json::Value,
 ) -> Option<ProviderKeyRateLimitCooldown> {
     ProviderKeyRateLimitCooldown::from_health_payload(payload)
+}
+
+/// Per-format reservation used to serialize the first request after a
+/// rate-limit cooldown expires. This is deliberately independent from health
+/// score and the ordinary key circuit breaker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderKeyRateLimitProbe {
+    pub until_unix_secs: u64,
+}
+
+impl ProviderKeyRateLimitProbe {
+    pub fn from_health_payload(payload: &serde_json::Value) -> Option<Self> {
+        let until_unix_secs = payload
+            .as_object()?
+            .get("rate_limit_probe_until_unix_secs")
+            .and_then(serde_json::Value::as_u64)?;
+        Some(Self { until_unix_secs })
+    }
+}
+
+/// True while another Gateway owns the first post-cooldown rate-limit probe.
+pub fn provider_key_rate_limit_probe_active_at(
+    key: &StoredProviderCatalogKey,
+    api_format: &str,
+    now_unix_secs: u64,
+) -> bool {
+    key.health_by_format
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .and_then(|values| values.get(api_format))
+        .and_then(ProviderKeyRateLimitProbe::from_health_payload)
+        .is_some_and(|probe| now_unix_secs < probe.until_unix_secs)
+}
+
+/// Parse a probe reservation directly from a `health_by_format` entry.
+pub fn provider_key_rate_limit_probe_payload(
+    payload: &serde_json::Value,
+) -> Option<ProviderKeyRateLimitProbe> {
+    ProviderKeyRateLimitProbe::from_health_payload(payload)
 }
 
 #[cfg(test)]
@@ -1509,7 +1557,9 @@ mod rate_limit_cooldown_tests {
 
     use super::{
         provider_key_rate_limit_cooldown_active_at, provider_key_rate_limit_cooldown_payload,
-        ProviderKeyRateLimitCooldown, UpstreamFailureClass, RATE_LIMIT_COOLDOWN_MAX_SECS,
+        provider_key_rate_limit_probe_active_at, provider_key_rate_limit_probe_payload,
+        ProviderKeyRateLimitCooldown, ProviderKeyRateLimitProbe, UpstreamFailureClass,
+        RATE_LIMIT_COOLDOWN_MAX_SECS,
     };
     use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 
@@ -1653,6 +1703,44 @@ mod rate_limit_cooldown_tests {
         assert_eq!(
             provider_key_rate_limit_cooldown_payload(&json!({"consecutive_rate_limits": 3})),
             None
+        );
+    }
+
+    #[test]
+    fn rate_limit_probe_is_format_scoped_and_expires() {
+        let mut key = key_with_cooldown("openai:chat", 1_000);
+        key.health_by_format
+            .as_mut()
+            .and_then(serde_json::Value::as_object_mut)
+            .and_then(|formats| formats.get_mut("openai:chat"))
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("test format payload should be present")
+            .insert("rate_limit_probe_until_unix_secs".to_string(), json!(1_060));
+
+        assert!(provider_key_rate_limit_probe_active_at(
+            &key,
+            "openai:chat",
+            1_059
+        ));
+        assert!(!provider_key_rate_limit_probe_active_at(
+            &key,
+            "openai:chat",
+            1_060
+        ));
+        assert!(!provider_key_rate_limit_probe_active_at(
+            &key,
+            "claude:messages",
+            1_059
+        ));
+
+        let probe = ProviderKeyRateLimitProbe {
+            until_unix_secs: 1_060,
+        };
+        assert_eq!(
+            provider_key_rate_limit_probe_payload(&json!({
+                "rate_limit_probe_until_unix_secs": 1_060
+            })),
+            Some(probe)
         );
     }
 }

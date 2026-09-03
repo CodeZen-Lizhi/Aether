@@ -20,7 +20,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
-use tracing::warn;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::ai_serving::planner::candidate_affinity_cache::remember_scheduler_affinity_for_candidate_with_routing_policy_at_epoch;
@@ -44,7 +44,10 @@ use crate::cache::{
 };
 use crate::clock::current_unix_ms;
 use crate::dispatch::refs::dispatch_ref_for_local_candidate;
-use crate::orchestration::{local_attempt_slot_count, ExecutionAttemptIdentity};
+use crate::orchestration::{
+    local_attempt_slot_count, try_claim_local_rate_limit_probe, ExecutionAttemptIdentity,
+    LocalRateLimitProbeClaim,
+};
 use crate::scheduler::candidate::is_auth_api_key_concurrency_limit_skip_reason;
 use crate::scheduler::config::SchedulerSchedulingMode;
 use crate::stage_metrics::observe_gateway_stage_ms;
@@ -67,6 +70,8 @@ pub(crate) struct LocalExecutionCandidateAttemptSource<'a> {
     skipped_provider_ids: BTreeSet<String>,
     skipped_endpoint_ids: BTreeSet<String>,
     skipped_credential_ids: BTreeSet<String>,
+    skipped_rate_limit_probe_scopes: BTreeSet<(String, String)>,
+    rate_limit_probe_state: Option<PlannerAppState<'a>>,
 }
 
 type DecorateSkippedCandidateFn<'a> = Arc<
@@ -97,6 +102,7 @@ enum LocalExecutionCandidateAttemptSourceItem<'a> {
 
 impl<'a> LocalExecutionCandidateAttemptSource<'a> {
     pub(crate) fn from_static_attempts_for_image_bridge(
+        state: PlannerAppState<'a>,
         attempts: Vec<LocalExecutionCandidateAttempt>,
     ) -> Self {
         let mut items = VecDeque::new();
@@ -110,6 +116,8 @@ impl<'a> LocalExecutionCandidateAttemptSource<'a> {
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_rate_limit_probe_scopes: BTreeSet::new(),
+            rate_limit_probe_state: Some(state),
         }
     }
 
@@ -135,6 +143,21 @@ impl<'a> LocalExecutionCandidateAttemptSource<'a> {
                         if dispatch_sequence_exhausted(attempts) {
                             self.items.pop_front();
                         }
+                        if rate_limit_probe_unavailable(
+                            self.rate_limit_probe_state,
+                            &mut self.skipped_rate_limit_probe_scopes,
+                            &attempt,
+                        )
+                        .await
+                        {
+                            debug!(
+                                key_id = %attempt.eligible.candidate.key_id,
+                                api_format = %attempt.eligible.candidate.endpoint_api_format,
+                                skip_reason = "key_rate_limit_probe_in_flight",
+                                "gateway candidate source skipped API format held by rate-limit recovery probe"
+                            );
+                            continue;
+                        }
                         return Ok(Some(attempt));
                     }
                     self.items.pop_front();
@@ -153,6 +176,21 @@ impl<'a> LocalExecutionCandidateAttemptSource<'a> {
                         self.items.pop_front();
                         continue;
                     };
+                    if rate_limit_probe_unavailable(
+                        self.rate_limit_probe_state,
+                        &mut self.skipped_rate_limit_probe_scopes,
+                        &attempt,
+                    )
+                    .await
+                    {
+                        debug!(
+                            key_id = %attempt.eligible.candidate.key_id,
+                            api_format = %attempt.eligible.candidate.endpoint_api_format,
+                            skip_reason = "key_rate_limit_probe_in_flight",
+                            "gateway candidate source skipped API format held by rate-limit recovery probe"
+                        );
+                        continue;
+                    }
                     return Ok(Some(attempt));
                 }
             }
@@ -200,6 +238,51 @@ impl<'a> LocalExecutionCandidateAttemptSource<'a> {
             if let LocalExecutionCandidateAttemptSourceItem::RequestedModelPage { cursor } = item {
                 cursor.skip_credential(key_id);
             }
+        }
+    }
+}
+
+fn rate_limit_probe_scope(attempt: &LocalExecutionCandidateAttempt) -> (String, String) {
+    (
+        attempt.eligible.candidate.key_id.clone(),
+        attempt.eligible.candidate.endpoint_api_format.clone(),
+    )
+}
+
+async fn rate_limit_probe_unavailable(
+    state: Option<PlannerAppState<'_>>,
+    skipped_scopes: &mut BTreeSet<(String, String)>,
+    attempt: &LocalExecutionCandidateAttempt,
+) -> bool {
+    let candidate = &attempt.eligible.candidate;
+    if !candidate.rate_limit_probe_required {
+        return false;
+    }
+    let probe_scope = rate_limit_probe_scope(attempt);
+    if skipped_scopes.contains(&probe_scope) {
+        return true;
+    }
+    let Some(state) = state else {
+        return false;
+    };
+    let api_format = candidate.endpoint_api_format.as_str();
+    match try_claim_local_rate_limit_probe(state.app(), &candidate.key_id, api_format).await {
+        Ok(LocalRateLimitProbeClaim::NotRequired | LocalRateLimitProbeClaim::Acquired) => false,
+        Ok(LocalRateLimitProbeClaim::Unavailable) => {
+            skipped_scopes.insert(probe_scope);
+            true
+        }
+        Err(error) => {
+            // Probe ownership protects a recently rate-limited key, but a
+            // temporary catalog read failure must not turn into a global
+            // availability outage. The normal request path stays fail-open.
+            warn!(
+                key_id = %candidate.key_id,
+                api_format,
+                error = ?error,
+                "gateway candidate source could not claim rate-limit recovery probe"
+            );
+            false
         }
     }
 }
@@ -633,6 +716,8 @@ where
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_rate_limit_probe_scopes: BTreeSet::new(),
+            rate_limit_probe_state: Some(state),
         },
         candidate_count,
     )
@@ -772,6 +857,8 @@ where
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_rate_limit_probe_scopes: BTreeSet::new(),
+            rate_limit_probe_state: Some(state),
         },
         candidate_count,
     )
@@ -1873,6 +1960,7 @@ mod tests {
     use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data_contracts::repository::candidates::RequestCandidateStatus;
+    use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
     use aether_provider_transport::snapshot::{
         GatewayProviderTransportEndpoint, GatewayProviderTransportKey,
         GatewayProviderTransportProvider,
@@ -1901,6 +1989,7 @@ mod tests {
             key_name: key_id.to_string(),
             key_auth_type: "api_key".to_string(),
             key_internal_priority: 10,
+            rate_limit_probe_required: false,
             key_global_priority_for_format: Some(10),
             key_capabilities: None,
             model_id: "model-1".to_string(),
@@ -2343,6 +2432,8 @@ mod tests {
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_rate_limit_probe_scopes: BTreeSet::new(),
+            rate_limit_probe_state: None,
         };
 
         let first = source
@@ -2388,6 +2479,8 @@ mod tests {
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_rate_limit_probe_scopes: BTreeSet::new(),
+            rate_limit_probe_state: None,
         };
 
         source.skip_credential("key-a");
@@ -2408,6 +2501,79 @@ mod tests {
         assert_eq!(
             endpoint_2_attempt.eligible.candidate.endpoint_id,
             "endpoint-2"
+        );
+    }
+
+    #[tokio::test]
+    async fn dynamic_attempt_source_keeps_other_format_of_probe_held_key_available() {
+        let key = StoredProviderCatalogKey::new(
+            "shared-key".to_string(),
+            "provider-1".to_string(),
+            "shared-key".to_string(),
+            "api_key".to_string(),
+            None,
+            true,
+        )
+        .expect("provider key should build")
+        .with_health_fields(
+            Some(json!({
+                "openai:chat": {
+                    "rate_limit_cooldown_until_unix_secs": 1,
+                    "consecutive_rate_limits": 1,
+                    "rate_limit_probe_until_unix_secs": 4_102_444_800u64
+                }
+            })),
+            None,
+        );
+        let app = AppState::new()
+            .expect("state should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_provider_catalog_repository_for_tests(Arc::new(
+                    InMemoryProviderCatalogReadRepository::seed(vec![], vec![], vec![key]),
+                )),
+            );
+        let mut held_format = sample_eligible("shared-key", None);
+        held_format.candidate.rate_limit_probe_required = true;
+
+        let mut other_format = sample_eligible("shared-key", None);
+        other_format.candidate.endpoint_id = "endpoint-2".to_string();
+        other_format.candidate.endpoint_api_format = "claude:messages".to_string();
+        other_format.candidate.rate_limit_probe_required = true;
+        other_format.provider_api_format = "claude:messages".to_string();
+        {
+            let transport = Arc::make_mut(&mut other_format.transport);
+            transport.endpoint.id = "endpoint-2".to_string();
+            transport.endpoint.api_format = "claude:messages".to_string();
+        }
+
+        let static_item =
+            |candidate, candidate_index| LocalExecutionCandidateAttemptSourceItem::Static {
+                attempts: dispatch_sequence_from_attempts(
+                    build_unpersisted_local_execution_candidate_attempts(
+                        candidate,
+                        candidate_index,
+                    )
+                    .into(),
+                ),
+            };
+        let mut source = LocalExecutionCandidateAttemptSource {
+            items: VecDeque::from([static_item(held_format, 0), static_item(other_format, 1)]),
+            skipped_provider_ids: BTreeSet::new(),
+            skipped_endpoint_ids: BTreeSet::new(),
+            skipped_credential_ids: BTreeSet::new(),
+            skipped_rate_limit_probe_scopes: BTreeSet::new(),
+            rate_limit_probe_state: Some(PlannerAppState::new(&app)),
+        };
+
+        let attempt = source
+            .next_attempt()
+            .await
+            .expect("candidate source should succeed")
+            .expect("another format on the same key should remain available");
+        assert_eq!(attempt.eligible.candidate.key_id, "shared-key");
+        assert_eq!(
+            attempt.eligible.candidate.endpoint_api_format,
+            "claude:messages"
         );
     }
 }

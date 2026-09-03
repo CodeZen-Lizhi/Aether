@@ -545,7 +545,9 @@ fn normalize_ids(ids: &[String]) -> Vec<String> {
 mod tests {
     use super::*;
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
-    use aether_data_contracts::repository::provider_catalog::ProviderCatalogWriteRepository;
+    use aether_data_contracts::repository::provider_catalog::{
+        ProviderCatalogKeyHealthStateUpdate, ProviderCatalogWriteRepository,
+    };
 
     fn cache() -> CachedProviderCatalogReadRepository {
         CachedProviderCatalogReadRepository::new(Arc::new(
@@ -610,6 +612,65 @@ mod tests {
             .await
             .expect("strong key read should succeed");
         assert_eq!(strong[0].upstream_metadata.as_ref(), Some(&new_metadata));
+    }
+
+    #[tokio::test]
+    async fn provider_catalog_strong_key_read_observes_health_update_across_local_caches() {
+        let key = StoredProviderCatalogKey::new(
+            "key-1".to_string(),
+            "provider-1".to_string(),
+            "key-1".to_string(),
+            "api_key".to_string(),
+            None,
+            true,
+        )
+        .expect("key should be valid");
+        let inner = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+            vec![provider("provider-1")],
+            Vec::new(),
+            vec![key],
+        ));
+        let first_gateway_cache = CachedProviderCatalogReadRepository::new(inner.clone());
+        let second_gateway_cache = CachedProviderCatalogReadRepository::new(inner.clone());
+        let key_ids = vec!["key-1".to_string()];
+
+        for cache in [&first_gateway_cache, &second_gateway_cache] {
+            let warmed = cache
+                .list_keys_by_ids(&key_ids)
+                .await
+                .expect("initial key read should succeed");
+            assert_eq!(warmed[0].health_by_format, None);
+        }
+
+        let health_by_format = serde_json::json!({
+            "openai:chat": {
+                "rate_limit_cooldown_until_unix_secs": 1_000,
+                "consecutive_rate_limits": 1,
+                "rate_limit_probe_until_unix_secs": 1_060
+            }
+        });
+        assert!(inner
+            .compare_and_update_key_health_state(&ProviderCatalogKeyHealthStateUpdate {
+                key_id: "key-1".to_string(),
+                expected_encrypted_auth_config: None,
+                expected_health_by_format: None,
+                expected_circuit_breaker_by_format: None,
+                health_by_format: Some(health_by_format.clone()),
+                circuit_breaker_by_format: None,
+            })
+            .await
+            .expect("health update should succeed"));
+
+        let stale = second_gateway_cache
+            .list_keys_by_ids(&key_ids)
+            .await
+            .expect("cached key read should succeed");
+        assert_eq!(stale[0].health_by_format, None);
+        let strong = second_gateway_cache
+            .list_keys_by_ids_strong(&key_ids)
+            .await
+            .expect("strong key read should succeed");
+        assert_eq!(strong[0].health_by_format.as_ref(), Some(&health_by_format));
     }
 
     #[tokio::test]

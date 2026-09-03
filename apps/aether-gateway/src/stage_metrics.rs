@@ -69,6 +69,7 @@ const STAGES: &[&str] = &[
     "openai_chat_payload_body_build",
     "candidate_page_load",
     "candidate_page_resolve",
+    "scheduler_candidate_key_runtime_state_strong",
     "pool_cursor_next_key",
     "pool_score_load",
     "pool_score_key_rows",

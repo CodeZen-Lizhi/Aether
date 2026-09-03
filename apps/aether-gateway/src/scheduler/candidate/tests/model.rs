@@ -111,6 +111,7 @@ fn scheduler_candidate_is_serializable() {
         key_name: "prod".to_string(),
         key_auth_type: "api_key".to_string(),
         key_internal_priority: 50,
+        rate_limit_probe_required: false,
         key_global_priority_for_format: Some(2),
         key_capabilities: Some(serde_json::json!({"cache_1h": true})),
         model_id: "model-1".to_string(),

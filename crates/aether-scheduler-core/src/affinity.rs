@@ -224,6 +224,7 @@ mod tests {
             key_name: format!("Key {id}"),
             key_auth_type: "api_key".to_string(),
             key_internal_priority: 1,
+            rate_limit_probe_required: false,
             key_global_priority_for_format: Some(1),
             key_capabilities: None,
             model_id: format!("model-{id}"),

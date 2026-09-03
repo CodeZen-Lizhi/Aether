@@ -88,6 +88,7 @@ fn enumerate_minimal_candidate_selection_inner(
             key_name: row.key_name,
             key_auth_type: row.key_auth_type,
             key_internal_priority: 0,
+            rate_limit_probe_required: false,
             key_global_priority_for_format: None,
             key_capabilities: row.key_capabilities,
             model_id: row.model_id,

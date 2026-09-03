@@ -89,6 +89,7 @@ mod tests {
             key_auth_type: "bearer".to_string(),
             provider_priority: 0,
             key_internal_priority: 0,
+            rate_limit_probe_required: false,
             key_global_priority_for_format: None,
             key_capabilities: capabilities,
             model_id: format!("model-{id}"),
@@ -625,6 +626,36 @@ mod tests {
                 rpm_reset_at: None,
             },
         ));
+    }
+
+    #[test]
+    fn candidate_selectability_skips_active_rate_limit_probe() {
+        let mut key = sample_key("1", 1.0);
+        key.health_by_format = Some(serde_json::json!({
+            "openai:chat": {
+                "health_score": 1.0,
+                "rate_limit_cooldown_until_unix_secs": 99,
+                "consecutive_rate_limits": 1,
+                "rate_limit_probe_until_unix_secs": 101
+            }
+        }));
+        let provider_key_rpm_states = BTreeMap::from([("key-1".to_string(), key)]);
+
+        assert_eq!(
+            candidate_runtime_skip_reason_with_state(CandidateRuntimeSelectabilityInput {
+                candidate: &sample_candidate("1", None),
+                recent_candidates: &[],
+                provider_concurrent_limits: &BTreeMap::new(),
+                provider_key_rpm_states: &provider_key_rpm_states,
+                now_unix_secs: 100,
+                provider_quota_blocks_requests: false,
+                account_quota_exhausted: false,
+                oauth_invalid: false,
+                enforce_key_circuit_breaker: true,
+                rpm_reset_at: None,
+            }),
+            Some("key_rate_limit_probe_in_flight")
+        );
     }
 
     #[test]

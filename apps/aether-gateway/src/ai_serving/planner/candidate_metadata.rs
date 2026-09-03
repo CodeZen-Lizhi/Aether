@@ -128,6 +128,7 @@ mod tests {
             key_name: "codex".to_string(),
             key_auth_type: "oauth".to_string(),
             key_internal_priority: 10,
+            rate_limit_probe_required: false,
             key_global_priority_for_format: None,
             key_capabilities: None,
             model_id: "model-1".to_string(),

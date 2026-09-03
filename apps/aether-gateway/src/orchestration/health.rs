@@ -144,6 +144,7 @@ pub(crate) fn project_local_failure_health(
     for field in [
         "rate_limit_cooldown_until_unix_secs",
         "consecutive_rate_limits",
+        "rate_limit_probe_until_unix_secs",
     ] {
         if let Some(value) = current.get(field) {
             projected.insert(field.to_string(), value.clone());
@@ -175,6 +176,7 @@ pub(crate) fn project_local_success_health(
             "last_failure_at": Value::Null,
             "rate_limit_cooldown_until_unix_secs": Value::Null,
             "consecutive_rate_limits": 0,
+            "rate_limit_probe_until_unix_secs": Value::Null,
         }),
     );
     Some(Value::Object(health_by_format))
@@ -206,22 +208,42 @@ pub(crate) fn project_local_rate_limit_cooldown(
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
+    // Older projections can retain the 429 ladder count after their deadline
+    // was cleared. It is not an active cooldown, but it must still seed the
+    // next fallback window instead of resetting back to 30 seconds.
+    let previous_cooldown = aether_scheduler_core::provider_key_rate_limit_cooldown_payload(
+        &Value::Object(current.clone()),
+    )
+    .or_else(|| {
+        current
+            .get("consecutive_rate_limits")
+            .and_then(Value::as_u64)
+            .map(
+                |consecutive_rate_limits| aether_scheduler_core::ProviderKeyRateLimitCooldown {
+                    until_unix_secs: 0,
+                    consecutive_rate_limits,
+                },
+            )
+    });
     let cooldown = aether_scheduler_core::ProviderKeyRateLimitCooldown::project(
-        aether_scheduler_core::provider_key_rate_limit_cooldown_payload(&Value::Object(
-            current.clone(),
-        )),
+        previous_cooldown,
         observed_at_unix_secs,
         retry_after_secs,
     );
 
     // Anti write-amplification: skip the CAS write when the active window was
-    // already covering the new deadline within the 5-second threshold.
+    // already covering the new deadline within the 5-second threshold. A 429
+    // must still clear an in-flight probe marker even when its deadline barely
+    // moves, otherwise a stale reservation could suppress the next recovery.
+    let has_probe_reservation = current
+        .get("rate_limit_probe_until_unix_secs")
+        .is_some_and(|value| !value.is_null());
     if let Some(existing) = aether_scheduler_core::provider_key_rate_limit_cooldown_payload(
         &Value::Object(current.clone()),
     ) {
         let still_active = existing.until_unix_secs > observed_at_unix_secs;
         let barely_moved = cooldown.until_unix_secs.abs_diff(existing.until_unix_secs) <= 5;
-        if still_active && barely_moved {
+        if still_active && barely_moved && !has_probe_reservation {
             return None;
         }
     }
@@ -235,7 +257,52 @@ pub(crate) fn project_local_rate_limit_cooldown(
         "consecutive_rate_limits".to_string(),
         json!(cooldown.consecutive_rate_limits),
     );
+    projected.insert("rate_limit_probe_until_unix_secs".to_string(), Value::Null);
     health_by_format.insert(api_format.to_string(), Value::Object(projected));
+    Some(Value::Object(health_by_format))
+}
+
+/// Atomically reserving the first request after an expired 429 cooldown keeps
+/// multiple Gateway instances from probing the same key at once. The caller
+/// must still perform the fenced compare-and-set write; this is only the pure
+/// JSON projection used by that write.
+pub(crate) fn project_local_rate_limit_probe_reservation(
+    current_health_by_format: Option<&Value>,
+    api_format: &str,
+    observed_at_unix_secs: u64,
+) -> Option<Value> {
+    let api_format = api_format.trim();
+    if api_format.is_empty() {
+        return None;
+    }
+
+    let mut health_by_format = current_health_by_format
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut current = health_by_format
+        .get(api_format)
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let cooldown = aether_scheduler_core::provider_key_rate_limit_cooldown_payload(
+        &Value::Object(current.clone()),
+    )?;
+    if observed_at_unix_secs < cooldown.until_unix_secs {
+        return None;
+    }
+    if aether_scheduler_core::provider_key_rate_limit_probe_payload(&Value::Object(current.clone()))
+        .is_some_and(|probe| observed_at_unix_secs < probe.until_unix_secs)
+    {
+        return None;
+    }
+
+    current.insert(
+        "rate_limit_probe_until_unix_secs".to_string(),
+        json!(observed_at_unix_secs
+            .saturating_add(aether_scheduler_core::RATE_LIMIT_PROBE_RESERVATION_SECS)),
+    );
+    health_by_format.insert(api_format.to_string(), Value::Object(current));
     Some(Value::Object(health_by_format))
 }
 
@@ -478,6 +545,7 @@ pub(crate) fn project_local_ramp_success_health(
         Value::Null,
     );
     payload.insert("consecutive_rate_limits".to_string(), json!(0));
+    payload.insert("rate_limit_probe_until_unix_secs".to_string(), Value::Null);
     health_by_format.insert(api_format.to_string(), Value::Object(payload));
     Some(Value::Object(health_by_format))
 }
@@ -850,7 +918,8 @@ mod p0_failure_class_tests {
 
     use super::{
         parse_retry_after_secs, project_local_failure_health, project_local_key_circuit_failure,
-        project_local_rate_limit_cooldown, project_local_success_health,
+        project_local_rate_limit_cooldown, project_local_rate_limit_probe_reservation,
+        project_local_success_health,
     };
     use crate::orchestration::LocalFailoverClassification;
 
@@ -878,7 +947,8 @@ mod p0_failure_class_tests {
                     "health_score": 0.9,
                     "consecutive_failures": 2,
                     "rate_limit_cooldown_until_unix_secs": NOW + 30,
-                    "consecutive_rate_limits": 1
+                    "consecutive_rate_limits": 1,
+                    "rate_limit_probe_until_unix_secs": NOW + 60
                 }
             })),
             "openai:chat",
@@ -894,6 +964,7 @@ mod p0_failure_class_tests {
             json!(NOW + 30)
         );
         assert_eq!(entry["consecutive_rate_limits"], json!(1));
+        assert_eq!(entry["rate_limit_probe_until_unix_secs"], json!(NOW + 60));
     }
 
     #[test]
@@ -904,7 +975,8 @@ mod p0_failure_class_tests {
                     "health_score": 0.5,
                     "consecutive_failures": 5,
                     "rate_limit_cooldown_until_unix_secs": NOW + 60,
-                    "consecutive_rate_limits": 2
+                    "consecutive_rate_limits": 2,
+                    "rate_limit_probe_until_unix_secs": NOW + 60
                 }
             })),
             "openai:chat",
@@ -915,6 +987,7 @@ mod p0_failure_class_tests {
         assert_eq!(entry["consecutive_failures"], json!(0));
         assert_eq!(entry["rate_limit_cooldown_until_unix_secs"], Value::Null);
         assert_eq!(entry["consecutive_rate_limits"], json!(0));
+        assert_eq!(entry["rate_limit_probe_until_unix_secs"], Value::Null);
     }
 
     #[test]
@@ -934,6 +1007,39 @@ mod p0_failure_class_tests {
         assert_eq!(entry["consecutive_rate_limits"], json!(2));
         // Pre-existing health fields are preserved.
         assert_eq!(entry["health_score"], json!(0.9));
+    }
+
+    #[test]
+    fn expired_cooldown_accepts_one_short_probe_then_429_replaces_it() {
+        let cooldown_expired = json!({
+            "openai:chat": {
+                "rate_limit_cooldown_until_unix_secs": NOW - 1,
+                "consecutive_rate_limits": 2
+            }
+        });
+        let claimed =
+            project_local_rate_limit_probe_reservation(Some(&cooldown_expired), "openai:chat", NOW)
+                .expect("expired cooldown should admit one probe");
+        assert_eq!(
+            claimed["openai:chat"]["rate_limit_probe_until_unix_secs"],
+            json!(NOW + aether_scheduler_core::RATE_LIMIT_PROBE_RESERVATION_SECS)
+        );
+        assert!(
+            project_local_rate_limit_probe_reservation(Some(&claimed), "openai:chat", NOW,)
+                .is_none()
+        );
+
+        let re_limited =
+            project_local_rate_limit_cooldown(Some(&claimed), "openai:chat", NOW, Some(30))
+                .expect("a second 429 should replace the probe with a cooldown");
+        assert_eq!(
+            re_limited["openai:chat"]["rate_limit_probe_until_unix_secs"],
+            Value::Null
+        );
+        assert_eq!(
+            re_limited["openai:chat"]["rate_limit_cooldown_until_unix_secs"],
+            json!(NOW + 30)
+        );
     }
 
     #[test]

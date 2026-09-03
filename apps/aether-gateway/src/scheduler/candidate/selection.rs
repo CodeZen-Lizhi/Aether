@@ -227,6 +227,17 @@ pub(super) async fn collect_selectable_enumerated_candidates_with_skip_reasons(
             .get(candidate.key_id.as_str())
         {
             candidate.key_internal_priority = key.internal_priority;
+            candidate.rate_limit_probe_required =
+                aether_scheduler_core::provider_key_rate_limit_cooldown(
+                    key,
+                    candidate.endpoint_api_format.as_str(),
+                )
+                .is_some_and(|cooldown| now_unix_secs >= cooldown.until_unix_secs)
+                    && !aether_scheduler_core::provider_key_rate_limit_probe_active_at(
+                        key,
+                        candidate.endpoint_api_format.as_str(),
+                        now_unix_secs,
+                    );
         }
     }
     let affinity_cache_key = build_scheduler_affinity_cache_key(
