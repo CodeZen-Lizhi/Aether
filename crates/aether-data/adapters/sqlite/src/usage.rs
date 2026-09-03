@@ -1320,6 +1320,32 @@ fn sqlite_usage_local_date_expr(tz_offset_minutes: i32) -> String {
     format!("date(created_at_unix_ms + ({offset}), 'unixepoch')")
 }
 
+fn sqlite_dashboard_raw_usage_start(
+    aggregate_rows: &[StoredUsageDashboardDailyBreakdownRow],
+    requested_start_unix_secs: u64,
+) -> Result<u64, DataLayerError> {
+    let Some(last_aggregate) = aggregate_rows.last() else {
+        return Ok(requested_start_unix_secs);
+    };
+    let date =
+        chrono::NaiveDate::parse_from_str(&last_aggregate.date, "%Y-%m-%d").map_err(|err| {
+            DataLayerError::UnexpectedValue(format!(
+                "invalid dashboard daily aggregate date {}: {err}",
+                last_aggregate.date
+            ))
+        })?;
+    let midnight = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+        DataLayerError::UnexpectedValue(format!(
+            "invalid dashboard daily aggregate date {}",
+            last_aggregate.date
+        ))
+    })?;
+    let end_unix_secs = u64::try_from(midnight.and_utc().timestamp())
+        .map_err(|_| DataLayerError::UnexpectedValue("negative dashboard aggregate date".into()))?
+        .saturating_add(86_400);
+    Ok(requested_start_unix_secs.max(end_unix_secs))
+}
+
 fn sqlite_usage_breakdown_group_expr(group_by: UsageBreakdownGroupBy) -> &'static str {
     match group_by {
         UsageBreakdownGroupBy::Model => "COALESCE(NULLIF(model, ''), 'unknown')",
@@ -2780,9 +2806,8 @@ LEFT JOIN usage_settlement_snapshots AS settlement
         let aggregate_rows = self
             .list_dashboard_daily_breakdown_from_daily_aggregates(query)
             .await?;
-        if !aggregate_rows.is_empty() {
-            return Ok(aggregate_rows);
-        }
+        let raw_created_from_unix_secs =
+            sqlite_dashboard_raw_usage_start(&aggregate_rows, query.created_from_unix_secs)?;
 
         let date_expr = sqlite_usage_local_date_expr(query.tz_offset_minutes);
         let mut builder = QueryBuilder::<Sqlite>::new(format!(
@@ -2809,7 +2834,7 @@ LEFT JOIN usage_settlement_snapshots AS settlement
         push_sqlite_usage_range(
             &mut builder,
             &mut has_where,
-            query.created_from_unix_secs,
+            raw_created_from_unix_secs,
             query.created_until_unix_secs,
         );
         push_sqlite_usage_finalized_filter(&mut builder, &mut has_where);
@@ -2827,7 +2852,8 @@ ORDER BY date ASC, total_cost_usd DESC, model ASC, provider ASC
         );
 
         let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
-        rows.iter()
+        let raw_rows = rows
+            .iter()
             .map(|row| {
                 Ok(StoredUsageDashboardDailyBreakdownRow {
                     date: row.try_get("date").map_sql_err()?,
@@ -2841,7 +2867,13 @@ ORDER BY date ASC, total_cost_usd DESC, model ASC, provider ASC
                     response_time_samples: sqlite_aggregate_u64(row, "response_time_samples")?,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, DataLayerError>>()?;
+
+        // Daily aggregation intentionally trails live usage, so read only the
+        // unaggregated tail to avoid double-counting completed buckets.
+        let mut rows = aggregate_rows;
+        rows.extend(raw_rows);
+        Ok(rows)
     }
 
     async fn summarize_dashboard_provider_counts(

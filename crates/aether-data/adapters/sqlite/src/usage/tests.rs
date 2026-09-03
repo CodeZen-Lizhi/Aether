@@ -2010,6 +2010,73 @@ INSERT INTO stats_daily (
 }
 
 #[tokio::test]
+async fn sqlite_dashboard_daily_stats_merges_unaggregated_days_with_daily_aggregates() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("sqlite pool should connect");
+    run_migrations(&pool)
+        .await
+        .expect("sqlite migrations should run");
+    seed_stats_targets(&pool).await;
+
+    sqlx::query(
+        r#"
+INSERT INTO stats_daily (
+    id, "date", total_requests, success_requests, error_requests,
+    input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+    total_cost, actual_total_cost, is_complete, created_at, updated_at
+) VALUES (
+    'daily-1', 86400, 9, 8, 1, 10, 20, 3, 4, 1.25, 1.0, 1, 1, 1
+);
+"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("daily aggregate should seed");
+
+    let writer = SqliteUsageWriteRepository::new(pool.clone());
+    writer
+        .upsert(sample_usage(
+            "aggregated-day-request",
+            "completed",
+            "pending",
+            172_799,
+        ))
+        .await
+        .expect("aggregated-day usage should seed");
+    writer
+        .upsert(sample_usage(
+            "unaggregated-request",
+            "completed",
+            "pending",
+            172_800,
+        ))
+        .await
+        .expect("current-day usage should seed");
+
+    let rows = SqliteUsageReadRepository::new(pool)
+        .list_dashboard_daily_breakdown(&UsageDashboardDailyBreakdownQuery {
+            created_from_unix_secs: 0,
+            created_until_unix_secs: 259_200,
+            tz_offset_minutes: 480,
+            user_id: None,
+        })
+        .await
+        .expect("dashboard daily breakdown should load");
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].date, "1970-01-02");
+    assert_eq!(rows[0].requests, 9);
+    assert_eq!(rows[1].date, "1970-01-03");
+    assert_eq!(rows[1].model, "model-1");
+    assert_eq!(rows[1].requests, 1);
+    assert_eq!(rows[1].total_tokens, 5);
+    assert_eq!(rows[1].total_cost_usd, 0.5);
+}
+
+#[tokio::test]
 async fn sqlite_first_byte_fast_path_preserves_lifecycle_state_and_counters() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
