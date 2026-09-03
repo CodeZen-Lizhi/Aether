@@ -345,3 +345,26 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 12: 收尾密钥倍率统一任务并归档
+<!-- trellis-session: v=2 fp=fbc8f5920aa44c47 -->
+
+**Date**: 2026-09-03
+**Task**: 收尾密钥倍率统一任务并归档
+**Branch**: `slim-personal`
+
+### Summary
+
+核验 key-multiplier-unify 实现已全部落地（billing 只读 Key 级默认倍率、前端倍率 UI 收敛、排序填充点更新），勾选 implement.md 清单并归档任务；随后开始新任务：模型测试绕过供应商/Key 开关校验。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `36f752cca` | feat(provider): 密钥成本倍率统一为 Key 级默认倍率 |
+| `0dde53292` | chore(provider): 倍率统一收尾——遗留字段注释与 billing 规范更新 |
+
+### Status
+
+[OK] **Completed**
