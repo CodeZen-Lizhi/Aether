@@ -18,6 +18,7 @@ pub(crate) mod submission;
 pub(crate) mod sync;
 pub(crate) mod transport;
 mod transport_failure;
+mod upstream_log;
 
 pub(crate) use self::admission::{
     acquire_upstream_execution_gate, UpstreamExecutionGateProvider, UPSTREAM_EXECUTION_GATE_NAME,
@@ -38,11 +39,34 @@ pub(crate) use self::fallback::{
 pub(crate) use self::response_header_rules::{
     apply_endpoint_response_header_rules, attach_provider_response_headers_to_report_context,
 };
+pub(crate) use self::upstream_log::{
+    log_upstream_attempt_started, log_upstream_request_failed, log_upstream_response_completed,
+    log_upstream_response_headers_received, UpstreamAttemptLog,
+};
 pub(crate) use crate::orchestration::{
     append_local_failover_policy_to_value, LocalFailoverAnalysis, LocalFailoverDecision,
 };
 pub(crate) use aether_ai_serving::AdaptationMode;
 pub(crate) use aether_ai_serving::{ConversionMode, ExecutionStrategy};
+
+pub(crate) fn ensure_execution_trace_header(
+    headers: &mut BTreeMap<String, String>,
+    trace_id: &str,
+) {
+    let trace_id = trace_id.trim();
+    if trace_id.is_empty()
+        || headers
+            .keys()
+            .any(|name| name.eq_ignore_ascii_case(crate::constants::TRACE_ID_HEADER))
+    {
+        return;
+    }
+
+    headers.insert(
+        crate::constants::TRACE_ID_HEADER.to_string(),
+        trace_id.to_string(),
+    );
+}
 
 pub(crate) fn ai_attempt_retry_scope_from_failure_disposition(
     disposition: crate::orchestration::FailureDisposition,
@@ -321,7 +345,12 @@ pub(crate) fn append_execution_contract_fields_to_value(
 
 #[cfg(test)]
 mod tests {
-    use super::{append_execution_contract_fields_to_value, ConversionMode, ExecutionStrategy};
+    use std::collections::BTreeMap;
+
+    use super::{
+        append_execution_contract_fields_to_value, ensure_execution_trace_header, ConversionMode,
+        ExecutionStrategy,
+    };
     use serde_json::json;
 
     #[test]
@@ -340,5 +369,24 @@ mod tests {
         assert_eq!(value["provider_contract"], "gemini:generate_content");
         assert_eq!(value["adaptation_mode"], "cross_format");
         assert_eq!(value["provider_api_format"], "gemini:generate_content");
+    }
+
+    #[test]
+    fn execution_trace_header_is_added_without_overriding_existing_trace() {
+        let mut headers = BTreeMap::new();
+        ensure_execution_trace_header(&mut headers, "trace-generated-1");
+        assert_eq!(
+            headers.get("x-trace-id"),
+            Some(&"trace-generated-1".to_string())
+        );
+
+        let mut client_headers =
+            BTreeMap::from([("X-Trace-Id".to_string(), "trace-client-1".to_string())]);
+        ensure_execution_trace_header(&mut client_headers, "trace-generated-2");
+        assert_eq!(
+            client_headers.get("X-Trace-Id"),
+            Some(&"trace-client-1".to_string())
+        );
+        assert_eq!(client_headers.len(), 1);
     }
 }

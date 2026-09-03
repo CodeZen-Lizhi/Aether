@@ -24,6 +24,11 @@ pub struct SchedulerMinimalCandidateSelectionCandidate {
     /// in-process scheduling fact, not part of persisted candidate metadata.
     #[serde(skip)]
     pub rate_limit_probe_required: bool,
+    /// Set from the scheduler's fresh runtime snapshot when an expired circuit
+    /// needs a CAS-protected half-open probe. Like the rate-limit marker, this
+    /// is transient scheduling state and is never persisted or serialized.
+    #[serde(skip)]
+    pub circuit_probe_required: bool,
     pub key_global_priority_for_format: Option<i32>,
     pub key_capabilities: Option<serde_json::Value>,
     pub model_id: String,

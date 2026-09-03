@@ -45,8 +45,8 @@ use crate::cache::{
 use crate::clock::current_unix_ms;
 use crate::dispatch::refs::dispatch_ref_for_local_candidate;
 use crate::orchestration::{
-    local_attempt_slot_count, try_claim_local_rate_limit_probe, ExecutionAttemptIdentity,
-    LocalRateLimitProbeClaim,
+    local_attempt_slot_count, try_claim_local_circuit_probe, try_claim_local_rate_limit_probe,
+    ExecutionAttemptIdentity, LocalCircuitProbeClaim, LocalRateLimitProbeClaim,
 };
 use crate::scheduler::candidate::is_auth_api_key_concurrency_limit_skip_reason;
 use crate::scheduler::config::SchedulerSchedulingMode;
@@ -70,6 +70,7 @@ pub(crate) struct LocalExecutionCandidateAttemptSource<'a> {
     skipped_provider_ids: BTreeSet<String>,
     skipped_endpoint_ids: BTreeSet<String>,
     skipped_credential_ids: BTreeSet<String>,
+    skipped_circuit_probe_scopes: BTreeSet<(String, String)>,
     skipped_rate_limit_probe_scopes: BTreeSet<(String, String)>,
     rate_limit_probe_state: Option<PlannerAppState<'a>>,
 }
@@ -116,6 +117,7 @@ impl<'a> LocalExecutionCandidateAttemptSource<'a> {
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_circuit_probe_scopes: BTreeSet::new(),
             skipped_rate_limit_probe_scopes: BTreeSet::new(),
             rate_limit_probe_state: Some(state),
         }
@@ -142,6 +144,21 @@ impl<'a> LocalExecutionCandidateAttemptSource<'a> {
                     if let Some(attempt) = next_attempt_from_dispatch_sequence(attempts) {
                         if dispatch_sequence_exhausted(attempts) {
                             self.items.pop_front();
+                        }
+                        if circuit_probe_unavailable(
+                            self.rate_limit_probe_state,
+                            &mut self.skipped_circuit_probe_scopes,
+                            &attempt,
+                        )
+                        .await
+                        {
+                            debug!(
+                                key_id = %attempt.eligible.candidate.key_id,
+                                api_format = %attempt.eligible.candidate.endpoint_api_format,
+                                skip_reason = "key_circuit_probe_in_flight",
+                                "gateway candidate source skipped API format held by circuit recovery probe"
+                            );
+                            continue;
                         }
                         if rate_limit_probe_unavailable(
                             self.rate_limit_probe_state,
@@ -176,6 +193,21 @@ impl<'a> LocalExecutionCandidateAttemptSource<'a> {
                         self.items.pop_front();
                         continue;
                     };
+                    if circuit_probe_unavailable(
+                        self.rate_limit_probe_state,
+                        &mut self.skipped_circuit_probe_scopes,
+                        &attempt,
+                    )
+                    .await
+                    {
+                        debug!(
+                            key_id = %attempt.eligible.candidate.key_id,
+                            api_format = %attempt.eligible.candidate.endpoint_api_format,
+                            skip_reason = "key_circuit_probe_in_flight",
+                            "gateway candidate source skipped API format held by circuit recovery probe"
+                        );
+                        continue;
+                    }
                     if rate_limit_probe_unavailable(
                         self.rate_limit_probe_state,
                         &mut self.skipped_rate_limit_probe_scopes,
@@ -247,6 +279,44 @@ fn rate_limit_probe_scope(attempt: &LocalExecutionCandidateAttempt) -> (String, 
         attempt.eligible.candidate.key_id.clone(),
         attempt.eligible.candidate.endpoint_api_format.clone(),
     )
+}
+
+async fn circuit_probe_unavailable(
+    state: Option<PlannerAppState<'_>>,
+    skipped_scopes: &mut BTreeSet<(String, String)>,
+    attempt: &LocalExecutionCandidateAttempt,
+) -> bool {
+    let candidate = &attempt.eligible.candidate;
+    if !candidate.circuit_probe_required {
+        return false;
+    }
+    let probe_scope = rate_limit_probe_scope(attempt);
+    if skipped_scopes.contains(&probe_scope) {
+        return true;
+    }
+    let Some(state) = state else {
+        return false;
+    };
+    let api_format = candidate.endpoint_api_format.as_str();
+    match try_claim_local_circuit_probe(state.app(), &candidate.key_id, api_format).await {
+        Ok(LocalCircuitProbeClaim::NotRequired | LocalCircuitProbeClaim::Acquired) => false,
+        Ok(LocalCircuitProbeClaim::Unavailable) => {
+            skipped_scopes.insert(probe_scope);
+            true
+        }
+        Err(error) => {
+            // A catalog read error must not turn a transient control-plane
+            // failure into a complete data-plane outage. The normal request
+            // remains fail-open, as it does for the rate-limit probe path.
+            warn!(
+                key_id = %candidate.key_id,
+                api_format,
+                error = ?error,
+                "gateway candidate source could not claim circuit recovery probe"
+            );
+            false
+        }
+    }
 }
 
 async fn rate_limit_probe_unavailable(
@@ -716,6 +786,7 @@ where
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_circuit_probe_scopes: BTreeSet::new(),
             skipped_rate_limit_probe_scopes: BTreeSet::new(),
             rate_limit_probe_state: Some(state),
         },
@@ -857,6 +928,7 @@ where
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_circuit_probe_scopes: BTreeSet::new(),
             skipped_rate_limit_probe_scopes: BTreeSet::new(),
             rate_limit_probe_state: Some(state),
         },
@@ -1990,6 +2062,7 @@ mod tests {
             key_auth_type: "api_key".to_string(),
             key_internal_priority: 10,
             rate_limit_probe_required: false,
+            circuit_probe_required: false,
             key_global_priority_for_format: Some(10),
             key_capabilities: None,
             model_id: "model-1".to_string(),
@@ -2172,7 +2245,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolved_candidate_page_cache_requires_fixed_order_or_explicit_affinity() {
+    async fn resolved_candidate_pages_are_never_cached_after_runtime_filtering() {
         let app = AppState::new().expect("state should build");
         let auth_snapshot = sample_auth_snapshot();
         let model_directive_policy =
@@ -2264,7 +2337,7 @@ mod tests {
             ..sticky_cursor
         };
 
-        assert!(should_cache_resolved_candidate_page(&cursor));
+        assert!(!should_cache_resolved_candidate_page(&cursor));
 
         let fixed_order_app = AppState::new()
             .expect("state should build")
@@ -2324,7 +2397,7 @@ mod tests {
             deferred_error: None,
         };
 
-        assert!(should_cache_resolved_candidate_page(&cursor));
+        assert!(!should_cache_resolved_candidate_page(&cursor));
     }
 
     #[test]
@@ -2432,6 +2505,7 @@ mod tests {
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_circuit_probe_scopes: BTreeSet::new(),
             skipped_rate_limit_probe_scopes: BTreeSet::new(),
             rate_limit_probe_state: None,
         };
@@ -2479,6 +2553,7 @@ mod tests {
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_circuit_probe_scopes: BTreeSet::new(),
             skipped_rate_limit_probe_scopes: BTreeSet::new(),
             rate_limit_probe_state: None,
         };
@@ -2561,6 +2636,7 @@ mod tests {
             skipped_provider_ids: BTreeSet::new(),
             skipped_endpoint_ids: BTreeSet::new(),
             skipped_credential_ids: BTreeSet::new(),
+            skipped_circuit_probe_scopes: BTreeSet::new(),
             skipped_rate_limit_probe_scopes: BTreeSet::new(),
             rate_limit_probe_state: Some(PlannerAppState::new(&app)),
         };

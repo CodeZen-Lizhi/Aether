@@ -858,6 +858,14 @@ async fn proxy_request_inner(
         .map(|accepted_at| accepted_at.0)
         .unwrap_or(started_at);
     crate::request_diagnostics::record_request_accepted_at(accepted_at);
+    info!(
+        event_name = "gateway_request_accepted",
+        log_type = "event",
+        trace_id = %trace_id,
+        method = %request.method(),
+        path = %request.uri().path(),
+        "gateway accepted request"
+    );
     if request
         .extensions()
         .get::<crate::middleware::GatewayRequestAcceptedAt>()

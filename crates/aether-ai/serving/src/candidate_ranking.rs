@@ -103,8 +103,8 @@ pub fn ai_ranking_context(config: AiRankingContextConfig) -> SchedulerRankingCon
         priority_mode: config.priority_mode,
         ranking_mode: ai_ranking_mode(config.scheduling_mode),
         include_health: false,
-        include_inflight: false,
-        include_latency: false,
+        include_inflight: config.include_inflight,
+        include_latency: config.include_latency,
         load_balance_seed: config.load_balance_seed,
     }
 }
@@ -331,5 +331,19 @@ mod tests {
             port.calls.lock().unwrap().as_slice(),
             ["rankable:candidate-a:false"]
         );
+    }
+
+    #[test]
+    fn ranking_context_forwards_dynamic_signal_flags() {
+        let context = ai_ranking_context(AiRankingContextConfig {
+            priority_mode: SchedulerPriorityMode::Provider,
+            scheduling_mode: AiRankingSchedulingMode::CacheAffinity,
+            load_balance_seed: 7,
+            include_inflight: true,
+            include_latency: true,
+        });
+
+        assert!(context.include_inflight);
+        assert!(context.include_latency);
     }
 }

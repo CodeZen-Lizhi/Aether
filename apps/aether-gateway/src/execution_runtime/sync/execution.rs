@@ -56,8 +56,11 @@ use crate::execution_runtime::transport::{
 use crate::execution_runtime::{
     ai_attempt_retry_scope_from_failure_disposition, analyze_local_candidate_failover_sync,
     apply_endpoint_response_header_rules, attach_provider_response_headers_to_report_context,
-    local_failover_response_text, resolve_core_sync_error_finalize_report_kind,
+    ensure_execution_trace_header, local_failover_response_text, log_upstream_attempt_started,
+    log_upstream_request_failed, log_upstream_response_completed,
+    log_upstream_response_headers_received, resolve_core_sync_error_finalize_report_kind,
     should_fallback_to_control_sync, should_finalize_sync_response, LocalFailoverDecision,
+    UpstreamAttemptLog,
 };
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
@@ -1167,12 +1170,16 @@ async fn execute_direct_sync_runtime_candidate(
     candidate_index: &str,
     progress_snapshot: Option<Arc<Mutex<OpenAiImageSyncProgressSnapshot>>>,
 ) -> Result<ExecutionResult, SyncExecutionFailure> {
+    let upstream_started_at = Instant::now();
+    let upstream_log = UpstreamAttemptLog::new(trace_id, plan, plan_kind, candidate_index, "sync");
+    log_upstream_attempt_started(&upstream_log);
     if !should_track_openai_image_sync_upstream_sse(plan_kind, plan, report_context) {
         let state_for_response_started = state.clone();
         let response_started_lifecycle_seed = build_lifecycle_usage_seed(plan, report_context);
         let response_started_candidate_snapshot =
             snapshot_local_request_candidate_status(plan, report_context);
-        return DirectSyncExecutionRuntime::new()
+        let upstream_log_for_response_started = upstream_log.clone();
+        let execution = DirectSyncExecutionRuntime::new()
             .execute_sync_with_response_started(plan, move |event| {
                 record_sync_response_started(
                     &state_for_response_started,
@@ -1182,9 +1189,32 @@ async fn execute_direct_sync_runtime_candidate(
                     event.status_code,
                     event.ttfb_ms,
                 );
+                log_upstream_response_headers_received(
+                    &upstream_log_for_response_started,
+                    event.status_code,
+                    event.ttfb_ms,
+                );
             })
-            .await
-            .map_err(SyncExecutionFailure::from_transport);
+            .await;
+        return match execution {
+            Ok(result) => {
+                let upstream_elapsed_ms = result
+                    .telemetry
+                    .as_ref()
+                    .and_then(|telemetry| telemetry.elapsed_ms)
+                    .unwrap_or_else(|| elapsed_ms_since(upstream_started_at));
+                log_upstream_response_completed(
+                    &upstream_log,
+                    result.status_code,
+                    upstream_elapsed_ms,
+                );
+                Ok(result)
+            }
+            Err(error) => {
+                log_upstream_request_failed(&upstream_log, elapsed_ms_since(upstream_started_at));
+                Err(SyncExecutionFailure::from_transport(error))
+            }
+        };
     }
 
     let started_at = Instant::now();
@@ -1747,6 +1777,7 @@ async fn execute_execution_runtime_sync_impl(
         .map(Some);
     }
 
+    ensure_execution_trace_header(&mut plan.headers, trace_id);
     ensure_execution_request_candidate_slot(state, &mut plan, &mut report_context).await;
     let plan_request_id = plan.request_id.clone();
     let plan_request_id_for_log = short_request_id(plan_request_id.as_str());

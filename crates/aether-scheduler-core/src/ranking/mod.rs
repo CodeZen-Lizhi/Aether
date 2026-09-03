@@ -198,6 +198,31 @@ mod tests {
     }
 
     #[test]
+    fn global_key_priority_mode_falls_back_to_persisted_internal_key_priority() {
+        let candidates = vec![
+            candidate("later", 0, 20, None),
+            candidate("first", 100, 5, None),
+        ];
+        let mut items = candidates.clone();
+
+        let outcomes = apply_scheduler_candidate_ranking(
+            &mut items,
+            &candidates,
+            SchedulerRankingContext {
+                priority_mode: SchedulerPriorityMode::GlobalKey,
+                ranking_mode: SchedulerRankingMode::FixedOrder,
+                include_health: false,
+                include_inflight: false,
+                include_latency: false,
+                load_balance_seed: 0,
+            },
+        );
+
+        assert_eq!(items[0].provider_id, "provider-first");
+        assert_eq!(outcomes[0].priority_slot, 5);
+    }
+
+    #[test]
     fn fixed_order_demotes_cross_format_before_priority() {
         let lower_priority_same_format = candidate("same", 10, 0, Some(10));
 
@@ -722,6 +747,7 @@ mod cost_based_and_signal_tests {
             key_auth_type: "api_key".to_string(),
             key_internal_priority: 0,
             rate_limit_probe_required: false,
+            circuit_probe_required: false,
             key_global_priority_for_format: Some(0),
             key_capabilities: None,
             model_id: "model-1".to_string(),

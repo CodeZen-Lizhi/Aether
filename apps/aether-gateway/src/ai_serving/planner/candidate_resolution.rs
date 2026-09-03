@@ -561,6 +561,7 @@ mod tests {
             key_auth_type: "bearer".to_string(),
             key_internal_priority: 0,
             rate_limit_probe_required: false,
+            circuit_probe_required: false,
             key_global_priority_for_format: None,
             key_capabilities: None,
             model_id: "model-1".to_string(),

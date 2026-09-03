@@ -91,11 +91,12 @@ use crate::execution_runtime::transport::{
 };
 use crate::execution_runtime::{
     ai_attempt_retry_scope_from_failure_disposition, apply_endpoint_response_header_rules,
-    attach_provider_response_headers_to_report_context, local_failover_response_text,
-    resolve_core_stream_direct_finalize_report_kind,
+    attach_provider_response_headers_to_report_context, ensure_execution_trace_header,
+    local_failover_response_text, log_upstream_attempt_started, log_upstream_request_failed,
+    log_upstream_response_headers_received, resolve_core_stream_direct_finalize_report_kind,
     resolve_core_stream_error_finalize_report_kind,
     resolve_local_candidate_failover_analysis_stream, should_fallback_to_control_stream,
-    should_retry_next_local_candidate_stream, LocalFailoverDecision,
+    should_retry_next_local_candidate_stream, LocalFailoverDecision, UpstreamAttemptLog,
 };
 use crate::execution_runtime::{
     MAX_ERROR_BODY_BYTES, MAX_STREAM_PREFETCH_BYTES, MAX_STREAM_PREFETCH_FRAMES,
@@ -887,8 +888,26 @@ async fn execute_in_process_stream(
     plan: &ExecutionPlan,
     trace_id: &str,
 ) -> Result<DirectUpstreamStreamExecution, InProcessStreamExecutionError> {
-    if let Some(execution) = execute_stream_plan_via_local_tunnel(state, plan).await? {
-        return Ok(execution);
+    let upstream_started_at = Instant::now();
+    let upstream_log = UpstreamAttemptLog::new(trace_id, plan, "-", "-", "stream");
+    log_upstream_attempt_started(&upstream_log);
+    match execute_stream_plan_via_local_tunnel(state, plan).await {
+        Ok(Some(execution)) => {
+            log_upstream_response_headers_received(
+                &upstream_log,
+                execution.status_code,
+                stream_elapsed_ms_since(upstream_started_at),
+            );
+            return Ok(execution);
+        }
+        Ok(None) => {}
+        Err(error) => {
+            log_upstream_request_failed(
+                &upstream_log,
+                stream_elapsed_ms_since(upstream_started_at),
+            );
+            return Err(error.into());
+        }
     }
 
     let upstream_target_permit = state
@@ -897,11 +916,20 @@ async fn execute_in_process_stream(
         .await?;
     match DirectSyncExecutionRuntime::new().execute_stream(plan).await {
         Ok(mut execution) => {
+            log_upstream_response_headers_received(
+                &upstream_log,
+                execution.status_code,
+                stream_elapsed_ms_since(upstream_started_at),
+            );
             execution.upstream_target_permit = upstream_target_permit;
             record_manual_proxy_request_success(state, plan).await;
             Ok(execution)
         }
         Err(error) => {
+            log_upstream_request_failed(
+                &upstream_log,
+                stream_elapsed_ms_since(upstream_started_at),
+            );
             record_manual_proxy_request_failure(state, plan).await;
             Err(error.into())
         }
@@ -2959,6 +2987,7 @@ async fn execute_execution_runtime_stream_inner(
     let stream_started_at = Instant::now();
     let mut stage_trace = RequestStageTrace::from_env();
     let candidate_slot_started_at = Instant::now();
+    ensure_execution_trace_header(&mut plan.headers, trace_id);
     ensure_execution_request_candidate_slot(state, &mut plan, &mut report_context).await;
     observe_gateway_stage_trace_ms(
         &mut stage_trace,

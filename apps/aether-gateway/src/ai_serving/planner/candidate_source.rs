@@ -577,22 +577,11 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
     }
 
     pub(crate) fn should_cache_current_priority_resolved_page(&self) -> bool {
-        if !(self.priority_page_emitted
-            && self.format_index == 0
-            && self.deferred_pages_by_format.is_empty())
-        {
-            return false;
-        }
-
-        match self.ordering_config.scheduling_mode {
-            SchedulerSchedulingMode::FixedOrder => true,
-            SchedulerSchedulingMode::CacheAffinity => {
-                has_explicit_session_affinity(self.client_session_affinity.as_ref())
-            }
-            #[allow(deprecated)]
-            SchedulerSchedulingMode::LoadBalance => false,
-            SchedulerSchedulingMode::CostBased => false,
-        }
+        // Candidate pages are filtered by mutable key health (circuits,
+        // cooldowns, RPM and OAuth state). This process-local cache cannot be
+        // invalidated when another gateway instance updates that state, so a
+        // cached page could reintroduce a key that was just excluded.
+        false
     }
 
     fn should_cache_current_priority_page(&self) -> bool {
@@ -1427,11 +1416,11 @@ mod tests {
     use super::*;
     use crate::data::GatewayDataState;
     use crate::AppState;
-    use aether_data::DataLayerError;
     use aether_data::repository::candidate_selection::InMemoryMinimalCandidateSelectionReadRepository;
     use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data::repository::quota::InMemoryProviderQuotaRepository;
+    use aether_data::DataLayerError;
     use aether_data_contracts::repository::candidate_selection::{
         MinimalCandidateSelectionReadRepository, StoredApiFormatCandidateRowsQuery,
         StoredProviderModelMapping, StoredRequestedModelCandidateRowsQuery,
@@ -1857,7 +1846,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn priority_page_cache_requires_fixed_order_or_explicit_affinity() {
+    async fn priority_pages_are_never_cached_after_runtime_filtering() {
         let repository: Arc<dyn MinimalCandidateSelectionReadRepository> =
             Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(
                 Vec::<StoredMinimalCandidateSelectionRow>::new(),
@@ -1895,10 +1884,10 @@ mod tests {
 
         cursor.client_session_affinity =
             Some(aether_scheduler_core::ClientSessionAffinity::from_session_key("session-1"));
-        assert!(cursor.should_cache_current_priority_resolved_page());
+        assert!(!cursor.should_cache_current_priority_resolved_page());
 
         cursor.ordering_config.scheduling_mode = SchedulerSchedulingMode::FixedOrder;
-        assert!(cursor.should_cache_current_priority_resolved_page());
+        assert!(!cursor.should_cache_current_priority_resolved_page());
 
         #[allow(deprecated)]
         {
@@ -2074,12 +2063,10 @@ mod tests {
         assert_eq!(outcome.candidates.len(), 1);
         assert_eq!(outcome.candidates[0].provider_id, "provider-b");
         assert_eq!(outcome.skipped_candidates.len(), 2);
-        assert!(
-            outcome
-                .skipped_candidates
-                .iter()
-                .all(|candidate| candidate.skip_reason == "key_circuit_open")
-        );
+        assert!(outcome
+            .skipped_candidates
+            .iter()
+            .all(|candidate| candidate.skip_reason == "key_circuit_open"));
     }
 
     fn opg_deepseek_row(

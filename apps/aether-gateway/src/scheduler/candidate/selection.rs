@@ -238,6 +238,15 @@ pub(super) async fn collect_selectable_enumerated_candidates_with_skip_reasons(
                         candidate.endpoint_api_format.as_str(),
                         now_unix_secs,
                     );
+            candidate.circuit_probe_required = aether_scheduler_core::is_provider_key_circuit_open(
+                key,
+                candidate.endpoint_api_format.as_str(),
+            )
+                && !aether_scheduler_core::is_provider_key_circuit_open_at(
+                    key,
+                    candidate.endpoint_api_format.as_str(),
+                    now_unix_secs,
+                );
         }
     }
     let affinity_cache_key = build_scheduler_affinity_cache_key(

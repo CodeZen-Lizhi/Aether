@@ -10,9 +10,9 @@ pub(super) fn candidate_priority_slot(
 ) -> i32 {
     match priority_mode {
         SchedulerPriorityMode::Provider => candidate.provider_priority,
-        SchedulerPriorityMode::GlobalKey => {
-            candidate.key_global_priority_for_format.unwrap_or(i32::MAX)
-        }
+        SchedulerPriorityMode::GlobalKey => candidate
+            .key_global_priority_for_format
+            .unwrap_or(candidate.key_internal_priority),
     }
 }
 
@@ -28,8 +28,12 @@ pub(super) fn compare_candidate_priority_slot(
             .then(left.key_internal_priority.cmp(&right.key_internal_priority)),
         SchedulerPriorityMode::GlobalKey => left
             .key_global_priority_for_format
-            .unwrap_or(i32::MAX)
-            .cmp(&right.key_global_priority_for_format.unwrap_or(i32::MAX))
+            .unwrap_or(left.key_internal_priority)
+            .cmp(
+                &right
+                    .key_global_priority_for_format
+                    .unwrap_or(right.key_internal_priority),
+            )
             .then(left.provider_priority.cmp(&right.provider_priority))
             .then(left.key_internal_priority.cmp(&right.key_internal_priority)),
     }

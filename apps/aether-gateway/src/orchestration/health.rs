@@ -30,6 +30,7 @@ pub(crate) fn parse_retry_after_secs(value: Option<&str>, now_unix_secs: u64) ->
 
 const LOCAL_HEALTH_SCORE_FLOOR: f64 = 0.2;
 pub(crate) const LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD: u64 = 8;
+pub(crate) const LOCAL_KEY_CIRCUIT_PROBE_RESERVATION_SECS: u64 = 60;
 const LOCAL_KEY_CIRCUIT_MAX_PROBE_INTERVAL_MINUTES: u64 = 32;
 // P1-6: rolling success-rate circuit trigger. 5-minute window, minimum sample
 // count, and the success-rate floor below which a flapping key trips the
@@ -363,11 +364,65 @@ pub(crate) fn project_local_key_circuit_open(
                 Value::Null
             },
             "half_open_until": Value::Null,
+            "half_open_until_unix_secs": Value::Null,
             "half_open_successes": 0,
             "half_open_failures": half_open_failures,
             "request_results_window": request_results_window,
         }),
     );
+    Some(Value::Object(circuit_by_format))
+}
+
+/// Reserve the single half-open probe after a circuit's next-probe deadline.
+/// The caller persists this projection with a compare-and-set, making the
+/// reservation the ownership boundary across Gateway instances.
+pub(crate) fn project_local_key_circuit_probe_reservation(
+    current_circuit_by_format: Option<&Value>,
+    api_format: &str,
+    observed_at_unix_secs: u64,
+) -> Option<Value> {
+    let api_format = api_format.trim();
+    if api_format.is_empty() {
+        return None;
+    }
+
+    let mut circuit_by_format = current_circuit_by_format
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut current = circuit_by_format
+        .get(api_format)
+        .and_then(Value::as_object)
+        .cloned()?;
+    if !current_bool(&current, "open") {
+        return None;
+    }
+    if current
+        .get("next_probe_at_unix_secs")
+        .and_then(Value::as_u64)
+        .is_some_and(|until| observed_at_unix_secs < until)
+    {
+        return None;
+    }
+    if current
+        .get("half_open_until_unix_secs")
+        .and_then(Value::as_u64)
+        .is_some_and(|until| observed_at_unix_secs < until)
+    {
+        return None;
+    }
+
+    let until_unix_secs =
+        observed_at_unix_secs.saturating_add(LOCAL_KEY_CIRCUIT_PROBE_RESERVATION_SECS);
+    current.insert(
+        "half_open_until".to_string(),
+        json!(unix_secs_to_rfc3339(until_unix_secs)),
+    );
+    current.insert(
+        "half_open_until_unix_secs".to_string(),
+        json!(until_unix_secs),
+    );
+    circuit_by_format.insert(api_format.to_string(), Value::Object(current));
     Some(Value::Object(circuit_by_format))
 }
 
@@ -437,6 +492,7 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
                 "last_failure_at": unix_secs_to_rfc3339(observed_at_unix_secs),
                 "last_probe_failure_at": Value::Null,
                 "half_open_until": Value::Null,
+                "half_open_until_unix_secs": Value::Null,
                 "half_open_successes": 0,
                 "half_open_failures": 0,
                 "request_results_window": request_results_window,
@@ -484,6 +540,7 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
                 Value::Null
             },
             "half_open_until": Value::Null,
+            "half_open_until_unix_secs": Value::Null,
             "half_open_successes": 0,
             "half_open_failures": half_open_failures,
             "request_results_window": request_results_window,
@@ -595,6 +652,7 @@ pub(crate) fn project_local_key_circuit_closed_with_ramp(
     payload.insert("next_probe_at".to_string(), Value::Null);
     payload.insert("next_probe_at_unix_secs".to_string(), Value::Null);
     payload.insert("half_open_until".to_string(), Value::Null);
+    payload.insert("half_open_until_unix_secs".to_string(), Value::Null);
     payload.insert("half_open_successes".to_string(), json!(0));
     payload.insert("half_open_failures".to_string(), json!(0));
     if was_open {
