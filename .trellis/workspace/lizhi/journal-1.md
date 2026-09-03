@@ -469,3 +469,41 @@
 ### Next Steps
 
 - 当前全仓遗留功能与性能审查任务仍处于 planning，待完成审查后另行归档。
+
+
+## Session 17: 区分原始成本与结算成本
+<!-- trellis-session: v=2 fp=c671906d7686d005 -->
+
+**Date**: 2026-09-03
+**Task**: 区分原始成本与结算成本
+**Branch**: `slim-personal`
+
+### Summary
+
+请求记录固定展示六位小数；仪表盘将原始成本作为主金额、倍率后结算成本作为次金额，并补齐每日结算成本聚合。
+
+### Main Changes
+
+- 请求记录桌面端与移动端原始/结算费用统一展示至小数点后六位。
+- 仪表盘今日、本月、每日及周期总费用同时展示原始成本和结算成本，图表继续使用原始成本。
+- 每日统计接口和 SQLite、内存聚合补充 actual_cost。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `46137f0a9` | feat(dashboard): distinguish original and settled costs |
+
+### Testing
+
+- [OK] 前端定向测试 39 项通过，vue-tsc 通过。
+- [OK] Gateway 管理员/普通用户概览与每日统计定向测试、SQLite 聚合测试通过。
+- [OK] rustfmt --check 与 git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 保留全仓遗留功能与性能审查任务，待其规划完成后另行处理。
