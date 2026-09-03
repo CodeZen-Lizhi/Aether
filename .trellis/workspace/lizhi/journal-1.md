@@ -507,3 +507,25 @@
 ### Next Steps
 
 - 保留全仓遗留功能与性能审查任务，待其规划完成后另行处理。
+
+
+## Session 18: 修复仪表盘近 7 天实时统计
+<!-- trellis-session: v=2 fp=5f267f9de46b75af -->
+
+**Date**: 2026-09-03
+**Task**: 修复仪表盘近 7 天实时统计
+**Branch**: `slim-personal`
+
+### Summary
+
+修复日聚合存在时遗漏实时 usage 的仪表盘近 7 天统计；按最后完成的 UTC 聚合桶截断原始查询，覆盖 UTC+8 去重边界，并通过 SQLite 88 项测试、Clippy 和格式检查。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4ce855c92` | fix(dashboard): merge live daily usage tail |
+
+### Status
+
+[OK] **Completed**
