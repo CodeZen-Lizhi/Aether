@@ -412,3 +412,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 15: 恢复 Provider Key 调度优先级
+<!-- trellis-session: v=2 fp=dcf21d5bcd6453d4 -->
+
+**Date**: 2026-09-03
+**Task**: 恢复 Provider Key 调度优先级
+**Branch**: `slim-personal`
+
+### Summary
+
+恢复新增和编辑 Provider Key 的内部优先级输入、后端持久化与调度排序；补充 SQLite 迁移和配置导入导出兼容。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9eec53d27` | fix(provider): restore key scheduling priority |
+
+### Status
+
+[OK] **Completed**

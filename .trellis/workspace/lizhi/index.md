@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-09-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~414 | Active |
+| `journal-1.md` | ~436 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-09-03 | 恢复 Provider Key 调度优先级 | `9eec53d27` | `slim-personal` |
 | 14 | 2026-09-03 | 模型测试绕过供应商与密钥开关校验 | `5f6095bdb` | `slim-personal` |
 | 13 | 2026-09-03 | 供应商列表按调度优先级排序 | `574298a68` | `slim-personal` |
 | 12 | 2026-09-03 | 收尾密钥倍率统一任务并归档 | `36f752cca`, `0dde53292` | `slim-personal` |
