@@ -84,6 +84,94 @@ fn sample_catalog_key_with_allowed_models(
     key
 }
 
+fn sample_openai_chat_transport() -> AdminGatewayProviderTransportSnapshot {
+    AdminGatewayProviderTransportSnapshot {
+        provider: crate::provider_transport::snapshot::GatewayProviderTransportProvider {
+            id: "provider-1".to_string(),
+            name: "Provider".to_string(),
+            provider_type: "custom".to_string(),
+            website: None,
+            is_active: false,
+            enable_format_conversion: false,
+            concurrent_limit: None,
+            max_retries: None,
+            proxy: None,
+            request_timeout_secs: None,
+            stream_first_byte_timeout_secs: None,
+            config: None,
+        },
+        endpoint: crate::provider_transport::snapshot::GatewayProviderTransportEndpoint {
+            id: "endpoint-1".to_string(),
+            provider_id: "provider-1".to_string(),
+            api_format: "openai:chat".to_string(),
+            api_family: None,
+            endpoint_kind: None,
+            is_active: false,
+            base_url: "https://api.openai.example/v1".to_string(),
+            header_rules: None,
+            body_rules: None,
+            max_retries: None,
+            custom_path: None,
+            config: None,
+            format_acceptance_config: None,
+            proxy: None,
+        },
+        key: crate::provider_transport::snapshot::GatewayProviderTransportKey {
+            id: "key-1".to_string(),
+            provider_id: "provider-1".to_string(),
+            name: "key".to_string(),
+            auth_type: "api_key".to_string(),
+            is_active: false,
+            api_formats: None,
+            auth_type_by_format: None,
+            allow_auth_channel_mismatch_formats: None,
+            allowed_models: None,
+            capabilities: None,
+            rate_multipliers: None,
+            expires_at_unix_secs: None,
+            proxy: None,
+            fingerprint: None,
+            upstream_metadata: None,
+            decrypted_api_key: "sk-test".to_string(),
+            decrypted_auth_config: None,
+        },
+    }
+}
+
+#[test]
+fn provider_query_capability_probe_ignores_inactive_status() {
+    let inactive = sample_openai_chat_transport();
+    assert_eq!(
+        crate::provider_transport::policy::local_openai_chat_transport_unsupported_reason(
+            &inactive
+        ),
+        Some("provider_inactive"),
+    );
+
+    let probed = provider_query_test_transport_for_capability_probe(&inactive);
+    assert!(
+        probed.provider.is_active && probed.endpoint.is_active && probed.key.is_active,
+        "the capability probe must neutralize runtime on/off state"
+    );
+    assert_eq!(
+        crate::provider_transport::policy::local_openai_chat_transport_unsupported_reason(&probed),
+        None,
+        "model tests must judge capability only, never enabled state"
+    );
+}
+
+#[test]
+fn provider_query_grok_test_reason_ignores_inactive_status() {
+    let mut transport = sample_openai_chat_transport();
+    transport.provider.provider_type = "grok".to_string();
+
+    assert_eq!(
+        super::adapter::provider_query_grok_test_unsupported_reason(&transport, "openai:chat"),
+        None,
+        "grok model tests must not reject inactive provider/endpoint/key"
+    );
+}
+
 #[test]
 fn provider_query_model_test_allows_keys_without_model_restrictions() {
     let unrestricted = sample_catalog_key_with_allowed_models(None);

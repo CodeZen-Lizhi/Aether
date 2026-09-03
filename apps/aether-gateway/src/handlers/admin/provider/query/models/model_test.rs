@@ -88,7 +88,7 @@ const ADMIN_PROVIDER_QUERY_NO_MODELS_FROM_ENDPOINT_DETAIL: &str =
     "No models returned from any endpoint";
 const ADMIN_PROVIDER_QUERY_NO_MODELS_FROM_KEY_DETAIL: &str = "No models returned from any key";
 const ADMIN_PROVIDER_QUERY_NO_ACTIVE_TEST_CANDIDATE_DETAIL: &str =
-    "No active endpoint or API key found";
+    "No usable API key found for this provider";
 const ADMIN_PROVIDER_QUERY_INVALID_MAPPED_MODEL_DETAIL: &str =
     "mapped_model_name is not valid for the selected model and endpoint";
 const PROVIDER_QUERY_KEY_MODEL_NOT_ALLOWED_SKIP_REASON: &str = "key_model_not_allowed";
@@ -602,7 +602,6 @@ fn provider_query_build_test_request_body_for_api_format_with_search_session(
             "model": model,
             "input": message,
             "max_output_tokens": 30,
-            "stream": true,
         }),
         "openai:search" => json!({
             "id": provider_query_search_test_session_id(search_session_id),
@@ -629,7 +628,6 @@ fn provider_query_build_test_request_body_for_api_format_with_search_session(
                 "content": message
             }],
             "max_tokens": 30,
-            "stream": true,
         }),
     }
 }
@@ -868,6 +866,21 @@ fn provider_query_key_supports_endpoint(
     )
 }
 
+// Model tests are a diagnostic channel: judge transport capability only
+// (format, header/body rules, auth, proxy), never runtime on/off state. The
+// shared policy checks in aether-provider-transport also serve the live proxy
+// path, so neutralize the flags on a test-local clone instead of weakening
+// the shared semantics.
+fn provider_query_test_transport_for_capability_probe(
+    transport: &AdminGatewayProviderTransportSnapshot,
+) -> AdminGatewayProviderTransportSnapshot {
+    let mut transport = transport.clone();
+    transport.provider.is_active = true;
+    transport.endpoint.is_active = true;
+    transport.key.is_active = true;
+    transport
+}
+
 async fn provider_query_select_preferred_non_kiro_endpoint(
     state: &AdminAppState<'_>,
     provider: &StoredProviderCatalogProvider,
@@ -875,8 +888,14 @@ async fn provider_query_select_preferred_non_kiro_endpoint(
     keys: &[StoredProviderCatalogKey],
     selected_key_ids: Option<&BTreeSet<String>>,
 ) -> Option<StoredProviderCatalogEndpoint> {
+    // Prefer active endpoints but keep disabled ones selectable: a disabled
+    // provider/endpoint must not make the model test impossible.
+    let mut ordered_endpoints = endpoints
+        .iter()
+        .filter(|endpoint| endpoint.is_active)
+        .chain(endpoints.iter().filter(|endpoint| !endpoint.is_active));
     for priority in 0..=2 {
-        for endpoint in endpoints.iter().filter(|endpoint| endpoint.is_active) {
+        for endpoint in ordered_endpoints.clone() {
             if provider_query_model_test_endpoint_priority(
                 &provider.provider_type,
                 &endpoint.api_format,
@@ -885,8 +904,7 @@ async fn provider_query_select_preferred_non_kiro_endpoint(
                 continue;
             }
             for key in keys {
-                if !key.is_active
-                    || !provider_query_selected_key_ids_allow_key(selected_key_ids, &key.id)
+                if !provider_query_selected_key_ids_allow_key(selected_key_ids, &key.id)
                     || !provider_query_key_supports_endpoint(
                         key,
                         &provider.provider_type,
@@ -903,7 +921,7 @@ async fn provider_query_select_preferred_non_kiro_endpoint(
                 };
                 if provider_query_transport_supports_model_test_execution(
                     state,
-                    &transport,
+                    &provider_query_test_transport_for_capability_probe(&transport),
                     endpoint.api_format.as_str(),
                 ) {
                     return Some(endpoint.clone());
@@ -912,21 +930,19 @@ async fn provider_query_select_preferred_non_kiro_endpoint(
         }
     }
 
-    endpoints
-        .iter()
+    ordered_endpoints
         .find(|endpoint| {
-            endpoint.is_active
-                && keys.iter().any(|key| {
-                    key.is_active
-                        && provider_query_selected_key_ids_allow_key(selected_key_ids, &key.id)
-                        && provider_query_key_supports_endpoint(
-                            key,
-                            &provider.provider_type,
-                            &endpoint.api_format,
-                        )
-                })
+            keys.iter().any(|key| {
+                provider_query_selected_key_ids_allow_key(selected_key_ids, &key.id)
+                    && provider_query_key_supports_endpoint(
+                        key,
+                        &provider.provider_type,
+                        &endpoint.api_format,
+                    )
+            })
         })
         .or_else(|| endpoints.iter().find(|endpoint| endpoint.is_active))
+        .or_else(|| endpoints.first())
         .cloned()
 }
 
@@ -1227,6 +1243,7 @@ async fn provider_query_execute_openai_image_test_candidate(
             "Provider transport snapshot is unavailable",
         ));
     };
+    let transport = provider_query_test_transport_for_capability_probe(&transport);
 
     if let Some(reason) = crate::provider_transport::openai_image_transport_unsupported_reason(
         &transport,
@@ -1460,6 +1477,7 @@ async fn provider_query_execute_standard_test_candidate(
             "Provider transport snapshot is unavailable",
         ));
     };
+    let transport = provider_query_test_transport_for_capability_probe(&transport);
     let provider_api_format = candidate.endpoint.api_format.as_str();
     let normalized_provider_api_format =
         crate::ai_serving::normalize_api_format_alias(provider_api_format);
@@ -1485,10 +1503,10 @@ async fn provider_query_execute_standard_test_candidate(
     }
 
     let incoming_request_headers = provider_query_extract_request_headers(payload);
-    let mut request_body = original_request_body.clone();
-    if let Some(object) = request_body.as_object_mut() {
-        object.insert("stream".to_string(), Value::Bool(false));
-    }
+    // Keep the client body untouched: upstream stream policy is decided by
+    // upstream_is_stream below, and enforce_request_body_stream_field drops
+    // the field for non-streaming requests instead of writing stream:false.
+    let request_body = original_request_body.clone();
     let request_model =
         provider_query_request_body_model(&request_body, &candidate.effective_model);
 
@@ -1913,13 +1931,25 @@ fn provider_query_select_test_endpoint<'a>(
     }
 
     if let Some(api_format) = api_format {
-        let endpoint = endpoints.iter().find(|endpoint| {
-            endpoint.is_active && endpoint.api_format.trim().eq_ignore_ascii_case(api_format)
-        });
+        let endpoint = endpoints
+            .iter()
+            .find(|endpoint| {
+                endpoint.is_active && endpoint.api_format.trim().eq_ignore_ascii_case(api_format)
+            })
+            .or_else(|| {
+                endpoints.iter().find(|endpoint| {
+                    endpoint.api_format.trim().eq_ignore_ascii_case(api_format)
+                })
+            });
         return Ok(endpoint);
     }
 
-    Ok(endpoints.iter().find(|endpoint| endpoint.is_active))
+    // Model tests must stay possible for disabled providers: prefer an active
+    // endpoint, but fall back to any endpoint before giving up.
+    Ok(endpoints
+        .iter()
+        .find(|endpoint| endpoint.is_active)
+        .or_else(|| endpoints.first()))
 }
 
 async fn provider_query_build_test_candidates(
@@ -2052,9 +2082,10 @@ async fn provider_query_build_test_candidates(
     let mut keys = Vec::new();
     let mut model_skipped_candidates = Vec::new();
 
+    // Model tests ignore key enabled state and health: any key compatible with
+    // the endpoint becomes a candidate, sorted by health/circuit state only.
     for key in all_keys
         .into_iter()
-        .filter(|key| key.is_active)
         .filter(|key| provider_query_selected_key_ids_allow_key(selected_key_ids.as_ref(), &key.id))
         .filter(|key| {
             provider_query_key_supports_endpoint(key, &provider.provider_type, &endpoint.api_format)

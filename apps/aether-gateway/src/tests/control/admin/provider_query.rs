@@ -2458,6 +2458,174 @@ async fn gateway_handles_openai_responses_test_model_locally_impl() {
 }
 
 #[test]
+fn gateway_handles_test_model_with_inactive_provider_endpoint_and_key() {
+    run_provider_query_test(
+        "gateway_handles_test_model_with_inactive_provider_endpoint_and_key",
+        gateway_handles_test_model_with_inactive_provider_endpoint_and_key_impl,
+    );
+}
+
+// Model tests are a diagnostic channel: provider/endpoint/key on-off state
+// must not block them. A fully disabled provider is still testable end to end.
+async fn gateway_handles_test_model_with_inactive_provider_endpoint_and_key_impl() {
+    let execution_runtime = Router::new().route(
+        "/v1/execute/sync",
+        any(move |Json(plan): Json<ExecutionPlan>| async move {
+            assert_eq!(plan.provider_id, "provider-disabled");
+            assert_eq!(plan.endpoint_id, "endpoint-disabled");
+            assert_eq!(plan.key_id, "key-disabled");
+            assert_eq!(plan.provider_api_format, "openai:chat");
+            assert!(!plan.stream);
+            assert_eq!(
+                plan.headers.get("authorization").map(String::as_str),
+                Some("Bearer sk-disabled")
+            );
+            Json(json!({
+                "request_id": plan.request_id,
+                "candidate_id": plan.candidate_id,
+                "status_code": 200,
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json_body": {
+                        "id": "chatcmpl-inactive-test",
+                        "object": "chat.completion",
+                        "choices": [{
+                            "message": {
+                                "role": "assistant",
+                                "content": "inactive provider is still testable"
+                            }
+                        }]
+                    }
+                },
+                "telemetry": {
+                    "elapsed_ms": 11
+                }
+            }))
+        }),
+    );
+    let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
+    let mut provider = sample_provider("provider-disabled", "DisabledProvider", 10);
+    provider.is_active = false;
+    let mut endpoint = sample_endpoint(
+        "endpoint-disabled",
+        "provider-disabled",
+        "openai:chat",
+        "https://api.disabled.example/v1",
+    );
+    endpoint.is_active = false;
+    let mut key = sample_key("key-disabled", "provider-disabled", "openai:chat", "sk-disabled");
+    key.is_active = false;
+    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider],
+        vec![endpoint],
+        vec![key],
+    ));
+
+    let gateway = build_router_with_state(
+        build_state_with_execution_runtime_override(execution_runtime_url)
+            .with_data_state_for_tests(GatewayDataState::with_provider_transport_reader_for_tests(
+                provider_catalog_repository,
+                DEVELOPMENT_ENCRYPTION_KEY.to_string(),
+            )),
+    );
+    let (gateway_url, gateway_handle) = start_server(gateway).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/api/admin/provider-query/test-model"))
+        .header(GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .json(&json!({
+            "provider_id": "provider-disabled",
+            "model": "gpt-4.1",
+            "api_format": "openai:chat"
+        }))
+        .send()
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: serde_json::Value = response.json().await.expect("json body should parse");
+    assert_eq!(payload["success"], json!(true));
+    assert_eq!(payload["total_candidates"], json!(1));
+    assert_eq!(payload["attempts"][0]["status"], json!("success"));
+    assert_eq!(
+        payload["data"]["response"]["choices"][0]["message"]["content"],
+        json!("inactive provider is still testable")
+    );
+
+    gateway_handle.abort();
+    execution_runtime_handle.abort();
+}
+
+#[test]
+fn gateway_rejects_test_model_when_provider_has_no_keys() {
+    run_provider_query_test(
+        "gateway_rejects_test_model_when_provider_has_no_keys",
+        gateway_rejects_test_model_when_provider_has_no_keys_impl,
+    );
+}
+
+async fn unreachable_execution_runtime_handler(_request: Request) -> StatusCode {
+    panic!("execution runtime must not be called when no API key exists")
+}
+
+async fn gateway_rejects_test_model_when_provider_has_no_keys_impl() {
+    let execution_runtime = Router::new().route(
+        "/v1/execute/sync",
+        any(unreachable_execution_runtime_handler),
+    );
+    let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
+    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![sample_provider("provider-no-keys", "NoKeys", 10)],
+        vec![sample_endpoint(
+            "endpoint-no-keys",
+            "provider-no-keys",
+            "openai:chat",
+            "https://api.nokeys.example/v1",
+        )],
+        Vec::new(),
+    ));
+
+    let gateway = build_router_with_state(
+        build_state_with_execution_runtime_override(execution_runtime_url)
+            .with_data_state_for_tests(GatewayDataState::with_provider_transport_reader_for_tests(
+                provider_catalog_repository,
+                DEVELOPMENT_ENCRYPTION_KEY.to_string(),
+            )),
+    );
+    let (gateway_url, gateway_handle) = start_server(gateway).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{gateway_url}/api/admin/provider-query/test-model"))
+        .header(GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .json(&json!({
+            "provider_id": "provider-no-keys",
+            "model": "gpt-4.1",
+            "api_format": "openai:chat"
+        }))
+        .send()
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let payload: serde_json::Value = response.json().await.expect("json body should parse");
+    assert_eq!(
+        payload["detail"],
+        json!("No usable API key found for this provider")
+    );
+
+    gateway_handle.abort();
+    execution_runtime_handle.abort();
+}
+
+#[test]
 fn gateway_handles_openai_image_test_model_locally() {
     run_provider_query_test(
         "gateway_handles_openai_image_test_model_locally",

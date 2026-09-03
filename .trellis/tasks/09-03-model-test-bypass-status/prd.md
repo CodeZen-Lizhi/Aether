@@ -82,14 +82,14 @@
 
 ## Acceptance Criteria
 
-- [ ] 供应商关闭 + 至少一个 Key（无论开关）→ 模型测试真实发起请求并返回上游结果。
-- [ ] 所有 Key 关闭但存在 → 模型测试真实发起请求。
-- [ ] 供应商与所有 Key 均开启 → 行为与现状一致（回归不破坏）。
-- [ ] 供应商下没有任何格式兼容的 Key → 返回明确错误，不发起请求。
-- [ ] 无任何活动端点但有 Key → 回退端点后仍可测试。
-- [ ] 正式转发链路不受影响：`crates/aether-provider/transport/src/policy.rs` 无语义变更，
+- [x] 供应商关闭 + 至少一个 Key（无论开关）→ 模型测试真实发起请求并返回上游结果。
+- [x] 所有 Key 关闭但存在 → 模型测试真实发起请求。
+- [x] 供应商与所有 Key 均开启 → 行为与现状一致（回归不破坏）。
+- [x] 供应商下没有任何格式兼容的 Key → 返回明确错误，不发起请求。
+- [x] 无任何活动端点但有 Key → 回退端点后仍可测试。
+- [x] 正式转发链路不受影响：`crates/aether-provider/transport/src/policy.rs` 无语义变更，
       `ai_serving/planner` 相关测试全部通过。
-- [ ] `cargo test -p aether-gateway`（至少 model_test 相关模块：
+- [x] `cargo test -p aether-gateway`（至少 model_test 相关模块：
       `handlers/admin/provider/query/models/model_test/tests.rs`、
       `control/tests/admin_provider_query.rs`、`tests/control/admin/provider_query.rs`）通过，
       受影响断言同步更新；`cargo test -p aether-provider-transport`（若涉及）通过。

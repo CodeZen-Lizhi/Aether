@@ -82,15 +82,8 @@ pub(super) fn provider_query_grok_test_unsupported_reason(
     transport: &AdminGatewayProviderTransportSnapshot,
     api_format: &str,
 ) -> Option<&'static str> {
-    if !transport.provider.is_active {
-        return Some("provider_inactive");
-    }
-    if !transport.endpoint.is_active {
-        return Some("endpoint_inactive");
-    }
-    if !transport.key.is_active {
-        return Some("key_inactive");
-    }
+    // Model tests ignore runtime on/off state: only real capability limits
+    // (provider type, api format, rules, proxy, profile) may reject a test.
     if !transport
         .provider
         .provider_type
