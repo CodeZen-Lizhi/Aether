@@ -1,4 +1,4 @@
-use super::value::build_admin_provider_summary_value;
+use super::{read_system_default_provider_priorities, value::build_admin_provider_summary_value};
 use crate::handlers::admin::request::AdminAppState;
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
@@ -173,11 +173,27 @@ pub(crate) async fn build_admin_providers_summary_payload(
         true
     });
 
+    // Order the complete filtered result before applying pagination so every
+    // page follows the same enabled-provider and routing-priority order.
+    let provider_priorities = read_system_default_provider_priorities(state).await;
     providers.sort_by(|left, right| {
         right
             .is_active
             .cmp(&left.is_active)
+            .then_with(|| {
+                provider_priorities
+                    .get(&left.id)
+                    .copied()
+                    .unwrap_or(i32::MAX)
+                    .cmp(
+                        &provider_priorities
+                            .get(&right.id)
+                            .copied()
+                            .unwrap_or(i32::MAX),
+                    )
+            })
             .then_with(|| left.created_at_unix_ms.cmp(&right.created_at_unix_ms))
+            .then_with(|| left.id.cmp(&right.id))
     });
 
     let total = providers.len();

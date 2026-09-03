@@ -6,6 +6,7 @@ use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
 use aether_data::repository::global_models::InMemoryGlobalModelReadRepository;
 use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
 use aether_data::repository::quota::InMemoryProviderQuotaRepository;
+use aether_data::repository::routing_profiles::InMemoryRoutingGroupRepository;
 use aether_data_contracts::repository::candidates::RequestCandidateStatus;
 use aether_data_contracts::repository::global_models::{
     GlobalModelReadRepository, StoredAdminGlobalModel, StoredAdminProviderModel,
@@ -15,6 +16,7 @@ use aether_data_contracts::repository::provider_catalog::{
     ProviderCatalogReadRepository, StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
     StoredProviderCatalogProvider,
 };
+use aether_data_contracts::repository::routing_profiles::StoredRoutingGroup;
 use axum::body::{Body, Bytes};
 use axum::routing::any;
 use axum::{extract::Request, Router};
@@ -403,24 +405,60 @@ async fn gateway_handles_admin_providers_summary_list_locally_with_bearer_admin_
                 .with_timestamps(Some(1_711_000_000), Some(1_711_000_100)),
             sample_provider("provider-anthropic", "anthropic", 20)
                 .with_timestamps(Some(1_710_000_000), Some(1_710_000_100)),
+            sample_provider("provider-disabled", "disabled", 30)
+                .with_transport_fields(false, false, None, None, None, None, None, None)
+                .with_timestamps(Some(1_709_000_000), Some(1_709_000_100)),
         ],
         vec![],
         vec![],
+    ));
+    let routing_group_repository = Arc::new(InMemoryRoutingGroupRepository::seed(
+        vec![StoredRoutingGroup {
+            id: "routing-default".to_string(),
+            name: "default".to_string(),
+            description: None,
+            enabled: true,
+            is_system_default: true,
+            config_json: json!({
+                "rules": [{
+                    "id": "provider-priority",
+                    "actions": [
+                        {"type": "set_provider_priority", "provider_id": "provider-openai", "priority": 1},
+                        {"type": "set_provider_priority", "provider_id": "provider-anthropic", "priority": 2},
+                        {"type": "set_provider_priority", "provider_id": "provider-disabled", "priority": 0}
+                    ]
+                }, {
+                    "id": "disabled-provider-priority",
+                    "enabled": false,
+                    "actions": [
+                        {"type": "set_provider_priority", "provider_id": "provider-openai", "priority": 9},
+                        {"type": "set_provider_priority", "provider_id": "provider-anthropic", "priority": 0}
+                    ]
+                }]
+            }),
+            version: 1,
+            created_at: 1,
+            updated_at: 1,
+            published_at: None,
+        }],
+        Vec::new(),
+        Vec::new(),
     ));
 
     let (upstream_url, upstream_handle) = start_server(upstream).await;
     let state = AppState::new()
         .expect("gateway should build")
-        .with_data_state_for_tests(GatewayDataState::with_provider_catalog_reader_for_tests(
-            provider_catalog_repository,
-        ));
+        .with_data_state_for_tests(
+            GatewayDataState::with_provider_catalog_reader_for_tests(provider_catalog_repository)
+                .with_routing_group_repository_for_tests(routing_group_repository),
+        );
     let access_token = issue_test_admin_access_token(&state, "device-admin-providers").await;
     let gateway = build_router_with_state(state);
     let (gateway_url, gateway_handle) = start_server(gateway).await;
 
     let response = reqwest::Client::new()
         .get(format!(
-            "{gateway_url}/api/admin/providers/summary?page=1&page_size=20"
+            "{gateway_url}/api/admin/providers/summary?page=1&page_size=2"
         ))
         .header("authorization", format!("Bearer {access_token}"))
         .header("x-client-device-id", "device-admin-providers")
@@ -431,13 +469,10 @@ async fn gateway_handles_admin_providers_summary_list_locally_with_bearer_admin_
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     let items = payload["items"].as_array().expect("items should be array");
+    assert_eq!(payload["total"], 3);
     assert_eq!(items.len(), 2);
-    let mut ids = items
-        .iter()
-        .filter_map(|item| item.get("id").and_then(serde_json::Value::as_str))
-        .collect::<Vec<_>>();
-    ids.sort_unstable();
-    assert_eq!(ids, vec!["provider-anthropic", "provider-openai"]);
+    assert_eq!(items[0]["id"], "provider-openai");
+    assert_eq!(items[1]["id"], "provider-anthropic");
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
