@@ -101,6 +101,20 @@
                     </div>
                   </PopoverContent>
                 </Popover>
+                <!-- 出站请求压缩开关 -->
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7"
+                  :class="isEndpointRequestGzipEnabled(endpoint) ? 'text-primary' : 'text-muted-foreground'"
+                  :aria-pressed="isEndpointRequestGzipEnabled(endpoint)"
+                  :aria-label="getEndpointRequestGzipTooltip(endpoint)"
+                  :title="getEndpointRequestGzipTooltip(endpoint)"
+                  :disabled="savingEndpointId === endpoint.id"
+                  @click="handleSetEndpointRequestGzip(endpoint, !isEndpointRequestGzipEnabled(endpoint))"
+                >
+                  <FileArchive class="h-3.5 w-3.5" />
+                </Button>
                 <!-- 上游流式三态按钮 -->
                 <Button
                   v-if="!isWebSocketEndpointApiFormat(endpoint.api_format)"
@@ -1033,7 +1047,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui'
-import { Settings, Trash2, Check, X, Power, ChevronRight, Plus, Shuffle, RotateCcw, Radio, CheckCircle, Save, Filter, HelpCircle, GripVertical, Globe, Code2, AlignLeft } from 'lucide-vue-next'
+import { Settings, Trash2, Check, X, Power, ChevronRight, Plus, Shuffle, RotateCcw, Radio, CheckCircle, Save, Filter, HelpCircle, GripVertical, Globe, FileArchive, Code2, AlignLeft } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { parseApiError } from '@/utils/errorParser'
 import { log } from '@/utils/logger'
@@ -1976,6 +1990,76 @@ function getEndpointUpstreamStreamPolicy(endpoint: ProviderEndpoint): string {
   if (s === 'force_stream' || s === 'stream' || s === 'sse' || s === 'true' || s === '1') return 'force_stream'
   if (s === 'force_non_stream' || s === 'force_sync' || s === 'non_stream' || s === 'sync' || s === 'false' || s === '0') return 'force_non_stream'
   return 'auto'
+}
+
+function configBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value
+  if (typeof value !== 'string') return undefined
+
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'true') return true
+  if (normalized === 'false') return false
+  return undefined
+}
+
+function isEndpointRequestGzipEnabled(endpoint: ProviderEndpoint): boolean {
+  const config = endpoint.config || {}
+  const policy = config.request_gzip ?? config.request_body_gzip
+  const direct = configBoolean(policy)
+  if (direct !== undefined) return direct
+
+  if (policy && typeof policy === 'object' && !Array.isArray(policy)) {
+    const objectPolicy = policy as Record<string, unknown>
+    const enabled = configBoolean(objectPolicy.enabled)
+    return enabled ?? objectPolicy.min_bytes !== undefined
+  }
+
+  const enabled = configBoolean(
+    config.request_gzip_enabled ?? config.request_body_gzip_enabled,
+  )
+  return enabled ?? (
+    config.request_gzip_min_bytes !== undefined
+    || config.request_body_gzip_min_bytes !== undefined
+  )
+}
+
+function getEndpointRequestGzipTooltip(endpoint: ProviderEndpoint): string {
+  return isEndpointRequestGzipEnabled(endpoint)
+    ? legacyT('已启用请求 gzip（点击关闭）')
+    : legacyT('启用请求 gzip')
+}
+
+async function handleSetEndpointRequestGzip(endpoint: ProviderEndpoint, enabled: boolean) {
+  savingEndpointId.value = endpoint.id
+  try {
+    const config: Record<string, unknown> = { ...(endpoint.config || {}) }
+    const existingPolicy = config.request_gzip ?? config.request_body_gzip
+    const existingMinBytes = config.request_gzip_min_bytes ?? config.request_body_gzip_min_bytes
+
+    delete config.request_gzip
+    delete config.request_body_gzip
+    delete config.request_gzip_enabled
+    delete config.request_body_gzip_enabled
+    delete config.request_gzip_min_bytes
+    delete config.request_body_gzip_min_bytes
+
+    if (enabled && existingPolicy && typeof existingPolicy === 'object' && !Array.isArray(existingPolicy)) {
+      config.request_gzip = { ...(existingPolicy as Record<string, unknown>), enabled: true }
+    } else if (enabled && existingMinBytes !== undefined) {
+      config.request_gzip = { enabled: true, min_bytes: existingMinBytes }
+    } else {
+      config.request_gzip = enabled
+    }
+
+    const updated = await updateEndpoint(endpoint.id, { config })
+    replaceLocalEndpoint(updated)
+    success(legacyT(enabled ? '已启用请求 gzip' : '已关闭请求 gzip'))
+    emit('endpointUpdated')
+  } catch (error: unknown) {
+    showError(localizedApiError(error, '更新请求 gzip 失败'), legacyT('错误'))
+  } finally {
+    savingEndpointId.value = null
+  }
 }
 
 function endpointProxyNodeId(endpoint: ProviderEndpoint): string {
