@@ -1643,7 +1643,6 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '清除账号异常标记': 'Clear account issue marker',
   '已清除 OAuth 异常标记': 'OAuth issue marker cleared',
   '密钥已删除': 'Key deleted',
-  'Key已完全恢复': 'Key fully recovered',
   '已清除提供商代理': 'Provider proxy cleared',
   '已清除账号代理，将使用提供商级别代理': 'Account proxy cleared; provider-level proxy will be used',
   '优先级已更新': 'Priority updated',

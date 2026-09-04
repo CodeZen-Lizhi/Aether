@@ -104,9 +104,15 @@ pub(crate) async fn recover_admin_key_health(
                 }),
             )
         } else {
+            let mut health_by_format = serde_json::Map::new();
+            let mut circuit_breaker_by_format = serde_json::Map::new();
+            for api_format in provider_key_effective_api_formats(&key) {
+                health_by_format.insert(api_format.clone(), default_key_health_payload());
+                circuit_breaker_by_format.insert(api_format, default_key_circuit_payload());
+            }
             (
-                json!({}),
-                json!({}),
+                serde_json::Value::Object(health_by_format),
+                serde_json::Value::Object(circuit_breaker_by_format),
                 "Key 所有格式已恢复".to_string(),
                 json!({
                     "health_score": 1.0,

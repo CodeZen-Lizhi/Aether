@@ -221,7 +221,7 @@
                                 size="icon"
                                 class="h-6 w-6 text-green-600"
                                 title="刷新健康状态"
-                                @click.stop="handleRecoverKey(keyEntry.key.id, keyEntry.endpoint?.api_format || formatGroup.api_format)"
+                                @click.stop="handleRecoverKey(keyEntry.key.id)"
                               >
                                 <RefreshCw class="w-3 h-3" />
                               </Button>
@@ -486,7 +486,7 @@
                                           v-if="key.circuit_breaker_open || (key.health_score ?? 1) < 0.5"
                                           class="p-0.5 rounded hover:bg-muted/50 text-green-600 shrink-0"
                                           title="刷新健康状态"
-                                          @click.stop="handleRecoverKey(key.id, providerEntry.endpoint?.api_format || formatGroup.api_format)"
+                                          @click.stop="handleRecoverKey(key.id)"
                                         >
                                           <RefreshCw class="w-3 h-3" />
                                         </button>
@@ -609,7 +609,7 @@ const emit = defineEmits<{
   refresh: []
 }>()
 
-const { success: showSuccess, error: showError } = useToast()
+const { error: showError } = useToast()
 const { tick: countdownTick, start: startCountdownTimer } = useCountdownTimer()
 
 // 使用外部传入的数据或内部状态
@@ -1095,13 +1095,12 @@ function getKeyProbeCountdown(key: RoutingKeyInfo): string {
   return countdown ? ` · ${countdown}` : ''
 }
 
-// 恢复 Key 健康状态（仅恢复指定 API 格式）
-async function handleRecoverKey(keyId: string, apiFormat: string) {
+// 恢复 Key 的全部 API 格式健康和本地熔断状态
+async function handleRecoverKey(keyId: string) {
   try {
-    const result = await recoverKeyHealth(keyId, apiFormat)
+    await recoverKeyHealth(keyId)
     // 通知父组件刷新数据
     emit('refresh')
-    showSuccess(result.message || 'Key 已恢复')
   } catch (err: unknown) {
     showError(parseApiError(err, 'Key 恢复失败'), '错误')
   }

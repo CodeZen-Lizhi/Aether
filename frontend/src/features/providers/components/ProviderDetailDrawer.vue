@@ -873,8 +873,7 @@ async function confirmDeleteKey() {
 
 async function handleRecoverKey(key: EndpointAPIKey) {
   try {
-    const result = await recoverKeyHealth(key.id, key.api_formats?.[0] ?? 'openai:chat')
-    showSuccess(legacyT(result.message || 'Key已完全恢复'))
+    await recoverKeyHealth(key.id)
     await Promise.all([loadProvider(), loadEndpoints()])
     emit('refresh')
   } catch (err: unknown) {

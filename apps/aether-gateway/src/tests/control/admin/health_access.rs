@@ -50,24 +50,42 @@ async fn gateway_recovers_admin_key_health_locally_with_trusted_admin_principal(
             "openai:chat",
             "https://api.openai.example",
         )],
-        vec![
-            sample_key("key-openai", "provider-openai", "openai:chat", "sk-test")
-                .with_health_fields(
-                    Some(json!({"openai:chat": {
+        vec![{
+            let mut key = sample_key("key-openai", "provider-openai", "openai:chat", "sk-test");
+            key.api_formats = Some(json!(["openai:chat", "openai:responses"]));
+            key.with_health_fields(
+                Some(json!({
+                    "openai:chat": {
                         "health_score": 0.2,
                         "consecutive_failures": 4,
                         "last_failure_at": "2026-03-26T12:00:00+00:00"
-                    }})),
-                    Some(json!({"openai:chat": {
+                    },
+                    "openai:responses": {
+                        "health_score": 0.3,
+                        "consecutive_failures": 2,
+                        "last_failure_at": "2026-03-26T12:02:00+00:00"
+                    }
+                })),
+                Some(json!({
+                    "openai:chat": {
                         "open": true,
                         "open_at": "2026-03-26T12:01:00+00:00",
                         "next_probe_at": "2099-03-26T12:05:00+00:00",
                         "half_open_until": null,
                         "half_open_successes": 0,
                         "half_open_failures": 1
-                    }})),
-                ),
-        ],
+                    },
+                    "openai:responses": {
+                        "open": true,
+                        "open_at": "2026-03-26T12:02:00+00:00",
+                        "next_probe_at": "2099-03-26T12:06:00+00:00",
+                        "half_open_until": null,
+                        "half_open_successes": 0,
+                        "half_open_failures": 1
+                    }
+                })),
+            )
+        }],
     ));
 
     let (upstream_url, upstream_handle) = start_server(upstream).await;
@@ -84,7 +102,7 @@ async fn gateway_recovers_admin_key_health_locally_with_trusted_admin_principal(
 
     let response = reqwest::Client::new()
         .patch(format!(
-            "{gateway_url}/api/admin/endpoints/health/keys/key-openai?api_format=openai:chat"
+            "{gateway_url}/api/admin/endpoints/health/keys/key-openai"
         ))
         .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
         .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
@@ -97,8 +115,7 @@ async fn gateway_recovers_admin_key_health_locally_with_trusted_admin_principal(
     let status = response.status();
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(status, StatusCode::OK, "payload={payload}");
-    assert_eq!(payload["message"], "Key 的 openai:chat 格式已恢复");
-    assert_eq!(payload["details"]["api_format"], "openai:chat");
+    assert_eq!(payload["message"], "Key 所有格式已恢复");
     assert_eq!(payload["details"]["health_score"], 1.0);
     assert_eq!(payload["details"]["circuit_breaker_open"], false);
     assert_eq!(payload["details"]["is_active"], true);
@@ -114,22 +131,43 @@ async fn gateway_recovers_admin_key_health_locally_with_trusted_admin_principal(
     assert_eq!(recovered_key.is_active, true);
     assert_eq!(
         recovered_key.health_by_format,
-        Some(json!({"openai:chat": {
-            "health_score": 1.0,
-            "consecutive_failures": 0,
-            "last_failure_at": null
-        }}))
+        Some(json!({
+            "openai:chat": {
+                "health_score": 1.0,
+                "consecutive_failures": 0,
+                "last_failure_at": null,
+                "rate_limit_cooldown_until_unix_secs": null,
+                "consecutive_rate_limits": 0
+            },
+            "openai:responses": {
+                "health_score": 1.0,
+                "consecutive_failures": 0,
+                "last_failure_at": null,
+                "rate_limit_cooldown_until_unix_secs": null,
+                "consecutive_rate_limits": 0
+            }
+        }))
     );
     assert_eq!(
         recovered_key.circuit_breaker_by_format,
-        Some(json!({"openai:chat": {
-            "open": false,
-            "open_at": null,
-            "next_probe_at": null,
-            "half_open_until": null,
-            "half_open_successes": 0,
-            "half_open_failures": 0
-        }}))
+        Some(json!({
+            "openai:chat": {
+                "open": false,
+                "open_at": null,
+                "next_probe_at": null,
+                "half_open_until": null,
+                "half_open_successes": 0,
+                "half_open_failures": 0
+            },
+            "openai:responses": {
+                "open": false,
+                "open_at": null,
+                "next_probe_at": null,
+                "half_open_until": null,
+                "half_open_successes": 0,
+                "half_open_failures": 0
+            }
+        }))
     );
 
     gateway_handle.abort();
