@@ -573,3 +573,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 21: Reset all key API format health
+<!-- trellis-session: v=2 fp=9c4dd7422a3028fe -->
+
+**Date**: 2026-09-04
+**Task**: Reset all key API format health
+**Branch**: `slim-personal`
+
+### Summary
+
+Fixed manual key recovery to reset every configured API format to health 100% and close local circuit breakers; removed success toast, rebuilt and restarted Docker app, and verified the service is healthy.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `68c0db22b` | fix: restore health for all key api formats |
+
+### Status
+
+[OK] **Completed**
