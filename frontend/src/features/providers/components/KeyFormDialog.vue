@@ -162,25 +162,23 @@
         </div>
       </div>
 
-      <!-- 成本倍率 -->
-      <div class="space-y-1.5">
-        <Label for="default_rate_multiplier">{{ legacyT('默认成本倍率') }}</Label>
-        <Input
-          id="default_rate_multiplier"
-          v-model.number="form.default_rate_multiplier"
-          type="number"
-          min="0"
-          max="100"
-          step="0.01"
-          class="h-8 w-32"
-        />
-        <p class="text-xs text-muted-foreground">
-          {{ legacyT('该密钥所有请求按此倍率计费，1 表示不调整。') }}
-        </p>
-      </div>
-
-      <!-- 配置项 -->
-      <div class="grid grid-cols-4 gap-3">
+      <!-- 成本与优先级 -->
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div class="space-y-1.5">
+          <Label for="default_rate_multiplier">{{ legacyT('默认成本倍率') }}</Label>
+          <Input
+            id="default_rate_multiplier"
+            v-model.number="form.default_rate_multiplier"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            class="h-8"
+          />
+          <p class="text-xs text-muted-foreground">
+            {{ legacyT('该密钥所有请求按此倍率计费，1 表示不调整。') }}
+          </p>
+        </div>
         <div>
           <Label
             for="internal_priority"
@@ -197,6 +195,10 @@
             {{ legacyT('越小越优先') }}
           </p>
         </div>
+      </div>
+
+      <!-- 限制与缓存配置 -->
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div>
           <Label
             for="rpm_limit"
@@ -468,16 +470,8 @@ function sanitizeAllowAuthChannelMismatchFormats(
 }
 
 function getDefaultApiFormats(): string[] {
-  const endpointFormat = props.endpoint?.api_format
-  if (endpointFormat) {
-    const endpointFormats = sanitizeApiFormats([endpointFormat])
-    if (endpointFormats.length > 0) {
-      return endpointFormats
-    }
-  }
-
-  const firstAvailableFormat = getSelectableApiFormats()[0]
-  return firstAvailableFormat ? [firstAvailableFormat] : []
+  // 新增密钥默认支持供应商已配置的全部 API 格式，用户仍可手动取消不需要的格式。
+  return getSelectableApiFormats()
 }
 
 // 按 provider/auth_type 过滤后的可用 API 格式列表
