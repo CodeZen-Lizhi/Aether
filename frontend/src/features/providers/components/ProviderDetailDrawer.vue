@@ -69,16 +69,6 @@
                         variant="outline"
                         size="sm"
                         class="h-9"
-                        @click="keyBatchImportDialogOpen = true"
-                      >
-                        <ListPlus class="mr-1.5 h-3.5 w-3.5" />
-                        批量导入
-                      </Button>
-                      <Button
-                        v-if="endpoints.length > 0"
-                        variant="outline"
-                        size="sm"
-                        class="h-9"
                         @click="handleAddKeyToFirstEndpoint"
                       >
                         <Plus class="w-3.5 h-3.5 mr-1.5" />
@@ -318,16 +308,6 @@
     @saved="handleKeyChanged"
   />
 
-  <ProviderKeyBatchImportDialog
-    v-if="open && keyBatchImportDialogOpen && provider"
-    :open="keyBatchImportDialogOpen"
-    :provider-id="provider.id"
-    :provider-name="provider.name"
-    :available-api-formats="availableKeyApiFormats"
-    @close="keyBatchImportDialogOpen = false"
-    @saved="handleKeyChanged"
-  />
-
   <!-- 模型权限对话框 -->
   <KeyAllowedModelsEditDialog
     v-if="open && keyPermissionsDialogOpen"
@@ -388,7 +368,6 @@ import { ref, watch, computed, nextTick } from 'vue'
 import {
   Plus,
   Key,
-  ListPlus,
   Loader2,
 } from 'lucide-vue-next'
 import { parseApiError } from '@/utils/errorParser'
@@ -422,7 +401,6 @@ import ProviderModelFormDialog from '@/features/providers/components/ProviderMod
 import AlertDialog from '@/components/common/AlertDialog.vue'
 import FailoverRulesDialog from '@/features/providers/components/FailoverRulesDialog.vue'
 import ProviderDetailHeader from '@/features/providers/components/ProviderDetailHeader.vue'
-import ProviderKeyBatchImportDialog from '@/features/providers/components/ProviderKeyBatchImportDialog.vue'
 import ProviderKeyActionCluster from '@/features/providers/components/ProviderKeyActionCluster.vue'
 import ProviderKeyIdentityBlock from '@/features/providers/components/ProviderKeyIdentityBlock.vue'
 import ProviderMonthlyQuotaCard from '@/features/providers/components/ProviderMonthlyQuotaCard.vue'
@@ -505,7 +483,6 @@ const endpointDialogOpen = ref(false)
 
 // 密钥相关状态
 const keyFormDialogOpen = ref(false)
-const keyBatchImportDialogOpen = ref(false)
 const keyPermissionsDialogOpen = ref(false)
 const currentEndpoint = ref<ProviderEndpoint | null>(null)
 const editingKey = ref<EndpointAPIKey | null>(null)
@@ -563,7 +540,6 @@ const multiplierSaving = ref(false)
 const hasBlockingDialogOpen = computed(() =>
   endpointDialogOpen.value ||
   keyFormDialogOpen.value ||
-  keyBatchImportDialogOpen.value ||
   keyPermissionsDialogOpen.value ||
   deleteKeyConfirmOpen.value ||
   modelFormDialogOpen.value ||
@@ -705,7 +681,6 @@ watch(
       // 重置所有对话框状态
       endpointDialogOpen.value = false
       keyFormDialogOpen.value = false
-      keyBatchImportDialogOpen.value = false
       keyPermissionsDialogOpen.value = false
       deleteKeyConfirmOpen.value = false
       batchAssignDialogOpen.value = false
