@@ -130,6 +130,30 @@ describe('ProviderKeyActionCluster', () => {
     unmount()
   })
 
+  it.each([401, 402, 403])('shows credential unavailable without a misleading health score for %s', (statusCode) => {
+    const { root, unmount } = mount({
+      apiKey: createProviderKey({
+        health_score: 1,
+        circuit_breaker_open: true,
+        circuit_breaker_by_format: {
+          'openai:chat': {
+            open: true,
+            reason: `credential_dead_${statusCode}`,
+            half_open_successes: 0,
+            half_open_failures: 0,
+          },
+        },
+      }),
+      circuitBreakerTitle: 'Credential is unavailable',
+      circuitProbeCountdown: ' 6m',
+    })
+
+    expect(root.querySelector('[data-testid="provider-key-circuit-badge"]')?.textContent).toContain('凭据不可用 6m')
+    expect(root.querySelector('[data-testid="provider-key-health"]')).toBeNull()
+
+    unmount()
+  })
+
   it('emits operation and proxy events without owning business logic', () => {
     const onRecover = vi.fn()
     const onPermissions = vi.fn()

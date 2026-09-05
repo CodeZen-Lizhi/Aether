@@ -1578,6 +1578,7 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '该账号尚未完成 Gemini Code Assist 激活，无法获取配额和使用模型': 'This account has not completed Gemini Code Assist activation, so quota and model usage cannot be fetched.',
   '账号未激活': 'Account not activated',
   '熔断': 'Circuit open',
+  '凭据不可用': 'Credential unavailable',
   '代理': 'Proxy',
   '代理节点已设置': 'Proxy node set',
   '设置代理节点': 'Set proxy node',

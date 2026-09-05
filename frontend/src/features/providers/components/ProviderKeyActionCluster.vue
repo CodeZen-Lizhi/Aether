@@ -7,11 +7,11 @@
       :title="circuitBreakerTitle"
       data-testid="provider-key-circuit-badge"
     >
-      {{ legacyT('熔断') }}{{ circuitProbeCountdown }}
+      {{ legacyT(hasCredentialUnavailableCircuit ? '凭据不可用' : '熔断') }}{{ circuitProbeCountdown }}
     </Badge>
 
     <div
-      v-if="apiKey.health_score !== undefined"
+      v-if="apiKey.health_score !== undefined && !hasCredentialUnavailableCircuit"
       class="flex items-center gap-1 mr-1"
       data-testid="provider-key-health"
     >
@@ -188,6 +188,20 @@ defineEmits<{
 }>()
 
 const { legacyT } = useI18n()
+
+const credentialUnavailableReasons = new Set([
+  'credential_dead_401',
+  'credential_dead_402',
+  'credential_dead_403',
+])
+
+const hasCredentialUnavailableCircuit = computed(() => {
+  if (!props.apiKey.circuit_breaker_open) return false
+
+  return Object.values(props.apiKey.circuit_breaker_by_format || {}).some(circuit => (
+    circuit.open && credentialUnavailableReasons.has(circuit.reason?.trim() || '')
+  ))
+})
 
 const healthScorePercent = computed(() => {
   const score = Number(props.apiKey.health_score ?? 0)
