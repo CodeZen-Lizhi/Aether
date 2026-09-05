@@ -163,117 +163,163 @@
       </div>
 
       <!-- 成本与优先级 -->
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div class="space-y-1.5">
-          <Label for="default_rate_multiplier">{{ legacyT('默认成本倍率') }}</Label>
-          <Input
-            id="default_rate_multiplier"
-            v-model.number="form.default_rate_multiplier"
-            type="number"
-            min="0"
-            max="100"
-            step="0.01"
-            class="h-8"
-          />
-          <p class="text-xs text-muted-foreground">
-            {{ legacyT('该密钥所有请求按此倍率计费，1 表示不调整。') }}
-          </p>
+      <div class="grid overflow-hidden rounded-lg border border-border/70 bg-border/70 sm:grid-cols-2 sm:divide-x sm:divide-border/70">
+        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
+          <div class="min-w-0">
+            <Label for="default_rate_multiplier">{{ legacyT('成本倍率') }}</Label>
+            <p
+              id="default-rate-multiplier-help"
+              class="mt-1 text-xs text-muted-foreground"
+            >
+              {{ legacyT('1 × 表示不调整') }}
+            </p>
+          </div>
+          <div class="w-24 shrink-0">
+            <Input
+              id="default_rate_multiplier"
+              v-model.number="form.default_rate_multiplier"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              size="sm"
+              class="h-9 text-right font-mono tabular-nums"
+              aria-describedby="default-rate-multiplier-help"
+            />
+          </div>
         </div>
-        <div>
-          <Label
-            for="internal_priority"
-            class="text-xs"
-          >{{ legacyT('优先级') }}</Label>
-          <Input
-            id="internal_priority"
-            v-model.number="form.internal_priority"
-            type="number"
-            min="0"
-            class="h-8"
-          />
-          <p class="text-xs text-muted-foreground mt-0.5">
-            {{ legacyT('越小越优先') }}
-          </p>
+        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 border-t border-border/70 bg-background px-3 py-2.5 sm:border-t-0">
+          <div class="min-w-0">
+            <Label for="internal_priority">{{ legacyT('优先级') }}</Label>
+            <p
+              id="internal-priority-help"
+              class="mt-1 text-xs text-muted-foreground"
+            >
+              {{ legacyT('越小越优先') }}
+            </p>
+          </div>
+          <div class="w-24 shrink-0">
+            <Input
+              id="internal_priority"
+              v-model.number="form.internal_priority"
+              type="number"
+              min="0"
+              step="1"
+              size="sm"
+              class="h-9 text-right font-mono tabular-nums"
+              aria-describedby="internal-priority-help"
+            />
+          </div>
         </div>
       </div>
 
-      <!-- 限制与缓存配置 -->
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div>
-          <Label
-            for="rpm_limit"
-            class="text-xs"
-          >{{ legacyT('RPM 限制') }}</Label>
-          <Input
-            id="rpm_limit"
-            :model-value="form.rpm_limit ?? ''"
-            type="number"
-            min="1"
-            max="10000"
-            :placeholder="legacyT('自适应')"
-            class="h-8"
-            @update:model-value="(v) => form.rpm_limit = parseNullableNumberInput(v, { min: 1, max: 10000 })"
-          />
-          <p class="text-xs text-muted-foreground mt-0.5">
-            {{ legacyT('留空自适应') }}
-          </p>
-        </div>
-        <div>
-          <Label
-            for="concurrent_limit"
-            class="text-xs"
-          >{{ legacyT('并发请求上限') }}</Label>
-          <Input
-            id="concurrent_limit"
-            :model-value="form.concurrent_limit ?? ''"
-            type="number"
-            min="0"
-            :placeholder="legacyT('不限制')"
-            class="h-8"
-            @update:model-value="(v) => form.concurrent_limit = parseNullableNumberInput(v, { min: 0 })"
-          />
-          <p class="text-xs text-muted-foreground mt-0.5">
-            {{ legacyT('留空或 0 表示不限制') }}
-          </p>
-        </div>
-        <div>
-          <Label
-            for="cache_ttl_minutes"
-            class="text-xs"
-          >{{ legacyT('缓存 TTL') }}</Label>
-          <Input
-            id="cache_ttl_minutes"
-            :model-value="form.cache_ttl_minutes ?? ''"
-            type="number"
-            min="0"
-            max="60"
-            class="h-8"
-            @update:model-value="(v) => form.cache_ttl_minutes = parseNumberInput(v, { min: 0, max: 60 }) ?? 5"
-          />
-          <p class="text-xs text-muted-foreground mt-0.5">
-            {{ legacyT('分钟，0禁用') }}
-          </p>
-        </div>
-        <div>
-          <Label
-            for="max_probe_interval_minutes"
-            class="text-xs"
-          >{{ legacyT('熔断探测') }}</Label>
-          <Input
-            id="max_probe_interval_minutes"
-            :model-value="form.max_probe_interval_minutes ?? ''"
-            type="number"
-            min="0"
-            max="32"
-            placeholder="32"
-            class="h-8"
-            @update:model-value="(v) => form.max_probe_interval_minutes = parseNumberInput(v, { min: 0, max: 32 }) ?? 32"
-          />
-          <p class="text-xs text-muted-foreground mt-0.5">
-            {{ legacyT('分钟，0-32') }}
-          </p>
-        </div>
-      </div>
+      <!-- 低频限制和稳定性参数收进高级选项，避免干扰常规密钥配置。 -->
+      <Collapsible
+        v-model:open="advancedSettingsExpanded"
+        class="overflow-hidden rounded-lg border border-border/70"
+      >
+        <CollapsibleTrigger as-child>
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
+          >
+            <div class="min-w-0">
+              <span class="text-sm font-medium text-foreground">{{ legacyT('高级选项') }}</span>
+              <span class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                <span>{{ rpmLimitSummary }}</span>
+                <span aria-hidden="true">·</span>
+                <span>{{ concurrentLimitSummary }}</span>
+              </span>
+            </div>
+            <ChevronDown
+              class="h-4 w-4 shrink-0 text-muted-foreground transition-transform"
+              :class="advancedSettingsExpanded ? 'rotate-180' : ''"
+            />
+          </button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <div class="grid gap-x-5 gap-y-4 border-t border-border/70 bg-muted/20 px-3 py-3 sm:grid-cols-2">
+            <div>
+              <Label for="rpm_limit">{{ legacyT('RPM 限制') }}</Label>
+              <div class="mt-1.5 w-full max-w-40">
+                <Input
+                  id="rpm_limit"
+                  :model-value="form.rpm_limit ?? ''"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  :placeholder="legacyT('自适应')"
+                  size="sm"
+                  class="h-9 font-mono tabular-nums"
+                  @update:model-value="(v) => form.rpm_limit = parseNullableNumberInput(v, { min: 1, max: 10000 })"
+                />
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ legacyT('留空自适应') }}
+              </p>
+            </div>
+
+            <div>
+              <Label for="concurrent_limit">{{ legacyT('并发请求上限') }}</Label>
+              <div class="mt-1.5 w-full max-w-40">
+                <Input
+                  id="concurrent_limit"
+                  :model-value="form.concurrent_limit ?? ''"
+                  type="number"
+                  min="0"
+                  :placeholder="legacyT('不限制')"
+                  size="sm"
+                  class="h-9 font-mono tabular-nums"
+                  @update:model-value="(v) => form.concurrent_limit = parseNullableNumberInput(v, { min: 0 })"
+                />
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ legacyT('留空或 0 表示不限制') }}
+              </p>
+            </div>
+
+            <div>
+              <Label for="cache_ttl_minutes">{{ legacyT('缓存 TTL') }}</Label>
+              <div class="mt-1.5 w-full max-w-40">
+                <Input
+                  id="cache_ttl_minutes"
+                  :model-value="form.cache_ttl_minutes ?? ''"
+                  type="number"
+                  min="0"
+                  max="60"
+                  size="sm"
+                  class="h-9 font-mono tabular-nums"
+                  @update:model-value="(v) => form.cache_ttl_minutes = parseNumberInput(v, { min: 0, max: 60 }) ?? 5"
+                />
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ legacyT('分钟，0禁用') }}
+              </p>
+            </div>
+
+            <div>
+              <Label for="max_probe_interval_minutes">{{ legacyT('熔断探测') }}</Label>
+              <div class="mt-1.5 w-full max-w-40">
+                <Input
+                  id="max_probe_interval_minutes"
+                  :model-value="form.max_probe_interval_minutes ?? ''"
+                  type="number"
+                  min="0"
+                  max="32"
+                  placeholder="32"
+                  size="sm"
+                  class="h-9 font-mono tabular-nums"
+                  @update:model-value="(v) => form.max_probe_interval_minutes = parseNumberInput(v, { min: 0, max: 32 }) ?? 32"
+                />
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ legacyT('分钟，0-32') }}
+              </p>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       <!-- 自动获取模型 -->
       <div class="space-y-3 py-2 px-3 rounded-md border border-border/60 bg-muted/30">
@@ -345,11 +391,14 @@ import { ref, computed, watch } from 'vue'
 import {
   Dialog,
   Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   Input,
   Label,
   Switch,
 } from '@/components/ui'
-import { Key, SquarePen, CircleHelp } from 'lucide-vue-next'
+import { ChevronDown, Key, SquarePen, CircleHelp } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useFormDialog } from '@/composables/useFormDialog'
 import { useI18n } from '@/i18n'
@@ -605,6 +654,7 @@ const canSave = computed(() => {
 
 const isOpen = computed(() => props.open)
 const saving = ref(false)
+const advancedSettingsExpanded = ref(false)
 const formNonce = ref(createFieldNonce())
 const keyNameInputId = computed(() => `key-name-${formNonce.value}`)
 const apiKeyInputId = computed(() => `api-key-${formNonce.value}`)
@@ -633,6 +683,27 @@ const form = ref({
   model_include_patterns_text: '',  // 包含规则文本（逗号分隔）
   model_exclude_patterns_text: ''   // 排除规则文本（逗号分隔）
 })
+
+const rpmLimitSummary = computed(() => {
+  const value = form.value.rpm_limit
+  return value == null
+    ? `RPM ${legacyT('自适应')}`
+    : `RPM ${value}`
+})
+
+const concurrentLimitSummary = computed(() => {
+  const value = form.value.concurrent_limit
+  return value == null || value === 0
+    ? legacyT('并发不限')
+    : `${legacyT('并发限制')} ${value}`
+})
+
+function hasCustomAdvancedSettings(key: EndpointAPIKey): boolean {
+  return key.rpm_limit != null
+    || (key.concurrent_limit != null && key.concurrent_limit > 0)
+    || (key.cache_ttl_minutes ?? 5) !== 5
+    || (key.max_probe_interval_minutes ?? 32) !== 32
+}
 
 watch(
   [() => props.availableApiFormats],
@@ -699,6 +770,7 @@ function toggleApiFormat(format: string) {
 // 重置表单
 function resetForm() {
   formNonce.value = createFieldNonce()
+  advancedSettingsExpanded.value = false
   const defaultApiFormats = getDefaultApiFormats()
   form.value = {
     name: '',
@@ -737,6 +809,7 @@ function clearForNextAdd() {
 function loadKeyData() {
   if (!props.editingKey) return
   formNonce.value = createFieldNonce()
+  advancedSettingsExpanded.value = hasCustomAdvancedSettings(props.editingKey)
   form.value = {
     name: props.editingKey.name,
     api_key: '',

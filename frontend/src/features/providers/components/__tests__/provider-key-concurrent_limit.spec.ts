@@ -18,8 +18,9 @@ vi.mock('@/api/endpoints', () => ({
 }))
 
 vi.mock('@/components/ui', async () => {
-  const { defineComponent, h, inject, provide } = await import('vue')
+  const { cloneVNode, computed, defineComponent, h, inject, provide } = await import('vue')
   const SelectContextKey = Symbol('SelectContext')
+  const CollapsibleContextKey = Symbol('CollapsibleContext')
 
   const passthrough = (name: string, tag = 'div') => defineComponent({
     name,
@@ -104,6 +105,56 @@ vi.mock('@/components/ui', async () => {
     },
   })
 
+  const Collapsible = defineComponent({
+    name: 'CollapsibleStub',
+    props: {
+      open: Boolean,
+    },
+    emits: ['update:open'],
+    setup(props, { emit, slots }) {
+      provide(CollapsibleContextKey, {
+        open: computed(() => props.open),
+        toggle: () => emit('update:open', !props.open),
+      })
+      return () => h('div', {
+        'data-collapsible': 'true',
+        'data-state': props.open ? 'open' : 'closed',
+      }, slots.default?.())
+    },
+  })
+
+  const CollapsibleTrigger = defineComponent({
+    name: 'CollapsibleTriggerStub',
+    setup(_, { slots }) {
+      const context = inject<{
+        open: { value: boolean }
+        toggle: () => void
+      } | null>(CollapsibleContextKey, null)
+
+      return () => {
+        const child = slots.default?.()[0]
+        if (!child) return null
+        return cloneVNode(child, {
+          'data-collapsible-trigger': 'true',
+          'aria-expanded': context?.open.value ? 'true' : 'false',
+          onClick: context?.toggle,
+        })
+      }
+    },
+  })
+
+  const CollapsibleContent = defineComponent({
+    name: 'CollapsibleContentStub',
+    setup(_, { slots }) {
+      const context = inject<{
+        open: { value: boolean }
+      } | null>(CollapsibleContextKey, null)
+      return () => context?.open.value
+        ? h('div', { 'data-collapsible-content': 'true' }, slots.default?.())
+        : null
+    },
+  })
+
   const Select = defineComponent({
     name: 'SelectStub',
     props: {
@@ -146,6 +197,9 @@ vi.mock('@/components/ui', async () => {
   return {
     Dialog,
     Button,
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
     Input,
     Label,
     Switch,
@@ -203,6 +257,7 @@ vi.mock('lucide-vue-next', async () => {
   })
 
   return {
+    ChevronDown: Icon,
     CircleHelp: Icon,
     Key: Icon,
     SquarePen: Icon,
@@ -265,14 +320,15 @@ function findInput(root: HTMLElement, id: string) {
   return input as HTMLInputElement
 }
 
+function findAdvancedSettingsTrigger(root: HTMLElement) {
+  const trigger = root.querySelector<HTMLButtonElement>('[data-collapsible-trigger="true"]')
+  expect(trigger).not.toBeNull()
+  return trigger as HTMLButtonElement
+}
+
 function updateInput(input: HTMLInputElement, value: string) {
   input.value = value
   input.dispatchEvent(new Event('input', { bubbles: true }))
-}
-
-function updateTextarea(textarea: HTMLTextAreaElement, value: string) {
-  textarea.value = value
-  textarea.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 async function submit(root: HTMLElement) {
@@ -307,6 +363,62 @@ afterEach(() => {
 })
 
 describe('provider key concurrent_limit form behavior', () => {
+  it('keeps default advanced settings collapsed when creating a key and lets the user expand them', async () => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey: null,
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+    })
+    await settle()
+
+    const trigger = findAdvancedSettingsTrigger(root)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(root.querySelector('#rpm_limit')).toBeNull()
+
+    trigger.click()
+    await settle()
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(root.querySelector('#rpm_limit')).not.toBeNull()
+  })
+
+  it('keeps default advanced settings collapsed when editing a key', async () => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey: createProviderKey({ rpm_limit: null, concurrent_limit: null }),
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+    })
+    await settle()
+
+    expect(findAdvancedSettingsTrigger(root).getAttribute('aria-expanded')).toBe('false')
+    expect(root.querySelector('#concurrent_limit')).toBeNull()
+  })
+
+  it('expands advanced settings when an edited key has a custom stability value', async () => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey: createProviderKey({
+        rpm_limit: null,
+        concurrent_limit: null,
+        cache_ttl_minutes: 0,
+      }),
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+    })
+    await settle()
+
+    expect(findAdvancedSettingsTrigger(root).getAttribute('aria-expanded')).toBe('true')
+    expect(findInput(root, 'cache_ttl_minutes').value).toBe('0')
+  })
+
   it('hydrates and serializes a positive concurrent_limit number from the normal key form', async () => {
     const saved = vi.fn()
     const updatedKey = createProviderKey({ rpm_limit: 42, concurrent_limit: 5 })
