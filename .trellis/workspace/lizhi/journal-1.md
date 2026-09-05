@@ -696,3 +696,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 26: 优化凭据熔断状态展示
+<!-- trellis-session: v=2 fp=aa47ab7606a66a3b -->
+
+**Date**: 2026-09-05
+**Task**: 优化凭据熔断状态展示
+**Branch**: `slim-personal`
+
+### Summary
+
+区分 401/402/403 凭据不可用熔断，隐藏容易误解的历史健康度；完成回归测试、类型检查，并用最新代码重建 Docker 后验证服务健康。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0e263b4cb` | fix: 区分凭据不可用熔断状态 |
+
+### Status
+
+[OK] **Completed**

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 25
+- **Total Sessions**: 26
 - **Last Active**: 2026-09-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~698 | Active |
+| `journal-1.md` | ~720 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 26 | 2026-09-05 | 优化凭据熔断状态展示 | `0e263b4cb` | `slim-personal` |
 | 25 | 2026-09-05 | 优化请求错误提示 | `10cfe8b34` | `slim-personal` |
 | 24 | 2026-09-05 | 修复供应商密钥熔断恢复流程 | `5f6cc0d45` | `slim-personal` |
 | 23 | 2026-09-05 | 批量模型映射 | `35f7f20ce` | `slim-personal` |
