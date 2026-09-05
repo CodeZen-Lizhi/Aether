@@ -674,3 +674,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 25: 优化请求错误提示
+<!-- trellis-session: v=2 fp=2befdbc922096fc2 -->
+
+**Date**: 2026-09-05
+**Task**: 优化请求错误提示
+**Branch**: `slim-personal`
+
+### Summary
+
+重构请求链路错误展示：按错误类型提供友好摘要与恢复建议，默认折叠技术详情，并补充 i18n 与首字节超时回归测试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `10cfe8b34` | feat(usage): 优化请求错误提示 |
+
+### Status
+
+[OK] **Completed**
