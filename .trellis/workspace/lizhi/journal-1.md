@@ -630,3 +630,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 23: 批量模型映射
+<!-- trellis-session: v=2 fp=fd1f5c296d934181 -->
+
+**Date**: 2026-09-05
+**Task**: 批量模型映射
+**Branch**: `slim-personal`
+
+### Summary
+
+新增批量模型映射工作台，支持自动配对、草稿审阅、连续保存和部分失败重试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35f7f20ce` | feat(provider): 支持批量模型映射 |
+
+### Status
+
+[OK] **Completed**
