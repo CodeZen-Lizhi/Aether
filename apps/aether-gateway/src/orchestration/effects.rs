@@ -11,7 +11,8 @@ use aether_data_contracts::repository::provider_catalog::{
 };
 use aether_scheduler_core::{
     build_scheduler_affinity_cache_key_for_api_key_id_with_client_session_and_scope,
-    count_recent_rpm_requests_for_provider_key, ClientSessionAffinity, SchedulerAffinityTarget,
+    count_recent_rpm_requests_for_provider_key, is_provider_key_circuit_open,
+    ClientSessionAffinity, SchedulerAffinityTarget,
 };
 use aether_usage_runtime::{
     build_stream_terminal_usage_outcome, build_sync_terminal_usage_outcome,
@@ -22,14 +23,13 @@ use tokio::sync::Mutex as TokioMutex;
 use tracing::warn;
 
 use super::{
-    circuit_ramp_active, circuit_success_rate_breached, classify_failure_disposition,
-    local_failover_error_message, project_local_adaptive_rate_limit,
-    project_local_adaptive_success, project_local_failure_health,
-    project_local_key_circuit_closed_with_ramp,
+    circuit_ramp_active, classify_failure_disposition, local_failover_error_message,
+    project_local_adaptive_rate_limit, project_local_adaptive_success,
+    project_local_failure_health, project_local_key_circuit_closed_with_ramp,
     project_local_key_circuit_failure_with_success_rate, project_local_key_circuit_open,
     project_local_ramp_success_health, project_local_rate_limit_cooldown,
-    project_local_success_health, resolve_local_failover_analysis_for_attempt, FailureScope,
-    LocalFailoverAnalysis, LocalFailoverClassification,
+    resolve_local_failover_analysis_for_attempt, FailureScope, LocalFailoverAnalysis,
+    LocalFailoverClassification,
 };
 use crate::client_session_affinity::{
     client_session_affinity_from_report_context_value, CLIENT_SESSION_AFFINITY_REPORT_CONTEXT_FIELD,
@@ -1158,28 +1158,15 @@ async fn record_transient_failure_effect(
             .and_then(|value| value.get("consecutive_failures"))
             .and_then(Value::as_u64)
             .unwrap_or(0);
-        // P1-7: a failure during the post-close recovery ramp re-opens the
-        // circuit immediately, continuing the exponential probe ladder.
-        // P1-6: the rolling success-rate verdict opens the circuit even when
-        // the consecutive ladder is below threshold (flapping keys).
-        let ramp_active =
-            circuit_ramp_active(current_key.circuit_breaker_by_format.as_ref(), api_format);
-        let success_rate_breached = if ramp_active {
-            Some(true)
-        } else {
-            Some(circuit_success_rate_breached(
-                current_key.circuit_breaker_by_format.as_ref(),
-                api_format,
-                observed_at_unix_secs,
-            ))
-        };
+        // The circuit projection owns both rolling-window evaluation and the
+        // immediate re-open rule for failures during recovery ramping.
         let circuit_breaker_by_format = project_local_key_circuit_failure_with_success_rate(
             current_key.circuit_breaker_by_format.as_ref(),
             api_format,
             observed_at_unix_secs,
             consecutive_failures,
             current_key.max_probe_interval_minutes,
-            success_rate_breached,
+            None,
         )
         .or_else(|| current_key.circuit_breaker_by_format.clone());
         let update = ProviderCatalogKeyHealthStateUpdate {
@@ -1236,6 +1223,7 @@ async fn record_health_success_effect(
     // stale success snapshot cannot overwrite a newer failure counter or open circuit.
     let effect_lock = PROVIDER_KEY_EFFECT_LOCKS.lock_for(&context.plan.key_id);
     let _effect_guard = effect_lock.lock().await;
+    let observed_at_unix_secs = current_unix_secs();
 
     let mut persist_gate_checked = false;
 
@@ -1254,34 +1242,22 @@ async fn record_health_success_effect(
         {
             return;
         }
-        // P1-7: success during the recovery ramp decrements the counter and
-        // raises health partway (health ramp), a final ramp success clears it
-        // to full 1.0; a plain success (no ramp) keeps the legacy full reset.
-        let ramp_active =
-            circuit_ramp_active(current_key.circuit_breaker_by_format.as_ref(), api_format);
-        let projected_health = if ramp_active {
-            project_local_ramp_success_health(
-                current_key.health_by_format.as_ref(),
-                current_key.circuit_breaker_by_format.as_ref(),
-                api_format,
-            )
-        } else {
-            project_local_success_health(current_key.health_by_format.as_ref(), api_format)
-        };
-        let Some(health_by_format) = projected_health else {
+        // This projection also recognizes the successful half-open probe:
+        // open -> 0.75, then three successes ramp linearly back to 1.0.
+        let recovery_active = is_provider_key_circuit_open(&current_key, api_format)
+            || circuit_ramp_active(current_key.circuit_breaker_by_format.as_ref(), api_format);
+        let Some(health_by_format) = project_local_ramp_success_health(
+            current_key.health_by_format.as_ref(),
+            current_key.circuit_breaker_by_format.as_ref(),
+            api_format,
+        ) else {
             return;
         };
-        let circuit_breaker_update_owned =
-            current_key
-                .circuit_breaker_by_format
-                .as_ref()
-                .and_then(|current| {
-                    project_local_key_circuit_closed_with_ramp(
-                        Some(current),
-                        api_format,
-                        current_key.health_by_format.as_ref(),
-                    )
-                });
+        let circuit_breaker_update_owned = project_local_key_circuit_closed_with_ramp(
+            current_key.circuit_breaker_by_format.as_ref(),
+            api_format,
+            observed_at_unix_secs,
+        );
         if current_key.health_by_format.as_ref() == Some(&health_by_format)
             && circuit_breaker_update_owned.as_ref()
                 == current_key.circuit_breaker_by_format.as_ref()
@@ -1299,7 +1275,7 @@ async fn record_health_success_effect(
             if !provider_key_health_success_persist_gate_allows(
                 &context.plan.key_id,
                 api_format,
-                circuit_breaker_update_owned.is_some() || clears_rate_limit_probe,
+                recovery_active || clears_rate_limit_probe,
             ) {
                 return;
             }
@@ -2574,7 +2550,10 @@ mod tests {
                 "openai:chat": {
                     "health_score": 1.0,
                     "consecutive_failures": 0,
-                    "last_failure_at": Value::Null
+                    "last_failure_at": Value::Null,
+                    "rate_limit_cooldown_until_unix_secs": Value::Null,
+                    "consecutive_rate_limits": 0,
+                    "rate_limit_probe_until_unix_secs": Value::Null
                 }
             }))
         );
@@ -2772,6 +2751,24 @@ mod tests {
         assert_eq!(circuit["open"], json!(false));
         assert_eq!(circuit["reason"], Value::Null);
         assert_eq!(circuit["next_probe_at_unix_secs"], Value::Null);
+        assert_eq!(circuit["ramp_remaining_successes"], json!(3));
+        assert_eq!(
+            stored_key
+                .health_by_format
+                .as_ref()
+                .and_then(|value| value.get("openai:chat"))
+                .and_then(|value| value.get("health_score"))
+                .and_then(Value::as_f64),
+            Some(0.75)
+        );
+        assert_eq!(
+            circuit["request_results_window"]
+                .as_array()
+                .and_then(|window| window.last())
+                .and_then(|entry| entry.get("ok"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
     }
     #[tokio::test]
     async fn adaptive_rate_limit_effect_updates_adaptive_key_observation() {

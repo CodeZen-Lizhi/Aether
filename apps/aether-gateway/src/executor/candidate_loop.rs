@@ -33,8 +33,8 @@ use crate::log_ids::short_request_id;
 use crate::orchestration::{
     local_execution_candidate_metadata_from_report_context,
     local_failover_policy_from_report_context, resolve_local_failover_policy,
-    resolve_local_transport_failover_analysis_for_attempt, LocalFailoverDecision,
-    LocalFailoverPolicy,
+    resolve_local_transport_failover_analysis_for_attempt, try_claim_local_circuit_probe,
+    LocalCircuitProbeClaim, LocalFailoverDecision, LocalFailoverPolicy,
 };
 use crate::privacy::RedactionExecutionCandidateId;
 use crate::request_candidate_runtime::{
@@ -204,6 +204,7 @@ where
             transfer_tracker,
         };
         run_dynamic_attempt_loop(
+            state,
             &port,
             &mut source,
             trace_id,
@@ -479,6 +480,7 @@ where
             transfer_tracker,
         };
         run_dynamic_attempt_loop(
+            state,
             &port,
             &mut source,
             trace_id,
@@ -769,6 +771,7 @@ async fn record_provider_transfer_attempt_failed<Attempt>(
 }
 
 async fn run_dynamic_attempt_loop<Port, Source, Attempt>(
+    state: &AppState,
     port: &Port,
     source: &mut Source,
     trace_id: &str,
@@ -787,6 +790,8 @@ where
 {
     let mut last_attempted = None;
     let mut fallback_response = None;
+    let mut failed_circuit_scopes = BTreeSet::new();
+    let mut unavailable_circuit_scopes = BTreeSet::new();
 
     loop {
         let next_started_at = std::time::Instant::now();
@@ -804,6 +809,19 @@ where
             let provider_id = attempt.execution_plan().provider_id.clone();
             port.mark_unused_attempts(vec![attempt]).await?;
             source.skip_provider(provider_id.as_str()).await?;
+            continue;
+        }
+        if circuit_unavailable_after_request_local_failure(
+            state,
+            &failed_circuit_scopes,
+            &mut unavailable_circuit_scopes,
+            &attempt,
+            trace_id,
+            plan_kind,
+        )
+        .await
+        {
+            port.mark_unused_attempts(vec![attempt]).await?;
             continue;
         }
         port.record_attempt_started(&attempt).await?;
@@ -843,6 +861,9 @@ where
         }
 
         port.record_attempt_failed(&attempt).await?;
+        if let Some(scope) = attempt_circuit_scope(&attempt) {
+            failed_circuit_scopes.insert(scope);
+        }
         if port.should_skip_attempt(&attempt).await? {
             source
                 .skip_provider(attempt.execution_plan().provider_id.as_str())
@@ -868,6 +889,64 @@ where
         port.build_exhaustion(last_plan, last_report_context)
             .await?,
     ))
+}
+
+fn attempt_circuit_scope<Attempt>(attempt: &Attempt) -> Option<(String, String)>
+where
+    Attempt: AiExecutionAttempt,
+{
+    let plan = attempt.execution_plan();
+    let key_id = plan.key_id.trim();
+    let api_format = plan.provider_api_format.trim();
+    if key_id.is_empty() || api_format.is_empty() {
+        return None;
+    }
+    Some((key_id.to_string(), api_format.to_string()))
+}
+
+async fn circuit_unavailable_after_request_local_failure<Attempt>(
+    state: &AppState,
+    failed_scopes: &BTreeSet<(String, String)>,
+    unavailable_scopes: &mut BTreeSet<(String, String)>,
+    attempt: &Attempt,
+    trace_id: &str,
+    plan_kind: &str,
+) -> bool
+where
+    Attempt: AiExecutionAttempt,
+{
+    let Some(scope) = attempt_circuit_scope(attempt) else {
+        return false;
+    };
+    if unavailable_scopes.contains(&scope) {
+        return true;
+    }
+    if !failed_scopes.contains(&scope) {
+        return false;
+    }
+
+    match try_claim_local_circuit_probe(state, &scope.0, &scope.1).await {
+        Ok(LocalCircuitProbeClaim::NotRequired | LocalCircuitProbeClaim::Acquired) => false,
+        Ok(LocalCircuitProbeClaim::Unavailable) => {
+            unavailable_scopes.insert(scope);
+            true
+        }
+        Err(error) => {
+            // Match candidate materialization's fail-open policy: a transient
+            // catalog read failure must not turn into a data-plane outage.
+            warn!(
+                event_name = "request_local_circuit_recheck_failed",
+                log_type = "ops",
+                trace_id,
+                plan_kind,
+                key_id = %scope.0,
+                api_format = %scope.1,
+                error = ?error,
+                "gateway could not recheck circuit state after an earlier attempt failed"
+            );
+            false
+        }
+    }
 }
 
 async fn apply_attempt_retry_scope<Source, Attempt>(
@@ -1647,14 +1726,17 @@ mod tests {
     use std::sync::{Arc, Mutex as StdMutex};
 
     use aether_contracts::{ExecutionPlan, ExecutionTimeouts, RequestBody};
+    use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data_contracts::repository::candidates::{
         RequestCandidateStatus, UpsertRequestCandidateRecord,
     };
+    use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
     use async_trait::async_trait;
     use serde_json::json;
     use tokio::sync::Mutex;
 
     use super::*;
+    use crate::data::GatewayDataState;
 
     struct TestRequestCandidateWriter {
         records: Mutex<Vec<UpsertRequestCandidateRecord>>,
@@ -1768,6 +1850,7 @@ mod tests {
         state: &'a AppState,
         tracker: ProviderTransferTracker,
         retry_scope: AiAttemptRetryScope,
+        project_health_failure: bool,
         executed: StdMutex<Vec<&'static str>>,
         unused: StdMutex<Vec<&'static str>>,
     }
@@ -1782,6 +1865,7 @@ mod tests {
                 state,
                 tracker,
                 retry_scope: AiAttemptRetryScope::Candidate,
+                project_health_failure: false,
                 executed: StdMutex::new(Vec::new()),
                 unused: StdMutex::new(Vec::new()),
             }
@@ -1792,8 +1876,16 @@ mod tests {
                 state,
                 tracker: ProviderTransferTracker::default(),
                 retry_scope,
+                project_health_failure: false,
                 executed: StdMutex::new(Vec::new()),
                 unused: StdMutex::new(Vec::new()),
+            }
+        }
+
+        fn with_health_failure_projection(state: &'a AppState) -> Self {
+            Self {
+                project_health_failure: true,
+                ..Self::new(state)
             }
         }
     }
@@ -1845,11 +1937,30 @@ mod tests {
             attempt: &TransferTestAttempt,
         ) -> Result<AiAttemptExecutionOutcome<Self::Response>, Self::Error> {
             self.executed.lock().unwrap().push(attempt.label);
-            Ok(if attempt.plan.provider_id == "provider-b" {
-                AiAttemptExecutionOutcome::Responded(Response::new(Body::from("ok")))
-            } else {
-                AiAttemptExecutionOutcome::retry(self.retry_scope)
-            })
+            if attempt.plan.provider_id == "provider-b" {
+                return Ok(AiAttemptExecutionOutcome::Responded(Response::new(
+                    Body::from("ok"),
+                )));
+            }
+            if self.project_health_failure {
+                crate::orchestration::apply_local_execution_effect(
+                    self.state,
+                    crate::orchestration::LocalExecutionEffectContext {
+                        plan: &attempt.plan,
+                        report_context: Some(&attempt.report_context),
+                    },
+                    crate::orchestration::LocalExecutionEffect::HealthFailure(
+                        crate::orchestration::LocalHealthFailureEffect {
+                            status_code: 503,
+                            classification:
+                                crate::orchestration::LocalFailoverClassification::RetryUpstreamFailure,
+                            retry_after_secs: None,
+                        },
+                    ),
+                )
+                .await;
+            }
+            Ok(AiAttemptExecutionOutcome::retry(self.retry_scope))
         }
 
         async fn mark_unused_attempts(
@@ -1916,29 +2027,35 @@ mod tests {
         }
     }
 
-    fn transfer_test_attempts() -> Vec<TransferTestAttempt> {
-        fn attempt(label: &'static str, provider_id: &str, key_id: &str) -> TransferTestAttempt {
-            let mut plan = test_plan(None);
-            plan.provider_id = provider_id.to_string();
-            plan.key_id = key_id.to_string();
-            TransferTestAttempt {
-                label,
-                plan,
-                report_context: json!({
-                    "local_failover_policy": {
-                        "max_transfer_count": 1,
-                        "max_transfer_timeout_seconds": 0
-                    }
-                }),
-            }
+    fn transfer_test_attempt(
+        label: &'static str,
+        provider_id: &str,
+        key_id: &str,
+        api_format: &str,
+    ) -> TransferTestAttempt {
+        let mut plan = test_plan(None);
+        plan.provider_id = provider_id.to_string();
+        plan.key_id = key_id.to_string();
+        plan.provider_api_format = api_format.to_string();
+        TransferTestAttempt {
+            label,
+            plan,
+            report_context: json!({
+                "local_failover_policy": {
+                    "max_transfer_count": 1,
+                    "max_transfer_timeout_seconds": 0
+                }
+            }),
         }
+    }
 
+    fn transfer_test_attempts() -> Vec<TransferTestAttempt> {
         vec![
-            attempt("a-key1-retry0", "provider-a", "key-1"),
-            attempt("a-key2-retry0", "provider-a", "key-2"),
-            attempt("a-key2-retry1", "provider-a", "key-2"),
-            attempt("a-key3-retry0", "provider-a", "key-3"),
-            attempt("b-key1-retry0", "provider-b", "key-b"),
+            transfer_test_attempt("a-key1-retry0", "provider-a", "key-1", "openai:chat"),
+            transfer_test_attempt("a-key2-retry0", "provider-a", "key-2", "openai:chat"),
+            transfer_test_attempt("a-key2-retry1", "provider-a", "key-2", "openai:chat"),
+            transfer_test_attempt("a-key3-retry0", "provider-a", "key-3", "openai:chat"),
+            transfer_test_attempt("b-key1-retry0", "provider-b", "key-b", "openai:chat"),
         ]
     }
 
@@ -2004,6 +2121,7 @@ mod tests {
         };
 
         let outcome = run_dynamic_attempt_loop(
+            &state,
             &port,
             &mut source,
             "trace-transfer-test",
@@ -2039,6 +2157,7 @@ mod tests {
         };
 
         let outcome = run_dynamic_attempt_loop(
+            &state,
             &port,
             &mut source,
             "trace-provider-scope-test",
@@ -2057,6 +2176,86 @@ mod tests {
             ["a-key1-retry0", "b-key1-retry0"]
         );
         assert_eq!(source.skipped_providers, ["provider-a"]);
+    }
+
+    #[tokio::test]
+    async fn dynamic_loop_rechecks_circuit_after_same_scope_failure() {
+        let key = StoredProviderCatalogKey::new(
+            "key-1".to_string(),
+            "provider-a".to_string(),
+            "key-1".to_string(),
+            "api_key".to_string(),
+            None,
+            true,
+        )
+        .expect("provider key should build")
+        .with_health_fields(
+            Some(json!({
+                "openai:chat": {
+                    "health_score": 0.2,
+                    "consecutive_failures": 7
+                }
+            })),
+            Some(json!({
+                "openai:chat": {
+                    "open": false,
+                    "failure_count": 7
+                }
+            })),
+        );
+        let state = AppState::new()
+            .expect("state should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_provider_catalog_repository_for_tests(Arc::new(
+                    InMemoryProviderCatalogReadRepository::seed(vec![], vec![], vec![key]),
+                )),
+            );
+        let port = TransferTestPort::with_health_failure_projection(&state);
+        let mut source = TransferTestAttemptSource {
+            attempts: vec![
+                transfer_test_attempt("stale-chat-first", "provider-a", "key-1", "openai:chat"),
+                transfer_test_attempt("stale-chat-retry", "provider-a", "key-1", "openai:chat"),
+                transfer_test_attempt("other-format", "provider-b", "key-1", "claude:messages"),
+            ]
+            .into(),
+            skipped_providers: Vec::new(),
+        };
+
+        let outcome = run_dynamic_attempt_loop(
+            &state,
+            &port,
+            &mut source,
+            "trace-circuit-recheck-test",
+            "circuit_recheck_test",
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("dynamic attempt loop should succeed");
+
+        assert!(matches!(
+            outcome,
+            LocalExecutionRequestOutcome::Responded(_)
+        ));
+        assert_eq!(
+            port.executed.lock().unwrap().as_slice(),
+            ["stale-chat-first", "other-format"]
+        );
+        assert_eq!(port.unused.lock().unwrap().as_slice(), ["stale-chat-retry"]);
+        assert!(source.skipped_providers.is_empty());
+        let stored_key = state
+            .read_provider_catalog_keys_by_ids(&["key-1".to_string()])
+            .await
+            .expect("provider key should load")
+            .into_iter()
+            .next()
+            .expect("provider key should exist");
+        assert_eq!(
+            stored_key
+                .circuit_breaker_by_format
+                .as_ref()
+                .and_then(|state| { state["openai:chat"]["open"].as_bool() }),
+            Some(true)
+        );
     }
 
     #[test]

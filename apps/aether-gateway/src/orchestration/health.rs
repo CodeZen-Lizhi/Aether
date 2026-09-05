@@ -38,14 +38,14 @@ const LOCAL_KEY_CIRCUIT_MAX_PROBE_INTERVAL_MINUTES: u64 = 32;
 pub(crate) const SUCCESS_RATE_WINDOW_SECS: u64 = 300;
 pub(crate) const SUCCESS_RATE_WINDOW_MIN_SAMPLES: usize = 10;
 pub(crate) const SUCCESS_RATE_WINDOW_THRESHOLD: f64 = 0.2;
-// P1-7: recovery ramp. A circuit closes at half health and needs this many
+// P1-7: recovery ramp. A circuit closes at reduced health and needs this many
 // consecutive successes to return to full 1.0; a failure during the ramp
 // re-opens the circuit immediately.
 pub(crate) const CIRCUIT_RAMP_INITIAL_HEALTH: f64 = 0.75;
 pub(crate) const CIRCUIT_RAMP_REQUIRED_SUCCESSES: u64 = 3;
 
 /// P1-6: evaluate the rolling request-result window (kept on the circuit
-/// payload as `request_results_window`, 30s-bucketed) against the success-rate
+/// payload as the bounded `request_results_window`) against the success-rate
 /// circuit trigger. Returns true when the window has enough samples inside
 /// the 5-minute horizon and the success ratio is below the threshold.
 pub(crate) fn circuit_success_rate_breached(
@@ -63,6 +63,10 @@ pub(crate) fn circuit_success_rate_breached(
         return false;
     };
 
+    request_result_window_success_rate_breached(window, now_unix_secs)
+}
+
+fn request_result_window_success_rate_breached(window: &[Value], now_unix_secs: u64) -> bool {
     let cutoff = now_unix_secs.saturating_sub(SUCCESS_RATE_WINDOW_SECS);
     let mut samples = 0usize;
     let mut successes = 0usize;
@@ -473,8 +477,17 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
     let request_results_window =
         append_request_result_window(&current, observed_at_unix_secs, false);
     let already_open = current_bool(&current, "open");
-    let success_rate_open = success_rate_breached.unwrap_or(false);
+    let ramp_failure = current
+        .get("ramp_remaining_successes")
+        .and_then(Value::as_u64)
+        .is_some_and(|remaining| remaining > 0);
+    let success_rate_open = success_rate_breached.unwrap_or_else(|| {
+        request_results_window.as_array().is_some_and(|window| {
+            request_result_window_success_rate_breached(window, observed_at_unix_secs)
+        })
+    });
     if !already_open
+        && !ramp_failure
         && !success_rate_open
         && consecutive_failures < LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD
     {
@@ -523,7 +536,9 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
         json!({
             "open": true,
             "open_at": open_at,
-            "reason": if success_rate_open && !already_open {
+            "reason": if ramp_failure && !already_open {
+                "recovery_ramp_failure".to_string()
+            } else if success_rate_open && !already_open {
                 format!("success_rate_window_{}pct", (SUCCESS_RATE_WINDOW_THRESHOLD * 100.0) as u64)
             } else {
                 format!("consecutive_failures_{LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD}")
@@ -565,23 +580,29 @@ pub(crate) fn project_local_ramp_success_health(
         return None;
     }
 
-    let remaining = current_circuit_by_format
+    let circuit_payload = current_circuit_by_format
         .and_then(Value::as_object)
         .and_then(|values| values.get(api_format))
-        .and_then(Value::as_object)
+        .and_then(Value::as_object);
+    let recovering_from_open = circuit_payload.is_some_and(|payload| current_bool(payload, "open"));
+    let remaining = circuit_payload
         .and_then(|payload| payload.get("ramp_remaining_successes"))
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    if remaining == 0 {
+    if !recovering_from_open && remaining == 0 {
         // Not actually ramping — fall back to the plain success projection.
         return project_local_success_health(current_health_by_format, api_format);
     }
 
-    let required = CIRCUIT_RAMP_REQUIRED_SUCCESSES.max(1);
-    let progressed = required.saturating_sub(remaining.saturating_sub(1));
-    // Linear climb 0.75 → 1.0 across the ramp steps.
-    let step = (1.0 - CIRCUIT_RAMP_INITIAL_HEALTH) / u64::from(required) as f64;
-    let score = CIRCUIT_RAMP_INITIAL_HEALTH + step * u64::from(progressed) as f64;
+    let score = if recovering_from_open {
+        CIRCUIT_RAMP_INITIAL_HEALTH
+    } else {
+        let required = CIRCUIT_RAMP_REQUIRED_SUCCESSES.max(1);
+        let progressed = required.saturating_sub(remaining.saturating_sub(1));
+        // Linear climb 0.75 -> 1.0 across the three post-probe successes.
+        let step = (1.0 - CIRCUIT_RAMP_INITIAL_HEALTH) / required as f64;
+        CIRCUIT_RAMP_INITIAL_HEALTH + step * progressed as f64
+    };
     let score = (score * 1000.0).round() / 1000.0;
 
     let mut health_by_format = current_health_by_format
@@ -610,42 +631,53 @@ pub(crate) fn project_local_ramp_success_health(
 pub(crate) fn project_local_key_circuit_closed(
     current_circuit_by_format: Option<&Value>,
     api_format: &str,
+    observed_at_unix_secs: u64,
 ) -> Option<Value> {
-    project_local_key_circuit_closed_with_ramp(current_circuit_by_format, api_format, None)
+    project_local_key_circuit_closed_with_ramp(
+        current_circuit_by_format,
+        api_format,
+        observed_at_unix_secs,
+    )
 }
 
 /// P1-7: circuit close with a recovery ramp. When the closed circuit was
 /// actually open (a probe succeeded), the entry enters ramping state:
 /// `ramp_remaining_successes` counts down on each projected success and a
-/// failure during the ramp re-opens immediately (handled by the caller
-/// checking `circuit_ramp_active`). A no-op close (was never open) keeps the
-/// legacy zeroed payload.
+/// failure during the ramp re-opens immediately in the failure projection.
+/// A normal success keeps a bounded request-result sample without entering
+/// recovery ramping.
 pub(crate) fn project_local_key_circuit_closed_with_ramp(
     current_circuit_by_format: Option<&Value>,
     api_format: &str,
-    previous_health_by_format: Option<&Value>,
+    observed_at_unix_secs: u64,
 ) -> Option<Value> {
     let api_format = api_format.trim();
     if api_format.is_empty() {
         return None;
     }
 
-    let was_open = current_circuit_by_format
-        .and_then(Value::as_object)
-        .and_then(|values| values.get(api_format))
-        .and_then(Value::as_object)
-        .is_some_and(|payload| {
-            payload
-                .get("open")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        });
-
     let mut circuit_by_format = current_circuit_by_format
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    let mut payload = serde_json::Map::new();
+    let mut payload = circuit_by_format
+        .get(api_format)
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let was_open = current_bool(&payload, "open");
+    let previous_remaining = payload
+        .get("ramp_remaining_successes")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let remaining = if was_open {
+        CIRCUIT_RAMP_REQUIRED_SUCCESSES
+    } else {
+        previous_remaining.saturating_sub(1)
+    };
+    let request_results_window =
+        append_request_result_window(&payload, observed_at_unix_secs, true);
+
     payload.insert("open".to_string(), json!(false));
     payload.insert("open_at".to_string(), Value::Null);
     payload.insert("reason".to_string(), Value::Null);
@@ -655,34 +687,19 @@ pub(crate) fn project_local_key_circuit_closed_with_ramp(
     payload.insert("half_open_until_unix_secs".to_string(), Value::Null);
     payload.insert("half_open_successes".to_string(), json!(0));
     payload.insert("half_open_failures".to_string(), json!(0));
-    if was_open {
+    payload.insert("failure_count".to_string(), json!(0));
+    payload.insert("last_failure_at".to_string(), Value::Null);
+    payload.insert("last_probe_failure_at".to_string(), Value::Null);
+    payload.insert("request_results_window".to_string(), request_results_window);
+    payload.insert("ramp_remaining_successes".to_string(), json!(remaining));
+    if remaining > 0 {
         payload.insert(
-            "ramp_remaining_successes".to_string(),
-            json!(CIRCUIT_RAMP_REQUIRED_SUCCESSES),
+            "ramp_health_seed".to_string(),
+            json!({"ramp_initial_health": CIRCUIT_RAMP_INITIAL_HEALTH}),
         );
-        // The ramp's initial health lives on the health payload; record the
-        // seed so project_local_success_health can pick it up on the first
-        // ramping success.
-        if let Some(health) = previous_health_by_format
-            .and_then(Value::as_object)
-            .and_then(|values| values.get(api_format))
-            .and_then(Value::as_object)
-        {
-            let mut ramp_seed = serde_json::Map::new();
-            ramp_seed.insert(
-                "ramp_initial_health".to_string(),
-                json!(CIRCUIT_RAMP_INITIAL_HEALTH),
-            );
-            let _ = health; // health fields merged by the caller, not here
-            payload.insert("ramp_health_seed".to_string(), Value::Object(ramp_seed));
-        } else {
-            payload.insert(
-                "ramp_health_seed".to_string(),
-                json!({"ramp_initial_health": CIRCUIT_RAMP_INITIAL_HEALTH}),
-            );
-        }
     } else {
-        payload.insert("ramp_remaining_successes".to_string(), json!(0));
+        payload.insert("probe_interval_minutes".to_string(), json!(0));
+        payload.remove("ramp_health_seed");
     }
     circuit_by_format.insert(api_format.to_string(), Value::Object(payload));
     Some(Value::Object(circuit_by_format))
@@ -717,7 +734,11 @@ fn next_circuit_probe_interval_minutes(
     if max_probe_interval_minutes == 0 {
         return 0;
     }
-    if !current_bool(current, "open") {
+    let ramp_active = current
+        .get("ramp_remaining_successes")
+        .and_then(Value::as_u64)
+        .is_some_and(|remaining| remaining > 0);
+    if !current_bool(current, "open") && !ramp_active {
         return 1.min(max_probe_interval_minutes);
     }
     current
@@ -880,6 +901,9 @@ mod tests {
                 "health_score": 1.0,
                 "consecutive_failures": 0,
                 "last_failure_at": Value::Null,
+                "rate_limit_cooldown_until_unix_secs": Value::Null,
+                "consecutive_rate_limits": 0,
+                "rate_limit_probe_until_unix_secs": Value::Null,
             })
         );
         assert_eq!(projected["openai:responses"]["health_score"], json!(0.8));
@@ -948,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn circuit_closed_projection_resets_format_circuit() {
+    fn successful_probe_closes_circuit_and_starts_ramp() {
         let projected = project_local_key_circuit_closed(
             Some(&json!({
                 "openai:chat": {
@@ -958,6 +982,7 @@ mod tests {
                 }
             })),
             "openai:chat",
+            1_760_000_000,
         )
         .expect("projection should exist");
 
@@ -966,6 +991,146 @@ mod tests {
         assert_eq!(
             projected["openai:chat"]["next_probe_at_unix_secs"],
             Value::Null
+        );
+        assert_eq!(
+            projected["openai:chat"]["ramp_remaining_successes"],
+            json!(3)
+        );
+    }
+}
+
+#[cfg(test)]
+mod p1_circuit_recovery_tests {
+    use serde_json::json;
+
+    use super::{
+        circuit_success_rate_breached, project_local_key_circuit_closed_with_ramp,
+        project_local_key_circuit_failure_with_success_rate, project_local_ramp_success_health,
+    };
+
+    const NOW: u64 = 100_000;
+    const FORMAT: &str = "openai:chat";
+
+    #[test]
+    fn successful_probe_ramps_health_across_three_more_successes() {
+        let mut health = json!({
+            "openai:chat": {
+                "health_score": 0.2,
+                "consecutive_failures": 8
+            }
+        });
+        let mut circuit = json!({
+            "openai:chat": {
+                "open": true,
+                "probe_interval_minutes": 4,
+                "max_probe_interval_minutes": 32,
+                "request_results_window": [{"ts": NOW - 1, "ok": false}]
+            }
+        });
+
+        let expected = [(0.75, 3), (0.833, 2), (0.917, 1), (1.0, 0)];
+        for (offset, (expected_score, expected_remaining)) in expected.into_iter().enumerate() {
+            health = project_local_ramp_success_health(Some(&health), Some(&circuit), FORMAT)
+                .expect("recovery health should project");
+            circuit = project_local_key_circuit_closed_with_ramp(
+                Some(&circuit),
+                FORMAT,
+                NOW + offset as u64,
+            )
+            .expect("recovery circuit should project");
+
+            assert_eq!(health[FORMAT]["health_score"], json!(expected_score));
+            assert_eq!(
+                circuit[FORMAT]["ramp_remaining_successes"],
+                json!(expected_remaining)
+            );
+        }
+
+        assert_eq!(circuit[FORMAT]["probe_interval_minutes"], json!(0));
+        let window = circuit[FORMAT]["request_results_window"]
+            .as_array()
+            .expect("request-result window should remain an array");
+        assert_eq!(window.len(), 5);
+        assert_eq!(
+            window
+                .iter()
+                .filter(|entry| entry["ok"] == json!(true))
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn ramp_failure_reopens_at_next_probe_backoff_step() {
+        let circuit = json!({
+            "openai:chat": {
+                "open": false,
+                "probe_interval_minutes": 4,
+                "max_probe_interval_minutes": 32,
+                "ramp_remaining_successes": 3,
+                "request_results_window": [{"ts": NOW - 1, "ok": true}]
+            }
+        });
+
+        let projected = project_local_key_circuit_failure_with_success_rate(
+            Some(&circuit),
+            FORMAT,
+            NOW,
+            1,
+            32,
+            None,
+        )
+        .expect("ramp failure should project");
+
+        assert_eq!(projected[FORMAT]["open"], json!(true));
+        assert_eq!(projected[FORMAT]["reason"], json!("recovery_ramp_failure"));
+        assert_eq!(projected[FORMAT]["probe_interval_minutes"], json!(8));
+        assert_eq!(
+            projected[FORMAT]["next_probe_at_unix_secs"],
+            json!(NOW + 8 * 60)
+        );
+    }
+
+    #[test]
+    fn tenth_sample_failure_trips_rolling_success_rate_immediately() {
+        let circuit = json!({
+            "openai:chat": {
+                "open": false,
+                "request_results_window": [
+                    {"ts": NOW - 9, "ok": true},
+                    {"ts": NOW - 8, "ok": false},
+                    {"ts": NOW - 7, "ok": false},
+                    {"ts": NOW - 6, "ok": false},
+                    {"ts": NOW - 5, "ok": false},
+                    {"ts": NOW - 4, "ok": false},
+                    {"ts": NOW - 3, "ok": false},
+                    {"ts": NOW - 2, "ok": false},
+                    {"ts": NOW - 1, "ok": false}
+                ]
+            }
+        });
+        assert!(!circuit_success_rate_breached(Some(&circuit), FORMAT, NOW));
+
+        let projected = project_local_key_circuit_failure_with_success_rate(
+            Some(&circuit),
+            FORMAT,
+            NOW,
+            1,
+            32,
+            None,
+        )
+        .expect("tenth result should project");
+
+        assert_eq!(projected[FORMAT]["open"], json!(true));
+        assert_eq!(
+            projected[FORMAT]["reason"],
+            json!("success_rate_window_20pct")
+        );
+        assert_eq!(
+            projected[FORMAT]["request_results_window"]
+                .as_array()
+                .map(Vec::len),
+            Some(10)
         );
     }
 }
