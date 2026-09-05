@@ -83,6 +83,7 @@ vi.mock('lucide-vue-next', async () => {
     ChevronLeft: Icon,
     ChevronRight: Icon,
     ExternalLink: Icon,
+    TriangleAlert: Icon,
   }
 })
 
@@ -641,6 +642,41 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.textContent).not.toContain('none')
     expect(root.textContent).not.toContain('不再重试')
     expect(root.textContent).not.toContain('该错误被标记为敏感上游错误')
+  })
+
+  it('presents a first-byte timeout as a recoverable warning with collapsed technical details', async () => {
+    const trace = buildTrace([
+      buildCandidate({
+        id: 'cand-first-byte-timeout',
+        status: 'failed',
+        status_code: 503,
+        error_message: 'Stream first byte timeout',
+        extra_data: {
+          upstream_response: {
+            status_code: 503,
+            headers: { 'content-type': 'application/json' },
+            body_state: 'disabled',
+          },
+        },
+      }),
+    ])
+
+    const root = mountTimeline(trace)
+    await nextTick()
+
+    const errorBlock = root.querySelector<HTMLElement>('.error-block')
+    expect(errorBlock?.getAttribute('role')).toBe('alert')
+    expect(errorBlock?.classList.contains('is-warning')).toBe(true)
+    expect(errorBlock?.textContent).toContain('上游服务响应超时')
+    expect(errorBlock?.textContent).toContain('没有返回首个响应')
+    expect(errorBlock?.textContent).toContain('建议稍后重试')
+    expect(errorBlock?.textContent).toContain('HTTP 503')
+
+    const technicalDetails = errorBlock?.querySelector<HTMLDetailsElement>('.error-details')
+    expect(technicalDetails?.open).toBe(false)
+    expect(technicalDetails?.textContent).toContain('Stream first byte timeout')
+    expect(technicalDetails?.querySelector<HTMLElement>('.error-upstream-response-json pre')?.dataset.title)
+      .toBe('上游响应')
   })
 
   it('keeps local sync diagnostics visible when upstream response body capture is disabled', async () => {

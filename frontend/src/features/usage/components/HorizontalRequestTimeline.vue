@@ -406,50 +406,11 @@
                   </span>
                 </div>
 
-                <!-- 错误信息：将实际上游响应头和响应体作为同一个对象展示 -->
-                <div
+                <RequestAttemptErrorPanel
                   v-if="currentAttempt.status === 'failed' && currentAttemptRequestError"
-                  class="error-block"
-                >
-                  <div class="error-heading">
-                    <span class="error-type">错误信息</span>
-                    <span
-                      v-if="currentAttemptRequestError.statusCode != null"
-                      class="error-status-badge"
-                      :class="currentAttemptRequestError.statusCode >= 400 ? 'is-error' : currentAttemptRequestError.statusCode >= 300 ? 'is-warning' : 'is-success'"
-                    >
-                      HTTP {{ currentAttemptRequestError.statusCode }}
-                    </span>
-                  </div>
-                  <div
-                    v-if="currentAttemptRequestError.message"
-                    class="error-msg"
-                  >
-                    {{ currentAttemptRequestError.message }}
-                  </div>
-                  <div
-                    v-if="currentAttemptRequestError.upstreamResponse"
-                    class="error-json error-upstream-response-json"
-                  >
-                    <JsonContentPanel
-                      :data="currentAttemptRequestError.upstreamResponse"
-                      :is-dark="isDark"
-                      title="上游响应"
-                      empty-message="无上游响应"
-                    />
-                  </div>
-                  <div
-                    v-if="currentAttemptRequestError.diagnostic"
-                    class="error-json error-diagnostic-json"
-                  >
-                    <JsonContentPanel
-                      :data="currentAttemptRequestError.diagnostic"
-                      :is-dark="isDark"
-                      title="失败诊断"
-                      empty-message="无失败诊断信息"
-                    />
-                  </div>
-                </div>
+                  :error="currentAttemptRequestError"
+                  :is-dark="isDark"
+                />
 
                 <!-- 额外数据 -->
                 <details
@@ -494,6 +455,7 @@ import Card from '@/components/ui/card.vue'
 import Badge from '@/components/ui/badge.vue'
 import Skeleton from '@/components/ui/skeleton.vue'
 import JsonContentPanel from './JsonContentPanel.vue'
+import RequestAttemptErrorPanel from './RequestAttemptErrorPanel.vue'
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-vue-next'
 import { requestTraceApi, type RequestTrace, type CandidateRecord, type ImageProgress } from '@/api/requestTrace'
 import { log } from '@/utils/logger'
@@ -1438,6 +1400,8 @@ const shouldShowAttemptMessageWithUpstreamResponse = (
 
 const currentAttemptRequestError = computed<{
   message: string
+  technicalMessage: string
+  presentationSource: string
   statusCode?: number
   upstreamResponse: Record<string, unknown> | null
   diagnostic: Record<string, unknown> | null
@@ -1502,6 +1466,8 @@ const currentAttemptRequestError = computed<{
 
   return {
     message: showMessage ? (message || '未知错误') : '',
+    technicalMessage: showMessage ? (rawMessage || fallbackType) : '',
+    presentationSource: rawMessage || fallbackType || message,
     statusCode,
     upstreamResponse: response,
     diagnostic,
@@ -2920,78 +2886,6 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   background: hsl(var(--background) / 0.8);
   color: hsl(var(--foreground));
   font-size: 0.8rem;
-}
-
-/* 错误信息 */
-.error-block {
-  margin-top: 1rem;
-  padding: 0.875rem;
-  background: #ef444410;
-  border: 1px solid #ef444430;
-  border-radius: 8px;
-}
-
-.error-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.25rem;
-}
-
-.error-type {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #ef4444;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-}
-
-.error-status-badge {
-  flex-shrink: 0;
-  padding: 0.125rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-family: ui-monospace, monospace;
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-}
-
-.error-status-badge.is-success {
-  color: #166534;
-  background: #22c55e18;
-}
-
-.error-status-badge.is-warning {
-  color: #92400e;
-  background: #f59e0b1f;
-}
-
-.error-status-badge.is-error {
-  color: #991b1b;
-  background: #ef44441f;
-}
-
-.error-msg {
-  font-size: 0.85rem;
-  color: #dc2626;
-  word-break: break-word;
-}
-
-.error-json {
-  margin-top: 0.75rem;
-}
-
-.dark .error-status-badge.is-success {
-  color: #bbf7d0;
-}
-
-.dark .error-status-badge.is-warning {
-  color: #fde68a;
-}
-
-.dark .error-status-badge.is-error {
-  color: #fecaca;
 }
 
 /* 额外信息 */
