@@ -652,3 +652,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 24: 修复供应商密钥熔断恢复流程
+<!-- trellis-session: v=2 fp=9c62eb038ed246a4 -->
+
+**Date**: 2026-09-05
+**Task**: 修复供应商密钥熔断恢复流程
+**Branch**: `slim-personal`
+
+### Summary
+
+修复按 key 和 API 格式隔离的熔断、半开探测、渐进恢复、滚动成功率窗口，以及同会话预生成候选绕过新熔断的问题；补充状态机约束和回归测试。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5f6cc0d45` | fix(gateway): 修复密钥熔断恢复流程 |
+
+### Status
+
+[OK] **Completed**
