@@ -595,3 +595,38 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 22: 优化密钥表单配置布局
+<!-- trellis-session: v=2 fp=d0a943a8da50b55a -->
+
+**Date**: 2026-09-05
+**Task**: 优化密钥表单配置布局
+**Branch**: `slim-personal`
+
+### Summary
+
+压缩成本倍率与优先级控件，将低频限流和缓存参数收进高级选项，并补充折叠状态回归测试。
+
+### Main Changes
+
+- 默认成本倍率与优先级改为紧凑数字控件
+- RPM、并发、缓存 TTL 与熔断探测收进默认折叠的高级选项
+- 保留既有 API 默认值与提交语义
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f93e9665042f43fc6ae31d4929cbeeda2988832a` | fix(provider): 优化密钥表单配置布局 |
+
+### Testing
+
+- [OK] frontend: npm run type-check
+- [OK] frontend: npm run test:run -- src/features/providers/components/__tests__/provider-key-concurrent_limit.spec.ts src/i18n/__tests__/i18n.spec.ts
+- [OK] frontend: npx eslint src/features/providers/components/KeyFormDialog.vue src/features/providers/components/__tests__/provider-key-concurrent_limit.spec.ts src/i18n/messages.ts
+- [OK] git diff --check
+
+### Status
+
+[OK] **Completed**
