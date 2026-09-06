@@ -4,20 +4,40 @@
     title="批量添加模型映射"
     description="选择客户端模型，并为它们指定一个提供商模型"
     :icon="Tags"
-    size="5xl"
+    size="6xl"
     :no-padding="true"
     @update:model-value="handleDialogUpdate"
   >
-    <div class="flex min-h-0 flex-col">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-muted/20 px-4 py-3 sm:px-6">
-        <p class="text-sm text-muted-foreground">
-          每次选择一个提供商模型生成配对草稿，保存前可逐项检查。
-        </p>
-        <div class="flex flex-wrap items-center gap-2">
+    <div class="flex min-h-0 flex-col bg-background">
+      <div class="border-b border-[var(--color-border)] bg-[var(--color-background-mute)] px-4 py-4 sm:px-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">1</span>
+            <span :class="selectedClientCount > 0 ? 'text-foreground' : 'font-medium text-primary'">选择客户端</span>
+            <ArrowRight
+              class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
+              :class="selectedUpstreamName ? 'bg-primary text-primary-foreground' : 'border border-border bg-background text-muted-foreground'"
+            >2</span>
+            <span :class="selectedUpstreamName ? 'text-foreground' : 'text-muted-foreground'">选择目标</span>
+            <ArrowRight
+              class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
+              :class="pendingCount > 0 ? 'bg-primary text-primary-foreground' : 'border border-border bg-background text-muted-foreground'"
+            >3</span>
+            <span :class="pendingCount > 0 ? 'text-foreground' : 'text-muted-foreground'">保存草稿</span>
+          </div>
+
           <Button
             variant="outline"
             size="sm"
-            class="h-8"
+            class="h-9 shrink-0"
             :disabled="models.length === 0 || upstreamModels.length === 0"
             @click="autoMatch"
           >
@@ -27,65 +47,141 @@
             />
             按名称自动匹配
           </Button>
-          <div
-            class="flex items-center gap-2 text-xs"
-            aria-live="polite"
-          >
-            <span class="rounded-md bg-primary/10 px-2 py-1 text-primary">
-              已选客户端 {{ selectedClientCount }}
+        </div>
+
+        <div
+          class="mt-3 flex flex-wrap items-center gap-2"
+          aria-live="polite"
+        >
+          <div class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-primary-soft)] bg-[var(--color-primary-mute)] px-3 py-1.5 text-sm text-primary">
+            <CheckCheck
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
+            <span class="font-medium">
+              {{ `已选客户端 ${selectedClientCount}` }}
             </span>
-            <span class="rounded-md bg-muted px-2 py-1 text-muted-foreground">
-              待保存 {{ pendingCount }}
-            </span>
+            <span class="text-primary">/ {{ models.length }}</span>
           </div>
+          <div class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-background px-3 py-1.5 text-sm text-muted-foreground">
+            <Link2
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
+            <span>待保存 {{ pendingCount }}</span>
+          </div>
+          <span
+            v-if="selectedUpstreamName"
+            class="min-w-0 max-w-full truncate rounded-lg border border-[var(--color-primary-soft)] bg-[var(--color-active)] px-3 py-1.5 font-mono text-xs text-primary"
+            :title="selectedUpstreamName"
+          >
+            目标：{{ selectedUpstreamName }}
+          </span>
         </div>
       </div>
 
-      <div class="grid min-h-0 gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div class="grid min-h-0 gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section
-          class="flex h-72 min-h-0 flex-col rounded-lg border border-border/70 bg-card lg:h-[min(48dvh,26rem)]"
+          class="flex h-[min(46dvh,26rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-card shadow-sm sm:h-[min(52dvh,30rem)] lg:h-[min(58dvh,38rem)]"
           aria-labelledby="batch-client-title"
         >
-          <div class="shrink-0 border-b border-border/60 p-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <h2
-                  id="batch-client-title"
-                  class="text-sm font-semibold"
-                >
-                  客户端模型
-                </h2>
-                <p class="text-xs text-muted-foreground">
-                  可多选，待保存目标会显示在每一行
+          <div class="shrink-0 border-b border-[var(--color-border)] p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <h2
+                    id="batch-client-title"
+                    class="text-sm font-semibold"
+                  >
+                    客户端模型
+                  </h2>
+                  <span class="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                    {{ models.length }}
+                  </span>
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  可多选，点击整行即可选择
                 </p>
               </div>
-              <button
-                type="button"
-                class="text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="filteredClients.length === 0"
-                :aria-pressed="allClientsSelected"
-                @click="toggleAllClients"
-              >
-                {{ allClientsSelected ? '取消全选' : '全选' }}
-              </button>
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  class="rounded-md px-2 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-[var(--color-primary-mute)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  :disabled="filteredClients.length === 0"
+                  :aria-pressed="allClientsSelected"
+                  @click="toggleAllClients"
+                >
+                  {{ allClientsSelected ? '取消全选' : '全选当前' }}
+                </button>
+                <button
+                  v-if="selectedClientCount > 0"
+                  type="button"
+                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  title="清空已选"
+                  aria-label="清空已选客户端"
+                  @click="clearClientSelection"
+                >
+                  <X
+                    class="h-4 w-4"
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
             </div>
-            <div class="relative">
+            <div class="relative mt-3">
               <Search
-                class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <Input
                 v-model="clientSearch"
-                class="h-9 pl-8"
+                class="h-10 pl-9"
                 placeholder="搜索客户端模型..."
                 aria-label="搜索客户端模型"
                 autofocus
               />
             </div>
+            <div
+              v-if="selectedClientCount > 0"
+              class="mt-3 rounded-lg border border-[var(--color-primary-soft)] bg-[var(--color-active)] px-3 py-2.5"
+            >
+              <div class="flex items-center justify-between gap-2 text-xs">
+                <span class="inline-flex min-w-0 items-center gap-1.5 font-medium text-primary">
+                  <CheckCheck
+                    class="h-3.5 w-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
+                  {{ `已选择 ${selectedClientCount} 个客户端` }}
+                </span>
+                <button
+                  type="button"
+                  class="shrink-0 rounded-md px-1.5 py-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  @click="clearClientSelection"
+                >
+                  清空
+                </button>
+              </div>
+              <div class="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                <span
+                  v-for="model in selectedClientPreview"
+                  :key="model.id"
+                  class="max-w-full truncate rounded-md bg-background px-2 py-1 text-xs text-foreground shadow-sm"
+                  :title="clientModelLabel(model)"
+                >
+                  {{ clientModelLabel(model) }}
+                </span>
+                <span
+                  v-if="selectedClientOverflowCount > 0"
+                  class="rounded-md bg-background px-2 py-1 text-xs text-muted-foreground shadow-sm"
+                >
+                  +{{ selectedClientOverflowCount }}
+                </span>
+              </div>
+            </div>
           </div>
 
           <fieldset
-            class="min-h-0 flex-1 overflow-y-auto p-2"
+            class="min-h-0 flex-1 overflow-y-auto p-3"
             aria-label="客户端模型列表"
           >
             <legend class="sr-only">
@@ -94,53 +190,74 @@
             <div
               v-for="model in filteredClients"
               :key="model.id"
-              class="mb-1 flex min-h-12 items-center gap-2 rounded-md border border-transparent px-2.5 py-2 transition-colors hover:bg-muted/60"
-              :class="drafts[model.id] ? 'border-primary/30 bg-primary/5' : ''"
+              class="mb-2 flex min-h-16 cursor-pointer items-stretch overflow-hidden rounded-lg border transition-all duration-200"
+              :class="isClientSelected(model.id)
+                ? 'border-[var(--color-primary-soft)] bg-[var(--color-active)] shadow-sm'
+                : 'border-[var(--color-border)] bg-background hover:border-[var(--color-primary-soft)] hover:bg-[var(--color-hover)]'"
+              @click="toggleClientSelection(model.id)"
             >
               <label
                 :for="`batch-client-${model.id}`"
-                class="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+                class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-3 py-2.5"
+                @click.stop
               >
                 <input
                   :id="`batch-client-${model.id}`"
                   v-model="selectedClientIds"
                   type="checkbox"
                   :value="model.id"
-                  class="h-4 w-4 shrink-0 rounded border-border/70 accent-primary"
+                  class="peer sr-only"
+                  :aria-label="`选择 ${clientModelLabel(model)}`"
+                  @change="clearSelectionFeedback"
                 >
+                <span
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-border bg-background text-transparent transition-colors peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-primary"
+                  aria-hidden="true"
+                >
+                  <Check class="h-3.5 w-3.5" />
+                </span>
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-medium">
-                    {{ clientModelLabel(model) }}
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span class="min-w-0 truncate text-sm font-medium">
+                      {{ clientModelLabel(model) }}
+                    </span>
+                    <span
+                      v-if="drafts[model.id]"
+                      class="shrink-0 rounded-md bg-[var(--color-primary-mute)] px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                    >
+                      待保存
+                    </span>
                   </span>
-                  <span class="block truncate font-mono text-xs text-muted-foreground">
+                  <span class="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
                     {{ model.provider_model_name }}
                   </span>
                 </span>
+                <span
+                  v-if="!drafts[model.id]"
+                  class="hidden shrink-0 text-right text-xs text-muted-foreground sm:block"
+                  :title="existingMappingsTitle(model)"
+                >
+                  {{ `默认映射 ${existingDefaultMappingCount(model)}` }}
+                </span>
               </label>
 
-              <span
-                v-if="!drafts[model.id]"
-                class="shrink-0 text-xs text-muted-foreground"
-                :title="existingMappingsTitle(model)"
-              >
-                默认映射 {{ existingDefaultMappingCount(model) }}
-              </span>
               <div
-                v-else
-                class="flex min-w-0 max-w-32 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs text-primary sm:max-w-44"
+                v-if="drafts[model.id]"
+                class="flex min-w-0 max-w-40 cursor-default items-center gap-1 border-l border-[var(--color-border)] bg-[var(--color-active)] px-2 sm:max-w-52"
+                @click.stop
               >
                 <span
-                  class="truncate font-mono"
+                  class="min-w-0 truncate font-mono text-xs text-primary"
                   :title="drafts[model.id]"
                 >
                   {{ drafts[model.id] }}
                 </span>
                 <button
                   type="button"
-                  class="shrink-0 rounded p-0.5 hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  class="shrink-0 rounded p-1 text-primary transition-colors hover:bg-[var(--color-primary-mute)] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   :aria-label="`清除 ${clientModelLabel(model)} 的待保存映射`"
                   title="清除草稿"
-                  @click="clearDraft(model.id)"
+                  @click.stop="clearDraft(model.id)"
                 >
                   <X
                     class="h-3.5 w-3.5"
@@ -160,25 +277,30 @@
         </section>
 
         <section
-          class="flex h-72 min-h-0 flex-col rounded-lg border border-border/70 bg-card lg:h-[min(48dvh,26rem)]"
+          class="flex h-[min(46dvh,26rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-card shadow-sm sm:h-[min(52dvh,30rem)] lg:h-[min(58dvh,38rem)]"
           aria-labelledby="batch-upstream-title"
         >
-          <div class="shrink-0 border-b border-border/60 p-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <h2
-                  id="batch-upstream-title"
-                  class="text-sm font-semibold"
-                >
-                  提供商模型
-                </h2>
-                <p class="text-xs text-muted-foreground">
+          <div class="shrink-0 border-b border-[var(--color-border)] p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <h2
+                    id="batch-upstream-title"
+                    class="text-sm font-semibold"
+                  >
+                    提供商模型
+                  </h2>
+                  <span class="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                    {{ allUpstreamModels.length }}
+                  </span>
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">
                   一次选择一个目标模型
                 </p>
               </div>
               <button
                 type="button"
-                class="rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] text-muted-foreground transition-colors hover:border-[var(--color-primary-soft)] hover:bg-[var(--color-primary-mute)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 :disabled="loadingUpstream"
                 title="刷新提供商模型"
                 aria-label="刷新提供商模型"
@@ -196,14 +318,14 @@
                 />
               </button>
             </div>
-            <div class="relative">
+            <div class="relative mt-3">
               <Search
-                class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <Input
                 v-model="upstreamSearch"
-                class="h-9 pl-8"
+                class="h-10 pl-9"
                 placeholder="搜索提供商模型..."
                 aria-label="搜索提供商模型"
               />
@@ -211,17 +333,18 @@
           </div>
 
           <div
-            class="min-h-0 flex-1 overflow-y-auto p-2"
+            class="min-h-0 flex-1 overflow-y-auto p-3"
             role="radiogroup"
             aria-label="提供商模型列表"
           >
             <div
               v-if="loadingUpstream"
-              class="flex min-h-48 items-center justify-center text-muted-foreground"
+              class="space-y-2"
             >
-              <Loader2
-                class="h-6 w-6 animate-spin text-primary"
-                aria-hidden="true"
+              <div
+                v-for="index in 5"
+                :key="index"
+                class="h-14 animate-pulse rounded-lg bg-muted"
               />
               <span class="sr-only">正在加载提供商模型</span>
             </div>
@@ -229,21 +352,31 @@
             <template v-else>
               <label
                 v-if="canAddCustom"
-                class="mb-2 flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-dashed border-primary/40 bg-primary/5 px-3 py-2 text-sm hover:bg-primary/10"
+                class="mb-2 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-[var(--color-primary-soft)] bg-[var(--color-active)] px-3 py-2.5 text-sm transition-colors hover:bg-[var(--color-primary-mute)]"
+                :class="selectedUpstreamName === upstreamSearch.trim() ? 'ring-2 ring-[var(--color-primary-soft)]' : ''"
               >
                 <input
                   type="radio"
                   name="batch-upstream-model"
                   :value="upstreamSearch.trim()"
-                  class="h-4 w-4 accent-primary"
+                  class="peer sr-only"
                   :checked="selectedUpstreamName === upstreamSearch.trim()"
                   @change="selectCustomModel"
                 >
+                <span
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary"
+                  aria-hidden="true"
+                >
+                  <span
+                    v-if="selectedUpstreamName === upstreamSearch.trim()"
+                    class="h-2 w-2 rounded-full bg-primary-foreground"
+                  />
+                </span>
                 <Plus
-                  class="h-4 w-4 text-primary"
+                  class="h-4 w-4 shrink-0 text-primary"
                   aria-hidden="true"
                 />
-                <span class="truncate font-mono">
+                <span class="min-w-0 truncate font-mono">
                   使用自定义提供商模型“{{ upstreamSearch.trim() }}”
                 </span>
               </label>
@@ -251,22 +384,35 @@
               <label
                 v-for="model in filteredUpstreamModels"
                 :key="model.id"
-                class="mb-1 flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 transition-colors hover:bg-muted/60"
-                :class="selectedUpstreamName === model.id ? 'bg-primary/5 text-primary' : ''"
+                class="mb-2 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-all duration-200"
+                :class="selectedUpstreamName === model.id
+                  ? 'border-[var(--color-primary-soft)] bg-[var(--color-active)] text-primary shadow-sm'
+                  : 'border-[var(--color-border)] bg-background hover:border-[var(--color-primary-soft)] hover:bg-[var(--color-hover)]'"
               >
                 <input
-                  v-model="selectedUpstreamName"
                   type="radio"
                   name="batch-upstream-model"
                   :value="model.id"
-                  class="h-4 w-4 shrink-0 accent-primary"
+                  class="peer sr-only"
+                  :checked="selectedUpstreamName === model.id"
+                  :aria-label="`选择 ${model.id}`"
+                  @change="selectUpstreamModel(model.id)"
                 >
+                <span
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary"
+                  aria-hidden="true"
+                >
+                  <span
+                    v-if="selectedUpstreamName === model.id"
+                    class="h-2 w-2 rounded-full bg-primary-foreground"
+                  />
+                </span>
                 <span class="min-w-0 flex-1 truncate font-mono text-sm">
                   {{ model.id }}
                 </span>
                 <span
                   v-if="model.owned_by"
-                  class="shrink-0 text-xs text-muted-foreground"
+                  class="shrink-0 rounded-md bg-muted px-1.5 py-1 text-[11px] text-muted-foreground"
                 >
                   {{ model.owned_by }}
                 </span>
@@ -290,12 +436,15 @@
             </template>
           </div>
 
-          <div class="shrink-0 space-y-2 border-t border-border/60 bg-muted/20 p-3">
-            <div class="text-xs text-muted-foreground">
-              <span>默认作用于全部端点和请求</span>
+          <div class="shrink-0 space-y-3 border-t border-[var(--color-border)] bg-[var(--color-background-mute)] p-4">
+            <div class="flex items-center justify-between gap-3 text-xs">
+              <span class="text-muted-foreground">作用范围</span>
+              <span class="min-w-0 truncate text-right font-medium text-foreground">
+                {{ selectedUpstreamName ? '全部端点和请求' : '尚未选择目标模型' }}
+              </span>
             </div>
             <Button
-              class="w-full"
+              class="h-11 w-full"
               :disabled="selectedClientCount === 0 || !selectedUpstreamName"
               @click="applyPair"
             >
@@ -303,13 +452,15 @@
                 class="mr-2 h-4 w-4"
                 aria-hidden="true"
               />
-              应用到已选客户端
+              <span>
+                {{ selectedClientCount > 0 && selectedUpstreamName ? `应用到 ${selectedClientCount} 个客户端` : '应用到已选客户端' }}
+              </span>
             </Button>
           </div>
         </section>
       </div>
 
-      <div class="border-t border-border/70 bg-muted/20 px-4 py-3 sm:px-6">
+      <div class="border-t border-[var(--color-border)] bg-[var(--color-background-mute)] px-4 py-3 sm:px-6">
         <p class="text-xs leading-5 text-muted-foreground">
           批量添加默认作用于全部端点和请求，精细范围可在保存后通过单条编辑调整。
         </p>
@@ -367,6 +518,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
+  ArrowRight,
+  Check,
+  CheckCheck,
   CloudDownload,
   Link2,
   Loader2,
@@ -457,7 +611,15 @@ const filteredUpstreamModels = computed(() => {
   return allUpstreamModels.value.filter(model => !query || model.id.toLowerCase().includes(query))
 })
 
-const selectedClientCount = computed(() => selectedClientIds.value.length)
+const selectedClientModels = computed(() => {
+  const selected = new Set(selectedClientIds.value)
+  return props.models.filter(model => selected.has(model.id))
+})
+const selectedClientCount = computed(() => selectedClientModels.value.length)
+const selectedClientPreview = computed(() => selectedClientModels.value.slice(0, 3))
+const selectedClientOverflowCount = computed(() => {
+  return Math.max(0, selectedClientCount.value - selectedClientPreview.value.length)
+})
 const pendingCount = computed(() => Object.keys(drafts.value).length)
 const allClientsSelected = computed(() => {
   return filteredClients.value.length > 0
@@ -470,6 +632,36 @@ const canAddCustom = computed(() => {
 
 function clientModelLabel(model: Model): string {
   return model.global_model_display_name || model.global_model_name || model.provider_model_name
+}
+
+function isClientSelected(modelId: string): boolean {
+  return selectedClientIds.value.includes(modelId)
+}
+
+function toggleClientSelection(modelId: string) {
+  const next = new Set(selectedClientIds.value)
+  if (next.has(modelId)) {
+    next.delete(modelId)
+  } else {
+    next.add(modelId)
+  }
+  selectedClientIds.value = [...next]
+  clearSelectionFeedback()
+}
+
+function clearSelectionFeedback() {
+  errorMessage.value = ''
+  successMessage.value = ''
+}
+
+function clearClientSelection() {
+  selectedClientIds.value = []
+  clearSelectionFeedback()
+}
+
+function selectUpstreamModel(name: string) {
+  selectedUpstreamName.value = name
+  clearSelectionFeedback()
 }
 
 function hasScopeValues(values?: string[]): boolean {
@@ -516,20 +708,21 @@ function toggleAllClients() {
   selectedClientIds.value = allClientsSelected.value
     ? selectedClientIds.value.filter(id => !visibleIds.has(id))
     : [...new Set([...selectedClientIds.value, ...visibleIds])]
+  clearSelectionFeedback()
 }
 
 function selectCustomModel() {
   const name = upstreamSearch.value.trim()
   if (!name) return
   customModels.value = [...new Set([...customModels.value, name])]
-  selectedUpstreamName.value = name
+  selectUpstreamModel(name)
 }
 
 function clearDraft(modelId: string) {
   const next = { ...drafts.value }
   delete next[modelId]
   drafts.value = next
-  successMessage.value = ''
+  clearSelectionFeedback()
 }
 
 function applyPair() {
@@ -556,8 +749,6 @@ function applyPair() {
   }
 
   drafts.value = next
-  selectedClientIds.value = []
-  selectedUpstreamName.value = ''
   upstreamSearch.value = ''
   errorMessage.value = ''
   successMessage.value = changedCount > 0
@@ -590,18 +781,21 @@ function exactUpstreamMatch(model: Model): string | undefined {
 function autoMatch() {
   const next = { ...drafts.value }
   let matchedCount = 0
+  const matchedIds: string[] = []
 
   for (const model of filteredClients.value) {
     if (next[model.id] || existingDefaultMappingCount(model) > 0) continue
     const upstreamName = exactUpstreamMatch(model)
     if (!upstreamName || hasDefaultMapping(model, upstreamName)) continue
     next[model.id] = upstreamName
+    matchedIds.push(model.id)
     matchedCount += 1
   }
 
   drafts.value = next
-  selectedClientIds.value = []
+  selectedClientIds.value = [...new Set([...selectedClientIds.value, ...matchedIds])]
   selectedUpstreamName.value = ''
+  upstreamSearch.value = ''
   errorMessage.value = ''
   successMessage.value = matchedCount > 0
     ? `已按名称生成 ${matchedCount} 条映射草稿`
@@ -748,6 +942,9 @@ async function saveMappings() {
       return
     }
 
+    selectedClientIds.value = []
+    selectedUpstreamName.value = ''
+    upstreamSearch.value = ''
     successMessage.value = changedSuccesses.length > 0
       ? `已成功保存 ${changedSuccesses.length} 条映射，可继续添加，完成后点击关闭。`
       : '映射已存在，无需重复保存。'
