@@ -2,7 +2,7 @@
   <Dialog
     :model-value="open"
     title="批量添加模型映射"
-    description="选择客户端模型，并为它们指定一个提供商模型"
+    description="逐个选择客户端模型，并为每个模型选择多个提供商模型"
     :icon="Tags"
     size="6xl"
     :no-padding="true"
@@ -13,25 +13,25 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">1</span>
-            <span :class="selectedClientCount > 0 ? 'text-foreground' : 'font-medium text-primary'">选择客户端</span>
+            <span :class="selectedClientId ? 'text-foreground' : 'font-medium text-primary'">选择客户端</span>
             <ArrowRight
               class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
               aria-hidden="true"
             />
             <span
               class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
-              :class="selectedUpstreamName ? 'bg-primary text-primary-foreground' : 'border border-border bg-background text-muted-foreground'"
+              :class="selectedUpstreamNames.length > 0 ? 'bg-primary text-primary-foreground' : 'border border-border bg-background text-muted-foreground'"
             >2</span>
-            <span :class="selectedUpstreamName ? 'text-foreground' : 'text-muted-foreground'">选择目标</span>
+            <span :class="selectedUpstreamNames.length > 0 ? 'text-foreground' : 'text-muted-foreground'">选择提供商模型</span>
             <ArrowRight
               class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
               aria-hidden="true"
             />
             <span
               class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
-              :class="pendingCount > 0 ? 'bg-primary text-primary-foreground' : 'border border-border bg-background text-muted-foreground'"
+              :class="pendingMappingCount > 0 ? 'bg-primary text-primary-foreground' : 'border border-border bg-background text-muted-foreground'"
             >3</span>
-            <span :class="pendingCount > 0 ? 'text-foreground' : 'text-muted-foreground'">保存草稿</span>
+            <span :class="pendingMappingCount > 0 ? 'text-foreground' : 'text-muted-foreground'">统一保存</span>
           </div>
 
           <Button
@@ -58,68 +58,222 @@
               class="h-4 w-4"
               aria-hidden="true"
             />
-            <span class="font-medium">
-              {{ `已选客户端 ${selectedClientCount}` }}
-            </span>
-            <span class="text-primary">/ {{ models.length }}</span>
+            <span class="font-medium">{{ `已暂存客户端 ${pendingClientCount}` }}</span>
           </div>
           <div class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-background px-3 py-1.5 text-sm text-muted-foreground">
             <Link2
               class="h-4 w-4"
               aria-hidden="true"
             />
-            <span>待保存 {{ pendingCount }}</span>
+            <span>待保存 {{ pendingMappingCount }}</span>
           </div>
           <span
-            v-if="selectedUpstreamName"
+            v-if="selectedClientModel"
             class="min-w-0 max-w-full truncate rounded-lg border border-[var(--color-primary-soft)] bg-[var(--color-active)] px-3 py-1.5 font-mono text-xs text-primary"
-            :title="selectedUpstreamName"
+            :title="clientModelLabel(selectedClientModel)"
           >
-            目标：{{ selectedUpstreamName }}
+            当前客户端：{{ clientModelLabel(selectedClientModel) }}
           </span>
         </div>
       </div>
 
-      <div class="grid min-h-0 gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div class="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
         <section
-          class="flex h-[min(46dvh,26rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-card shadow-sm sm:h-[min(52dvh,30rem)] lg:h-[min(58dvh,38rem)]"
-          aria-labelledby="batch-client-title"
+          class="rounded-xl border border-[var(--color-border)] bg-card shadow-sm"
+          aria-labelledby="batch-config-title"
         >
-          <div class="shrink-0 border-b border-[var(--color-border)] p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <h2
-                    id="batch-client-title"
-                    class="text-sm font-semibold"
+          <div class="border-b border-[var(--color-border)] p-4 sm:p-5">
+            <h2
+              id="batch-config-title"
+              class="text-sm font-semibold"
+            >
+              配置映射
+            </h2>
+            <p class="mt-1 text-xs text-muted-foreground">
+              先选择一个客户端模型，再从下拉列表中多选提供商模型。
+            </p>
+          </div>
+
+          <div class="space-y-5 p-4 sm:p-5">
+            <div class="space-y-2">
+              <Label
+                for="batch-client-model"
+                class="text-sm font-medium"
+              >客户端模型</Label>
+              <Select
+                :model-value="selectedClientId"
+                @update:model-value="selectClientModel"
+              >
+                <SelectTrigger
+                  id="batch-client-model"
+                  class="h-10 rounded-lg"
+                >
+                  <SelectValue placeholder="请选择客户端模型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="model in models"
+                    :key="model.id"
+                    :value="model.id"
+                    :text-value="`${clientModelLabel(model)} ${model.provider_model_name}`"
                   >
-                    客户端模型
-                  </h2>
-                  <span class="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
-                    {{ models.length }}
-                  </span>
-                </div>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  可多选，点击整行即可选择
-                </p>
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span class="min-w-0 truncate font-medium">{{ clientModelLabel(model) }}</span>
+                      <span class="shrink-0 font-mono text-xs text-muted-foreground">{{ model.provider_model_name }}</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p class="text-xs text-muted-foreground">
+                {{ selectedClientModel
+                  ? '切换到其他客户端后，当前选择会保留为草稿。'
+                  : '请先选择客户端模型' }}
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <div class="flex items-center justify-between gap-3">
+                <Label
+                  id="batch-upstream-model-label"
+                  class="text-sm font-medium"
+                >提供商模型</Label>
+                <span
+                  class="shrink-0 text-xs"
+                  :class="selectedUpstreamNames.length ? 'text-primary' : 'text-muted-foreground'"
+                >
+                  {{ selectedUpstreamNames.length ? `已选 ${selectedUpstreamNames.length} 个` : '未选择' }}
+                </span>
               </div>
-              <div class="flex shrink-0 items-center gap-1">
+              <div
+                role="group"
+                aria-labelledby="batch-upstream-model-label"
+              >
+                <MultiSelect
+                  v-model="selectedUpstreamNames"
+                  :options="upstreamOptions"
+                  :disabled="!selectedClientId || loadingUpstream"
+                  :placeholder="selectedClientId ? '选择一个或多个提供商模型' : '请先选择客户端模型'"
+                  empty-text="暂无提供商模型"
+                  no-results-text="无匹配提供商模型"
+                  search-placeholder="搜索提供商模型..."
+                  trigger-class="h-10 rounded-lg"
+                  :search-threshold="0"
+                  teleport
+                />
+              </div>
+              <p class="text-xs text-muted-foreground">
+                {{ loadingUpstream
+                  ? '正在加载提供商模型'
+                  : selectedClientId
+                    ? '可多选；每个客户端模型各自保留一组待保存映射。'
+                    : '选择客户端模型后即可多选。' }}
+              </p>
+            </div>
+
+            <div class="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-background-mute)] p-3">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div class="min-w-0 flex-1 space-y-1.5">
+                  <Label
+                    for="batch-custom-upstream-model"
+                    class="text-xs"
+                  >添加自定义提供商模型</Label>
+                  <Input
+                    id="batch-custom-upstream-model"
+                    v-model="customModelName"
+                    class="h-9 rounded-lg"
+                    placeholder="输入自定义提供商模型名称..."
+                    :disabled="!selectedClientId"
+                    @keydown.enter.prevent="addCustomModel"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="h-9 shrink-0"
+                  :disabled="!canAddCustom"
+                  @click="addCustomModel"
+                >
+                  <Plus
+                    class="mr-1.5 h-3.5 w-3.5"
+                    aria-hidden="true"
+                  />
+                  添加并选中
+                </Button>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">
+              <span class="text-xs text-muted-foreground">默认作用于全部端点和请求</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="h-9 shrink-0"
+                :disabled="loadingUpstream"
+                title="刷新提供商模型"
+                @click="fetchUpstreamModels(true)"
+              >
+                <Loader2
+                  v-if="loadingUpstream"
+                  class="mr-1.5 h-3.5 w-3.5 animate-spin"
+                  aria-hidden="true"
+                />
+                <RefreshCw
+                  v-else
+                  class="mr-1.5 h-3.5 w-3.5"
+                  aria-hidden="true"
+                />
+                刷新提供商模型
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="flex min-h-72 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-card shadow-sm"
+          aria-labelledby="batch-drafts-title"
+        >
+          <div class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-4 sm:p-5">
+            <div class="min-w-0">
+              <h2
+                id="batch-drafts-title"
+                class="text-sm font-semibold"
+              >
+                映射草稿
+              </h2>
+              <p class="mt-1 text-xs text-muted-foreground">
+                已暂存的映射将在保存时统一提交。
+              </p>
+            </div>
+            <span class="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+              {{ pendingMappingCount }}
+            </span>
+          </div>
+
+          <div class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 sm:p-4">
+            <article
+              v-for="draft in pendingDrafts"
+              :key="draft.model.id"
+              class="rounded-lg border border-[var(--color-border)] bg-background p-3"
+            >
+              <div class="flex items-start justify-between gap-3">
                 <button
                   type="button"
-                  class="rounded-md px-2 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-[var(--color-primary-mute)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  :disabled="filteredClients.length === 0"
-                  :aria-pressed="allClientsSelected"
-                  @click="toggleAllClients"
+                  class="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  :title="`继续编辑 ${clientModelLabel(draft.model)}`"
+                  @click="selectClientModel(draft.model.id)"
                 >
-                  {{ allClientsSelected ? '取消全选' : '全选当前' }}
+                  <span class="block truncate text-sm font-medium">{{ clientModelLabel(draft.model) }}</span>
+                  <span class="mt-0.5 block truncate font-mono text-xs text-muted-foreground">{{ draft.model.provider_model_name }}</span>
+                  <span class="mt-1.5 inline-flex text-xs text-primary">继续编辑</span>
                 </button>
                 <button
-                  v-if="selectedClientCount > 0"
                   type="button"
-                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  title="清空已选"
-                  aria-label="清空已选客户端"
-                  @click="clearClientSelection"
+                  class="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  :aria-label="`清空 ${clientModelLabel(draft.model)} 的草稿`"
+                  title="清空草稿"
+                  @click="clearDraft(draft.model.id)"
                 >
                   <X
                     class="h-4 w-4"
@@ -127,335 +281,43 @@
                   />
                 </button>
               </div>
-            </div>
-            <div class="relative mt-3">
-              <Search
-                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                v-model="clientSearch"
-                class="h-10 pl-9"
-                placeholder="搜索客户端模型..."
-                aria-label="搜索客户端模型"
-                autofocus
-              />
-            </div>
-            <div
-              v-if="selectedClientCount > 0"
-              class="mt-3 rounded-lg border border-[var(--color-primary-soft)] bg-[var(--color-active)] px-3 py-2.5"
-            >
-              <div class="flex items-center justify-between gap-2 text-xs">
-                <span class="inline-flex min-w-0 items-center gap-1.5 font-medium text-primary">
-                  <CheckCheck
-                    class="h-3.5 w-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                  {{ `已选择 ${selectedClientCount} 个客户端` }}
-                </span>
-                <button
-                  type="button"
-                  class="shrink-0 rounded-md px-1.5 py-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  @click="clearClientSelection"
-                >
-                  清空
-                </button>
-              </div>
-              <div class="mt-2 flex min-w-0 flex-wrap gap-1.5">
+              <div class="mt-3 flex flex-wrap gap-1.5">
                 <span
-                  v-for="model in selectedClientPreview"
-                  :key="model.id"
-                  class="max-w-full truncate rounded-md bg-background px-2 py-1 text-xs text-foreground shadow-sm"
-                  :title="clientModelLabel(model)"
+                  v-for="upstreamName in draft.upstreamNames"
+                  :key="upstreamName"
+                  class="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--color-primary-mute)] py-1 pl-2 pr-1 font-mono text-xs text-primary"
                 >
-                  {{ clientModelLabel(model) }}
-                </span>
-                <span
-                  v-if="selectedClientOverflowCount > 0"
-                  class="rounded-md bg-background px-2 py-1 text-xs text-muted-foreground shadow-sm"
-                >
-                  +{{ selectedClientOverflowCount }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <fieldset
-            class="min-h-0 flex-1 overflow-y-auto p-3"
-            aria-label="客户端模型列表"
-          >
-            <legend class="sr-only">
-              客户端模型列表
-            </legend>
-            <div
-              v-for="model in filteredClients"
-              :key="model.id"
-              class="mb-2 flex min-h-16 cursor-pointer items-stretch overflow-hidden rounded-lg border transition-all duration-200"
-              :class="isClientSelected(model.id)
-                ? 'border-[var(--color-primary-soft)] bg-[var(--color-active)] shadow-sm'
-                : 'border-[var(--color-border)] bg-background hover:border-[var(--color-primary-soft)] hover:bg-[var(--color-hover)]'"
-              @click="toggleClientSelection(model.id)"
-            >
-              <label
-                :for="`batch-client-${model.id}`"
-                class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-3 py-2.5"
-                @click.stop
-              >
-                <input
-                  :id="`batch-client-${model.id}`"
-                  v-model="selectedClientIds"
-                  type="checkbox"
-                  :value="model.id"
-                  class="peer sr-only"
-                  :aria-label="`选择 ${clientModelLabel(model)}`"
-                  @change="clearSelectionFeedback"
-                >
-                <span
-                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-border bg-background text-transparent transition-colors peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-primary"
-                  aria-hidden="true"
-                >
-                  <Check class="h-3.5 w-3.5" />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="flex min-w-0 items-center gap-2">
-                    <span class="min-w-0 truncate text-sm font-medium">
-                      {{ clientModelLabel(model) }}
-                    </span>
-                    <span
-                      v-if="drafts[model.id]"
-                      class="shrink-0 rounded-md bg-[var(--color-primary-mute)] px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                    >
-                      待保存
-                    </span>
-                  </span>
-                  <span class="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
-                    {{ model.provider_model_name }}
-                  </span>
-                </span>
-                <span
-                  v-if="!drafts[model.id]"
-                  class="hidden shrink-0 text-right text-xs text-muted-foreground sm:block"
-                  :title="existingMappingsTitle(model)"
-                >
-                  {{ `默认映射 ${existingDefaultMappingCount(model)}` }}
-                </span>
-              </label>
-
-              <div
-                v-if="drafts[model.id]"
-                class="flex min-w-0 max-w-40 cursor-default items-center gap-1 border-l border-[var(--color-border)] bg-[var(--color-active)] px-2 sm:max-w-52"
-                @click.stop
-              >
-                <span
-                  class="min-w-0 truncate font-mono text-xs text-primary"
-                  :title="drafts[model.id]"
-                >
-                  {{ drafts[model.id] }}
-                </span>
-                <button
-                  type="button"
-                  class="shrink-0 rounded p-1 text-primary transition-colors hover:bg-[var(--color-primary-mute)] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  :aria-label="`清除 ${clientModelLabel(model)} 的待保存映射`"
-                  title="清除草稿"
-                  @click.stop="clearDraft(model.id)"
-                >
-                  <X
-                    class="h-3.5 w-3.5"
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
-            </div>
-
-            <div
-              v-if="filteredClients.length === 0"
-              class="flex min-h-48 items-center justify-center px-4 text-center text-sm text-muted-foreground"
-            >
-              {{ clientSearch ? '无匹配客户端模型' : '暂无客户端模型' }}
-            </div>
-          </fieldset>
-        </section>
-
-        <section
-          class="flex h-[min(46dvh,26rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-card shadow-sm sm:h-[min(52dvh,30rem)] lg:h-[min(58dvh,38rem)]"
-          aria-labelledby="batch-upstream-title"
-        >
-          <div class="shrink-0 border-b border-[var(--color-border)] p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <h2
-                    id="batch-upstream-title"
-                    class="text-sm font-semibold"
+                  <span class="truncate">{{ upstreamName }}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded p-0.5 hover:bg-[var(--color-primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    :aria-label="`移除 ${upstreamName}`"
+                    @click="removeDraftUpstreamName(draft.model.id, upstreamName)"
                   >
-                    提供商模型
-                  </h2>
-                  <span class="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
-                    {{ allUpstreamModels.length }}
-                  </span>
-                </div>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  一次选择一个目标模型
-                </p>
+                    <X
+                      class="h-3 w-3"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </span>
               </div>
-              <button
-                type="button"
-                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] text-muted-foreground transition-colors hover:border-[var(--color-primary-soft)] hover:bg-[var(--color-primary-mute)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                :disabled="loadingUpstream"
-                title="刷新提供商模型"
-                aria-label="刷新提供商模型"
-                @click="fetchUpstreamModels(true)"
-              >
-                <Loader2
-                  v-if="loadingUpstream"
-                  class="h-4 w-4 animate-spin"
-                  aria-hidden="true"
-                />
-                <RefreshCw
-                  v-else
-                  class="h-4 w-4"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-            <div class="relative mt-3">
-              <Search
-                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                v-model="upstreamSearch"
-                class="h-10 pl-9"
-                placeholder="搜索提供商模型..."
-                aria-label="搜索提供商模型"
-              />
-            </div>
-          </div>
+            </article>
 
-          <div
-            class="min-h-0 flex-1 overflow-y-auto p-3"
-            role="radiogroup"
-            aria-label="提供商模型列表"
-          >
             <div
-              v-if="loadingUpstream"
-              class="space-y-2"
-            >
-              <div
-                v-for="index in 5"
-                :key="index"
-                class="h-14 animate-pulse rounded-lg bg-muted"
-              />
-              <span class="sr-only">正在加载提供商模型</span>
-            </div>
-
-            <template v-else>
-              <label
-                v-if="canAddCustom"
-                class="mb-2 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-[var(--color-primary-soft)] bg-[var(--color-active)] px-3 py-2.5 text-sm transition-colors hover:bg-[var(--color-primary-mute)]"
-                :class="selectedUpstreamName === upstreamSearch.trim() ? 'ring-2 ring-[var(--color-primary-soft)]' : ''"
-              >
-                <input
-                  type="radio"
-                  name="batch-upstream-model"
-                  :value="upstreamSearch.trim()"
-                  class="peer sr-only"
-                  :checked="selectedUpstreamName === upstreamSearch.trim()"
-                  @change="selectCustomModel"
-                >
-                <span
-                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary"
-                  aria-hidden="true"
-                >
-                  <span
-                    v-if="selectedUpstreamName === upstreamSearch.trim()"
-                    class="h-2 w-2 rounded-full bg-primary-foreground"
-                  />
-                </span>
-                <Plus
-                  class="h-4 w-4 shrink-0 text-primary"
-                  aria-hidden="true"
-                />
-                <span class="min-w-0 truncate font-mono">
-                  使用自定义提供商模型“{{ upstreamSearch.trim() }}”
-                </span>
-              </label>
-
-              <label
-                v-for="model in filteredUpstreamModels"
-                :key="model.id"
-                class="mb-2 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-all duration-200"
-                :class="selectedUpstreamName === model.id
-                  ? 'border-[var(--color-primary-soft)] bg-[var(--color-active)] text-primary shadow-sm'
-                  : 'border-[var(--color-border)] bg-background hover:border-[var(--color-primary-soft)] hover:bg-[var(--color-hover)]'"
-              >
-                <input
-                  type="radio"
-                  name="batch-upstream-model"
-                  :value="model.id"
-                  class="peer sr-only"
-                  :checked="selectedUpstreamName === model.id"
-                  :aria-label="`选择 ${model.id}`"
-                  @change="selectUpstreamModel(model.id)"
-                >
-                <span
-                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary"
-                  aria-hidden="true"
-                >
-                  <span
-                    v-if="selectedUpstreamName === model.id"
-                    class="h-2 w-2 rounded-full bg-primary-foreground"
-                  />
-                </span>
-                <span class="min-w-0 flex-1 truncate font-mono text-sm">
-                  {{ model.id }}
-                </span>
-                <span
-                  v-if="model.owned_by"
-                  class="shrink-0 rounded-md bg-muted px-1.5 py-1 text-[11px] text-muted-foreground"
-                >
-                  {{ model.owned_by }}
-                </span>
-              </label>
-
-              <div
-                v-if="filteredUpstreamModels.length === 0 && !canAddCustom"
-                class="flex min-h-40 flex-col items-center justify-center text-center text-muted-foreground"
-              >
-                <CloudDownload
-                  class="mb-2 h-8 w-8 opacity-30"
-                  aria-hidden="true"
-                />
-                <p class="text-sm">
-                  {{ upstreamSearch ? '无匹配提供商模型' : '暂无提供商模型' }}
-                </p>
-                <p class="mt-1 text-xs">
-                  点击右上角刷新按钮获取模型
-                </p>
-              </div>
-            </template>
-          </div>
-
-          <div class="shrink-0 space-y-3 border-t border-[var(--color-border)] bg-[var(--color-background-mute)] p-4">
-            <div class="flex items-center justify-between gap-3 text-xs">
-              <span class="text-muted-foreground">作用范围</span>
-              <span class="min-w-0 truncate text-right font-medium text-foreground">
-                {{ selectedUpstreamName ? '全部端点和请求' : '尚未选择目标模型' }}
-              </span>
-            </div>
-            <Button
-              class="h-11 w-full"
-              :disabled="selectedClientCount === 0 || !selectedUpstreamName"
-              @click="applyPair"
+              v-if="pendingDrafts.length === 0"
+              class="flex min-h-48 flex-col items-center justify-center px-4 text-center text-muted-foreground"
             >
               <Link2
-                class="mr-2 h-4 w-4"
+                class="mb-2 h-8 w-8 opacity-30"
                 aria-hidden="true"
               />
-              <span>
-                {{ selectedClientCount > 0 && selectedUpstreamName ? `应用到 ${selectedClientCount} 个客户端` : '应用到已选客户端' }}
-              </span>
-            </Button>
+              <p class="text-sm">
+                暂无待保存映射
+              </p>
+              <p class="mt-1 text-xs">
+                先选择客户端模型和提供商模型，草稿会显示在这里。
+              </p>
+            </div>
           </div>
         </section>
       </div>
@@ -488,7 +350,7 @@
           class="text-xs text-muted-foreground"
           aria-live="polite"
         >
-          {{ pendingCount ? `${pendingCount} 个客户端模型待保存` : '没有待保存草稿' }}
+          {{ pendingMappingCount ? `${pendingClientCount} 个客户端模型，${pendingMappingCount} 条映射待保存` : '没有待保存草稿' }}
         </span>
         <div class="flex items-center gap-2">
           <Button
@@ -496,10 +358,10 @@
             :disabled="saving"
             @click="closeDialog"
           >
-            {{ pendingCount ? '取消' : '关闭' }}
+            {{ pendingMappingCount ? '取消' : '关闭' }}
           </Button>
           <Button
-            :disabled="saving || pendingCount === 0"
+            :disabled="saving || pendingMappingCount === 0"
             @click="saveMappings"
           >
             <Loader2
@@ -507,7 +369,7 @@
               class="mr-2 h-4 w-4 animate-spin"
               aria-hidden="true"
             />
-            {{ saving ? '保存中...' : `保存 ${pendingCount} 条映射` }}
+            {{ saving ? '保存中...' : `保存 ${pendingMappingCount} 条映射` }}
           </Button>
         </div>
       </div>
@@ -519,19 +381,27 @@
 import { computed, ref, watch } from 'vue'
 import {
   ArrowRight,
-  Check,
   CheckCheck,
-  CloudDownload,
   Link2,
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   Sparkles,
   Tags,
   X,
 } from 'lucide-vue-next'
-import { Button, Dialog, Input } from '@/components/ui'
+import {
+  Button,
+  Dialog,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui'
+import MultiSelect, { type MultiSelectOption } from '@/components/common/MultiSelect.vue'
 import { updateModel } from '@/api/endpoints/models'
 import type { Model, ProviderModelMapping, UpstreamModel } from '@/api/endpoints'
 import { useConfirm } from '@/composables/useConfirm'
@@ -548,13 +418,18 @@ interface Props {
 
 interface DraftEntry {
   modelId: string
-  upstreamName: string
+  upstreamNames: string[]
 }
 
 interface SaveResult extends DraftEntry {
   status: 'fulfilled' | 'rejected'
-  changed: boolean
+  addedNames: string[]
   reason?: unknown
+}
+
+interface PendingDraft {
+  model: Model
+  upstreamNames: string[]
 }
 
 const props = defineProps<Props>()
@@ -571,26 +446,19 @@ const {
   warning: showWarning,
 } = useToast()
 
-const clientSearch = ref('')
-const upstreamSearch = ref('')
-const selectedClientIds = ref<string[]>([])
-const selectedUpstreamName = ref('')
+const selectedClientId = ref('')
+const customModelName = ref('')
 const upstreamModels = ref<UpstreamModel[]>([])
 const customModels = ref<string[]>([])
-const drafts = ref<Record<string, string>>({})
+const drafts = ref<Record<string, string[]>>({})
 const locallySavedNames = ref<Record<string, string[]>>({})
 const loadingUpstream = ref(false)
 const saving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
-const filteredClients = computed(() => {
-  const query = clientSearch.value.trim().toLowerCase()
-  return props.models.filter(model => {
-    if (!query) return true
-    const searchableText = `${clientModelLabel(model)} ${model.provider_model_name}`.toLowerCase()
-    return searchableText.includes(query)
-  })
+const selectedClientModel = computed(() => {
+  return props.models.find(model => model.id === selectedClientId.value) ?? null
 })
 
 const allUpstreamModels = computed<UpstreamModel[]>(() => {
@@ -606,47 +474,50 @@ const allUpstreamModels = computed<UpstreamModel[]>(() => {
   return [...byId.values()]
 })
 
-const filteredUpstreamModels = computed(() => {
-  const query = upstreamSearch.value.trim().toLowerCase()
-  return allUpstreamModels.value.filter(model => !query || model.id.toLowerCase().includes(query))
+const upstreamOptions = computed<MultiSelectOption[]>(() => {
+  return allUpstreamModels.value.map(model => ({
+    value: model.id,
+    label: model.id,
+  }))
 })
 
-const selectedClientModels = computed(() => {
-  const selected = new Set(selectedClientIds.value)
-  return props.models.filter(model => selected.has(model.id))
+const selectedUpstreamNames = computed<string[]>({
+  get() {
+    if (!selectedClientId.value) return []
+    return drafts.value[selectedClientId.value] ?? []
+  },
+  set(names) {
+    if (!selectedClientId.value) return
+    updateDraftNames(selectedClientId.value, names)
+  },
 })
-const selectedClientCount = computed(() => selectedClientModels.value.length)
-const selectedClientPreview = computed(() => selectedClientModels.value.slice(0, 3))
-const selectedClientOverflowCount = computed(() => {
-  return Math.max(0, selectedClientCount.value - selectedClientPreview.value.length)
+
+const pendingDrafts = computed<PendingDraft[]>(() => {
+  return props.models.flatMap(model => {
+    const upstreamNames = drafts.value[model.id] ?? []
+    return upstreamNames.length > 0 ? [{ model, upstreamNames }] : []
+  })
 })
-const pendingCount = computed(() => Object.keys(drafts.value).length)
-const allClientsSelected = computed(() => {
-  return filteredClients.value.length > 0
-    && filteredClients.value.every(model => selectedClientIds.value.includes(model.id))
+
+const pendingClientCount = computed(() => pendingDrafts.value.length)
+const pendingMappingCount = computed(() => {
+  return pendingDrafts.value.reduce((count, draft) => count + draft.upstreamNames.length, 0)
 })
 const canAddCustom = computed(() => {
-  const name = upstreamSearch.value.trim()
-  return Boolean(name) && !allUpstreamModels.value.some(model => model.id === name)
+  const name = customModelName.value.trim()
+  return Boolean(
+    selectedClientId.value
+      && name
+      && !allUpstreamModels.value.some(model => model.id === name),
+  )
 })
 
 function clientModelLabel(model: Model): string {
   return model.global_model_display_name || model.global_model_name || model.provider_model_name
 }
 
-function isClientSelected(modelId: string): boolean {
-  return selectedClientIds.value.includes(modelId)
-}
-
-function toggleClientSelection(modelId: string) {
-  const next = new Set(selectedClientIds.value)
-  if (next.has(modelId)) {
-    next.delete(modelId)
-  } else {
-    next.add(modelId)
-  }
-  selectedClientIds.value = [...next]
-  clearSelectionFeedback()
+function normalizeUpstreamNames(names: string[]): string[] {
+  return [...new Set(names.map(name => name.trim()).filter(Boolean))]
 }
 
 function clearSelectionFeedback() {
@@ -654,14 +525,31 @@ function clearSelectionFeedback() {
   successMessage.value = ''
 }
 
-function clearClientSelection() {
-  selectedClientIds.value = []
+function selectClientModel(modelId: string) {
+  selectedClientId.value = modelId
+  customModelName.value = ''
   clearSelectionFeedback()
 }
 
-function selectUpstreamModel(name: string) {
-  selectedUpstreamName.value = name
+function updateDraftNames(modelId: string, names: string[]) {
+  const normalizedNames = normalizeUpstreamNames(names)
+  const next = { ...drafts.value }
+  if (normalizedNames.length > 0) {
+    next[modelId] = normalizedNames
+  } else {
+    delete next[modelId]
+  }
+  drafts.value = next
   clearSelectionFeedback()
+}
+
+function addCustomModel() {
+  const name = customModelName.value.trim()
+  if (!name || !selectedClientId.value) return
+
+  customModels.value = [...new Set([...customModels.value, name])]
+  selectedUpstreamNames.value = [...selectedUpstreamNames.value, name]
+  customModelName.value = ''
 }
 
 function hasScopeValues(values?: string[]): boolean {
@@ -672,19 +560,6 @@ function isDefaultScopeMapping(mapping: ProviderModelMapping): boolean {
   return !hasScopeValues(mapping.api_formats)
     && !hasScopeValues(mapping.endpoint_ids)
     && !hasScopeValues(mapping.operations)
-}
-
-function defaultMappings(model: Model): ProviderModelMapping[] {
-  return currentMappings(model).filter(isDefaultScopeMapping)
-}
-
-function existingDefaultMappingCount(model: Model): number {
-  return defaultMappings(model).length
-}
-
-function existingMappingsTitle(model: Model): string {
-  const names = defaultMappings(model).map(mapping => mapping.name)
-  return names.length > 0 ? names.join(', ') : '尚未配置默认范围映射'
 }
 
 function currentMappings(model: Model): ProviderModelMapping[] {
@@ -703,57 +578,15 @@ function hasDefaultMapping(model: Model, name: string): boolean {
   })
 }
 
-function toggleAllClients() {
-  const visibleIds = new Set(filteredClients.value.map(model => model.id))
-  selectedClientIds.value = allClientsSelected.value
-    ? selectedClientIds.value.filter(id => !visibleIds.has(id))
-    : [...new Set([...selectedClientIds.value, ...visibleIds])]
-  clearSelectionFeedback()
-}
-
-function selectCustomModel() {
-  const name = upstreamSearch.value.trim()
-  if (!name) return
-  customModels.value = [...new Set([...customModels.value, name])]
-  selectUpstreamModel(name)
-}
-
 function clearDraft(modelId: string) {
-  const next = { ...drafts.value }
-  delete next[modelId]
-  drafts.value = next
-  clearSelectionFeedback()
+  updateDraftNames(modelId, [])
 }
 
-function applyPair() {
-  const upstreamName = selectedUpstreamName.value.trim()
-  if (!upstreamName || selectedClientIds.value.length === 0) return
-
-  const next = { ...drafts.value }
-  let changedCount = 0
-  for (const modelId of selectedClientIds.value) {
-    const model = props.models.find(item => item.id === modelId)
-    if (!model) continue
-
-    if (hasDefaultMapping(model, upstreamName)) {
-      if (next[modelId]) {
-        delete next[modelId]
-      }
-      continue
-    }
-
-    if (next[modelId] !== upstreamName) {
-      next[modelId] = upstreamName
-      changedCount += 1
-    }
-  }
-
-  drafts.value = next
-  upstreamSearch.value = ''
-  errorMessage.value = ''
-  successMessage.value = changedCount > 0
-    ? `已生成 ${changedCount} 条映射草稿`
-    : '没有需要新增的映射，重复项已忽略'
+function removeDraftUpstreamName(modelId: string, upstreamName: string) {
+  updateDraftNames(
+    modelId,
+    (drafts.value[modelId] ?? []).filter(name => name !== upstreamName),
+  )
 }
 
 function exactUpstreamMatch(model: Model): string | undefined {
@@ -781,21 +614,18 @@ function exactUpstreamMatch(model: Model): string | undefined {
 function autoMatch() {
   const next = { ...drafts.value }
   let matchedCount = 0
-  const matchedIds: string[] = []
 
-  for (const model of filteredClients.value) {
-    if (next[model.id] || existingDefaultMappingCount(model) > 0) continue
+  for (const model of props.models) {
     const upstreamName = exactUpstreamMatch(model)
     if (!upstreamName || hasDefaultMapping(model, upstreamName)) continue
-    next[model.id] = upstreamName
-    matchedIds.push(model.id)
+
+    const names = normalizeUpstreamNames(next[model.id] ?? [])
+    if (names.includes(upstreamName)) continue
+    next[model.id] = [...names, upstreamName]
     matchedCount += 1
   }
 
   drafts.value = next
-  selectedClientIds.value = [...new Set([...selectedClientIds.value, ...matchedIds])]
-  selectedUpstreamName.value = ''
-  upstreamSearch.value = ''
   errorMessage.value = ''
   successMessage.value = matchedCount > 0
     ? `已按名称生成 ${matchedCount} 条映射草稿`
@@ -823,10 +653,8 @@ async function fetchUpstreamModels(forceRefresh = false) {
 }
 
 function resetState() {
-  clientSearch.value = ''
-  upstreamSearch.value = ''
-  selectedClientIds.value = []
-  selectedUpstreamName.value = ''
+  selectedClientId.value = ''
+  customModelName.value = ''
   upstreamModels.value = []
   customModels.value = []
   drafts.value = {}
@@ -845,7 +673,7 @@ async function handleDialogUpdate(value: boolean) {
 
 async function closeDialog() {
   if (saving.value) return
-  if (pendingCount.value > 0) {
+  if (pendingMappingCount.value > 0) {
     const confirmed = await confirm({
       title: '放弃更改',
       message: '有未保存的映射草稿，确定要关闭吗？',
@@ -858,36 +686,43 @@ async function closeDialog() {
   emit('update:open', false)
 }
 
-function rememberSavedMapping(modelId: string, upstreamName: string) {
+function rememberSavedMappings(modelId: string, upstreamNames: string[]) {
   locallySavedNames.value = {
     ...locallySavedNames.value,
-    [modelId]: [...new Set([
+    [modelId]: normalizeUpstreamNames([
       ...(locallySavedNames.value[modelId] ?? []),
-      upstreamName,
-    ])],
+      ...upstreamNames,
+    ]),
   }
 }
 
 async function saveDraft(entry: DraftEntry): Promise<SaveResult> {
   const model = props.models.find(item => item.id === entry.modelId)
   if (!model) {
-    return { ...entry, status: 'rejected', changed: false, reason: new Error('客户端模型不存在') }
+    return {
+      ...entry,
+      status: 'rejected',
+      addedNames: [],
+      reason: new Error('客户端模型不存在'),
+    }
   }
 
-  if (hasDefaultMapping(model, entry.upstreamName)) {
-    return { ...entry, status: 'fulfilled', changed: false }
+  const namesToAdd = normalizeUpstreamNames(entry.upstreamNames)
+    .filter(name => !hasDefaultMapping(model, name))
+  if (namesToAdd.length === 0) {
+    return { ...entry, status: 'fulfilled', addedNames: [] }
   }
 
   try {
     await updateModel(props.providerId, model.id, {
       provider_model_mappings: [
         ...currentMappings(model),
-        { name: entry.upstreamName, priority: 1 },
+        ...namesToAdd.map(name => ({ name, priority: 1 })),
       ],
     })
-    return { ...entry, status: 'fulfilled', changed: true }
+    return { ...entry, status: 'fulfilled', addedNames: namesToAdd }
   } catch (reason: unknown) {
-    return { ...entry, status: 'rejected', changed: false, reason }
+    return { ...entry, status: 'rejected', addedNames: [], reason }
   }
 }
 
@@ -902,51 +737,58 @@ async function saveDrafts(entries: DraftEntry[]): Promise<SaveResult[]> {
 }
 
 async function saveMappings() {
-  if (saving.value || pendingCount.value === 0) return
+  if (saving.value || pendingMappingCount.value === 0) return
 
   saving.value = true
   errorMessage.value = ''
   successMessage.value = ''
-  const entries = Object.entries(drafts.value).map(([modelId, upstreamName]) => ({
-    modelId,
-    upstreamName,
-  }))
+  const entries = Object.entries(drafts.value)
+    .map(([modelId, upstreamNames]) => ({ modelId, upstreamNames }))
+    .filter(entry => entry.upstreamNames.length > 0)
 
   try {
     const results = await saveDrafts(entries)
     const failures = results.filter(result => result.status === 'rejected')
     const successes = results.filter(result => result.status === 'fulfilled')
-    const changedSuccesses = successes.filter(result => result.changed)
+    const addedMappingCount = successes.reduce(
+      (count, result) => count + result.addedNames.length,
+      0,
+    )
 
     for (const result of successes) {
-      rememberSavedMapping(result.modelId, result.upstreamName)
+      if (result.addedNames.length > 0) {
+        rememberSavedMappings(result.modelId, result.addedNames)
+      }
     }
 
-    const failedDrafts: Record<string, string> = {}
+    const failedDrafts: Record<string, string[]> = {}
     for (const failure of failures) {
-      failedDrafts[failure.modelId] = failure.upstreamName
+      failedDrafts[failure.modelId] = failure.upstreamNames
     }
     drafts.value = failedDrafts
 
-    if (changedSuccesses.length > 0) {
+    if (addedMappingCount > 0) {
       emit('saved')
     }
 
     if (failures.length > 0) {
-      selectedClientIds.value = failures.map(failure => failure.modelId)
+      selectedClientId.value = failures[0].modelId
+      const failedMappingCount = failures.reduce(
+        (count, failure) => count + failure.upstreamNames.length,
+        0,
+      )
       const firstError = parseApiError(failures[0].reason, '保存失败')
-      errorMessage.value = changedSuccesses.length > 0
-        ? `已保存 ${changedSuccesses.length} 条，${failures.length} 条失败并保留草稿。${firstError}`
-        : `${failures.length} 条映射保存失败，草稿已保留。${firstError}`
+      errorMessage.value = addedMappingCount > 0
+        ? `已保存 ${addedMappingCount} 条，${failedMappingCount} 条失败并保留草稿。${firstError}`
+        : `${failedMappingCount} 条映射保存失败，草稿已保留。${firstError}`
       showError(errorMessage.value, '批量保存失败')
       return
     }
 
-    selectedClientIds.value = []
-    selectedUpstreamName.value = ''
-    upstreamSearch.value = ''
-    successMessage.value = changedSuccesses.length > 0
-      ? `已成功保存 ${changedSuccesses.length} 条映射，可继续添加，完成后点击关闭。`
+    selectedClientId.value = ''
+    customModelName.value = ''
+    successMessage.value = addedMappingCount > 0
+      ? `已成功保存 ${addedMappingCount} 条映射，可继续添加，完成后点击关闭。`
       : '映射已存在，无需重复保存。'
     showSuccess(successMessage.value)
   } finally {
