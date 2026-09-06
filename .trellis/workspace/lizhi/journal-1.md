@@ -718,3 +718,40 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 27: 优化批量模型映射交互
+<!-- trellis-session: v=2 fp=991703bcd91c8294 -->
+
+**Date**: 2026-09-06
+**Task**: 优化批量模型映射交互
+**Branch**: `slim-personal`
+
+### Summary
+
+重做批量模型映射的多选反馈与工作流，并重建 Docker 服务。
+
+### Main Changes
+
+- 客户端模型支持整行多选、全选、清空和已选摘要。
+- 提供商目标模型改为明确单选卡片，批量操作状态可见。
+- 补齐新交互的英文文案，并用新前端镜像重建 app 服务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `64479a490` | feat(provider): 优化批量模型映射多选交互 |
+
+### Testing
+
+- [OK] vue-tsc、定向 ESLint、生产构建均通过。
+- [OK] Vitest 定向 3 个文件、11 项测试通过；Docker 健康检查和 HTTP 200 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 无
