@@ -379,11 +379,13 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 }
 
 .error-technical-message code {
+  min-width: 0;
   overflow-wrap: anywhere;
   color: var(--foreground);
   font-size: 0.8rem;
   line-height: 1.5;
-  white-space: pre-wrap;
+  /* The global inline-code rule forces nowrap; raw upstream errors must wrap. */
+  white-space: pre-wrap !important;
 }
 
 .error-json {
