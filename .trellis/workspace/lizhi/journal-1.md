@@ -755,3 +755,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Next Steps
 
 - 无
+
+
+## Session 28: 完成批量模型映射编辑体验
+<!-- trellis-session: v=2 fp=52b211e78cc0f50b -->
+
+**Date**: 2026-09-06
+**Task**: 完成批量模型映射编辑体验
+**Branch**: `slim-personal`
+
+### Summary
+
+移除批量映射弹窗顶部流程区，将刷新入口移至标题栏，并支持已有默认范围映射回显、修改与删除保存。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `812889742` | fix(provider): 支持批量编辑模型映射 |
+
+### Status
+
+[OK] **Completed**
