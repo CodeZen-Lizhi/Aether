@@ -104,12 +104,11 @@ use crate::execution_runtime::{
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
     apply_local_execution_effect, build_local_error_flow_metadata, classify_failure_disposition,
-    cyber_continue_failover_enabled, parse_retry_after_secs, trace_upstream_response_body,
-    with_error_flow_report_context, with_upstream_response_report_context, FailureDisposition,
-    FailureTokenAction, LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect,
-    LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
-    LocalFailoverAnalysis, LocalFailoverClassification, LocalHealthFailureEffect,
-    LocalHealthSuccessEffect,
+    parse_retry_after_secs, trace_upstream_response_body, with_error_flow_report_context,
+    with_upstream_response_report_context, FailureDisposition, FailureTokenAction,
+    LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
+    LocalExecutionEffect, LocalExecutionEffectContext, LocalFailoverAnalysis,
+    LocalFailoverClassification, LocalHealthFailureEffect, LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::{
     acquire_provider_pool_in_flight_guard, ProviderPoolInFlightGuard,
@@ -5190,9 +5189,11 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             "gateway normalized declared upstream stream response headers for the client"
         );
     }
-    let prefetch_for_cyber_failover =
-        is_openai_responses_family_format(plan.provider_api_format.as_str())
-            && cyber_continue_failover_enabled(state).await;
+    // Responses providers can return HTTP 200 before emitting a terminal
+    // `response.failed` event. Keep the stream uncommitted until the first
+    // business event so that this failure can still advance the candidate loop.
+    let prefetch_openai_responses_stream =
+        is_openai_responses_family_format(plan.provider_api_format.as_str());
     let stream_commit_policy = StreamCommitPolicy::for_response(
         direct_stream_finalize_kind.is_some(),
         upstream_content_type,
@@ -5200,7 +5201,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         plan.client_api_format.as_str(),
         false,
         local_stream_rewriter.is_some(),
-        prefetch_for_cyber_failover,
+        prefetch_openai_responses_stream,
     );
     let reuse_committed_precommit =
         stream_precommit_committed && stream_commit_policy.is_native_anthropic();
@@ -5684,7 +5685,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
 
                     if anthropic_commit_ready
                         || (matches!(inspection, StreamPrefetchInspection::NonError)
-                            && (!prefetch_for_cyber_failover
+                            && (!prefetch_openai_responses_stream
                                 || prefetched_openai_responses_body_has_output_boundary(
                                     &prefetched_inspection_body,
                                 )))
@@ -7234,14 +7235,11 @@ mod tests {
         }
     }
 
-    async fn execute_prefetched_codex_cyber_policy_failure(
+    async fn execute_prefetched_openai_responses_failure(
+        request_id: &str,
         continue_failover: bool,
+        upstream_error_text: &str,
     ) -> Option<axum::http::Response<Body>> {
-        let request_id = if continue_failover {
-            "req-cyber-policy-retry"
-        } else {
-            "req-cyber-policy-stop"
-        };
         let plan = codex_cyber_policy_plan(request_id);
         let provider_catalog = provider_catalog_for_plan(&plan, None);
         let data_state = crate::data::GatewayDataState::with_provider_transport_reader_for_tests(
@@ -7260,7 +7258,7 @@ mod tests {
             .expect("app state should build")
             .with_data_state_for_tests(data_state);
         let upstream_setup = "event: response.created\ndata: {\"type\":\"response.created\"}\n\n";
-        let upstream_error = "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}\n\n";
+        let upstream_error = upstream_error_text.to_string();
         let frame_stream = stream! {
             yield Ok::<Bytes, std::io::Error>(ndjson_frame(StreamFrame {
                 frame_type: StreamFrameType::Headers,
@@ -7284,7 +7282,7 @@ mod tests {
                 frame_type: StreamFrameType::Data,
                 payload: StreamFramePayload::Data {
                     chunk_b64: None,
-                    text: Some(upstream_error.to_string()),
+                    text: Some(upstream_error),
                 },
             }));
             yield Ok::<Bytes, std::io::Error>(ndjson_frame(StreamFrame::eof()));
@@ -7315,6 +7313,19 @@ mod tests {
         )
         .await
         .expect("execution should succeed")
+    }
+
+    async fn execute_prefetched_codex_cyber_policy_failure(
+        continue_failover: bool,
+    ) -> Option<axum::http::Response<Body>> {
+        let request_id = if continue_failover {
+            "req-cyber-policy-retry"
+        } else {
+            "req-cyber-policy-stop"
+        };
+        let upstream_error = "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}}\n\n";
+        execute_prefetched_openai_responses_failure(request_id, continue_failover, upstream_error)
+            .await
     }
 
     async fn execute_prefetched_transport_failure(
@@ -8465,9 +8476,9 @@ mod tests {
     fn provider_error_inspection_detects_response_failed_at_every_chunk_boundary() {
         let body = concat!(
             "event: response.created\n",
-            "data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\"}\n\n",
+            "data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\"}}\n\n",
             "event: response.failed\n",
-            "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}\n\n",
+            "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"invalid_request\",\"message\":\"cyber policy rejected the request\",\"code\":\"cyber_policy_violation\",\"param\":\"input\"}}}\n\n",
         )
         .as_bytes();
 
@@ -8512,7 +8523,22 @@ mod tests {
             .await
             .expect("default Codex cyber policy handling should return the provider error");
 
-        assert_eq!(response.status().as_u16(), 200);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn openai_responses_terminal_stream_error_retries_without_cyber_setting() {
+        let upstream_error = "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"type\":\"server_error\",\"message\":\"upstream unavailable\"}}}\n\n";
+        assert!(
+            execute_prefetched_openai_responses_failure(
+                "req-responses-stream-terminal-retry",
+                false,
+                upstream_error,
+            )
+            .await
+            .is_none(),
+            "a terminal Responses stream failure before output should retry the next candidate"
+        );
     }
 
     #[tokio::test]
@@ -9592,7 +9618,7 @@ mod tests {
     }
 
     #[test]
-    fn cyber_failover_setting_forces_prefetch_for_event_streams() {
+    fn openai_responses_terminal_error_detection_forces_event_stream_prefetch() {
         assert!(!should_skip_direct_finalize_prefetch(
             Some("openai_responses_sync_finalize"),
             Some("text/event-stream"),
@@ -9605,7 +9631,7 @@ mod tests {
     }
 
     #[test]
-    fn cyber_prefetch_waits_through_response_setup_until_output() {
+    fn openai_responses_prefetch_waits_through_setup_until_output() {
         assert!(!prefetched_openai_responses_body_has_output_boundary(
             b"event: response.created\ndata: {\"type\":\"response.created\"}\n\n"
         ));
