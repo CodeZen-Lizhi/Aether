@@ -555,6 +555,12 @@ mod tests {
     #[test]
     fn key_circuit_allows_probe_after_next_probe_time() {
         let mut circuit_open_key = sample_key_with_concurrent_limit("1", Some(2));
+        circuit_open_key.health_by_format = Some(serde_json::json!({
+            "openai:chat": {
+                "health_score": 0.0,
+                "consecutive_failures": 8
+            }
+        }));
         circuit_open_key.circuit_breaker_by_format = Some(serde_json::json!({
             "openai:chat": {
                 "open": true,

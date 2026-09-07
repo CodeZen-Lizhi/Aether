@@ -25,7 +25,8 @@ use tracing::warn;
 use super::{
     circuit_ramp_active, classify_failure_disposition, local_failover_error_message,
     project_local_adaptive_rate_limit, project_local_adaptive_success,
-    project_local_failure_health, project_local_key_circuit_closed_with_ramp,
+    project_local_circuit_open_health, project_local_failure_health,
+    project_local_key_circuit_closed_with_ramp,
     project_local_key_circuit_failure_with_success_rate, project_local_key_circuit_open,
     project_local_ramp_success_health, project_local_rate_limit_cooldown,
     resolve_local_failover_analysis_for_attempt, FailureScope, LocalFailoverAnalysis,
@@ -746,6 +747,12 @@ async fn record_credential_dead_circuit_effect(
             current_key.max_probe_interval_minutes,
         )
         .or_else(|| current_key.circuit_breaker_by_format.clone());
+        let health_by_format = project_local_circuit_open_health(
+            current_key.health_by_format.as_ref(),
+            api_format,
+            observed_at_unix_secs,
+        )
+        .or_else(|| current_key.health_by_format.clone());
         let update = ProviderCatalogKeyHealthStateUpdate {
             key_id: context.plan.key_id.clone(),
             expected_encrypted_auth_config: auth_config_fence
@@ -753,7 +760,7 @@ async fn record_credential_dead_circuit_effect(
                 .map(ToOwned::to_owned),
             expected_health_by_format: current_key.health_by_format.clone(),
             expected_circuit_breaker_by_format: current_key.circuit_breaker_by_format,
-            health_by_format: current_key.health_by_format,
+            health_by_format,
             circuit_breaker_by_format,
         };
         match state
@@ -1094,8 +1101,8 @@ async fn record_health_failure_effect(
             record_credential_dead_circuit_effect(state, context, effect).await;
             unbind_scheduler_affinity_for_failed_candidate(state, context).await;
         }
-        // 5xx / transport: legacy accounting (60s/8-failure cooldown +
-        // 8-consecutive-failure circuit), unchanged.
+        // 5xx / transport: shared eight-failure health budget plus the
+        // existing 8-consecutive-failure circuit and probe ladder.
         aether_scheduler_core::UpstreamFailureClass::Transient => {
             record_transient_failure_effect(state, context, effect).await;
         }
@@ -1144,7 +1151,7 @@ async fn record_transient_failure_effect(
         {
             return;
         }
-        let Some(health_by_format) = project_local_failure_health(
+        let Some(mut health_by_format) = project_local_failure_health(
             current_key.health_by_format.as_ref(),
             api_format,
             effect.classification,
@@ -1169,6 +1176,22 @@ async fn record_transient_failure_effect(
             None,
         )
         .or_else(|| current_key.circuit_breaker_by_format.clone());
+        let circuit_open = circuit_breaker_by_format
+            .as_ref()
+            .and_then(|value| value.get(api_format))
+            .and_then(Value::as_object)
+            .and_then(|payload| payload.get("open"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if circuit_open {
+            if let Some(projected) = project_local_circuit_open_health(
+                Some(&health_by_format),
+                api_format,
+                observed_at_unix_secs,
+            ) {
+                health_by_format = projected;
+            }
+        }
         let update = ProviderCatalogKeyHealthStateUpdate {
             key_id: context.plan.key_id.clone(),
             expected_encrypted_auth_config: auth_config_fence
@@ -1243,7 +1266,7 @@ async fn record_health_success_effect(
             return;
         }
         // This projection also recognizes the successful half-open probe:
-        // open -> 0.75, then three successes ramp linearly back to 1.0.
+        // open -> 0.25, then three successes ramp linearly back to 1.0.
         let recovery_active = is_provider_key_circuit_open(&current_key, api_format)
             || circuit_ramp_active(current_key.circuit_breaker_by_format.as_ref(), api_format);
         let Some(health_by_format) = project_local_ramp_success_health(
@@ -2359,7 +2382,7 @@ mod tests {
             stored_key.health_by_format,
             Some(json!({
                 "openai:chat": {
-                    "health_score": 0.6,
+                    "health_score": 0.875,
                     "consecutive_failures": 1,
                     "last_failure_at": stored_key
                         .health_by_format
@@ -2446,6 +2469,15 @@ mod tests {
             .expect("format circuit should be stored");
         assert_eq!(circuit["open"], json!(true));
         assert_eq!(circuit["reason"], json!("consecutive_failures_8"));
+        assert_eq!(
+            stored_key
+                .health_by_format
+                .as_ref()
+                .and_then(|value| value.get("openai:chat"))
+                .and_then(|value| value.get("health_score"))
+                .and_then(Value::as_f64),
+            Some(0.0)
+        );
         assert_eq!(circuit["probe_interval_minutes"], json!(1));
         assert!(circuit["next_probe_at_unix_secs"].as_u64().is_some());
         assert_eq!(
@@ -2510,7 +2542,7 @@ mod tests {
         assert_eq!(circuit["reason"], json!("consecutive_failures_8"));
     }
     #[tokio::test]
-    async fn health_success_projection_resets_key_health_for_format() {
+    async fn health_success_projection_recovers_key_health_for_format() {
         let state = health_state();
         let plan = sample_plan();
 
@@ -2759,7 +2791,7 @@ mod tests {
                 .and_then(|value| value.get("openai:chat"))
                 .and_then(|value| value.get("health_score"))
                 .and_then(Value::as_f64),
-            Some(0.75)
+            Some(0.25)
         );
         assert_eq!(
             circuit["request_results_window"]

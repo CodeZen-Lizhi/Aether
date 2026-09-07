@@ -96,13 +96,16 @@ pub fn candidate_runtime_skip_reason_with_state(
     }
 
     if let Some(provider_key) = provider_key {
-        if enforce_key_circuit_breaker
-            && crate::is_provider_key_circuit_open_at(
-                provider_key,
-                candidate.endpoint_api_format.as_str(),
-                now_unix_secs,
-            )
-        {
+        let circuit_open = crate::is_provider_key_circuit_open(
+            provider_key,
+            candidate.endpoint_api_format.as_str(),
+        );
+        let circuit_open_at = crate::is_provider_key_circuit_open_at(
+            provider_key,
+            candidate.endpoint_api_format.as_str(),
+            now_unix_secs,
+        );
+        if enforce_key_circuit_breaker && circuit_open_at {
             return Some("key_circuit_open");
         }
         if crate::provider_key_rate_limit_cooldown_active_at(
@@ -119,7 +122,12 @@ pub fn candidate_runtime_skip_reason_with_state(
         ) {
             return Some("key_rate_limit_probe_in_flight");
         }
-        if crate::provider_key_health_score(provider_key, candidate.endpoint_api_format.as_str())
+        let circuit_probe_due = enforce_key_circuit_breaker && circuit_open && !circuit_open_at;
+        if !circuit_probe_due
+            && crate::provider_key_health_score(
+                provider_key,
+                candidate.endpoint_api_format.as_str(),
+            )
             .is_some_and(|score| score <= 0.0)
         {
             return Some("key_health_score_zero");

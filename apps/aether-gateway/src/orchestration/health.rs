@@ -28,7 +28,8 @@ pub(crate) fn parse_retry_after_secs(value: Option<&str>, now_unix_secs: u64) ->
     (delta_secs <= crate::orchestration::RATE_LIMIT_COOLDOWN_MAX_SECS).then_some(delta_secs)
 }
 
-const LOCAL_HEALTH_SCORE_FLOOR: f64 = 0.2;
+// Health is the remaining failure budget: one retryable failure spends 1/8,
+// and the eighth failure opens the circuit and sets the score to zero.
 pub(crate) const LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD: u64 = 8;
 pub(crate) const LOCAL_KEY_CIRCUIT_PROBE_RESERVATION_SECS: u64 = 60;
 const LOCAL_KEY_CIRCUIT_MAX_PROBE_INTERVAL_MINUTES: u64 = 32;
@@ -41,7 +42,7 @@ pub(crate) const SUCCESS_RATE_WINDOW_THRESHOLD: f64 = 0.2;
 // P1-7: recovery ramp. A circuit closes at reduced health and needs this many
 // consecutive successes to return to full 1.0; a failure during the ramp
 // re-opens the circuit immediately.
-pub(crate) const CIRCUIT_RAMP_INITIAL_HEALTH: f64 = 0.75;
+pub(crate) const CIRCUIT_RAMP_INITIAL_HEALTH: f64 = 0.25;
 pub(crate) const CIRCUIT_RAMP_REQUIRED_SUCCESSES: u64 = 3;
 
 /// P1-6: evaluate the rolling request-result window (kept on the circuit
@@ -126,15 +127,28 @@ pub(crate) fn project_local_failure_health(
         .unwrap_or(0)
         .max(0) as u64;
     let consecutive_failures = previous_failures.saturating_add(1);
+    let projected_score_from_budget = projected_failure_health_score(consecutive_failures);
+    let projected_score = current
+        .get("health_score")
+        .and_then(Value::as_f64)
+        .map(|current_score| {
+            let current_score = current_score.clamp(0.0, 1.0);
+            if current_score <= 0.0 || consecutive_failures >= LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD {
+                0.0
+            } else if current_score < local_health_score_step() {
+                // Keep an inconsistent legacy score positive but never raise
+                // it just because a new failure was recorded.
+                current_score
+            } else {
+                (current_score - local_health_score_step()).max(local_health_score_step())
+            }
+        })
+        .unwrap_or(projected_score_from_budget);
 
     let mut projected = serde_json::Map::new();
     projected.insert(
         "health_score".to_string(),
-        json!(projected_failure_health_score(
-            classification,
-            status_code,
-            consecutive_failures
-        )),
+        json!((projected_score * 1000.0).round() / 1000.0),
     );
     projected.insert(
         "consecutive_failures".to_string(),
@@ -160,6 +174,37 @@ pub(crate) fn project_local_failure_health(
     Some(Value::Object(health_by_format))
 }
 
+/// Force a format's health score to zero when its circuit opens. The failure
+/// counter and rate-limit fields are preserved so the UI can explain why the
+/// key was blocked and the next request can still be fenced by CAS.
+pub(crate) fn project_local_circuit_open_health(
+    current_health_by_format: Option<&Value>,
+    api_format: &str,
+    observed_at_unix_secs: u64,
+) -> Option<Value> {
+    let api_format = api_format.trim();
+    if api_format.is_empty() {
+        return None;
+    }
+
+    let mut health_by_format = current_health_by_format
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut payload = health_by_format
+        .get(api_format)
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    payload.insert("health_score".to_string(), json!(0.0));
+    payload.insert(
+        "last_failure_at".to_string(),
+        json!(unix_secs_to_rfc3339(observed_at_unix_secs)),
+    );
+    health_by_format.insert(api_format.to_string(), Value::Object(payload));
+    Some(Value::Object(health_by_format))
+}
+
 pub(crate) fn project_local_success_health(
     current_health_by_format: Option<&Value>,
     api_format: &str,
@@ -173,17 +218,40 @@ pub(crate) fn project_local_success_health(
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    health_by_format.insert(
-        api_format.to_string(),
-        json!({
-            "health_score": 1.0,
-            "consecutive_failures": 0,
-            "last_failure_at": Value::Null,
-            "rate_limit_cooldown_until_unix_secs": Value::Null,
-            "consecutive_rate_limits": 0,
-            "rate_limit_probe_until_unix_secs": Value::Null,
-        }),
+    let current = health_by_format
+        .get(api_format)
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let previous_failures = current
+        .get("consecutive_failures")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        .max(0) as u64;
+    let recovered_failures = previous_failures.saturating_sub(1);
+    // A normal success refunds one failure-budget unit. Half-open probe
+    // recovery uses the separate ramp projection below.
+    let current_score = current
+        .get("health_score")
+        .and_then(Value::as_f64)
+        .map(|score| score.clamp(0.0, 1.0))
+        .unwrap_or_else(|| projected_failure_health_score(previous_failures));
+    let recovered_score =
+        ((current_score + local_health_score_step()).min(1.0) * 1000.0).round() / 1000.0;
+    let mut payload = current;
+    payload.insert("health_score".to_string(), json!(recovered_score));
+    payload.insert(
+        "consecutive_failures".to_string(),
+        json!(recovered_failures),
     );
+    payload.insert("last_failure_at".to_string(), Value::Null);
+    payload.insert(
+        "rate_limit_cooldown_until_unix_secs".to_string(),
+        Value::Null,
+    );
+    payload.insert("consecutive_rate_limits".to_string(), json!(0));
+    payload.insert("rate_limit_probe_until_unix_secs".to_string(), Value::Null);
+    health_by_format.insert(api_format.to_string(), Value::Object(payload));
     Some(Value::Object(health_by_format))
 }
 
@@ -361,6 +429,7 @@ pub(crate) fn project_local_key_circuit_open(
             "next_probe_at_unix_secs": next_probe_at_unix_secs,
             "probe_interval_minutes": probe_interval_minutes,
             "max_probe_interval_minutes": max_probe_interval_minutes,
+            "failure_threshold": LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD,
             "last_failure_at": unix_secs_to_rfc3339(observed_at_unix_secs),
             "last_probe_failure_at": if half_open_failures > 0 {
                 json!(unix_secs_to_rfc3339(observed_at_unix_secs))
@@ -501,6 +570,7 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
                 "next_probe_at_unix_secs": Value::Null,
                 "probe_interval_minutes": 0,
                 "max_probe_interval_minutes": normalize_max_probe_interval_minutes(max_probe_interval_minutes),
+                "failure_threshold": LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD,
                 "failure_count": consecutive_failures,
                 "last_failure_at": unix_secs_to_rfc3339(observed_at_unix_secs),
                 "last_probe_failure_at": Value::Null,
@@ -547,6 +617,7 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
             "next_probe_at_unix_secs": next_probe_at_unix_secs,
             "probe_interval_minutes": probe_interval_minutes,
             "max_probe_interval_minutes": max_probe_interval_minutes,
+            "failure_threshold": LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD,
             "failure_count": consecutive_failures,
             "last_failure_at": unix_secs_to_rfc3339(observed_at_unix_secs),
             "last_probe_failure_at": if already_open {
@@ -565,7 +636,7 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
 }
 
 /// P1-7: success projection during the recovery ramp. Health climbs from the
-/// ramp's initial 0.75 toward 1.0 (linear per remaining success), and the
+/// ramp's initial 0.25 toward 1.0 (linear per remaining success), and the
 /// ramp counter on the circuit payload counts down; the circuit-side
 /// decrement happens in project_local_key_circuit_closed_with_ramp when the
 /// caller re-projects the closed circuit. Kept side-effect-free: this only
@@ -599,7 +670,7 @@ pub(crate) fn project_local_ramp_success_health(
     } else {
         let required = CIRCUIT_RAMP_REQUIRED_SUCCESSES.max(1);
         let progressed = required.saturating_sub(remaining.saturating_sub(1));
-        // Linear climb 0.75 -> 1.0 across the three post-probe successes.
+        // Linear climb 0.25 -> 1.0 across the three post-probe successes.
         let step = (1.0 - CIRCUIT_RAMP_INITIAL_HEALTH) / required as f64;
         CIRCUIT_RAMP_INITIAL_HEALTH + step * progressed as f64
     };
@@ -692,6 +763,9 @@ pub(crate) fn project_local_key_circuit_closed_with_ramp(
     payload.insert("last_probe_failure_at".to_string(), Value::Null);
     payload.insert("request_results_window".to_string(), request_results_window);
     payload.insert("ramp_remaining_successes".to_string(), json!(remaining));
+    payload
+        .entry("failure_threshold".to_string())
+        .or_insert_with(|| json!(LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD));
     if remaining > 0 {
         payload.insert(
             "ramp_health_seed".to_string(),
@@ -721,6 +795,10 @@ pub(crate) fn circuit_ramp_active(
 
 fn current_bool(current: &serde_json::Map<String, Value>, field: &str) -> bool {
     current.get(field).and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn local_health_score_step() -> f64 {
+    1.0 / LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD.max(1) as f64
 }
 
 fn normalize_max_probe_interval_minutes(value: i32) -> u64 {
@@ -803,20 +881,10 @@ fn local_candidate_failure_should_project_health(
     }
 }
 
-fn projected_failure_health_score(
-    classification: LocalFailoverClassification,
-    status_code: u16,
-    consecutive_failures: u64,
-) -> f64 {
-    let base_score = match classification {
-        LocalFailoverClassification::RetrySuccessPattern => 0.75,
-        _ if status_code >= 500 => 0.6,
-        _ => 0.7,
-    };
-
-    let penalty = consecutive_failures.saturating_sub(1) as f64 * 0.15;
-    let normalized = (base_score - penalty).max(LOCAL_HEALTH_SCORE_FLOOR);
-    (normalized * 1000.0).round() / 1000.0
+fn projected_failure_health_score(consecutive_failures: u64) -> f64 {
+    let remaining = LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD.saturating_sub(consecutive_failures);
+    ((remaining as f64 / LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD.max(1) as f64) * 1000.0).round()
+        / 1000.0
 }
 
 #[cfg(test)]
@@ -824,9 +892,9 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::{
-        project_local_failure_health, project_local_key_circuit_closed,
-        project_local_key_circuit_failure, project_local_key_circuit_open,
-        project_local_success_health,
+        project_local_circuit_open_health, project_local_failure_health,
+        project_local_key_circuit_closed, project_local_key_circuit_failure,
+        project_local_key_circuit_open, project_local_success_health,
     };
     use crate::orchestration::LocalFailoverClassification;
 
@@ -848,8 +916,50 @@ mod tests {
         .expect("projection should exist");
 
         assert_eq!(projected["openai:chat"]["consecutive_failures"], json!(2));
-        assert_eq!(projected["openai:chat"]["health_score"], json!(0.45));
+        assert_eq!(projected["openai:chat"]["health_score"], json!(0.575));
         assert!(projected["openai:chat"]["last_failure_at"].is_string());
+    }
+
+    #[test]
+    fn failure_projection_uses_the_same_eight_request_budget_as_the_circuit() {
+        let mut health = None;
+        for failure_count in 1..=8 {
+            health = project_local_failure_health(
+                health.as_ref(),
+                "openai:chat",
+                LocalFailoverClassification::RetryUpstreamFailure,
+                503,
+                1_760_000_000 + failure_count,
+            );
+            let expected_score = ((8 - failure_count) as f64 / 8.0 * 1000.0).round() / 1000.0;
+            assert_eq!(
+                health.as_ref().expect("failure should project")["openai:chat"]["health_score"],
+                json!(expected_score)
+            );
+        }
+    }
+
+    #[test]
+    fn circuit_open_health_override_preserves_failure_context() {
+        let projected = project_local_circuit_open_health(
+            Some(&json!({
+                "openai:chat": {
+                    "health_score": 0.125,
+                    "consecutive_failures": 8,
+                    "rate_limit_cooldown_until_unix_secs": 1_760_000_100u64
+                }
+            })),
+            "openai:chat",
+            1_760_000_000,
+        )
+        .expect("health override should project");
+
+        assert_eq!(projected["openai:chat"]["health_score"], json!(0.0));
+        assert_eq!(projected["openai:chat"]["consecutive_failures"], json!(8));
+        assert_eq!(
+            projected["openai:chat"]["rate_limit_cooldown_until_unix_secs"],
+            json!(1_760_000_100u64)
+        );
     }
 
     #[test]
@@ -877,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn success_projection_resets_only_target_format() {
+    fn success_projection_recovers_only_one_failure_budget_unit() {
         let projected = project_local_success_health(
             Some(&json!({
                 "openai:chat": {
@@ -898,8 +1008,8 @@ mod tests {
         assert_eq!(
             projected["openai:chat"],
             json!({
-                "health_score": 1.0,
-                "consecutive_failures": 0,
+                "health_score": 0.525,
+                "consecutive_failures": 2,
                 "last_failure_at": Value::Null,
                 "rate_limit_cooldown_until_unix_secs": Value::Null,
                 "consecutive_rate_limits": 0,
@@ -930,6 +1040,7 @@ mod tests {
             json!(1_760_000_060u64)
         );
         assert_eq!(projected["openai:chat"]["probe_interval_minutes"], json!(1));
+        assert_eq!(projected["openai:chat"]["failure_threshold"], json!(8));
     }
 
     #[test]
@@ -1028,7 +1139,7 @@ mod p1_circuit_recovery_tests {
             }
         });
 
-        let expected = [(0.75, 3), (0.833, 2), (0.917, 1), (1.0, 0)];
+        let expected = [(0.25, 3), (0.5, 2), (0.75, 1), (1.0, 0)];
         for (offset, (expected_score, expected_remaining)) in expected.into_iter().enumerate() {
             health = project_local_ramp_success_health(Some(&health), Some(&circuit), FORMAT)
                 .expect("recovery health should project");
@@ -1206,8 +1317,8 @@ mod p0_failure_class_tests {
         )
         .expect("success should project");
         let entry = &projected["openai:chat"];
-        assert_eq!(entry["health_score"], json!(1.0));
-        assert_eq!(entry["consecutive_failures"], json!(0));
+        assert_eq!(entry["health_score"], json!(0.625));
+        assert_eq!(entry["consecutive_failures"], json!(4));
         assert_eq!(entry["rate_limit_cooldown_until_unix_secs"], Value::Null);
         assert_eq!(entry["consecutive_rate_limits"], json!(0));
         assert_eq!(entry["rate_limit_probe_until_unix_secs"], Value::Null);

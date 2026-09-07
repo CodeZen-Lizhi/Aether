@@ -1178,11 +1178,21 @@ function getKeyCircuitBreakerTitle(key: EndpointAPIKey): string {
   const parts = entries.map(([format, value]) => {
     const label = formatApiFormatShort(format)
     const reason = value.reason ? `${legacyT('原因')}: ${value.reason}` : `${legacyT('原因')}: ${legacyT('连续失败')}`
+    const failureCount = typeof value.failure_count === 'number'
+      ? value.failure_count
+      : value.consecutive_failures
+    const failureThreshold = typeof value.failure_threshold === 'number'
+      ? value.failure_threshold
+      : 8
+    const tracksConsecutiveFailureBudget = !value.reason || value.reason.startsWith('consecutive_failures_')
+    const failureProgress = tracksConsecutiveFailureBudget && typeof failureCount === 'number'
+      ? `${legacyT('连续失败')}: ${failureCount}/${failureThreshold}`
+      : ''
     const interval = typeof value.probe_interval_minutes === 'number'
       ? `${legacyT('探测间隔')}: ${value.probe_interval_minutes} ${legacyT('分钟')}`
       : ''
     const countdown = getFormatProbeCountdown(key, format).trim()
-    return [label, reason, interval, countdown ? `${legacyT('状态')}: ${countdown}` : '']
+    return [label, reason, failureProgress, interval, countdown ? `${legacyT('状态')}: ${countdown}` : '']
       .filter(Boolean)
       .join(' / ')
   })

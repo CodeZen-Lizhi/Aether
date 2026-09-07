@@ -310,6 +310,7 @@ export interface FormatCircuitBreakerData {
   next_probe_at_unix_secs?: number | null
   probe_interval_minutes?: number | null
   max_probe_interval_minutes?: number | null
+  failure_threshold?: number | null
   failure_count?: number | null
   consecutive_failures?: number | null
   last_failure_at?: string | null
