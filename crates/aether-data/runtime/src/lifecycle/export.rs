@@ -481,7 +481,6 @@ const USAGE_HTTP_BODY_DETAIL_COLUMNS: &[&str] = &[
     "body_capture_mode",
 ];
 
-#[cfg(all(feature = "postgres", feature = "sqlite"))]
 const REQUEST_BODY_DETAIL_TABLES: &[&str] = &["usage_body_blobs"];
 #[cfg(all(feature = "postgres", feature = "sqlite"))]
 const LIFECYCLE_TABLES: &[&str] = &["_sqlx_migrations", "schema_backfills"];
@@ -838,8 +837,22 @@ pub async fn copy_database_records(
         return copy_postgres_to_sqlite_from_target_schema(source, target, options).await;
     }
 
-    let mut records =
-        decode_jsonl(&export_database_jsonl(source, domains, created_at_unix_secs).await?)?;
+    let source_driver = source.driver;
+    let source_jsonl = match source_driver {
+        #[cfg(feature = "sqlite")]
+        DatabaseDriver::Sqlite if options.omit_request_body_details => {
+            let pool = crate::driver::sqlite::SqlitePoolFactory::new(source)?.connect_lazy()?;
+            let domains = if domains.is_empty() {
+                sqlite_core_export_domains()
+            } else {
+                domains
+            };
+            sqlite::export_sqlite_jsonl_for_copy(&pool, domains, created_at_unix_secs, options)
+                .await?
+        }
+        _ => export_database_jsonl(source, domains, created_at_unix_secs).await?,
+    };
+    let mut records = decode_jsonl(&source_jsonl)?;
     if options.omit_request_body_details {
         omit_request_body_details_from_records(&mut records);
     }
@@ -854,31 +867,35 @@ fn omit_request_body_details_from_records(records: &mut Vec<DataExportRecord>) {
         else {
             return true;
         };
-        let Some(object) = payload.as_object_mut() else {
-            return true;
-        };
-        match *domain {
-            ExportDomain::Usage => {
-                for column_name in USAGE_REQUEST_BODY_DETAIL_COLUMNS {
-                    object.remove(*column_name);
-                }
-            }
-            ExportDomain::Auxiliary
-                if object.get("__table").and_then(Value::as_str) == Some("usage_body_blobs") =>
-            {
-                return false;
-            }
-            ExportDomain::Auxiliary
-                if object.get("__table").and_then(Value::as_str) == Some("usage_http_audits") =>
-            {
-                for column_name in USAGE_HTTP_BODY_DETAIL_COLUMNS {
-                    object.remove(*column_name);
-                }
-            }
-            _ => {}
-        }
-        true
+        omit_request_body_details_from_payload(*domain, payload)
     });
+}
+
+fn omit_request_body_details_from_payload(domain: ExportDomain, payload: &mut Value) -> bool {
+    let Some(object) = payload.as_object_mut() else {
+        return true;
+    };
+    match domain {
+        ExportDomain::Usage => {
+            for column_name in USAGE_REQUEST_BODY_DETAIL_COLUMNS {
+                object.remove(*column_name);
+            }
+        }
+        ExportDomain::Auxiliary
+            if object.get("__table").and_then(Value::as_str) == Some("usage_body_blobs") =>
+        {
+            return false;
+        }
+        ExportDomain::Auxiliary
+            if object.get("__table").and_then(Value::as_str) == Some("usage_http_audits") =>
+        {
+            for column_name in USAGE_HTTP_BODY_DETAIL_COLUMNS {
+                object.remove(*column_name);
+            }
+        }
+        _ => {}
+    }
+    true
 }
 
 #[cfg(all(feature = "postgres", feature = "sqlite"))]
