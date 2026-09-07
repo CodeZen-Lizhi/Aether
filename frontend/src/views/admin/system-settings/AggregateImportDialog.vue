@@ -25,6 +25,9 @@
               <li>
                 API Keys: {{ aggregateImportPreview.config_data.providers?.reduce((sum: number, p: { api_keys?: unknown[] }) => sum + (p.api_keys?.length || 0), 0) }} 个
               </li>
+              <li v-if="aggregateImportPreview.config_data.routing_strategy">
+                调度策略: 1 个
+              </li>
             </ul>
           </div>
           <div>
@@ -142,6 +145,11 @@
             全局模型创建 {{ aggregateImportResult.config.stats.global_models.created }}，
             提供商创建 {{ aggregateImportResult.config.stats.providers.created }}，
             API Keys 创建 {{ aggregateImportResult.config.stats.keys.created }}
+            <template v-if="aggregateImportResult.config.stats.routing_strategy">
+              ，调度策略创建 {{ aggregateImportResult.config.stats.routing_strategy.created }}，
+              更新 {{ aggregateImportResult.config.stats.routing_strategy.updated }}，
+              跳过 {{ aggregateImportResult.config.stats.routing_strategy.skipped }}
+            </template>
           </p>
         </div>
         <div>

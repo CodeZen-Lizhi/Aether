@@ -1,5 +1,6 @@
 use super::{AdminAppState, ADMIN_SYSTEM_DATA_EXPORT_VERSION};
 use crate::api::ai::admin_endpoint_signature_parts;
+use crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY;
 use crate::handlers::admin::auth::hash_admin_user_api_key;
 use crate::handlers::admin::model::ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY;
 use crate::handlers::admin::provider::endpoints_admin::payloads::AdminProviderEndpointUpdatePatch;
@@ -48,11 +49,129 @@ use aether_data_contracts::repository::global_models::{
     AdminGlobalModelListQuery, AdminProviderModelListQuery, CreateAdminGlobalModelRecord,
     UpdateAdminGlobalModelRecord, UpsertAdminProviderModelRecord,
 };
+use aether_data_contracts::repository::routing_profiles::{
+    CreateRoutingGroupRecord, CreateRoutingGroupVersionRecord, RoutingGroupLookupKey,
+    UpdateRoutingGroupRecord,
+};
 use axum::{body::Bytes, http};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+
+fn remap_routing_strategy_config(
+    value: &mut Value,
+    provider_id_map: &BTreeMap<String, String>,
+    key_id_map: &BTreeMap<String, String>,
+) {
+    let Some(config) = value.as_object_mut() else {
+        return;
+    };
+
+    if let Some(Value::Array(rules)) = config.get_mut("rules") {
+        for rule in rules {
+            let Some(rule) = rule.as_object_mut() else {
+                continue;
+            };
+            let Some(Value::Array(actions)) = rule.get_mut("actions") else {
+                continue;
+            };
+            actions.retain_mut(|action| {
+                let Some(action) = action.as_object_mut() else {
+                    return true;
+                };
+                remap_routing_id_array(action, "provider_ids", provider_id_map);
+                remap_routing_id_array(action, "key_ids", key_id_map);
+                if matches!(
+                    action.get("type").and_then(Value::as_str),
+                    Some("restrict_providers")
+                ) && action
+                    .get("provider_ids")
+                    .and_then(Value::as_array)
+                    .is_some_and(Vec::is_empty)
+                {
+                    return false;
+                }
+                if matches!(action.get("type").and_then(Value::as_str), Some("restrict_keys"))
+                    && action
+                        .get("key_ids")
+                        .and_then(Value::as_array)
+                        .is_some_and(Vec::is_empty)
+                {
+                    return false;
+                }
+                if let Some(Value::String(source_id)) = action.get("provider_id") {
+                    let Some(target_id) = provider_id_map.get(source_id) else {
+                        return false;
+                    };
+                    action.insert("provider_id".to_string(), json!(target_id));
+                }
+                if let Some(Value::String(source_id)) = action.get("key_id") {
+                    let Some(target_id) = key_id_map.get(source_id) else {
+                        return false;
+                    };
+                    action.insert("key_id".to_string(), json!(target_id));
+                }
+                true
+            });
+        }
+    }
+
+    if let Some(Value::Array(model_policies)) = config.get_mut("model_policies") {
+        for policy in model_policies {
+            let Some(policy) = policy.as_object_mut() else {
+                continue;
+            };
+            remap_routing_id_array(policy, "allowed_providers", provider_id_map);
+            remap_routing_id_array(policy, "allowed_keys", key_id_map);
+            remap_routing_id_map(policy, "provider_priority_overrides", provider_id_map);
+            remap_routing_id_map(policy, "key_priority_overrides", key_id_map);
+        }
+    }
+}
+
+fn remap_routing_id_array(
+    object: &mut Map<String, Value>,
+    field: &str,
+    id_map: &BTreeMap<String, String>,
+) {
+    let Some(Value::Array(ids)) = object.get_mut(field) else {
+        return;
+    };
+    ids.retain_mut(|id| {
+        let Some(source_id) = id.as_str() else {
+            return false;
+        };
+        let Some(target_id) = id_map.get(source_id) else {
+            return false;
+        };
+        *id = json!(target_id);
+        true
+    });
+}
+
+fn remap_routing_id_map(
+    object: &mut Map<String, Value>,
+    field: &str,
+    id_map: &BTreeMap<String, String>,
+) {
+    let Some(Value::Object(entries)) = object.get_mut(field) else {
+        return;
+    };
+    let old = std::mem::take(entries);
+    for (source_id, value) in old {
+        if let Some(target_id) = id_map.get(&source_id) {
+            entries.insert(target_id.clone(), value);
+        }
+    }
+}
+
+fn validate_imported_routing_strategy_config(value: &Value) -> Result<(), String> {
+    let config = serde_json::from_value::<aether_routing_core::RoutingGroupConfig>(value.clone())
+        .map_err(|err| format!("调度策略配置格式无效: {err}"))?;
+    aether_routing_core::validate_routing_group_config(&config)
+        .map_err(|err| format!("调度策略配置无效: {err}"))
+}
 
 fn invalid_request(detail: impl Into<String>) -> (http::StatusCode, Value) {
     (
@@ -67,6 +186,21 @@ fn normalize_imported_system_config_key(key: &str) -> String {
         ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY.to_string()
     } else {
         normalized
+    }
+}
+
+fn normalize_imported_default_user_group_config(
+    config: &mut ImportedSystemConfig,
+    existing_user_group_ids: &BTreeSet<String>,
+) {
+    if normalize_imported_system_config_key(&config.key) != DEFAULT_USER_GROUP_CONFIG_KEY {
+        return;
+    }
+    let Some(group_id) = config.value.as_str() else {
+        return;
+    };
+    if !existing_user_group_ids.contains(group_id) {
+        config.value = Value::Null;
     }
 }
 
@@ -1152,9 +1286,33 @@ impl<'a> AdminAppState<'a> {
         let imported_oauth_providers = routed!(parse_admin_system_config_array::<
             ImportedOAuthProvider,
         >(&root, "oauth_providers",));
-        let imported_system_configs = routed!(parse_admin_system_config_array::<
+        let mut imported_system_configs = routed!(parse_admin_system_config_array::<
             ImportedSystemConfig,
         >(&root, "system_configs",));
+        let imported_routing_strategy = parsed.request.document.routing_strategy;
+        if let Some(strategy) = imported_routing_strategy.as_ref() {
+            if let Err(detail) =
+                validate_imported_routing_strategy_config(&strategy.config_json)
+            {
+                return Ok(Err(invalid_request(detail)));
+            }
+        }
+
+        let existing_user_group_ids = if self.has_user_data_reader() {
+            self.list_user_groups()
+                .await?
+                .into_iter()
+                .map(|group| group.id)
+                .collect::<BTreeSet<_>>()
+        } else {
+            BTreeSet::new()
+        };
+        for config in &mut imported_system_configs {
+            normalize_imported_default_user_group_config(
+                &mut config.value,
+                &existing_user_group_ids,
+            );
+        }
 
         let mut stats = AdminSystemConfigImportStats::default();
 
@@ -1347,6 +1505,8 @@ impl<'a> AdminAppState<'a> {
             .into_iter()
             .map(|provider| (provider.name.clone(), provider))
             .collect::<BTreeMap<_, _>>();
+        let mut imported_provider_id_map = BTreeMap::<String, String>::new();
+        let mut imported_key_id_map = BTreeMap::<String, String>::new();
 
         for imported_provider_item in imported_providers {
             let (raw_provider, imported_provider) = imported_provider_item.into_parts();
@@ -1435,6 +1595,9 @@ impl<'a> AdminAppState<'a> {
                 stats.providers.created += 1;
                 created
             };
+            if let Some(source_id) = imported_provider.id.as_deref() {
+                imported_provider_id_map.insert(source_id.to_string(), provider.id.clone());
+            }
 
             let imported_endpoints = routed!(parse_admin_system_config_nested_array::<
                 ImportedEndpoint,
@@ -1789,6 +1952,12 @@ impl<'a> AdminAppState<'a> {
                             stats.keys.updated += 1;
                         }
                     }
+                    if let Some(source_id) = imported_key.id.as_deref() {
+                        imported_key_id_map.insert(
+                            source_id.to_string(),
+                            existing_keys[existing_index].id.clone(),
+                        );
+                    }
                     continue;
                 }
 
@@ -1821,6 +1990,9 @@ impl<'a> AdminAppState<'a> {
                         "创建 Provider '{provider_name}' 的 Key 失败"
                     ))));
                 };
+                if let Some(source_id) = imported_key.id.as_deref() {
+                    imported_key_id_map.insert(source_id.to_string(), created.id.clone());
+                }
                 existing_keys.push(created);
                 stats.keys.created += 1;
             }
@@ -1912,6 +2084,111 @@ impl<'a> AdminAppState<'a> {
                 };
                 existing_models_by_name.insert(provider_model_name, created);
                 stats.models.created += 1;
+            }
+        }
+
+        if let Some(imported_strategy) = imported_routing_strategy {
+            if !self.has_routing_group_data_reader() || !self.has_routing_group_data_writer() {
+                stats.routing_strategy.skipped += 1;
+                stats.errors.push(
+                    "当前运行环境不支持写入调度策略，已跳过 routing_strategy".to_string(),
+                );
+            } else {
+                let mut config_json = imported_strategy.config_json;
+                remap_routing_strategy_config(
+                    &mut config_json,
+                    &imported_provider_id_map,
+                    &imported_key_id_map,
+                );
+                let existing = self
+                    .find_routing_group(RoutingGroupLookupKey::SystemDefault)
+                    .await?;
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .ok()
+                    .map(|duration| duration.as_secs() as i64)
+                    .unwrap_or(0);
+                let (persisted, should_record_version, was_existing) =
+                    if let Some(existing) = existing {
+                        match merge_mode {
+                            AdminImportMergeMode::Skip => (existing, false, true),
+                            AdminImportMergeMode::Error => {
+                                return Ok(Err(invalid_request("系统默认调度策略已存在")));
+                            }
+                            AdminImportMergeMode::Overwrite => {
+                                let latest_version = self
+                                    .list_routing_group_versions(&existing.id)
+                                    .await?
+                                    .into_iter()
+                                    .map(|version| version.version)
+                                    .max()
+                                    .unwrap_or(0);
+                                let next_version = existing
+                                    .version
+                                    .max(latest_version)
+                                    .saturating_add(1);
+                                let Some(updated) = self
+                                    .update_routing_group(
+                                        &existing.id,
+                                        UpdateRoutingGroupRecord {
+                                            name: Some(imported_strategy.name),
+                                            description: Some(imported_strategy.description),
+                                            enabled: Some(imported_strategy.enabled),
+                                            is_system_default: Some(true),
+                                            config_json: Some(config_json),
+                                            version: Some(next_version),
+                                            updated_at: now,
+                                            published_at: Some(Some(now)),
+                                        },
+                                    )
+                                    .await?
+                                else {
+                                    return Ok(Err(invalid_request("更新系统默认调度策略失败")));
+                                };
+                                (updated, true, true)
+                            }
+                        }
+                    } else {
+                        let Some(created) = self
+                            .create_routing_group(CreateRoutingGroupRecord {
+                                id: Uuid::new_v4().to_string(),
+                                name: imported_strategy.name,
+                                description: imported_strategy.description,
+                                enabled: imported_strategy.enabled,
+                                is_system_default: true,
+                                config_json,
+                                version: imported_strategy.version.max(1),
+                                created_at: now,
+                                updated_at: now,
+                                published_at: Some(now),
+                            })
+                            .await?
+                        else {
+                            return Ok(Err(invalid_request("创建系统默认调度策略失败")));
+                        };
+                        (created, true, false)
+                    };
+                if was_existing {
+                    if should_record_version {
+                        stats.routing_strategy.updated += 1;
+                    } else {
+                        stats.routing_strategy.skipped += 1;
+                    }
+                } else {
+                    stats.routing_strategy.created += 1;
+                }
+                if should_record_version {
+                    let _ = self
+                        .create_routing_group_version(CreateRoutingGroupVersionRecord {
+                            id: Uuid::new_v4().to_string(),
+                            group_id: persisted.id.clone(),
+                            version: persisted.version,
+                            config_json: persisted.config_json.clone(),
+                            created_at: now,
+                            created_by: None,
+                        })
+                        .await?;
+                }
             }
         }
 
@@ -2146,8 +2423,10 @@ impl<'a> AdminAppState<'a> {
             } = system_config;
             let normalized_key = normalize_imported_system_config_key(&key);
             let exists = existing_system_config_keys.contains(&normalized_key);
+            let is_default_group_reset = normalized_key == DEFAULT_USER_GROUP_CONFIG_KEY
+                && value.is_null();
             match (exists, merge_mode) {
-                (true, AdminImportMergeMode::Skip) => {
+                (true, AdminImportMergeMode::Skip) if !is_default_group_reset => {
                     stats.system_configs.skipped += 1;
                     continue;
                 }
@@ -3275,7 +3554,8 @@ mod tests {
         imported_optional_i32, imported_optional_u64, imported_rfc3339_to_unix_secs,
         imported_string_list_from_value, normalize_import_endpoint_format,
         normalize_import_key_formats, normalize_import_key_raw_payload,
-        validate_imported_system_users_export_version, ImportedProviderKey,
+        normalize_imported_default_user_group_config, remap_routing_strategy_config,
+        validate_imported_system_users_export_version, ImportedProviderKey, ImportedSystemConfig,
     };
     use crate::admin_api::AdminAppState;
     use crate::data::GatewayDataState;
@@ -3293,6 +3573,91 @@ mod tests {
         assert_eq!(
             validate_imported_system_users_export_version(Some(&json!(null))).unwrap_err(),
             "version 必须是 x.y 字符串"
+        );
+    }
+
+    #[test]
+    fn import_clears_default_user_group_when_exported_group_is_missing() {
+        let mut config = ImportedSystemConfig {
+            key: "default_user_group_id".to_string(),
+            value: json!("missing-group"),
+            description: None,
+        };
+
+        normalize_imported_default_user_group_config(
+            &mut config,
+            &std::collections::BTreeSet::new(),
+        );
+
+        assert!(config.value.is_null());
+    }
+
+    #[test]
+    fn import_remaps_routing_strategy_provider_and_key_ids() {
+        let mut config = json!({
+            "allowed_models": [],
+            "default_policy": {
+                "priority_mode": "provider",
+                "scheduling_mode": "fixed_order"
+            },
+            "model_policies": [{
+                "model": "gpt-test",
+                "allowed_providers": ["provider-old", "provider-missing"],
+                "allowed_keys": ["key-old"],
+                "provider_priority_overrides": {
+                    "provider-old": 1,
+                    "provider-missing": 2
+                },
+                "key_priority_overrides": {"key-old": 3}
+            }],
+            "rules": [{
+                "id": "ui_provider_priority",
+                "priority": 1,
+                "enabled": true,
+                "phase": "client_request",
+                "conditions": {},
+                "actions": [
+                    {"type": "restrict_providers", "provider_ids": ["provider-old", "provider-missing"]},
+                    {"type": "restrict_keys", "key_ids": ["key-old", "key-missing"]},
+                    {"type": "set_provider_priority", "provider_id": "provider-old", "priority": 1},
+                    {"type": "set_provider_priority", "provider_id": "provider-missing", "priority": 2},
+                    {"type": "set_key_priority", "key_id": "key-old", "priority": 3}
+                ]
+            }]
+        });
+
+        remap_routing_strategy_config(
+            &mut config,
+            &std::collections::BTreeMap::from([(
+                "provider-old".to_string(),
+                "provider-new".to_string(),
+            )]),
+            &std::collections::BTreeMap::from([(
+                "key-old".to_string(),
+                "key-new".to_string(),
+            )]),
+        );
+
+        assert_eq!(
+            config["rules"][0]["actions"],
+            json!([
+                {"type": "restrict_providers", "provider_ids": ["provider-new"]},
+                {"type": "restrict_keys", "key_ids": ["key-new"]},
+                {"type": "set_provider_priority", "provider_id": "provider-new", "priority": 1},
+                {"type": "set_key_priority", "key_id": "key-new", "priority": 3}
+            ])
+        );
+        assert_eq!(
+            config["model_policies"][0]["allowed_providers"],
+            json!(["provider-new"])
+        );
+        assert_eq!(
+            config["model_policies"][0]["provider_priority_overrides"],
+            json!({"provider-new": 1})
+        );
+        assert_eq!(
+            config["model_policies"][0]["key_priority_overrides"],
+            json!({"key-new": 3})
         );
     }
 
@@ -3358,6 +3723,7 @@ mod tests {
             .map(ToOwned::to_owned)
             .collect();
         let item = ImportedProviderKey {
+            id: None,
             api_key: None,
             auth_type: None,
             auth_config: None,

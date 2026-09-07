@@ -1,4 +1,5 @@
 use super::ADMIN_SYSTEM_DATA_EXPORT_VERSION;
+use crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY;
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::admin::system::shared::configs::is_sensitive_admin_system_config_key;
 use crate::handlers::admin::system::shared::export::{
@@ -10,13 +11,14 @@ use crate::GatewayError;
 use aether_admin::system::{
     serialize_admin_system_users_export_wallet, AdminSystemConfigDocument, AdminSystemConfigEntry,
     AdminSystemConfigGlobalModel, AdminSystemConfigLdap, AdminSystemConfigOAuthProvider,
-    AdminSystemConfigProxyNode, ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
+    AdminSystemConfigProxyNode, AdminSystemConfigRoutingStrategy, ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
     ADMIN_SYSTEM_USERS_EXPORT_VERSION,
 };
 use aether_data_contracts::repository::global_models::AdminGlobalModelListQuery;
+use aether_data_contracts::repository::routing_profiles::RoutingGroupLookupKey;
 use chrono::Utc;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl<'a> AdminAppState<'a> {
     pub(crate) async fn build_admin_system_config_export_payload(
@@ -83,11 +85,20 @@ impl<'a> AdminAppState<'a> {
                 connect_timeout: config.connect_timeout,
             });
 
+        let existing_user_group_ids = if self.has_user_data_reader() {
+            self.list_user_groups()
+                .await?
+                .into_iter()
+                .map(|group| group.id)
+                .collect::<BTreeSet<_>>()
+        } else {
+            BTreeSet::new()
+        };
         let system_configs = self.list_system_config_entries().await?;
         let system_configs_data = system_configs
             .iter()
             .map(|entry| {
-                let value = if is_sensitive_admin_system_config_key(&entry.key) {
+                let mut value = if is_sensitive_admin_system_config_key(&entry.key) {
                     entry
                         .value
                         .as_str()
@@ -97,6 +108,13 @@ impl<'a> AdminAppState<'a> {
                 } else {
                     entry.value.clone()
                 };
+                if entry.key == DEFAULT_USER_GROUP_CONFIG_KEY
+                    && value
+                        .as_str()
+                        .is_some_and(|group_id| !existing_user_group_ids.contains(group_id))
+                {
+                    value = serde_json::Value::Null;
+                }
                 AdminSystemConfigEntry {
                     key: entry.key.clone(),
                     value,
@@ -151,6 +169,20 @@ impl<'a> AdminAppState<'a> {
             })
             .collect::<Vec<_>>();
 
+        let routing_strategy = self
+            .find_routing_group(RoutingGroupLookupKey::SystemDefault)
+            .await?
+            .map(|group| AdminSystemConfigRoutingStrategy {
+                id: Some(group.id),
+                name: group.name,
+                description: group.description,
+                enabled: group.enabled,
+                is_system_default: group.is_system_default,
+                config_json: group.config_json,
+                version: group.version,
+                published_at: group.published_at,
+            });
+
         let document = AdminSystemConfigDocument {
             version: ADMIN_SYSTEM_CONFIG_EXPORT_VERSION.to_string(),
             exported_at: Utc::now().to_rfc3339(),
@@ -160,6 +192,7 @@ impl<'a> AdminAppState<'a> {
             ldap_config: ldap_data,
             oauth_providers: oauth_data,
             system_configs: system_configs_data,
+            routing_strategy,
         };
 
         serde_json::to_value(document).map_err(|err| GatewayError::Internal(err.to_string()))

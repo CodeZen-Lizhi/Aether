@@ -353,6 +353,7 @@ pub struct AdminSystemConfigImportStats {
     pub ldap: AdminSystemConfigImportCounter,
     pub oauth: AdminSystemConfigImportCounter,
     pub system_configs: AdminSystemConfigImportCounter,
+    pub routing_strategy: AdminSystemConfigImportCounter,
     pub errors: Vec<String>,
 }
 
@@ -398,6 +399,8 @@ pub struct AdminSystemConfigEndpoint {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdminSystemConfigProviderKey {
+    #[serde(default)]
+    pub id: Option<String>,
     #[serde(default)]
     pub api_key: Option<String>,
     #[serde(default)]
@@ -477,6 +480,8 @@ pub struct AdminSystemConfigProviderModel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdminSystemConfigProvider {
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -512,6 +517,24 @@ pub struct AdminSystemConfigProvider {
     pub api_keys: Vec<AdminSystemConfigProviderKey>,
     #[serde(default)]
     pub models: Vec<AdminSystemConfigProviderModel>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdminSystemConfigRoutingStrategy {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub is_system_default: bool,
+    pub config_json: Value,
+    #[serde(default)]
+    pub version: i64,
+    #[serde(default)]
+    pub published_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -620,6 +643,8 @@ pub struct AdminSystemConfigDocument {
     pub oauth_providers: Vec<AdminSystemConfigOAuthProvider>,
     #[serde(default)]
     pub system_configs: Vec<AdminSystemConfigEntry>,
+    #[serde(default)]
+    pub routing_strategy: Option<AdminSystemConfigRoutingStrategy>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

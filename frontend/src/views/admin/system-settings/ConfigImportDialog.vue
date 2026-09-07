@@ -32,6 +32,9 @@
           <li v-if="importPreview.oauth_providers?.length">
             OAuth Providers: {{ importPreview.oauth_providers.length }} 个
           </li>
+          <li v-if="importPreview.routing_strategy">
+            调度策略: 1 个
+          </li>
         </ul>
       </div>
 
@@ -196,6 +199,16 @@
             创建: {{ importResult.stats.proxy_nodes.created }},
             更新: {{ importResult.stats.proxy_nodes.updated }},
             跳过: {{ importResult.stats.proxy_nodes.skipped }}
+          </p>
+        </div>
+        <div v-if="importResult.stats.routing_strategy">
+          <p class="font-medium">
+            调度策略
+          </p>
+          <p class="text-muted-foreground">
+            创建: {{ importResult.stats.routing_strategy.created }},
+            更新: {{ importResult.stats.routing_strategy.updated }},
+            跳过: {{ importResult.stats.routing_strategy.skipped }}
           </p>
         </div>
       </div>

@@ -102,6 +102,7 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         })
                         .map(serde_json::Value::String);
                     AdminSystemConfigProviderKey {
+                        id: Some(key.id.clone()),
                         api_key: key.encrypted_api_key.as_deref().map(|ciphertext| {
                             decrypt_admin_system_export_secret(state, ciphertext)
                                 .unwrap_or_default()
@@ -200,6 +201,7 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                 .collect::<Vec<_>>();
 
             AdminSystemConfigProvider {
+                id: Some(provider.id.clone()),
                 name: provider.name.clone(),
                 description: provider.description.clone(),
                 website: provider.website.clone(),

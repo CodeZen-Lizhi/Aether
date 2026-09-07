@@ -78,6 +78,18 @@ export interface ConfigExportData {
   ldap_config?: LDAPConfigExport | null
   oauth_providers?: OAuthProviderExport[]
   system_configs?: SystemConfigExport[]
+  routing_strategy?: RoutingStrategyExport | null
+}
+
+export interface RoutingStrategyExport {
+  id?: string | null
+  name: string
+  description?: string | null
+  enabled?: boolean
+  is_system_default?: boolean
+  config_json: Record<string, unknown>
+  version?: number
+  published_at?: number | null
 }
 
 export interface ProxyNodeExport {
@@ -267,6 +279,7 @@ export interface GlobalModelExport {
 }
 
 export interface ProviderExport {
+  id?: string
   name: string
   description?: string | null
   website?: string | null
@@ -301,6 +314,7 @@ export interface EndpointExport {
 }
 
 export interface ProviderKeyExport {
+  id?: string
   api_key: string
   auth_type?: string
   auth_config?: string | Record<string, unknown> | null
@@ -632,6 +646,7 @@ export interface ConfigImportResponse {
     ldap?: { created: number; updated: number; skipped: number }
     oauth?: { created: number; updated: number; skipped: number }
     system_configs?: { created: number; updated: number; skipped: number }
+    routing_strategy?: { created: number; updated: number; skipped: number }
     errors: string[]
   }
 }
