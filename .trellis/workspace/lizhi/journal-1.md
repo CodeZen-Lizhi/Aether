@@ -777,3 +777,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 29: 修复 Responses 流错误故障转移
+<!-- trellis-session: v=2 fp=7cfb086a6a820081 -->
+
+**Date**: 2026-09-07
+**Task**: 修复 Responses 流错误故障转移
+**Branch**: `slim-personal`
+
+### Summary
+
+修复 OpenAI Responses 上游先返回 HTTP 200、随后以 response.failed 结束时候选循环提前终止的问题；在首个业务事件前保持流未提交，使终端错误能够继续下一个供应商。补充并修正相关回归测试，完成编译检查、Docker 重建与健康验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c59e09cd2` | fix(gateway): 修复 Responses 流错误故障转移 |
+
+### Status
+
+[OK] **Completed**
