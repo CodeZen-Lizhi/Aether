@@ -1,0 +1,332 @@
+{
+  "baseline": "58c445ddc894f5297cc49da9030ee400c0f634c4",
+  "baseline_command": "RUST_MIN_STACK=33554432 CARGO_TARGET_DIR=/Users/zhenglizhi/otherProjects/Aether/target cargo test -p aether-gateway --lib --locked --offline -- --quiet",
+  "baseline_counts": {
+    "passed": 2530,
+    "failed": 25,
+    "ignored": 7
+  },
+  "initial_modified_counts": {
+    "passed": 2545,
+    "failed": 25,
+    "ignored": 7
+  },
+  "failure_sets_identical": true,
+  "only_in_modified": [],
+  "only_in_baseline": [],
+  "baseline_failures": [
+    "ai_serving::planner::decision_input::tests::static_default_routing_policy_attaches_without_request_context",
+    "control::auth::gate::tests::daily_quota_estimate_applies_provider_key_rate_multiplier",
+    "execution_runtime::stream::execution::tests::direct_anthropic_provider_error_is_not_duplicated",
+    "execution_runtime::stream::execution::tests::execute_execution_runtime_stream_bridges_openai_image_sync_json_from_remote_runtime_to_image_sse",
+    "execution_runtime::stream::execution::tests::execute_execution_runtime_stream_bridges_sync_json_body_from_remote_runtime_to_sse",
+    "execution_runtime::stream::execution::tests::execute_execution_runtime_stream_records_first_data_as_streaming_before_terminal_telemetry",
+    "execution_runtime::stream::execution::tests::execute_execution_runtime_stream_records_first_stream_event_before_visible_text",
+    "execution_runtime::stream::execution::tests::execute_execution_runtime_stream_rewrites_redirect_to_structured_failure",
+    "execution_runtime::stream::execution::tests::execute_stream_from_frame_stream_cancels_upstream_when_client_drops_body",
+    "execution_runtime::stream::execution::tests::execute_stream_from_frame_stream_does_not_finalize_rewritten_tool_call_after_midstream_error",
+    "execution_runtime::stream::execution::tests::image_stream_downstream_close_after_done_is_recorded_success",
+    "execution_runtime::stream::execution::tests::native_anthropic_auth_error_moves_to_the_next_credential",
+    "execution_runtime::stream::execution::tests::native_anthropic_done_marker_does_not_replace_message_stop",
+    "execution_runtime::stream::execution::tests::native_anthropic_eof_after_commit_emits_anthropic_terminal_event",
+    "execution_runtime::stream::execution::tests::native_anthropic_error_before_semantic_event_allows_failover",
+    "execution_runtime::stream::execution::tests::native_anthropic_frame_error_after_commit_emits_anthropic_terminal_event",
+    "execution_runtime::stream::execution::tests::native_anthropic_semantic_event_commits_before_later_error",
+    "execution_runtime::stream::execution::tests::openai_image_stream_ignores_plan_total_timeout",
+    "execution_runtime::stream::execution::tests::split_done_then_downstream_close_is_recorded_success",
+    "handlers::admin::request::system::import::tests::users_backup_roundtrips_current_admin_keys_and_usage_with_sqlite",
+    "tests::ai_execute::sync::cli::gateway_executes_openai_responses_sync_after_api_key_concurrency_wait_budget_elapses",
+    "tests::architecture::sql_and_data::aether_data_backend_pool_modules_do_not_own_maintenance_sql",
+    "tests::architecture::usage::handlers_do_not_depend_on_raw_state_records",
+    "tests::architecture::workspace_tiers::data_facade_preserves_legacy_driver_paths_without_owning_driver_code",
+    "tests::control::admin::system::gateway_roundtrips_current_system_config_backup_with_sqlite"
+  ],
+  "baseline_quality": {
+    "fmt_exit_code": 1,
+    "fmt_diff_blocks": [
+      {
+        "file": "apps/aether-gateway/src/handlers/admin/provider/query/models/model_test.rs",
+        "line": 1937
+      },
+      {
+        "file": "apps/aether-gateway/src/tests/control/admin/provider_query.rs",
+        "line": 2515
+      },
+      {
+        "file": "crates/aether-billing/src/pricing.rs",
+        "line": 459
+      },
+      {
+        "file": "crates/aether-billing/src/pricing.rs",
+        "line": 482
+      },
+      {
+        "file": "crates/aether-billing/src/pricing.rs",
+        "line": 859
+      },
+      {
+        "file": "crates/aether-data/contracts/src/repository/billing/types.rs",
+        "line": 76
+      },
+      {
+        "file": "crates/aether-scheduler-core/src/health.rs",
+        "line": 41
+      },
+      {
+        "file": "crates/aether-scheduler-core/src/health.rs",
+        "line": 824
+      }
+    ],
+    "clippy_exit_code": 101,
+    "clippy_errors": [
+      {
+        "message": "error: this OR pattern can be rewritten using a range",
+        "file": "crates/aether-scheduler-core/src/health.rs",
+        "line": 656
+      }
+    ],
+    "clippy_no_deps_exit_code": 101,
+    "clippy_no_deps_errors": [
+      {
+        "message": "error: duplicated attribute",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/chat/decision/request.rs",
+        "line": 645
+      },
+      {
+        "message": "error: duplicated attribute",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/chat/decision/request.rs",
+        "line": 646
+      },
+      {
+        "message": "error: duplicated attribute",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/chat/decision/request.rs",
+        "line": 1009
+      },
+      {
+        "message": "error: unnecessary `>= y + 1` or `x - 1 >=`",
+        "file": "apps/aether-gateway/src/data/state/routing_group_cache.rs",
+        "line": 687
+      },
+      {
+        "message": "error: using `map_err` over `inspect_err`",
+        "file": "apps/aether-gateway/src/ai_serving/planner/candidate_preparation.rs",
+        "line": 31
+      },
+      {
+        "message": "error: this loop never actually loops",
+        "file": "apps/aether-gateway/src/execution_runtime/sync/execution.rs",
+        "line": 2131
+      },
+      {
+        "message": "error: using `Option.and_then(|x| Some(y))`, which is more succinctly expressed as `map(|x| y)`",
+        "file": "apps/aether-gateway/src/handlers/admin/observability/monitoring/cache_affinity_reads.rs",
+        "line": 204
+      },
+      {
+        "message": "error: unreachable pattern",
+        "file": "apps/aether-gateway/src/dispatch/refs.rs",
+        "line": 71
+      },
+      {
+        "message": "error: items after a test module",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/responses/mod.rs",
+        "line": 663
+      },
+      {
+        "message": "error: derefed type is same as origin",
+        "file": "apps/aether-gateway/src/execution_runtime/stream/execution.rs",
+        "line": 3491
+      },
+      {
+        "message": "error: derefed type is same as origin",
+        "file": "apps/aether-gateway/src/execution_runtime/stream/execution.rs",
+        "line": 3492
+      },
+      {
+        "message": "error: this `MutexGuard` is held across an await point",
+        "file": "apps/aether-gateway/src/execution_runtime/transport.rs",
+        "line": 5930
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 1861
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 1889
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 1992
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 2027
+      },
+      {
+        "message": "error: this `MutexGuard` is held across an await point",
+        "file": "apps/aether-gateway/src/request_candidate_queue.rs",
+        "line": 3767
+      },
+      {
+        "message": "error: for loop over a single element",
+        "file": "apps/aether-gateway/src/tests/architecture/admin_provider.rs",
+        "line": 798
+      },
+      {
+        "message": "error: for loop over a single element",
+        "file": "apps/aether-gateway/src/tests/architecture/admin_shared.rs",
+        "line": 153
+      },
+      {
+        "message": "error: for loop over a single element",
+        "file": "apps/aether-gateway/src/tests/architecture/ai_serving.rs",
+        "line": 847
+      }
+    ]
+  },
+  "baseline_only_failures_final_run": [],
+  "final_gemini_recheck": {
+    "command": "cargo test -p aether-gateway --lib --locked --offline tests::ai_execute::sync::chat::local_decision::gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candidate_without_external_control_config -- --exact --nocapture",
+    "exit_code": 0,
+    "counts": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "finding": "Final full run had a pro-vs-flash model target mismatch in this unchanged Gemini fixture. The initial modified run and baseline full run passed it; an immediate isolated rerun on the final code also passed. No Gemini code was changed."
+  },
+  "final_quality": {
+    "cargo_check_exit_code": 0,
+    "scoped_rustfmt_exit_code": 0,
+    "fmt_exit_code": 1,
+    "fmt_output_identical_after_root_normalization": true,
+    "clippy_exit_code": 101,
+    "clippy_errors": [
+      {
+        "message": "error: this OR pattern can be rewritten using a range",
+        "file": "crates/aether-scheduler-core/src/health.rs",
+        "line": 656
+      }
+    ],
+    "clippy_errors_match_baseline": true,
+    "clippy_no_deps_exit_code": 101,
+    "clippy_no_deps_errors": [
+      {
+        "message": "error: duplicated attribute",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/chat/decision/request.rs",
+        "line": 645
+      },
+      {
+        "message": "error: duplicated attribute",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/chat/decision/request.rs",
+        "line": 646
+      },
+      {
+        "message": "error: duplicated attribute",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/chat/decision/request.rs",
+        "line": 1009
+      },
+      {
+        "message": "error: unnecessary `>= y + 1` or `x - 1 >=`",
+        "file": "apps/aether-gateway/src/data/state/routing_group_cache.rs",
+        "line": 687
+      },
+      {
+        "message": "error: using `map_err` over `inspect_err`",
+        "file": "apps/aether-gateway/src/ai_serving/planner/candidate_preparation.rs",
+        "line": 31
+      },
+      {
+        "message": "error: this loop never actually loops",
+        "file": "apps/aether-gateway/src/execution_runtime/sync/execution.rs",
+        "line": 2131
+      },
+      {
+        "message": "error: using `Option.and_then(|x| Some(y))`, which is more succinctly expressed as `map(|x| y)`",
+        "file": "apps/aether-gateway/src/handlers/admin/observability/monitoring/cache_affinity_reads.rs",
+        "line": 204
+      },
+      {
+        "message": "error: unreachable pattern",
+        "file": "apps/aether-gateway/src/dispatch/refs.rs",
+        "line": 71
+      },
+      {
+        "message": "error: items after a test module",
+        "file": "apps/aether-gateway/src/ai_serving/planner/standard/openai/responses/mod.rs",
+        "line": 663
+      },
+      {
+        "message": "error: derefed type is same as origin",
+        "file": "apps/aether-gateway/src/execution_runtime/stream/execution.rs",
+        "line": 3491
+      },
+      {
+        "message": "error: derefed type is same as origin",
+        "file": "apps/aether-gateway/src/execution_runtime/stream/execution.rs",
+        "line": 3492
+      },
+      {
+        "message": "error: this `MutexGuard` is held across an await point",
+        "file": "apps/aether-gateway/src/execution_runtime/transport.rs",
+        "line": 6219
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 1861
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 1889
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 1992
+      },
+      {
+        "message": "error: this call to `clone` can be replaced with `std::slice::from_ref`",
+        "file": "apps/aether-gateway/src/handlers/admin/request/system/import.rs",
+        "line": 2027
+      },
+      {
+        "message": "error: this `MutexGuard` is held across an await point",
+        "file": "apps/aether-gateway/src/request_candidate_queue.rs",
+        "line": 3767
+      },
+      {
+        "message": "error: for loop over a single element",
+        "file": "apps/aether-gateway/src/tests/architecture/admin_provider.rs",
+        "line": 798
+      },
+      {
+        "message": "error: for loop over a single element",
+        "file": "apps/aether-gateway/src/tests/architecture/admin_shared.rs",
+        "line": 153
+      },
+      {
+        "message": "error: for loop over a single element",
+        "file": "apps/aether-gateway/src/tests/architecture/ai_serving.rs",
+        "line": 847
+      }
+    ],
+    "clippy_no_deps_errors_match_baseline_ignoring_shifted_line_numbers": true,
+    "new_clippy_diagnostics": [],
+    "removed_clippy_diagnostics": []
+  },
+  "final_package_counts": {
+    "passed": 2547,
+    "failed": 26,
+    "ignored": 7
+  },
+  "final_only_failures": [
+    "tests::ai_execute::sync::chat::local_decision::gateway_executes_openai_chat_sync_via_local_cross_format_gemini_candidate_without_external_control_config"
+  ]
+}
