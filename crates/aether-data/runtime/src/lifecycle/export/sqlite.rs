@@ -19,6 +19,30 @@ pub async fn export_sqlite_jsonl(
     domains: Vec<ExportDomain>,
     created_at_unix_secs: u64,
 ) -> Result<String, DataLayerError> {
+    export_sqlite_jsonl_with_options(
+        pool,
+        domains,
+        created_at_unix_secs,
+        DataCopyOptions::default(),
+    )
+    .await
+}
+
+pub(super) async fn export_sqlite_jsonl_for_copy(
+    pool: &crate::driver::sqlite::SqlitePool,
+    domains: Vec<ExportDomain>,
+    created_at_unix_secs: u64,
+    options: DataCopyOptions,
+) -> Result<String, DataLayerError> {
+    export_sqlite_jsonl_with_options(pool, domains, created_at_unix_secs, options).await
+}
+
+async fn export_sqlite_jsonl_with_options(
+    pool: &crate::driver::sqlite::SqlitePool,
+    domains: Vec<ExportDomain>,
+    created_at_unix_secs: u64,
+    options: DataCopyOptions,
+) -> Result<String, DataLayerError> {
     let mut tx = pool.begin().await.map_sql_err()?;
     let manifest = DataExportManifest::new(
         created_at_unix_secs,
@@ -29,7 +53,7 @@ pub async fn export_sqlite_jsonl(
 
     for domain in domains {
         if domain == ExportDomain::Auxiliary {
-            export_sqlite_auxiliary_records(&mut tx, &mut records).await?;
+            export_sqlite_auxiliary_records(&mut tx, &mut records, options).await?;
             continue;
         }
         if domain == ExportDomain::Billing {
@@ -46,7 +70,12 @@ pub async fn export_sqlite_jsonl(
         let rows = sqlx::query(&sql).fetch_all(&mut *tx).await.map_sql_err()?;
         for row in rows {
             let id = sqlite_export_row_id(domain, &row, id_column)?;
-            records.push(DataExportRecord::row(domain, id, sqlite_row_payload(&row)?));
+            let mut payload = sqlite_row_payload(&row)?;
+            if !options.omit_request_body_details
+                || omit_request_body_details_from_payload(domain, &mut payload)
+            {
+                records.push(DataExportRecord::row(domain, id, payload));
+            }
         }
     }
 
@@ -139,8 +168,12 @@ fn sqlite_domain_table(
 async fn export_sqlite_auxiliary_records(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     records: &mut Vec<DataExportRecord>,
+    options: DataCopyOptions,
 ) -> Result<(), DataLayerError> {
     for table in AUXILIARY_TABLES {
+        if options.omit_request_body_details && REQUEST_BODY_DETAIL_TABLES.contains(&table.name) {
+            continue;
+        }
         let table_sql = sqlite_quote_identifier(table.name)?;
         let order_sql = table
             .primary_key
@@ -155,11 +188,13 @@ async fn export_sqlite_auxiliary_records(
         for row in rows {
             let payload = sqlite_row_payload(&row)?;
             let id = auxiliary_row_id(*table, &payload)?;
-            records.push(DataExportRecord::row(
-                ExportDomain::Auxiliary,
-                id,
-                payload_with_table(payload, table.name)?,
-            ));
+            let mut payload = payload_with_table(payload, table.name)?;
+            if options.omit_request_body_details
+                && !omit_request_body_details_from_payload(ExportDomain::Auxiliary, &mut payload)
+            {
+                continue;
+            }
+            records.push(DataExportRecord::row(ExportDomain::Auxiliary, id, payload));
         }
     }
     Ok(())
