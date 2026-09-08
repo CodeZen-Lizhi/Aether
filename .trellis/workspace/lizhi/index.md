@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 30
+- **Total Sessions**: 32
 - **Last Active**: 2026-09-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~838 | Active |
+| `journal-1.md` | ~902 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-09-08 | 提交 SQLite 与单用户审查修复 | `ad7ac23ab199c736b9250e7895efa39bf10a17c9` | `slim-personal` |
+| 31 | 2026-09-08 | 接续审查并完成 SQLite 与单用户一致性修复 | - | `slim-personal` |
 | 30 | 2026-09-08 | 新版备份恢复修复与推送收尾 | `b43b337a5`, `ae38ce94a` | `slim-personal` |
 | 29 | 2026-09-07 | 修复 Responses 流错误故障转移 | `c59e09cd2` | `slim-personal` |
 | 28 | 2026-09-06 | 完成批量模型映射编辑体验 | `812889742` | `slim-personal` |

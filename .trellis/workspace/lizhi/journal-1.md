@@ -836,3 +836,67 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Next Steps
 
 - 在允许更长编译时间的环境运行现有 current_backups_roundtrip_through_authenticated_sqlite_routes 用例，补齐新版导出后再导入的运行证据。
+
+
+## Session 31: 接续审查并完成 SQLite 与单用户一致性修复
+<!-- trellis-session: v=2 fp=2d597dbf449844f2 -->
+
+**Date**: 2026-09-08
+**Task**: 接续审查并完成 SQLite 与单用户一致性修复
+**Branch**: `slim-personal`
+
+### Summary
+
+完成导出导入复制、SQLite-only runtime 与 CLI、真实钱包摘要、简化路由规则保存及孤立前端清理；代码留在 slim-personal 工作区，未提交或 push。
+
+### Main Changes
+
+- 修复并归档 audit-remediation R1-R7；详细验收见 .trellis/tasks/archive/2026-09/09-08-audit-remediation/verification.md。
+- 同步 SQLite lifecycle、认证钱包摘要、简化路由往返规范与索引；未修改历史 SQL 或真实数据。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Rust：data 两种 feature 检查及 gateway 编译通过；export 16、backend 18、migration 12、backfill 6、schema 8、routing 7、gateway CLI 54、gateway resolver 2、auth 1 项通过。
+- [OK] 前端类型检查、5 文件 ESLint、4 文件 Vitest 29/29；schema check、29 文件 rustfmt、git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实现完成，尚未提交；后续提交或发布时按 verification.md 处理配置兼容与验证盲区。
+
+
+## Session 32: 提交 SQLite 与单用户审查修复
+<!-- trellis-session: v=2 fp=5b3f324fa5fd4c60 -->
+
+**Date**: 2026-09-08
+**Task**: 提交 SQLite 与单用户审查修复
+**Branch**: `slim-personal`
+
+### Summary
+
+按用户明确授权提交已验收的审查修复，回填 Trellis 任务提交号并同步交付记录，目标分支 origin/slim-personal。
+
+### Main Changes
+
+- 代码与规范提交 ad7ac23ab；归档验证报告及开发日志作为独立提交。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ad7ac23ab199c736b9250e7895efa39bf10a17c9` | fix: 修复单用户与 SQLite 运行一致性问题 |
+
+### Testing
+
+- [OK] 沿用 Session 31 的已通过验证；提交前 git diff --check、暂存区检查通过；git fetch 确认远端基线一致。
+
+### Status
+
+[OK] **Completed**
