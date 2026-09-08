@@ -43,12 +43,13 @@ async fn export_sqlite_jsonl_with_options(
     created_at_unix_secs: u64,
     options: DataCopyOptions,
 ) -> Result<String, DataLayerError> {
+    let manifest =
+        DataExportManifest::new(created_at_unix_secs, Some(DatabaseDriver::Sqlite), domains);
+    for domain in &manifest.domains {
+        domain.ensure_supported()?;
+    }
+    let domains = manifest.domains.clone();
     let mut tx = pool.begin().await.map_sql_err()?;
-    let manifest = DataExportManifest::new(
-        created_at_unix_secs,
-        Some(DatabaseDriver::Sqlite),
-        domains.clone(),
-    );
     let mut records = vec![DataExportRecord::manifest(manifest)];
 
     for domain in domains {
@@ -65,8 +66,7 @@ async fn export_sqlite_jsonl_with_options(
             continue;
         }
         let (table_name, id_column) = sqlite_domain_table(domain)?;
-        let order_by = export_order_by(domain, id_column);
-        let sql = format!("SELECT * FROM {table_name} ORDER BY {order_by}");
+        let sql = format!("SELECT * FROM {table_name} ORDER BY {id_column} ASC");
         let rows = sqlx::query(&sql).fetch_all(&mut *tx).await.map_sql_err()?;
         for row in rows {
             let id = sqlite_export_row_id(domain, &row, id_column)?;
@@ -96,9 +96,19 @@ pub async fn import_sqlite_plan(
     plan: &DataImportPlan,
 ) -> Result<usize, DataLayerError> {
     let mut tx = pool.begin().await.map_sql_err()?;
+    // Domain/table order is stable for backups but does not follow every foreign key.
+    // Defer validation to commit so cross-domain references remain atomic.
+    sqlx::query("PRAGMA defer_foreign_keys = ON")
+        .execute(&mut *tx)
+        .await
+        .map_sql_err()?;
     let mut imported = 0usize;
     let mut column_cache = BTreeMap::<String, SqliteImportColumns>::new();
     for domain in &plan.manifest.domains {
+        if plan.rows(*domain).is_empty() {
+            continue;
+        }
+        domain.ensure_supported()?;
         if *domain == ExportDomain::Auxiliary {
             for row in plan.rows(*domain) {
                 import_sqlite_auxiliary_row(&mut tx, row, &mut column_cache).await?;
@@ -135,6 +145,7 @@ pub async fn import_sqlite_plan(
 fn sqlite_domain_table(
     domain: ExportDomain,
 ) -> Result<(&'static str, &'static str), DataLayerError> {
+    domain.ensure_supported()?;
     match domain {
         ExportDomain::Users => Ok(("users", "id")),
         ExportDomain::ApiKeys => Ok(("api_keys", "id")),
@@ -144,24 +155,13 @@ fn sqlite_domain_table(
         ExportDomain::Models => Ok(("models", "id")),
         ExportDomain::GlobalModels => Ok(("global_models", "id")),
         ExportDomain::AuthModules => Ok(("auth_modules", "id")),
-        ExportDomain::OAuthProviders => Ok(("oauth_providers", "provider_type")),
-        ExportDomain::UserOAuthLinks => Ok(("user_oauth_links", "id")),
-        ExportDomain::UserGroups => Ok(("user_groups", "id")),
-        ExportDomain::UserGroupMembers => Ok(("user_group_members", "group_id")),
         ExportDomain::ProxyNodes => Ok(("proxy_nodes", "id")),
         ExportDomain::SystemConfigs => Ok(("system_configs", "id")),
-        ExportDomain::Wallets => Err(DataLayerError::InvalidInput(
-            "sqlite wallet export uses multiple tables and must be handled as a domain".to_string(),
-        )),
         ExportDomain::Usage => Ok((r#""usage""#, "request_id")),
-        ExportDomain::Billing => Err(DataLayerError::InvalidInput(
-            "sqlite billing export uses multiple tables and must be handled as a domain"
-                .to_string(),
-        )),
-        ExportDomain::Auxiliary => Err(DataLayerError::InvalidInput(
-            "sqlite auxiliary export uses multiple tables and must be handled as a domain"
-                .to_string(),
-        )),
+        _ => Err(DataLayerError::InvalidInput(format!(
+            "sqlite export domain '{}' uses multiple tables and must be handled as a domain",
+            domain.as_str()
+        ))),
     }
 }
 
@@ -205,11 +205,6 @@ fn sqlite_export_row_id(
     row: &sqlx::sqlite::SqliteRow,
     id_column: &str,
 ) -> Result<String, DataLayerError> {
-    if domain == ExportDomain::UserGroupMembers {
-        let group_id = sqlite_required_export_text(row, "group_id", domain)?;
-        let user_id = sqlite_required_export_text(row, "user_id", domain)?;
-        return Ok(format!("{group_id}:{user_id}"));
-    }
     sqlite_required_export_text(row, id_column, domain)
 }
 

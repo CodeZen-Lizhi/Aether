@@ -3198,6 +3198,27 @@ async fn gateway_handles_auth_login_locally_without_proxying_upstream() {
         .expect("me request should succeed");
 
     assert_eq!(me_response.status(), StatusCode::OK);
+    let me_payload: serde_json::Value = me_response.json().await.expect("me body should parse");
+    let billing = &me_payload["billing"];
+    assert_eq!(billing["id"], "wallet-auth-1");
+    assert_eq!(billing["balance"], 15.5);
+    assert_eq!(billing["recharge_balance"], 12.5);
+    assert_eq!(billing["gift_balance"], 3.0);
+    assert_eq!(billing["refundable_balance"], 12.5);
+    assert_eq!(billing["total_consumed"], 4.5);
+    assert_eq!(billing["limit_mode"], "finite");
+    assert_eq!(billing["unlimited"], false);
+    assert!(billing["updated_at"].is_string());
+
+    let mut unlimited_wallet = sample_auth_wallet("user-auth-1", now);
+    unlimited_wallet.limit_mode = "unlimited".to_string();
+    let unlimited =
+        crate::handlers::public::build_auth_wallet_summary_payload(Some(&unlimited_wallet));
+    assert_eq!(unlimited["unlimited"], true);
+    assert_eq!(unlimited["balance"], 15.5);
+    let missing = crate::handlers::public::build_auth_wallet_summary_payload(None);
+    assert!(missing["id"].is_null());
+    assert_eq!(missing["unlimited"], false);
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();

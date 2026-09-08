@@ -1,22 +1,16 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde_json::json;
 
 use super::{
-    build_import_plan, decode_jsonl, encode_jsonl, export_mysql_core_jsonl, export_mysql_jsonl,
-    export_postgres_core_jsonl, export_sqlite_core_jsonl, filter_import_payload,
-    import_mysql_jsonl, import_postgres_jsonl, import_sqlite_jsonl, mysql_core_export_domains,
-    normalize_imported_binary, normalize_imported_integer_timestamp,
-    normalize_postgres_import_payload, postgres_bytea_json_value, postgres_core_export_domains,
-    sqlite_core_export_domains, sqlite_schema_copy_insert_sql, DataExportManifest,
-    DataExportRecord, DataImportPlan, ExportDomain, ExportRow, PostgresImportColumn,
-    SchemaCopyColumn, SchemaCopyTable, SqliteCopyColumn, AUXILIARY_TABLES,
+    build_import_plan, copy_database_records, decode_jsonl, encode_jsonl, export_sqlite_core_jsonl,
+    export_sqlite_jsonl, filter_import_payload, import_sqlite_jsonl, normalize_imported_binary,
+    normalize_imported_integer_timestamp, sqlite_core_export_domains, DataCopyOptions,
+    DataExportManifest, DataExportRecord, DataImportPlan, ExportDomain, ExportRow,
+    AUXILIARY_TABLES,
 };
-use crate::driver::postgres::{PostgresPoolConfig, PostgresPoolFactory};
-use crate::lifecycle::migrate::{
-    run_migrations as run_postgres_migrations, run_mysql_migrations, run_sqlite_migrations,
-};
-use crate::DatabaseDriver;
+use crate::lifecycle::migrate::run_sqlite_migrations;
+use crate::{DatabaseDriver, SqlDatabaseConfig};
 
 #[test]
 fn jsonl_round_trips_manifest_and_domain_rows() {
@@ -63,9 +57,15 @@ fn jsonl_round_trips_manifest_and_domain_rows() {
 }
 
 #[test]
-fn core_export_domains_match_across_sql_drivers() {
-    assert_eq!(sqlite_core_export_domains(), mysql_core_export_domains());
-    assert_eq!(sqlite_core_export_domains(), postgres_core_export_domains());
+fn core_export_domains_only_include_current_sqlite_domains() {
+    for domain in [
+        ExportDomain::OAuthProviders,
+        ExportDomain::UserOAuthLinks,
+        ExportDomain::UserGroups,
+        ExportDomain::UserGroupMembers,
+    ] {
+        assert!(!sqlite_core_export_domains().contains(&domain));
+    }
     assert!(sqlite_core_export_domains().contains(&ExportDomain::Auxiliary));
 }
 
@@ -105,10 +105,6 @@ ORDER BY name
         "global_models",
         "models",
         "auth_modules",
-        "oauth_providers",
-        "user_oauth_links",
-        "user_groups",
-        "user_group_members",
         "proxy_nodes",
         "system_configs",
         "usage",
@@ -130,10 +126,15 @@ ORDER BY name
     exported_tables.extend(AUXILIARY_TABLES.iter().map(|table| table.name.to_string()));
 
     assert_eq!(schema_tables, exported_tables);
+    let encoded = export_sqlite_core_jsonl(&pool, 1)
+        .await
+        .expect("default export must read every current table");
+    let plan = build_import_plan(&encoded).expect("default export should decode");
+    assert_eq!(plan.manifest.domains, sqlite_core_export_domains());
 }
 
-#[test]
-fn version_one_exports_remain_importable_after_full_export_expansion() {
+#[tokio::test]
+async fn version_one_exports_remain_importable_after_full_export_expansion() {
     let records = decode_jsonl(
         r#"{"record_type":"manifest","manifest":{"format_version":1,"created_at_unix_secs":1,"source_driver":null,"domains":["users"]}}
 {"record_type":"row","domain":"users","id":"user-1","payload":{"id":"user-1"}}"#,
@@ -141,6 +142,70 @@ fn version_one_exports_remain_importable_after_full_export_expansion() {
     .expect("version one exports should remain supported");
 
     assert_eq!(records.len(), 2);
+
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("sqlite pool should connect");
+    run_sqlite_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    for domain in [
+        ExportDomain::OAuthProviders,
+        ExportDomain::UserOAuthLinks,
+        ExportDomain::UserGroups,
+        ExportDomain::UserGroupMembers,
+    ] {
+        let error = export_sqlite_jsonl(&pool, vec![domain], 1)
+            .await
+            .expect_err("retired domains cannot be exported");
+        assert!(error.to_string().contains("retired"));
+
+        let mut manifest = DataExportManifest::new(
+            1,
+            Some(DatabaseDriver::Postgres),
+            vec![ExportDomain::GlobalModels, domain],
+        );
+        manifest.format_version = 1;
+        let mut records = vec![
+            DataExportRecord::manifest(manifest),
+            DataExportRecord::row(
+                ExportDomain::GlobalModels,
+                "legacy-model",
+                json!({
+                    "id": "legacy-model", "name": "legacy-model", "created_at": 1, "updated_at": 1
+                }),
+            ),
+        ];
+        let encoded = encode_jsonl(&records).expect("legacy backup should encode");
+        assert_eq!(
+            import_sqlite_jsonl(&pool, &encoded)
+                .await
+                .expect("empty retired domains remain importable"),
+            1
+        );
+
+        if let DataExportRecord::Row { payload, .. } = &mut records[1] {
+            payload["name"] = json!("must-rollback");
+        }
+        records.push(DataExportRecord::row(
+            domain,
+            "retired-row",
+            json!({"id": "retired-row"}),
+        ));
+        let encoded = encode_jsonl(&records).expect("legacy backup should encode");
+        let error = import_sqlite_jsonl(&pool, &encoded)
+            .await
+            .expect_err("retired rows must not be silently discarded");
+        assert!(error.to_string().contains("retired"));
+        let name: String =
+            sqlx::query_scalar("SELECT name FROM global_models WHERE id = 'legacy-model'")
+                .fetch_one(&pool)
+                .await
+                .expect("model should remain");
+        assert_eq!(name, "legacy-model");
+    }
 }
 
 #[test]
@@ -198,57 +263,6 @@ fn jsonl_rejects_duplicate_domain_ids() {
 }
 
 #[test]
-fn postgres_import_payload_normalizes_sqlite_values_for_target_columns() {
-    let target_columns = BTreeMap::from([
-        (
-            "id".to_string(),
-            postgres_column("character varying", "varchar"),
-        ),
-        (
-            "email_verified".to_string(),
-            postgres_column("boolean", "bool"),
-        ),
-        (
-            "created_at".to_string(),
-            postgres_column("timestamp with time zone", "timestamptz"),
-        ),
-        (
-            "allowed_models".to_string(),
-            postgres_column("json", "json"),
-        ),
-        (
-            "role".to_string(),
-            postgres_not_null_default_column("USER-DEFINED", "userrole"),
-        ),
-    ]);
-    let row = ExportRow {
-        id: "user-1".to_string(),
-        payload: json!({
-            "id": "user-1",
-            "email_verified": 1,
-            "created_at": 1,
-            "allowed_models": "[\"gpt-test\"]",
-            "role": null,
-            "legacy_nullable": null
-        }),
-    };
-
-    let normalized = normalize_postgres_import_payload(
-        "public.users",
-        ExportDomain::Users,
-        &row,
-        &target_columns,
-    )
-    .expect("postgres payload should normalize");
-
-    assert_eq!(normalized["email_verified"], json!(true));
-    assert_eq!(normalized["created_at"], json!("1970-01-01T00:00:01+00:00"));
-    assert_eq!(normalized["allowed_models"], json!(["gpt-test"]));
-    assert!(!normalized.contains_key("role"));
-    assert!(!normalized.contains_key("legacy_nullable"));
-}
-
-#[test]
 fn cross_driver_timestamp_normalization_preserves_usage_second_contract() {
     assert_eq!(
         normalize_imported_integer_timestamp(
@@ -262,7 +276,7 @@ fn cross_driver_timestamp_normalization_preserves_usage_second_contract() {
     );
     assert_eq!(
         normalize_imported_integer_timestamp(
-            "mysql",
+            "sqlite",
             "request_candidates",
             "created_at_unix_ms",
             &json!("1970-01-01T00:00:01.234900Z"),
@@ -270,43 +284,6 @@ fn cross_driver_timestamp_normalization_preserves_usage_second_contract() {
         .expect("millisecond timestamp should normalize"),
         Some(1_234),
     );
-
-    let target_columns = BTreeMap::from([(
-        "created_at_unix_ms".to_string(),
-        postgres_column("timestamp with time zone", "timestamptz"),
-    )]);
-    let row = ExportRow {
-        id: "usage-1".to_string(),
-        payload: json!({ "created_at_unix_ms": 1_700_000_000 }),
-    };
-    let normalized = normalize_postgres_import_payload(
-        "public.usage",
-        ExportDomain::Usage,
-        &row,
-        &target_columns,
-    )
-    .expect("postgres usage timestamp should normalize");
-    assert_eq!(
-        normalized["created_at_unix_ms"],
-        json!("2023-11-14T22:13:20+00:00")
-    );
-
-    let target_columns = BTreeMap::from([(
-        "created_at_unix_ms".to_string(),
-        postgres_column("bigint", "int8"),
-    )]);
-    let row = ExportRow {
-        id: "usage-1".to_string(),
-        payload: json!({ "created_at_unix_ms": "1970-01-01T00:00:01.234900Z" }),
-    };
-    let normalized = normalize_postgres_import_payload(
-        "public.usage",
-        ExportDomain::Usage,
-        &row,
-        &target_columns,
-    )
-    .expect("postgres integer usage timestamp should normalize");
-    assert_eq!(normalized["created_at_unix_ms"], json!(1));
 }
 
 #[test]
@@ -317,46 +294,16 @@ fn cross_driver_binary_normalization_preserves_raw_bytes() {
         Some(vec![0, 1, 127, 255]),
     );
     assert_eq!(
-        normalize_imported_binary("mysql", "payload_gzip", &json!("\\x00017fff"))
+        normalize_imported_binary("sqlite", "payload_gzip", &json!("\\x00017fff"))
             .expect("postgres hex should normalize"),
         Some(vec![0, 1, 127, 255]),
     );
     assert!(normalize_imported_binary("sqlite", "payload_gzip", &json!([256])).is_err());
-    assert_eq!(
-        postgres_bytea_json_value("payload_gzip", &json!([0, 1, 127, 255]))
-            .expect("postgres bytea should normalize"),
-        json!("\\x00017fff"),
-    );
+    assert!(normalize_imported_binary("sqlite", "payload_gzip", &json!("\\x€0")).is_err());
 }
 
 #[test]
-fn postgres_import_payload_rejects_non_null_unknown_columns() {
-    let target_columns = BTreeMap::from([(
-        "id".to_string(),
-        postgres_column("character varying", "varchar"),
-    )]);
-    let row = ExportRow {
-        id: "user-1".to_string(),
-        payload: json!({
-            "id": "user-1",
-            "unexpected_column": "value"
-        }),
-    };
-
-    let err = normalize_postgres_import_payload(
-        "public.users",
-        ExportDomain::Users,
-        &row,
-        &target_columns,
-    )
-    .expect_err("non-null unknown columns should fail");
-
-    assert!(err.to_string().contains("unexpected_column"));
-    assert!(err.to_string().contains("does not exist"));
-}
-
-#[test]
-fn mysql_and_sqlite_import_payloads_reject_non_null_unknown_columns() {
+fn sqlite_import_payloads_reject_non_null_unknown_columns() {
     let target_columns = BTreeSet::from(["id".to_string()]);
     let row = ExportRow {
         id: "user-1".to_string(),
@@ -367,7 +314,7 @@ fn mysql_and_sqlite_import_payloads_reject_non_null_unknown_columns() {
         }),
     };
 
-    for driver_name in ["mysql", "sqlite"] {
+    for driver_name in ["sqlite"] {
         let err = filter_import_payload(
             driver_name,
             "users",
@@ -384,7 +331,7 @@ fn mysql_and_sqlite_import_payloads_reject_non_null_unknown_columns() {
 }
 
 #[test]
-fn mysql_and_sqlite_import_payloads_ignore_unknown_null_columns() {
+fn sqlite_import_payloads_ignore_unknown_null_columns() {
     let target_columns = BTreeSet::from(["id".to_string()]);
     let row = ExportRow {
         id: "user-1".to_string(),
@@ -407,59 +354,6 @@ fn mysql_and_sqlite_import_payloads_ignore_unknown_null_columns() {
         filtered,
         serde_json::Map::from_iter([("id".to_string(), json!("user-1"))])
     );
-}
-
-#[test]
-fn postgres_to_sqlite_copy_uses_primary_key_upsert_instead_of_replace() {
-    let table = SchemaCopyTable {
-        table_name: "usage".to_string(),
-        columns: vec![
-            SchemaCopyColumn {
-                sqlite: SqliteCopyColumn {
-                    name: "request_id".to_string(),
-                    declared_type: "TEXT".to_string(),
-                    not_null: true,
-                    has_default: false,
-                    primary_key_position: 1,
-                },
-                postgres: postgres_column("character varying", "varchar"),
-            },
-            SchemaCopyColumn {
-                sqlite: SqliteCopyColumn {
-                    name: "status".to_string(),
-                    declared_type: "TEXT".to_string(),
-                    not_null: true,
-                    has_default: false,
-                    primary_key_position: 0,
-                },
-                postgres: postgres_column("character varying", "varchar"),
-            },
-        ],
-    };
-
-    let sql = sqlite_schema_copy_insert_sql(&table).expect("copy SQL should build");
-
-    assert!(!sql.contains("OR REPLACE"));
-    assert!(sql.contains("ON CONFLICT (\"request_id\") DO UPDATE SET"));
-    assert!(sql.contains("\"status\" = excluded.\"status\""));
-}
-
-fn postgres_column(data_type: &str, udt_name: &str) -> PostgresImportColumn {
-    PostgresImportColumn {
-        data_type: data_type.to_ascii_lowercase(),
-        udt_name: udt_name.to_ascii_lowercase(),
-        is_nullable: true,
-        has_default: false,
-    }
-}
-
-fn postgres_not_null_default_column(data_type: &str, udt_name: &str) -> PostgresImportColumn {
-    PostgresImportColumn {
-        data_type: data_type.to_ascii_lowercase(),
-        udt_name: udt_name.to_ascii_lowercase(),
-        is_nullable: false,
-        has_default: true,
-    }
 }
 
 #[tokio::test]
@@ -525,17 +419,8 @@ async fn sqlite_import_updates_parent_without_cascading_child_rows() {
         r#"
 INSERT INTO users (id, email, username, created_at, updated_at)
 VALUES ('import-user', 'import@example.test', 'import-user', 1, 1);
-INSERT INTO user_groups (
-  id, name, normalized_name, description, priority,
-  allowed_providers_mode, allowed_api_formats_mode, allowed_models_mode, rate_limit_mode,
-  created_at, updated_at
-)
-VALUES (
-  'import-group', 'Before', 'import-group', 'preserve-me', 0,
-  'inherit', 'inherit', 'inherit', 'inherit', 1, 1
-);
-INSERT INTO user_group_members (group_id, user_id, created_at)
-VALUES ('import-group', 'import-user', 1);
+INSERT INTO referral_rewards (id, referral_id, inviter_user_id, invitee_user_id, reward_type, trigger_point, idempotency_key, amount_usd, created_at, updated_at)
+VALUES ('import-reward', 'historical-referral', 'import-user', 'import-user', 'gift', 'payment', 'import-reward-once', 2.5, 1, 1);
 "#,
     )
     .execute(&pool)
@@ -544,49 +429,41 @@ VALUES ('import-group', 'import-user', 1);
 
     let encoded = encode_jsonl(&[
         DataExportRecord::manifest(DataExportManifest::new(
-            1_700_000_000,
+            1,
             Some(DatabaseDriver::Postgres),
-            vec![ExportDomain::UserGroups],
+            vec![ExportDomain::Users],
         )),
         DataExportRecord::row(
-            ExportDomain::UserGroups,
-            "import-group",
+            ExportDomain::Users,
+            "import-user",
             json!({
-                "id": "import-group",
-                "name": "After",
-                "normalized_name": "import-group",
-                "priority": 10,
-                "allowed_providers_mode": "inherit",
-                "allowed_api_formats_mode": "inherit",
-                "allowed_models_mode": "inherit",
-                "rate_limit_mode": "inherit",
-                "created_at": 1,
-                "updated_at": 2
+                "id": "import-user", "username": "After", "created_at": 1, "updated_at": 2
             }),
         ),
     ])
-    .expect("group export should encode");
-
+    .expect("user export should encode");
     assert_eq!(
         import_sqlite_jsonl(&pool, &encoded)
             .await
-            .expect("group import should update in place"),
+            .expect("user import should update in place"),
         1
     );
-    let group = sqlx::query_as::<_, (String, String)>(
-        "SELECT name, description FROM user_groups WHERE id = 'import-group'",
+    let user: (String, String) =
+        sqlx::query_as("SELECT username, email FROM users WHERE id = 'import-user'")
+            .fetch_one(&pool)
+            .await
+            .expect("updated user should load");
+    assert_eq!(
+        user,
+        ("After".to_string(), "import@example.test".to_string())
+    );
+    let reward_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM referral_rewards WHERE inviter_user_id = 'import-user'",
     )
     .fetch_one(&pool)
     .await
-    .expect("updated group should load");
-    assert_eq!(group, ("After".to_string(), "preserve-me".to_string()));
-    let member_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_group_members WHERE group_id = 'import-group'",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("group member count should load");
-    assert_eq!(member_count, 1);
+    .expect("child reward count should load");
+    assert_eq!(reward_count, 1);
 }
 
 #[tokio::test]
@@ -637,14 +514,59 @@ async fn sqlite_import_rolls_back_rows_after_late_failure() {
             .await
             .expect("rolled back row count should load");
     assert_eq!(count, 0);
+
+    let encoded = encode_jsonl(&[
+        DataExportRecord::manifest(DataExportManifest::new(
+            1,
+            Some(DatabaseDriver::Sqlite),
+            vec![ExportDomain::GlobalModels, ExportDomain::Auxiliary],
+        )),
+        DataExportRecord::row(
+            ExportDomain::GlobalModels,
+            "rollback-parent",
+            json!({
+                "id": "rollback-parent", "name": "rollback-parent", "created_at": 1, "updated_at": 1
+            }),
+        ),
+        DataExportRecord::row(
+            ExportDomain::Auxiliary,
+            "background_task_events:rollback-child",
+            json!({
+                "__table": "background_task_events", "id": "rollback-child",
+                "run_id": "missing-run", "event_type": "created", "message": "rollback",
+                "created_at_unix_secs": 1
+            }),
+        ),
+    ])
+    .expect("foreign key fixture should encode");
+    let error = import_sqlite_jsonl(&pool, &encoded)
+        .await
+        .expect_err("deferred foreign keys must still be enforced at commit");
+    assert!(error.to_string().contains("FOREIGN KEY constraint failed"));
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM global_models WHERE id LIKE 'rollback-%'")
+            .fetch_one(&pool)
+            .await
+            .expect("rolled back parents should load");
+    assert_eq!(count, 0);
+    let deferred: i64 = sqlx::query_scalar("PRAGMA defer_foreign_keys")
+        .fetch_one(&pool)
+        .await
+        .expect("foreign key mode should load");
+    assert_eq!(deferred, 0);
 }
 
 #[tokio::test]
 async fn sqlite_core_export_reads_migrated_database_rows() {
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
+    let temp_dir = std::env::temp_dir().join(format!("aether-export-{}", unique_suffix()));
+    std::fs::create_dir(&temp_dir).expect("temporary export directory should exist");
+    let source_config = SqlDatabaseConfig {
+        url: format!("sqlite://{}", temp_dir.join("source.db").display()),
+        ..SqlDatabaseConfig::sqlite_default()
+    };
+    let pool = crate::driver::sqlite::SqlitePoolFactory::new(source_config.clone())
+        .expect("sqlite factory should build")
+        .connect_lazy()
         .expect("sqlite pool should connect");
     run_sqlite_migrations(&pool)
         .await
@@ -654,10 +576,6 @@ async fn sqlite_core_export_reads_migrated_database_rows() {
             r#"
 INSERT INTO users (id, email, username, auth_source, created_at, updated_at)
 VALUES ('user-1', 'owner@example.com', 'owner', 'local', '1970-01-01T00:00:01Z', '1970-01-01T00:00:02Z');
-INSERT INTO user_groups (id, name, normalized_name, description, priority, allowed_models, allowed_models_mode, created_at, updated_at)
-VALUES ('group-1', 'Export Group', 'export group', 'Exported group', 10, '["gpt-test"]', 'specific', '1970-01-01T00:00:01Z', '1970-01-01T00:00:02Z');
-INSERT INTO user_group_members (group_id, user_id, created_at)
-VALUES ('group-1', 'user-1', '1970-01-01T00:00:01Z');
 INSERT INTO api_keys (id, user_id, key_hash, key_encrypted, name, created_at, updated_at)
 VALUES ('api-key-1', 'user-1', 'hash-1', 'ciphertext-1', 'Default', '1970-01-01T00:00:01Z', '1970-01-01T00:00:02Z');
 INSERT INTO providers (id, name, provider_type, created_at, updated_at)
@@ -676,6 +594,10 @@ INSERT INTO dimension_collectors (id, api_format, task_type, dimension_name, sou
 VALUES ('collector-1', 'openai', 'chat', 'input_tokens', 'computed', 'float', 'usage.input_tokens', 10, 1, '1970-01-01T00:00:01Z', '1970-01-01T00:00:02Z');
 INSERT INTO system_configs (id, key, value, created_at, updated_at)
 VALUES ('config-1', 'billing.enabled', 'true', '1970-01-01T00:00:01Z', '1970-01-01T00:00:02Z');
+INSERT INTO payment_gateway_configs (provider, endpoint_url, merchant_id, merchant_key_encrypted, created_at, updated_at)
+VALUES ('legacy-gateway', 'https://example.test/pay', 'merchant-1', 'ciphertext-merchant', 1, 2);
+INSERT INTO referral_rewards (id, referral_id, inviter_user_id, invitee_user_id, reward_type, trigger_point, idempotency_key, amount_usd, created_at, updated_at)
+VALUES ('reward-1', 'historical-referral', 'user-1', 'user-1', 'gift', 'payment', 'reward-once', 2.5, 1, 2);
 INSERT INTO wallets (id, user_id, created_at, updated_at)
 VALUES ('wallet-1', 'user-1', '1970-01-01T00:00:01Z', '1970-01-01T00:00:02Z');
 INSERT INTO "usage" (request_id, id, user_id, provider_name, model, status, billing_status, created_at_unix_ms, updated_at_unix_secs)
@@ -714,16 +636,6 @@ VALUES (
         import_plan.rows(ExportDomain::Users)[0].payload["email"],
         "owner@example.com"
     );
-    assert!(import_plan
-        .rows(ExportDomain::UserGroups)
-        .iter()
-        .any(|row| row.id == "group-1" && row.payload["name"] == "Export Group"));
-    assert!(import_plan
-        .rows(ExportDomain::UserGroupMembers)
-        .iter()
-        .any(|row| row.id == "group-1:user-1"
-            && row.payload["group_id"] == "group-1"
-            && row.payload["user_id"] == "user-1"));
     assert_eq!(
         import_plan.rows(ExportDomain::ApiKeys)[0].payload["key_encrypted"],
         "ciphertext-1"
@@ -757,6 +669,17 @@ VALUES (
         .any(|row| row.payload["__table"] == "usage_routing_snapshots"
             && row.payload["candidate_id"] == "candidate-1"
             && row.payload["selected_provider_id"] == "provider-1"));
+    assert!(import_plan
+        .rows(ExportDomain::Auxiliary)
+        .iter()
+        .any(|row| row.payload["__table"] == "payment_gateway_configs"
+            && row.payload["merchant_key_encrypted"] == "ciphertext-merchant"));
+    assert!(import_plan
+        .rows(ExportDomain::Auxiliary)
+        .iter()
+        .any(
+            |row| row.payload["__table"] == "referral_rewards" && row.payload["amount_usd"] == 2.5
+        ));
 
     let target_pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
@@ -769,7 +692,7 @@ VALUES (
     let imported = import_sqlite_jsonl(&target_pool, &encoded)
         .await
         .expect("sqlite import should load exported rows");
-    assert_eq!(imported, 20);
+    assert_eq!(imported, import_plan_row_count(&import_plan));
 
     let imported_api_key =
         sqlx::query_as::<_, (String,)>("SELECT key_encrypted FROM api_keys WHERE id = 'api-key-1'")
@@ -804,15 +727,6 @@ WHERE id = 'global-model-1'
         (1, 2, "integer".to_string(), "integer".to_string())
     );
 
-    let imported_group_member = sqlx::query_as::<_, (String, String)>(
-            "SELECT group_id, user_id FROM user_group_members WHERE group_id = 'group-1' AND user_id = 'user-1'",
-        )
-        .fetch_one(&target_pool)
-        .await
-        .expect("imported user group member should load");
-    assert_eq!(imported_group_member.0, "group-1");
-    assert_eq!(imported_group_member.1, "user-1");
-
     let imported_billing_rule = sqlx::query_as::<_, (String,)>(
         "SELECT expression FROM billing_rules WHERE id = 'billing-rule-1'",
     )
@@ -844,486 +758,70 @@ WHERE request_id = 'request-1'
         ("candidate-1".to_string(), 2, "provider-1".to_string())
     );
 
-    if let Some(database_url) = std::env::var("AETHER_TEST_POSTGRES_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    {
-        let config = PostgresPoolConfig {
-            database_url,
-            min_connections: 1,
-            max_connections: 1,
-            acquire_timeout_ms: 1_000,
-            idle_timeout_ms: 5_000,
-            max_lifetime_ms: 30_000,
-            statement_cache_capacity: 64,
-            require_ssl: false,
+    for omit_request_body_details in [false, true] {
+        let target_config = SqlDatabaseConfig {
+            url: format!(
+                "sqlite://{}",
+                temp_dir
+                    .join(format!("copy-{omit_request_body_details}.db"))
+                    .display()
+            ),
+            ..SqlDatabaseConfig::sqlite_default()
         };
-        let postgres_pool = PostgresPoolFactory::new(config)
-            .expect("postgres factory should build")
+        let copied_pool = crate::driver::sqlite::SqlitePoolFactory::new(target_config.clone())
+            .expect("copy factory should build")
             .connect_lazy()
-            .expect("postgres pool should build");
-        run_postgres_migrations(&postgres_pool)
+            .expect("copy pool should connect");
+        run_sqlite_migrations(&copied_pool)
             .await
-            .expect("postgres migrations should run");
-
-        let imported = import_postgres_jsonl(&postgres_pool, &encoded)
-            .await
-            .expect("postgres import should load exported rows");
-        assert_eq!(imported, 20);
-
-        let imported_api_key = sqlx::query_as::<_, (String,)>(
-            "SELECT key_encrypted FROM api_keys WHERE id = 'api-key-1'",
+            .expect("copy migrations should run");
+        let count = copy_database_records(
+            source_config.clone(),
+            target_config,
+            vec![],
+            1,
+            DataCopyOptions {
+                omit_request_body_details,
+            },
         )
-        .fetch_one(&postgres_pool)
         .await
-        .expect("imported postgres api key should load");
-        assert_eq!(imported_api_key.0, "ciphertext-1");
-    }
-}
-
-#[tokio::test]
-async fn postgres_core_export_reads_migrated_database_rows_when_url_is_set() {
-    let Some(database_url) = std::env::var("AETHER_TEST_POSTGRES_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    else {
-        eprintln!(
-            "skipping postgres core export smoke test because AETHER_TEST_POSTGRES_URL is unset"
+        .expect("default copy should succeed");
+        assert_eq!(count, imported - usize::from(omit_request_body_details));
+        let merchant_key: String = sqlx::query_scalar("SELECT merchant_key_encrypted FROM payment_gateway_configs WHERE provider = 'legacy-gateway'")
+            .fetch_one(&copied_pool).await.expect("gateway config should be copied");
+        assert_eq!(merchant_key, "ciphertext-merchant");
+        let reward: f64 =
+            sqlx::query_scalar("SELECT amount_usd FROM referral_rewards WHERE id = 'reward-1'")
+                .fetch_one(&copied_pool)
+                .await
+                .expect("referral reward should be copied");
+        assert_eq!(reward, 2.5);
+        let body_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM usage_body_blobs")
+            .fetch_one(&copied_pool)
+            .await
+            .expect("body count should load");
+        assert_eq!(body_count, i64::from(!omit_request_body_details));
+        let body_ref: Option<String> = sqlx::query_scalar(
+            "SELECT request_body_ref FROM usage_http_audits WHERE request_id = 'request-1'",
+        )
+        .fetch_one(&copied_pool)
+        .await
+        .expect("audit should be copied");
+        assert_eq!(
+            body_ref.as_deref(),
+            if omit_request_body_details {
+                None
+            } else {
+                Some("body-ref-1")
+            }
         );
-        return;
-    };
-
-    let config = PostgresPoolConfig {
-        database_url,
-        min_connections: 1,
-        max_connections: 1,
-        acquire_timeout_ms: 1_000,
-        idle_timeout_ms: 5_000,
-        max_lifetime_ms: 30_000,
-        statement_cache_capacity: 64,
-        require_ssl: false,
-    };
-    let pool = PostgresPoolFactory::new(config)
-        .expect("postgres factory should build")
-        .connect_lazy()
-        .expect("postgres pool should build");
-    run_postgres_migrations(&pool)
-        .await
-        .expect("postgres migrations should run");
-
-    let suffix = unique_suffix();
-    let user_id = format!("export-user-{suffix}");
-    let api_key_id = format!("export-api-key-{suffix}");
-    let provider_id = format!("export-provider-{suffix}");
-    let provider_key_id = format!("export-provider-key-{suffix}");
-    let endpoint_id = format!("export-endpoint-{suffix}");
-    let global_model_id = format!("export-global-model-{suffix}");
-    let model_id = format!("export-model-{suffix}");
-    let billing_rule_id = format!("export-billing-rule-{suffix}");
-    let collector_id = format!("export-collector-{suffix}");
-    let config_id = format!("export-config-{suffix}");
-    let config_key = format!("export.config.{suffix}");
-    let wallet_id = format!("export-wallet-{suffix}");
-    let request_id = format!("export-request-{suffix}");
-    let group_id = format!("export-group-{suffix}");
-
-    sqlx::query(
-            "INSERT INTO users (id, email, username, auth_source, email_verified, created_at, updated_at) VALUES ($1, $2, $3, 'local', TRUE, to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&user_id)
-        .bind(format!("{user_id}@example.com"))
-        .bind(format!("owner-{suffix}"))
-        .execute(&pool)
-        .await
-        .expect("user should seed");
-    sqlx::query(
-            "INSERT INTO user_groups (id, name, normalized_name, priority, allowed_models, allowed_models_mode, created_at, updated_at) VALUES ($1, $2, $3, 10, '[\"provider-model\"]', 'specific', to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&group_id)
-        .bind(format!("Export Group {suffix}"))
-        .bind(format!("export group {suffix}"))
-        .execute(&pool)
-        .await
-        .expect("user group should seed");
-    sqlx::query(
-            "INSERT INTO user_group_members (group_id, user_id, created_at) VALUES ($1, $2, to_timestamp(1))",
-        )
-        .bind(&group_id)
-        .bind(&user_id)
-        .execute(&pool)
-        .await
-        .expect("user group member should seed");
-    sqlx::query(
-            "INSERT INTO api_keys (id, user_id, key_hash, key_encrypted, name, created_at, updated_at) VALUES ($1, $2, $3, 'ciphertext-1', 'Default', to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&api_key_id)
-        .bind(&user_id)
-        .bind(format!("hash-{api_key_id}"))
-        .execute(&pool)
-        .await
-        .expect("api key should seed");
-    sqlx::query(
-            "INSERT INTO providers (id, name, provider_type, created_at, updated_at) VALUES ($1, $2, 'openai', to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&provider_id)
-        .bind(format!("Provider {suffix}"))
-        .execute(&pool)
-        .await
-        .expect("provider should seed");
-    sqlx::query(
-            "INSERT INTO provider_api_keys (id, provider_id, name, encrypted_key, total_tokens, total_cost_usd, created_at, updated_at) VALUES ($1, $2, 'Provider Key', 'ciphertext-provider', 0, 0, to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&provider_key_id)
-        .bind(&provider_id)
-        .execute(&pool)
-        .await
-        .expect("provider key should seed");
-    sqlx::query(
-            "INSERT INTO provider_endpoints (id, provider_id, name, base_url, created_at, updated_at) VALUES ($1, $2, 'Primary', 'https://example.test', to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&endpoint_id)
-        .bind(&provider_id)
-        .execute(&pool)
-        .await
-        .expect("endpoint should seed");
-    sqlx::query(
-            "INSERT INTO global_models (id, name, created_at, updated_at) VALUES ($1, $2, to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&global_model_id)
-        .bind(format!("global-model-{suffix}"))
-        .execute(&pool)
-        .await
-        .expect("global model should seed");
-    sqlx::query(
-            "INSERT INTO models (id, provider_id, global_model_id, provider_model_name, created_at, updated_at) VALUES ($1, $2, $3, 'provider-model', to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&model_id)
-        .bind(&provider_id)
-        .bind(&global_model_id)
-        .execute(&pool)
-        .await
-        .expect("model should seed");
-    sqlx::query(
-            "INSERT INTO billing_rules (id, global_model_id, name, task_type, expression, variables, dimension_mappings, is_enabled, created_at, updated_at) VALUES ($1, $2, 'Rule One', 'chat', 'input_tokens * 0.01', '{}', '{\"input\":\"input_tokens\"}', TRUE, to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&billing_rule_id)
-        .bind(&global_model_id)
-        .execute(&pool)
-        .await
-        .expect("billing rule should seed");
-    sqlx::query(
-            "INSERT INTO dimension_collectors (id, api_format, task_type, dimension_name, source_type, value_type, transform_expression, priority, is_enabled, created_at, updated_at) VALUES ($1, 'openai', 'chat', $2, 'computed', 'float', 'usage.input_tokens', 10, TRUE, to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&collector_id)
-        .bind(format!("input_tokens_{suffix}"))
-        .execute(&pool)
-        .await
-        .expect("dimension collector should seed");
-    sqlx::query(
-            "INSERT INTO system_configs (id, key, value, created_at, updated_at) VALUES ($1, $2, 'true', to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&config_id)
-        .bind(&config_key)
-        .execute(&pool)
-        .await
-        .expect("system config should seed");
-    sqlx::query(
-            "INSERT INTO wallets (id, user_id, created_at, updated_at) VALUES ($1, $2, to_timestamp(1), to_timestamp(2))",
-        )
-        .bind(&wallet_id)
-        .bind(&user_id)
-        .execute(&pool)
-        .await
-        .expect("wallet should seed");
-    sqlx::query(
-            "INSERT INTO \"usage\" (request_id, id, user_id, provider_name, model, status, billing_status, created_at_unix_ms, updated_at_unix_secs) VALUES ($1, $2, $3, 'Provider One', 'provider-model', 'completed', 'settled', 1, 2)",
-        )
-        .bind(&request_id)
-        .bind(&request_id)
-        .bind(&user_id)
-        .execute(&pool)
-        .await
-        .expect("usage should seed");
-
-    let encoded = export_postgres_core_jsonl(&pool, 1_700_000_000)
-        .await
-        .expect("postgres export should encode");
-    let import_plan = build_import_plan(&encoded).expect("postgres export should decode");
-
-    assert_eq!(
-        import_plan.manifest.source_driver,
-        Some(DatabaseDriver::Postgres)
-    );
-    assert_eq!(import_plan.manifest.domains, postgres_core_export_domains());
-    assert!(import_plan
-        .rows(ExportDomain::Users)
-        .iter()
-        .any(|row| row.id == user_id));
-    assert!(import_plan
-        .rows(ExportDomain::UserGroups)
-        .iter()
-        .any(|row| row.id == group_id));
-    assert!(import_plan
-        .rows(ExportDomain::UserGroupMembers)
-        .iter()
-        .any(|row| row.id == format!("{group_id}:{user_id}")));
-    assert!(import_plan
-        .rows(ExportDomain::ApiKeys)
-        .iter()
-        .any(|row| row.id == api_key_id && row.payload["key_encrypted"] == "ciphertext-1"));
-    assert!(import_plan
-        .rows(ExportDomain::ProviderKeys)
-        .iter()
-        .any(|row| {
-            row.id == provider_key_id && row.payload["encrypted_key"] == "ciphertext-provider"
-        }));
-    assert!(import_plan
-        .rows(ExportDomain::GlobalModels)
-        .iter()
-        .any(|row| row.id == global_model_id));
-    assert!(import_plan
-        .rows(ExportDomain::Models)
-        .iter()
-        .any(|row| row.id == model_id));
-    assert!(import_plan
-        .rows(ExportDomain::Usage)
-        .iter()
-        .any(|row| row.id == request_id));
-
-    let target_pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("target sqlite pool should connect");
-    run_sqlite_migrations(&target_pool)
-        .await
-        .expect("target sqlite migrations should run");
-    let imported = import_sqlite_jsonl(&target_pool, &encoded)
-        .await
-        .expect("sqlite import should load postgres exported rows");
-    assert_eq!(imported, import_plan_row_count(&import_plan));
-
-    let imported_api_key =
-        sqlx::query_as::<_, (String,)>("SELECT key_encrypted FROM api_keys WHERE id = $1")
-            .bind(&api_key_id)
-            .fetch_one(&target_pool)
-            .await
-            .expect("imported sqlite api key should load");
-    assert_eq!(imported_api_key.0, "ciphertext-1");
-    let imported_global_model_timestamps = sqlx::query_as::<_, (i64, i64, String, String)>(
-        "SELECT created_at, updated_at, typeof(created_at), typeof(updated_at) FROM global_models WHERE id = ?",
-    )
-    .bind(&global_model_id)
-    .fetch_one(&target_pool)
-    .await
-    .expect("imported sqlite global model timestamps should decode as integers");
-    assert_eq!(
-        imported_global_model_timestamps,
-        (1, 2, "integer".to_string(), "integer".to_string())
-    );
-    let imported_group_member = sqlx::query_as::<_, (String, String)>(
-        "SELECT group_id, user_id FROM user_group_members WHERE group_id = ? AND user_id = ?",
-    )
-    .bind(&group_id)
-    .bind(&user_id)
-    .fetch_one(&target_pool)
-    .await
-    .expect("imported sqlite user group member should load");
-    assert_eq!(imported_group_member.0, group_id);
-    assert_eq!(imported_group_member.1, user_id);
-}
-
-#[tokio::test]
-async fn mysql_core_export_reads_migrated_database_rows_when_url_is_set() {
-    let Some(database_url) = std::env::var("AETHER_TEST_MYSQL_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    else {
-        eprintln!("skipping mysql core export smoke test because AETHER_TEST_MYSQL_URL is unset");
-        return;
-    };
-
-    let pool = sqlx::mysql::MySqlPoolOptions::new()
-        .max_connections(1)
-        .connect(&database_url)
-        .await
-        .expect("mysql test pool should connect");
-    run_mysql_migrations(&pool)
-        .await
-        .expect("mysql migrations should run");
-
-    let suffix = unique_suffix();
-    let user_id = format!("export-user-{suffix}");
-    let api_key_id = format!("export-api-key-{suffix}");
-    let provider_id = format!("export-provider-{suffix}");
-    let provider_key_id = format!("export-provider-key-{suffix}");
-    let endpoint_id = format!("export-endpoint-{suffix}");
-    let global_model_id = format!("export-global-model-{suffix}");
-    let model_id = format!("export-model-{suffix}");
-    let config_id = format!("export-config-{suffix}");
-    let wallet_id = format!("export-wallet-{suffix}");
-    let request_id = format!("export-request-{suffix}");
-    let group_id = format!("export-group-{suffix}");
-
-    sqlx::query(
-            "INSERT INTO users (id, email, username, auth_source, created_at, updated_at) VALUES (?, ?, ?, 'local', 1, 2)",
-        )
-        .bind(&user_id)
-        .bind(format!("{user_id}@example.com"))
-        .bind(format!("owner-{suffix}"))
-        .execute(&pool)
-        .await
-        .expect("user should seed");
-    sqlx::query(
-            "INSERT INTO user_groups (id, name, normalized_name, priority, allowed_models, allowed_models_mode, created_at, updated_at) VALUES (?, ?, ?, 10, '[\"provider-model\"]', 'specific', 1, 2)",
-        )
-        .bind(&group_id)
-        .bind(format!("Export Group {suffix}"))
-        .bind(format!("export group {suffix}"))
-        .execute(&pool)
-        .await
-        .expect("user group should seed");
-    sqlx::query("INSERT INTO user_group_members (group_id, user_id, created_at) VALUES (?, ?, 1)")
-        .bind(&group_id)
-        .bind(&user_id)
-        .execute(&pool)
-        .await
-        .expect("user group member should seed");
-    sqlx::query(
-            "INSERT INTO api_keys (id, user_id, key_hash, key_encrypted, name, created_at, updated_at) VALUES (?, ?, ?, 'ciphertext-1', 'Default', 1, 2)",
-        )
-        .bind(&api_key_id)
-        .bind(&user_id)
-        .bind(format!("hash-{api_key_id}"))
-        .execute(&pool)
-        .await
-        .expect("api key should seed");
-    sqlx::query(
-            "INSERT INTO providers (id, name, provider_type, created_at, updated_at) VALUES (?, ?, 'openai', 1, 2)",
-        )
-        .bind(&provider_id)
-        .bind(format!("Provider {suffix}"))
-        .execute(&pool)
-        .await
-        .expect("provider should seed");
-    sqlx::query(
-            "INSERT INTO provider_api_keys (id, provider_id, name, encrypted_key, created_at, updated_at) VALUES (?, ?, 'Provider Key', 'ciphertext-provider', 1, 2)",
-        )
-        .bind(&provider_key_id)
-        .bind(&provider_id)
-        .execute(&pool)
-        .await
-        .expect("provider key should seed");
-    sqlx::query(
-            "INSERT INTO provider_endpoints (id, provider_id, name, base_url, created_at, updated_at) VALUES (?, ?, 'Primary', 'https://example.test', 1, 2)",
-        )
-        .bind(&endpoint_id)
-        .bind(&provider_id)
-        .execute(&pool)
-        .await
-        .expect("endpoint should seed");
-    sqlx::query("INSERT INTO global_models (id, name, created_at, updated_at) VALUES (?, ?, 1, 2)")
-        .bind(&global_model_id)
-        .bind(format!("global-model-{suffix}"))
-        .execute(&pool)
-        .await
-        .expect("global model should seed");
-    sqlx::query(
-            "INSERT INTO models (id, provider_id, global_model_id, provider_model_name, created_at, updated_at) VALUES (?, ?, ?, 'provider-model', 1, 2)",
-        )
-        .bind(&model_id)
-        .bind(&provider_id)
-        .bind(&global_model_id)
-        .execute(&pool)
-        .await
-        .expect("model should seed");
-    sqlx::query(
-            "INSERT INTO system_configs (id, `key`, value, created_at, updated_at) VALUES (?, ?, 'true', 1, 2)",
-        )
-        .bind(&config_id)
-        .bind(format!("export.config.{suffix}"))
-        .execute(&pool)
-        .await
-        .expect("system config should seed");
-    sqlx::query("INSERT INTO wallets (id, user_id, created_at, updated_at) VALUES (?, ?, 1, 2)")
-        .bind(&wallet_id)
-        .bind(&user_id)
-        .execute(&pool)
-        .await
-        .expect("wallet should seed");
-    sqlx::query(
-            "INSERT INTO `usage` (request_id, id, user_id, provider_name, model, status, billing_status, created_at_unix_ms, updated_at_unix_secs) VALUES (?, ?, ?, 'Provider One', 'provider-model', 'completed', 'settled', 1, 2)",
-        )
-        .bind(&request_id)
-        .bind(&request_id)
-        .bind(&user_id)
-        .execute(&pool)
-        .await
-        .expect("usage should seed");
-
-    let encoded = export_mysql_core_jsonl(&pool, 1_700_000_000)
-        .await
-        .expect("mysql export should encode");
-    let import_plan = build_import_plan(&encoded).expect("mysql export should decode");
-
-    assert_eq!(
-        import_plan.manifest.source_driver,
-        Some(DatabaseDriver::Mysql)
-    );
-    assert_eq!(import_plan.manifest.domains, mysql_core_export_domains());
-    assert!(import_plan
-        .rows(ExportDomain::Users)
-        .iter()
-        .any(|row| row.id == user_id));
-    assert!(import_plan
-        .rows(ExportDomain::UserGroups)
-        .iter()
-        .any(|row| row.id == group_id));
-    assert!(import_plan
-        .rows(ExportDomain::UserGroupMembers)
-        .iter()
-        .any(|row| row.id == format!("{group_id}:{user_id}")));
-    assert!(import_plan
-        .rows(ExportDomain::ApiKeys)
-        .iter()
-        .any(|row| row.id == api_key_id && row.payload["key_encrypted"] == "ciphertext-1"));
-    assert!(import_plan
-        .rows(ExportDomain::ProviderKeys)
-        .iter()
-        .any(|row| {
-            row.id == provider_key_id && row.payload["encrypted_key"] == "ciphertext-provider"
-        }));
-    assert!(import_plan
-        .rows(ExportDomain::Usage)
-        .iter()
-        .any(|row| row.id == request_id));
-
-    let selected_export = export_mysql_jsonl(
-        &pool,
-        vec![
-            ExportDomain::Users,
-            ExportDomain::UserGroups,
-            ExportDomain::UserGroupMembers,
-            ExportDomain::ApiKeys,
-            ExportDomain::ProviderKeys,
-            ExportDomain::Usage,
-        ],
-        1_700_000_001,
-    )
-    .await
-    .expect("selected mysql export should encode");
-    let imported = import_mysql_jsonl(&pool, &selected_export)
-        .await
-        .expect("mysql import should be idempotent");
-    assert!(imported >= 6);
-
-    let imported_api_key =
-        sqlx::query_as::<_, (String,)>("SELECT key_encrypted FROM api_keys WHERE id = ?")
-            .bind(&api_key_id)
-            .fetch_one(&pool)
-            .await
-            .expect("imported mysql api key should load");
-    assert_eq!(imported_api_key.0, "ciphertext-1");
+        let routing: String = sqlx::query_scalar("SELECT selected_provider_id FROM usage_routing_snapshots WHERE request_id = 'request-1'")
+            .fetch_one(&copied_pool).await.expect("routing snapshot should be retained");
+        assert_eq!(routing, "provider-1");
+        copied_pool.close().await;
+    }
+    pool.close().await;
+    std::fs::remove_dir_all(temp_dir).expect("temporary export directory should be removed");
 }
 
 fn unique_suffix() -> String {

@@ -1,6 +1,6 @@
 use aether_routing_core::{
     resolve_routing_policy_simplified, MutationPlan, RankingOverlay, ResolvedRoutingPolicy,
-    RoutingGroupConfig, RoutingPolicyInput, RoutingRulePhase, RoutingSchedulingMode,
+    RoutingAction, RoutingGroupConfig, RoutingPolicyInput, RoutingRulePhase, RoutingSchedulingMode,
     RoutingSetPriorityMode,
 };
 use http::StatusCode;
@@ -55,6 +55,38 @@ pub(crate) fn resolve_gateway_routing_policy(
             status: StatusCode::BAD_REQUEST,
             message: format!("invalid routing group config: {err}"),
         })?;
+    let legacy_actions = config.rules.iter().any(|rule| {
+        rule.actions.iter().any(|action| {
+            (rule.id.starts_with("ui_model_scheduling:")
+                && matches!(action, RoutingAction::SetScheduling { .. }))
+                || matches!(
+                    action,
+                    RoutingAction::RestrictModels { .. }
+                        | RoutingAction::SetKeyPriority { .. }
+                        | RoutingAction::SetScheduling {
+                            priority_mode: Some(RoutingSetPriorityMode::GlobalKey),
+                            ..
+                        }
+                        | RoutingAction::SetScheduling {
+                            scheduling_mode: Some(RoutingSchedulingMode::LoadBalance),
+                            ..
+                        }
+                )
+        })
+    });
+    if !config.allowed_models.is_empty()
+        || !config.model_policies.is_empty()
+        || config.default_policy.priority_mode == RoutingSetPriorityMode::GlobalKey
+        || config.default_policy.scheduling_mode == RoutingSchedulingMode::LoadBalance
+        || legacy_actions
+    {
+        tracing::debug!(
+            event_name = "routing_legacy_dimensions_ignored",
+            log_type = "event",
+            group_id = input.group_id,
+            "legacy routing dimensions normalized to the single-strategy policy"
+        );
+    }
     resolve_routing_policy_simplified(
         &config,
         RoutingPolicyInput {
@@ -131,7 +163,19 @@ fn static_default_policy_fields(
         default_policy.get("scheduling_mode"),
         RoutingSchedulingMode::default,
     )?;
-    Ok(Some((priority_mode, scheduling_mode)))
+    if priority_mode == RoutingSetPriorityMode::GlobalKey
+        || scheduling_mode == RoutingSchedulingMode::LoadBalance
+    {
+        tracing::debug!(
+            event_name = "routing_legacy_dimensions_ignored",
+            log_type = "event",
+            "legacy static routing modes normalized to provider ordering and supported scheduling"
+        );
+    }
+    Ok(Some((
+        RoutingSetPriorityMode::Provider,
+        scheduling_mode.for_simplified_policy(),
+    )))
 }
 
 fn routing_array_field_is_missing_or_empty(
@@ -174,7 +218,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn static_default_policy_matches_full_resolver_without_body_context() {
+    fn static_default_policy_matches_simplified_resolver_without_body_context() {
         let config = json!({
             "default_policy": {
                 "priority_mode": "global_key",
@@ -214,13 +258,31 @@ mod tests {
         .expect("full policy should resolve");
 
         assert_eq!(static_policy, full_policy);
+        let simplified_policy = resolve_routing_policy_simplified(
+            &serde_json::from_value(config.clone()).expect("config should parse"),
+            RoutingPolicyInput {
+                group_id: Some("group-1"),
+                group_version: Some(7),
+                selection_source: "system_default",
+                requested_model: "mock-model",
+                resolved_model: "mock-model",
+                api_format: "openai:chat",
+                user_id: Some("user-1"),
+                api_key_id: Some("key-1"),
+                headers: &json!({}),
+                body: &json!({}),
+                phase: RoutingRulePhase::ClientRequest,
+            },
+        )
+        .expect("simplified policy should resolve");
+        assert_eq!(static_policy, simplified_policy);
         assert_eq!(
             static_policy.priority_mode,
-            RoutingSetPriorityMode::GlobalKey
+            RoutingSetPriorityMode::Provider
         );
         assert_eq!(
             static_policy.scheduling_mode,
-            RoutingSchedulingMode::LoadBalance
+            RoutingSchedulingMode::CacheAffinity
         );
         assert!(static_policy.mutation_plan.is_empty());
         assert!(static_policy.matched_rules.is_empty());

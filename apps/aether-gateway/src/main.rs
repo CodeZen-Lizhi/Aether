@@ -57,14 +57,12 @@ impl From<VideoTaskTruthSourceArg> for VideoTaskTruthSourceMode {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum DeploymentTopologyArg {
     SingleNode,
-    MultiNode,
 }
 
 impl DeploymentTopologyArg {
     const fn as_str(self) -> &'static str {
         match self {
             Self::SingleNode => "single-node",
-            Self::MultiNode => "multi-node",
         }
     }
 }
@@ -72,8 +70,6 @@ impl DeploymentTopologyArg {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum DatabaseDriverArg {
     Sqlite,
-    Mysql,
-    Postgres,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -86,10 +82,6 @@ enum ExportDomainArg {
     Models,
     GlobalModels,
     AuthModules,
-    OAuthProviders,
-    UserOAuthLinks,
-    UserGroups,
-    UserGroupMembers,
     ProxyNodes,
     SystemConfigs,
     Wallets,
@@ -109,10 +101,6 @@ impl From<ExportDomainArg> for ExportDomain {
             ExportDomainArg::Models => ExportDomain::Models,
             ExportDomainArg::GlobalModels => ExportDomain::GlobalModels,
             ExportDomainArg::AuthModules => ExportDomain::AuthModules,
-            ExportDomainArg::OAuthProviders => ExportDomain::OAuthProviders,
-            ExportDomainArg::UserOAuthLinks => ExportDomain::UserOAuthLinks,
-            ExportDomainArg::UserGroups => ExportDomain::UserGroups,
-            ExportDomainArg::UserGroupMembers => ExportDomain::UserGroupMembers,
             ExportDomainArg::ProxyNodes => ExportDomain::ProxyNodes,
             ExportDomainArg::SystemConfigs => ExportDomain::SystemConfigs,
             ExportDomainArg::Wallets => ExportDomain::Wallets,
@@ -127,8 +115,6 @@ impl From<DatabaseDriverArg> for DatabaseDriver {
     fn from(value: DatabaseDriverArg) -> Self {
         match value {
             DatabaseDriverArg::Sqlite => DatabaseDriver::Sqlite,
-            DatabaseDriverArg::Mysql => DatabaseDriver::Mysql,
-            DatabaseDriverArg::Postgres => DatabaseDriver::Postgres,
         }
     }
 }
@@ -544,7 +530,7 @@ struct GatewayDataArgs {
     #[arg(long, env = "AETHER_DATABASE_URL")]
     database_url: Option<String>,
 
-    #[arg(long, env = "AETHER_GATEWAY_DATA_POSTGRES_URL")]
+    #[arg(long, hide = true, env = "AETHER_GATEWAY_DATA_POSTGRES_URL")]
     postgres_url: Option<String>,
 
     #[arg(long, env = "AETHER_GATEWAY_DATA_ENCRYPTION_KEY")]
@@ -600,12 +586,6 @@ impl GatewayDataArgs {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned);
-        let legacy_postgres_url = self
-            .postgres_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned);
         let generic_database_url = std::env::var("DATABASE_URL")
             .ok()
             .map(|value| value.trim().to_string())
@@ -614,23 +594,39 @@ impl GatewayDataArgs {
         resolve_database_url(
             self.effective_database_driver(),
             configured_url,
-            legacy_postgres_url,
             generic_database_url,
         )
     }
 
-    fn effective_sql_database_config(&self) -> Option<SqlDatabaseConfig> {
-        let url = self.effective_database_url()?;
+    fn effective_sql_database_config(&self) -> Result<Option<SqlDatabaseConfig>, std::io::Error> {
+        if self
+            .postgres_url
+            .as_deref()
+            .is_some_and(|url| !url.trim().is_empty())
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "AETHER_GATEWAY_DATA_POSTGRES_URL/--postgres-url is retired; configure SQLite with AETHER_DATABASE_DRIVER=sqlite and AETHER_DATABASE_URL",
+            ));
+        }
+        let Some(url) = self.effective_database_url() else {
+            return Ok(None);
+        };
         let driver = self
             .effective_database_driver()
             .or_else(|| DatabaseDriver::from_database_url(&url))
-            .unwrap_or(DatabaseDriver::Postgres);
-
-        Some(SqlDatabaseConfig {
-            driver,
-            url,
-            pool: self.effective_sql_pool_config(driver),
-        })
+            .unwrap_or(DatabaseDriver::Sqlite);
+        if driver != DatabaseDriver::Sqlite {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("database driver '{driver}' is not supported; use SQLite"),
+            ));
+        }
+        SqlDatabaseConfig::new(driver, url, self.effective_sql_pool_config(driver))
+            .map(Some)
+            .map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string())
+            })
     }
 
     fn effective_sql_pool_config(&self, driver: DatabaseDriver) -> SqlPoolConfig {
@@ -716,41 +712,32 @@ impl GatewayDataArgs {
         )
     }
 
-    fn to_config(&self) -> GatewayDataConfig {
-        let database = self.effective_sql_database_config();
+    fn to_config(&self) -> Result<GatewayDataConfig, std::io::Error> {
+        let database = self.effective_sql_database_config()?;
 
         let config = match database {
             Some(database) => GatewayDataConfig::from_database_config(database),
             None => GatewayDataConfig::disabled(),
         };
 
-        match self.effective_encryption_key() {
+        Ok(match self.effective_encryption_key() {
             Some(value) => {
                 warm_python_fernet_secret(&value);
                 config.with_encryption_key(value)
             }
             None => config,
-        }
+        })
     }
 }
 
 fn resolve_database_url(
     driver: Option<DatabaseDriver>,
     configured_url: Option<String>,
-    legacy_postgres_url: Option<String>,
     generic_database_url: Option<String>,
 ) -> Option<String> {
-    if configured_url.is_some() {
-        return configured_url;
-    }
-
-    match driver {
-        Some(DatabaseDriver::Sqlite) => {
-            generic_database_url.or_else(|| Some(DEFAULT_SQLITE_DATABASE_URL.to_string()))
-        }
-        Some(DatabaseDriver::Mysql) => generic_database_url,
-        Some(DatabaseDriver::Postgres) | None => legacy_postgres_url.or(generic_database_url),
-    }
+    configured_url.or(generic_database_url).or_else(|| {
+        (driver == Some(DatabaseDriver::Sqlite)).then(|| DEFAULT_SQLITE_DATABASE_URL.to_string())
+    })
 }
 
 #[derive(ClapArgs, Debug, Clone)]
@@ -1415,9 +1402,6 @@ impl Args {
                 return runtime_backend;
             }
         }
-        if matches!(self.deployment_topology, DeploymentTopologyArg::MultiNode) {
-            return RuntimeBackendArg::Redis;
-        }
         if database.is_some_and(|database| database.driver == DatabaseDriver::Sqlite) {
             return RuntimeBackendArg::Memory;
         }
@@ -1681,96 +1665,28 @@ async fn run_healthcheck(
 }
 
 fn validate_deployment_topology(
-    args: &Args,
+    _args: &Args,
     database: Option<&SqlDatabaseConfig>,
-    data_redis_url: Option<&str>,
+    runtime_redis_url: Option<&str>,
     runtime_backend: RuntimeBackendArg,
 ) -> Result<(), std::io::Error> {
-    if matches!(args.deployment_topology, DeploymentTopologyArg::SingleNode) {
-        if database.is_none() && data_redis_url.is_none() {
-            warn!(
-                "single-node deployment is starting without SQL database or Redis; local-only mode is allowed, but admin/auth/billing persistence will be limited"
-            );
-        }
-        if matches!(runtime_backend, RuntimeBackendArg::Redis) && data_redis_url.is_none() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "AETHER_RUNTIME_BACKEND=redis requires REDIS_URL or AETHER_GATEWAY_DATA_REDIS_URL",
-            ));
-        }
-        return Ok(());
-    }
-
-    if matches!(args.node_role, NodeRoleArg::All) {
+    if database.is_some_and(|database| database.driver != DatabaseDriver::Sqlite) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "AETHER_GATEWAY_NODE_ROLE=all is only valid for single-node deployment; use frontdoor or background when AETHER_GATEWAY_DEPLOYMENT_TOPOLOGY=multi-node",
+            "only SQLite is supported for single-node deployment",
         ));
     }
-
-    let mut missing = Vec::new();
-    if database.is_none() {
-        missing.push("AETHER_DATABASE_URL, DATABASE_URL, or AETHER_GATEWAY_DATA_POSTGRES_URL");
-    }
-    if data_redis_url.is_none() {
-        missing.push("REDIS_URL or AETHER_GATEWAY_DATA_REDIS_URL");
-    }
-
-    if !missing.is_empty() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!(
-                "multi-node deployment requires shared data backends; missing {}",
-                missing.join(", ")
-            ),
-        ));
-    }
-
-    if matches!(runtime_backend, RuntimeBackendArg::Memory) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "AETHER_RUNTIME_BACKEND=memory is only valid for single-node deployment",
-        ));
-    }
-
-    if database.is_some_and(|database| database.driver == DatabaseDriver::Sqlite) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "AETHER_DATABASE_DRIVER=sqlite is only valid for single-node deployment",
-        ));
-    }
-
-    if args
-        .video_task_store_path
-        .as_deref()
-        .map(str::trim)
-        .is_some_and(|value| !value.is_empty())
-    {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "AETHER_GATEWAY_VIDEO_TASK_STORE_PATH must be unset when AETHER_GATEWAY_DEPLOYMENT_TOPOLOGY=multi-node; use shared SQL-backed state instead",
-        ));
-    }
-
-    if env_var_trimmed("AETHER_GATEWAY_INSTANCE_ID").is_none() {
+    if database.is_none() && runtime_redis_url.is_none() {
         warn!(
-            "multi-node deployment started without AETHER_GATEWAY_INSTANCE_ID; this is acceptable for stateless frontdoor replicas, but tunnel owner routing should set an explicit per-node instance id"
+            "single-node deployment is starting without SQL database or Redis; local-only mode is allowed, but admin/auth/billing persistence will be limited"
         );
     }
-    if env_var_trimmed("AETHER_TUNNEL_RELAY_BASE_URL").is_none() {
-        warn!(
-            "multi-node deployment started without AETHER_TUNNEL_RELAY_BASE_URL; frontdoor replicas are fine, but proxy tunnel owner relay cannot forward across nodes until a per-node reachable base URL is configured"
-        );
+    if matches!(runtime_backend, RuntimeBackendArg::Redis) && runtime_redis_url.is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "AETHER_RUNTIME_BACKEND=redis requires AETHER_RUNTIME_REDIS_URL, REDIS_URL or AETHER_GATEWAY_DATA_REDIS_URL",
+        ));
     }
-    if !matches!(
-        args.video_task_truth_source_mode,
-        VideoTaskTruthSourceArg::RustAuthoritative
-    ) {
-        warn!(
-            "multi-node deployment is still using python-sync-report video task truth source; keep rust-authoritative as the long-term cluster baseline"
-        );
-    }
-
     Ok(())
 }
 
@@ -1803,7 +1719,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return run_healthcheck(app_port, args.healthcheck_timeout_ms).await;
     }
     init_service_runtime(args.runtime_config()?)?;
-    let sql_database_config = args.data.effective_sql_database_config();
+    let sql_database_config = args.data.effective_sql_database_config()?;
     let data_redis_url = args.data.effective_redis_url();
     let runtime_backend =
         args.effective_runtime_backend(sql_database_config.as_ref(), data_redis_url.as_deref());
@@ -1814,7 +1730,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         runtime_redis_url.as_deref(),
         runtime_backend,
     )?;
-    let data_config = args.data.to_config();
+    let data_config = args.data.to_config()?;
     let isolate_background_database = args.node_role.isolates_background_database();
     let background_database_config = if isolate_background_database {
         data_config.background_database_config()
@@ -1889,12 +1805,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err.to_string()))?,
     );
-    let rate_limit_config = if matches!(args.deployment_topology, DeploymentTopologyArg::MultiNode)
-    {
-        args.rate_limit.config().with_local_fallback(false)
-    } else {
-        args.rate_limit.config()
-    };
+    let rate_limit_config = args.rate_limit.config();
     if args.data.configured_encryption_key_mismatch() {
         warn!(
             "AETHER_GATEWAY_DATA_ENCRYPTION_KEY differs from ENCRYPTION_KEY; aether-gateway will prefer the gateway-specific value"
@@ -1988,13 +1899,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .as_ref()
             .map(|database| database.pool.max_connections)
             .unwrap_or_default(),
-        data_postgres_configured = sql_database_config
-            .as_ref()
-            .is_some_and(|database| database.driver == DatabaseDriver::Postgres),
         runtime_redis_configured = matches!(runtime_backend, RuntimeBackendArg::Redis),
         data_redis_url_supplied = data_redis_url.is_some(),
         data_has_encryption_key = data_config.encryption_key().is_some(),
-        data_postgres_require_ssl = args.data.postgres_require_ssl,
         "aether-gateway startup configuration"
     );
 
@@ -2061,18 +1968,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             })?;
         state = state.with_distributed_websocket_connection_gate(distributed_gate);
     }
-    if matches!(args.deployment_topology, DeploymentTopologyArg::MultiNode)
-        && !state.has_usage_data_writer()
-    {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "usage persistence requires a configured shared SQL data backend; set AETHER_DATABASE_DRIVER and AETHER_DATABASE_URL before starting aether-gateway",
-        )
-        .into());
-    }
-    if matches!(args.deployment_topology, DeploymentTopologyArg::SingleNode)
-        && !state.has_usage_data_writer()
-    {
+    if !state.has_usage_data_writer() {
         warn!(
             "usage persistence backend is not configured; single-node local-only mode will run without durable usage records"
         );
@@ -2189,10 +2085,10 @@ async fn run_data_command(command: &DataCommand) -> Result<(), Box<dyn std::erro
 fn required_sql_database_config(
     data: &GatewayDataArgs,
 ) -> Result<SqlDatabaseConfig, Box<dyn std::error::Error>> {
-    data.effective_sql_database_config().ok_or_else(|| {
+    data.effective_sql_database_config()?.ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "AETHER_DATABASE_DRIVER/AETHER_DATABASE_URL, AETHER_GATEWAY_DATA_POSTGRES_URL, or DATABASE_URL is required",
+            "SQLite configuration via AETHER_DATABASE_DRIVER/AETHER_DATABASE_URL or DATABASE_URL is required",
         )
         .into()
     })
@@ -2312,10 +2208,10 @@ async fn run_data_copy(args: &DataCopyArgs) -> Result<(), Box<dyn std::error::Er
 }
 
 async fn run_explicit_migrations(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    if args.data.effective_sql_database_config().is_none() {
+    if args.data.effective_sql_database_config()?.is_none() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "AETHER_DATABASE_DRIVER/AETHER_DATABASE_URL, AETHER_GATEWAY_DATA_POSTGRES_URL, or DATABASE_URL is required when running --migrate",
+            "SQLite configuration via AETHER_DATABASE_DRIVER/AETHER_DATABASE_URL or DATABASE_URL is required when running --migrate",
         )
         .into());
     }
@@ -2326,7 +2222,7 @@ async fn run_explicit_migrations(args: &Args) -> Result<(), Box<dyn std::error::
         );
     }
 
-    let state = AppState::new()?.with_data_config(args.data.to_config())?;
+    let state = AppState::new()?.with_data_config(args.data.to_config()?)?;
     let pending = state
         .pending_database_migrations()
         .await?
@@ -2356,13 +2252,13 @@ async fn run_explicit_migrations(args: &Args) -> Result<(), Box<dyn std::error::
 }
 
 async fn run_explicit_backfills(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    let database = args.data.effective_sql_database_config().ok_or_else(|| {
+    let database = args.data.effective_sql_database_config()?.ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "AETHER_DATABASE_DRIVER/AETHER_DATABASE_URL, AETHER_GATEWAY_DATA_POSTGRES_URL, or DATABASE_URL is required when running --apply-backfills",
+            "SQLite configuration via AETHER_DATABASE_DRIVER/AETHER_DATABASE_URL or DATABASE_URL is required when running --apply-backfills",
         )
     })?;
-    let state = AppState::new()?.with_data_config(args.data.to_config())?;
+    let state = AppState::new()?.with_data_config(args.data.to_config()?)?;
     ensure_database_schema_is_current(&state).await?;
 
     let pending = state
@@ -2529,7 +2425,7 @@ fn pending_backfills_error(
 mod tests {
     use super::{
         automatic_gateway_request_concurrency_for_capacity,
-        automatic_gateway_request_concurrency_for_parallelism, automatic_sql_pool_config,
+        automatic_gateway_request_concurrency_for_parallelism,
         automatic_sql_pool_config_for_parallelism, automatic_usage_queue_workers_for_parallelism,
         ensure_database_backfills_are_current, ensure_database_schema_is_current,
         pending_backfills_error, pending_schema_error, resolve_healthcheck_url,
@@ -2809,6 +2705,7 @@ mod tests {
         let database = args
             .data
             .effective_sql_database_config()
+            .expect("database configuration should be valid")
             .expect("sqlite database config should build");
 
         assert_eq!(database.driver, DatabaseDriver::Sqlite);
@@ -2817,15 +2714,18 @@ mod tests {
     }
 
     #[test]
-    fn explicit_mysql_driver_accepts_generic_database_url() {
-        let url = super::resolve_database_url(
-            Some(DatabaseDriver::Mysql),
-            None,
-            Some("postgres://legacy/aether".to_string()),
-            Some("mysql://root:root@localhost/aether".to_string()),
-        );
-
-        assert_eq!(url.as_deref(), Some("mysql://root:root@localhost/aether"));
+    fn unsupported_database_urls_are_rejected_before_connecting() {
+        for url in ["mysql://localhost/aether", "postgres://localhost/aether"] {
+            let mut args = test_args();
+            args.data.database_url = Some(url.to_string());
+            let error = args
+                .data
+                .effective_sql_database_config()
+                .expect_err("unsupported URL must not create runtime configuration");
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+            assert!(error.to_string().contains("not supported"));
+            assert!(super::required_sql_database_config(&args.data).is_err());
+        }
     }
 
     #[test]
@@ -2833,7 +2733,6 @@ mod tests {
         let url = super::resolve_database_url(
             Some(DatabaseDriver::Sqlite),
             None,
-            Some("postgres://legacy/aether".to_string()),
             Some("sqlite:///opt/aether/data/aether.db".to_string()),
         );
 
@@ -2841,32 +2740,33 @@ mod tests {
     }
 
     #[test]
-    fn postgres_legacy_url_keeps_precedence_over_generic_database_url() {
-        let url = super::resolve_database_url(
-            Some(DatabaseDriver::Postgres),
-            None,
-            Some("postgres://legacy/aether".to_string()),
-            Some("postgres://generic/aether".to_string()),
-        );
-
-        assert_eq!(url.as_deref(), Some("postgres://legacy/aether"));
+    fn legacy_postgres_url_is_rejected_instead_of_switching_databases() {
+        let mut args = test_args();
+        args.data.database_driver = Some(DatabaseDriverArg::Sqlite);
+        args.data.postgres_url = Some("postgres://legacy/aether".to_string());
+        let error = args
+            .data
+            .effective_sql_database_config()
+            .expect_err("retired URL must not silently select a new database");
+        assert!(error.to_string().contains("retired"));
     }
 
     #[test]
-    fn gateway_data_pool_auto_sizes_server_databases_from_runtime_cpu() {
+    fn sqlite_driver_rejects_server_database_url_mismatches() {
         let mut args = test_args();
-        args.data.database_driver = Some(DatabaseDriverArg::Postgres);
-        args.data.database_url = Some("postgres://postgres:postgres@localhost/aether".to_string());
-
-        let database = args
+        args.data.database_driver = Some(DatabaseDriverArg::Sqlite);
+        args.data.database_url = Some("postgres://localhost/aether".to_string());
+        let error = args
             .data
             .effective_sql_database_config()
-            .expect("postgres database config should build");
-        let auto = automatic_sql_pool_config(DatabaseDriver::Postgres);
-
-        assert_eq!(database.driver, DatabaseDriver::Postgres);
-        assert_eq!(database.pool.min_connections, auto.min_connections);
-        assert_eq!(database.pool.max_connections, auto.max_connections);
+            .expect_err("SQLite must not accept a PostgreSQL URL");
+        assert!(error.to_string().contains("does not match"));
+        assert!(super::copy_database_config(
+            DatabaseDriverArg::Sqlite,
+            "mysql://localhost/aether",
+            "source"
+        )
+        .is_err());
     }
 
     #[test]
@@ -3211,6 +3111,7 @@ mod tests {
         let database = args
             .data
             .effective_sql_database_config()
+            .expect("database configuration should be valid")
             .expect("sqlite database config should build");
 
         assert_eq!(database.pool.min_connections, 2);
@@ -3219,32 +3120,34 @@ mod tests {
     }
 
     #[test]
-    fn gateway_data_pool_partial_max_override_clamps_auto_minimum() {
+    fn gateway_data_pool_partial_max_override_keeps_sqlite_minimum() {
         let mut args = test_args();
-        args.data.database_driver = Some(DatabaseDriverArg::Postgres);
-        args.data.database_url = Some("postgres://postgres:postgres@localhost/aether".to_string());
+        args.data.database_driver = Some(DatabaseDriverArg::Sqlite);
+        args.data.database_url = Some("sqlite://./data/aether.db".to_string());
         args.data.postgres_max_connections = Some(2);
 
         let database = args
             .data
             .effective_sql_database_config()
-            .expect("postgres database config should build");
+            .expect("database configuration should be valid")
+            .expect("sqlite database config should build");
 
-        assert_eq!(database.pool.min_connections, 2);
+        assert_eq!(database.pool.min_connections, 1);
         assert_eq!(database.pool.max_connections, 2);
     }
 
     #[test]
     fn gateway_data_pool_partial_min_override_raises_auto_maximum() {
         let mut args = test_args();
-        args.data.database_driver = Some(DatabaseDriverArg::Postgres);
-        args.data.database_url = Some("postgres://postgres:postgres@localhost/aether".to_string());
+        args.data.database_driver = Some(DatabaseDriverArg::Sqlite);
+        args.data.database_url = Some("sqlite://./data/aether.db".to_string());
         args.data.postgres_min_connections = Some(128);
 
         let database = args
             .data
             .effective_sql_database_config()
-            .expect("postgres database config should build");
+            .expect("database configuration should be valid")
+            .expect("sqlite database config should build");
 
         assert_eq!(database.pool.min_connections, 128);
         assert_eq!(database.pool.max_connections, 128);
@@ -3273,7 +3176,7 @@ mod tests {
         args.data.database_url = Some("sqlite://./data/aether.db".to_string());
         args.data.redis_url = Some("redis://127.0.0.1/0".to_string());
 
-        let config = args.data.to_config();
+        let config = args.data.to_config().expect("data config should build");
 
         assert_eq!(
             config
@@ -3287,8 +3190,8 @@ mod tests {
     #[test]
     fn redis_runtime_config_owns_redis_connection() {
         let mut args = test_args();
-        args.data.database_driver = Some(DatabaseDriverArg::Postgres);
-        args.data.database_url = Some("postgres://postgres:postgres@localhost/aether".to_string());
+        args.data.database_driver = Some(DatabaseDriverArg::Sqlite);
+        args.data.database_url = Some("sqlite://./data/aether.db".to_string());
         args.data.redis_url = Some("redis://127.0.0.1/0".to_string());
 
         let config = args.runtime_state_config(
@@ -3384,89 +3287,78 @@ mod tests {
     }
 
     #[test]
-    fn multi_node_accepts_mysql_database_backend() {
-        let mut args = test_args();
-        args.deployment_topology = DeploymentTopologyArg::MultiNode;
-        args.node_role = NodeRoleArg::Frontdoor;
-        args.video_task_store_path = None;
-        let database = test_database(DatabaseDriver::Mysql, 8);
-
-        super::validate_deployment_topology(
-            &args,
-            Some(&database),
-            Some("redis://127.0.0.1/0"),
-            RuntimeBackendArg::Redis,
-        )
-        .expect("multi-node mysql with shared redis should be accepted");
+    fn single_node_rejects_retired_database_backends() {
+        let args = test_args();
+        for driver in [DatabaseDriver::Mysql, DatabaseDriver::Postgres] {
+            let database = test_database(driver, 8);
+            let error = super::validate_deployment_topology(
+                &args,
+                Some(&database),
+                Some("redis://127.0.0.1/0"),
+                RuntimeBackendArg::Redis,
+            )
+            .expect_err("retired SQL drivers are unsupported in every topology");
+            assert!(error.to_string().contains("only SQLite"));
+        }
     }
 
     #[test]
-    fn multi_node_rejects_memory_runtime_backend() {
-        let mut args = test_args();
-        args.deployment_topology = DeploymentTopologyArg::MultiNode;
-        args.node_role = NodeRoleArg::Frontdoor;
-        let database = SqlDatabaseConfig::new(
-            DatabaseDriver::Postgres,
-            "postgres://postgres:postgres@localhost/aether".to_string(),
-            SqlPoolConfig::default(),
-        )
-        .expect("postgres config should build");
-
-        let error = super::validate_deployment_topology(
-            &args,
-            Some(&database),
-            Some("redis://127.0.0.1/0"),
-            RuntimeBackendArg::Memory,
-        )
-        .expect_err("multi-node memory runtime should be rejected");
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
-        assert!(error.to_string().contains("AETHER_RUNTIME_BACKEND=memory"));
+    fn cli_rejects_multi_node_topology() {
+        use clap::Parser;
+        let error = Args::try_parse_from(["aether-gateway", "--deployment-topology", "multi-node"])
+            .expect_err("multi-node must not be advertised as an available topology");
+        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+        assert!(error.to_string().contains("single-node"));
     }
 
     #[test]
-    fn multi_node_rejects_missing_redis_runtime_backend() {
-        let mut args = test_args();
-        args.deployment_topology = DeploymentTopologyArg::MultiNode;
-        args.node_role = NodeRoleArg::Frontdoor;
-        let database = SqlDatabaseConfig::new(
-            DatabaseDriver::Postgres,
-            "postgres://postgres:postgres@localhost/aether".to_string(),
-            SqlPoolConfig::default(),
-        )
-        .expect("postgres config should build");
-
+    fn single_node_rejects_redis_runtime_without_url() {
+        let args = test_args();
+        let database = test_database(DatabaseDriver::Sqlite, 1);
         let error = super::validate_deployment_topology(
             &args,
             Some(&database),
             None,
             RuntimeBackendArg::Redis,
         )
-        .expect_err("multi-node should require redis");
+        .expect_err("explicit Redis requires its URL");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
-        assert!(error.to_string().contains("REDIS_URL"));
+        assert!(error.to_string().contains("AETHER_RUNTIME_REDIS_URL"));
     }
 
     #[test]
-    fn multi_node_rejects_sqlite_database_backend() {
-        let mut args = test_args();
-        args.deployment_topology = DeploymentTopologyArg::MultiNode;
-        args.node_role = NodeRoleArg::Frontdoor;
-        let database = SqlDatabaseConfig::new(
-            DatabaseDriver::Sqlite,
-            "sqlite://./data/aether.db".to_string(),
-            SqlPoolConfig::default(),
-        )
-        .expect("sqlite config should build");
-
-        let error = super::validate_deployment_topology(
-            &args,
-            Some(&database),
-            Some("redis://127.0.0.1/0"),
-            RuntimeBackendArg::Redis,
-        )
-        .expect_err("multi-node sqlite should be rejected");
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
-        assert!(error.to_string().contains("AETHER_DATABASE_DRIVER=sqlite"));
+    fn cli_rejects_retired_driver_and_export_domain_options() {
+        use clap::Parser;
+        for driver in ["postgres", "mysql"] {
+            let error = Args::try_parse_from(["aether-gateway", "--database-driver", driver])
+                .expect_err("CLI must reject unsupported drivers");
+            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+            assert!(error.to_string().contains("sqlite"));
+            let error = Args::try_parse_from([
+                "aether-gateway",
+                "copy",
+                "--source-driver",
+                driver,
+                "--source-url",
+                "unused",
+                "--target-driver",
+                "sqlite",
+                "--target-url",
+                "sqlite::memory:",
+            ])
+            .expect_err("copy must reject unsupported source drivers");
+            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+        }
+        let error = Args::try_parse_from([
+            "aether-gateway",
+            "export",
+            "--output",
+            "unused.jsonl",
+            "--domains",
+            "user-groups",
+        ])
+        .expect_err("retired export domains must be rejected");
+        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
     }
 
     #[test]

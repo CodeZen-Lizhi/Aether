@@ -1,18 +1,18 @@
 //! Runtime database migration entry points.
 //!
-//! Each driver owns its migrator and startup preparation. The facade keeps
+//! The SQLite adapter owns its migrator and startup preparation. The facade keeps
 //! the established public entry points used by gateway bootstrap code.
 
 #[cfg(feature = "sqlite")]
 mod sqlite;
 mod types;
 
-#[cfg(all(test, feature = "postgres", feature = "mysql", feature = "sqlite"))]
+#[cfg(all(test, feature = "sqlite"))]
 mod tests;
 
 pub use types::PendingMigrationInfo;
 
-#[cfg(any(feature = "mysql", feature = "sqlite"))]
+#[cfg(feature = "sqlite")]
 use sqlx::migrate::MigrateError;
 
 #[cfg(feature = "sqlite")]

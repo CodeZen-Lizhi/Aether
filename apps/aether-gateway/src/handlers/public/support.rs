@@ -36,9 +36,9 @@ mod support_user_me;
 pub(crate) use self::support_models::filter_eligible_model_rows;
 pub(crate) use self::support_models::matches_model_mapping_for_models;
 
+pub(crate) use self::support_auth::auth_session::build_auth_wallet_summary_payload;
 use self::support_auth::auth_session::{
-    build_auth_wallet_summary_payload, handle_auth_me, resolve_authenticated_local_user,
-    AuthenticatedLocalUserContext,
+    handle_auth_me, resolve_authenticated_local_user, AuthenticatedLocalUserContext,
 };
 use self::support_auth::{
     build_auth_error_response, build_auth_json_response, build_auth_settings_payload,

@@ -111,6 +111,31 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
+    pub(crate) async fn find_auth_user_wallet(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<aether_data::repository::wallet::StoredWalletSnapshot>, GatewayError> {
+        #[cfg(test)]
+        if let Some(store) = self.auth_wallet_store.as_ref() {
+            if let Some(wallet) = store
+                .lock()
+                .expect("auth wallet store should lock")
+                .values()
+                .find(|wallet| wallet.user_id.as_deref() == Some(user_id))
+                .cloned()
+            {
+                return Ok(Some(wallet));
+            }
+        }
+
+        self.data
+            .find_wallet(aether_data::repository::wallet::WalletLookupKey::UserId(
+                user_id,
+            ))
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
     pub(crate) async fn initialize_auth_user_wallet(
         &self,
         user_id: &str,

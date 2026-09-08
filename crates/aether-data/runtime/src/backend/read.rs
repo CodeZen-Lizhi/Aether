@@ -82,11 +82,8 @@ impl fmt::Debug for DataReadRepositories {
 }
 
 impl DataReadRepositories {
-    pub(crate) fn from_backends(
-        #[cfg(feature = "postgres")] postgres: Option<&PostgresBackend>,
-        #[cfg(feature = "mysql")] mysql: Option<&MysqlBackend>,
-        #[cfg(feature = "sqlite")] sqlite: Option<&SqliteBackend>,
-    ) -> Self {
+    pub(crate) fn from_backends(#[cfg(feature = "sqlite")] sqlite: Option<&SqliteBackend>) -> Self {
+        #[cfg_attr(not(feature = "sqlite"), allow(unused_mut))]
         let mut repositories = Self::default();
         #[cfg(feature = "sqlite")]
         if let Some(sqlite) = sqlite {
@@ -268,27 +265,21 @@ impl DataReadRepositories {
     }
 }
 
-#[cfg(all(test, feature = "postgres"))]
+#[cfg(all(test, feature = "sqlite"))]
 mod tests {
     use super::DataReadRepositories;
-    use crate::backend::PostgresBackend;
-    use crate::driver::postgres::PostgresPoolConfig;
+    use crate::{DatabaseDriver, SqlDatabaseConfig, SqlPoolConfig, SqliteBackend};
 
     #[tokio::test]
-    async fn builds_read_repositories_from_postgres_backend() {
-        let backend = PostgresBackend::from_config(PostgresPoolConfig {
-            database_url: "postgres://localhost/aether".to_string(),
-            min_connections: 1,
-            max_connections: 4,
-            acquire_timeout_ms: 1_000,
-            idle_timeout_ms: 5_000,
-            max_lifetime_ms: 30_000,
-            statement_cache_capacity: 64,
-            require_ssl: false,
+    async fn builds_read_repositories_from_sqlite_backend() {
+        let backend = SqliteBackend::from_config(SqlDatabaseConfig {
+            driver: DatabaseDriver::Sqlite,
+            url: "sqlite::memory:".to_string(),
+            pool: SqlPoolConfig::default(),
         })
-        .expect("postgres backend should build");
+        .expect("sqlite backend should build");
 
-        let read = DataReadRepositories::from_postgres(Some(&backend));
+        let read = DataReadRepositories::from_backends(Some(&backend));
 
         assert!(read.has_any());
         assert!(read.announcements().is_some());

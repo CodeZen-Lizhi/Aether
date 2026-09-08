@@ -116,7 +116,7 @@ fn checked_sql_identifier(value: &str) -> Result<&str, DataLayerError> {
     }
 }
 
-#[cfg(any(feature = "mysql", feature = "sqlite"))]
+#[cfg(feature = "sqlite")]
 fn current_unix_secs() -> u64 {
     chrono::Utc::now().timestamp().max(0) as u64
 }
@@ -168,14 +168,14 @@ fn should_skip_imported_aggregate(
     }
 }
 
-#[cfg(any(feature = "mysql", feature = "sqlite"))]
+#[cfg(feature = "sqlite")]
 fn serialize_json_value(value: &serde_json::Value) -> Result<String, DataLayerError> {
     serde_json::to_string(value).map_err(|err| {
         DataLayerError::UnexpectedValue(format!("invalid system config JSON value: {err}"))
     })
 }
 
-#[cfg(any(feature = "mysql", feature = "sqlite"))]
+#[cfg(feature = "sqlite")]
 fn parse_json_value(value: String) -> Result<serde_json::Value, DataLayerError> {
     serde_json::from_str(&value).map_err(|err| {
         DataLayerError::UnexpectedValue(format!("invalid system config JSON value: {err}"))

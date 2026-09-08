@@ -2,6 +2,8 @@
 
 > **Scope**: `frontend/` — Vue 3 + Pinia + Tailwind 管理界面。后端 Rust 包的规范见各 `aether-*/` 目录。
 
+调度策略页的读写边界见 [Simplified Routing](../aether-routing-core/backend/simplified-routing.md)：保存须传入原分组配置，保留未退役规则的条件、阶段和执行语义；Key 优先级读取实体字段。
+
 ---
 
 ## Convention: i18n 文案机制（中文源文案 + 映射字典）

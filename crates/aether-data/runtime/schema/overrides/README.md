@@ -6,7 +6,7 @@ represented by `schema/logical/*.toml` yet.
 It is not a normal schema source tree. Leave it with this README only until a
 real override exists.
 
-Use overrides for:
+Use overrides for dialect-specific audit artifacts such as:
 
 - Postgres-only indexes such as GIN/GiST expression indexes
 - views
@@ -19,4 +19,6 @@ schema generator can express them.
 
 Do not add `.gitkeep` placeholder directories. When an override is introduced,
 create only the directory and SQL file that are actually needed, then add that
-file to the relevant source manifest so `compose_schema.sh check` covers it.
+file to the relevant source manifest and its explicit verification path.
+`compose_schema.sh check` covers the executable SQLite baseline and generated
+audit output; it does not enable PostgreSQL/MySQL runtime adapters.

@@ -1,9 +1,9 @@
 //! Backend composition layer.
 //!
-//! `DataBackends` chooses the configured SQL driver, builds low-level pools,
+//! `DataBackends` validates the SQLite configuration, builds low-level pools,
 //! instantiates concrete repositories, and exposes app-facing read/write,
 //! lease, transaction, and maintenance handles. Request-path repository SQL
-//! belongs in the selected `aether-data-*` adapter; backend-owned maintenance
+//! belongs in `aether-data-sqlite`; backend-owned maintenance
 //! SQL lives in focused modules such as `stats`, `wallet`, and `system`.
 
 mod leases;
@@ -11,14 +11,18 @@ mod maintenance;
 mod read;
 #[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "sqlite")]
 mod stats;
-#[cfg(any(feature = "mysql", feature = "sqlite"))]
+#[cfg(feature = "sqlite")]
 mod stats_common;
+#[cfg(feature = "sqlite")]
 mod system;
 mod transactions;
+#[cfg(feature = "sqlite")]
 mod wallet;
 mod write;
 
+#[cfg(feature = "sqlite")]
 use crate::maintenance::DatabasePoolSummary;
 pub use leases::DataLeaseBackends;
 pub use read::DataReadRepositories;
@@ -30,23 +34,9 @@ pub use write::DataWriteRepositories;
 use crate::database::DatabaseDriver;
 use crate::{DataLayerConfig, DataLayerError};
 
-#[derive(Clone, Copy)]
-enum SqlBackendRef<'a> {
-    #[cfg(feature = "postgres")]
-    Postgres(&'a PostgresBackend),
-    #[cfg(feature = "mysql")]
-    Mysql(&'a MysqlBackend),
-    #[cfg(feature = "sqlite")]
-    Sqlite(&'a SqliteBackend),
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct DataBackends {
     config: DataLayerConfig,
-    #[cfg(feature = "postgres")]
-    postgres: Option<PostgresBackend>,
-    #[cfg(feature = "mysql")]
-    mysql: Option<MysqlBackend>,
     #[cfg(feature = "sqlite")]
     sqlite: Option<SqliteBackend>,
     leases: DataLeaseBackends,
@@ -55,6 +45,7 @@ pub struct DataBackends {
     write: DataWriteRepositories,
 }
 
+#[cfg(feature = "sqlite")]
 fn summarize_pool(
     driver: DatabaseDriver,
     pool_size: usize,
@@ -77,17 +68,11 @@ fn summarize_pool(
 
 fn ensure_driver_enabled(driver: DatabaseDriver) -> Result<(), DataLayerError> {
     match driver {
-        #[cfg(feature = "postgres")]
-        DatabaseDriver::Postgres => Ok(()),
-        #[cfg(not(feature = "postgres"))]
         DatabaseDriver::Postgres => Err(DataLayerError::InvalidInput(
-            "PostgreSQL driver is not enabled for this aether-data build".to_string(),
+            "PostgreSQL is not supported by the SQLite-only aether-data runtime".to_string(),
         )),
-        #[cfg(feature = "mysql")]
-        DatabaseDriver::Mysql => Ok(()),
-        #[cfg(not(feature = "mysql"))]
         DatabaseDriver::Mysql => Err(DataLayerError::InvalidInput(
-            "MySQL driver is not enabled for this aether-data build".to_string(),
+            "MySQL is not supported by the SQLite-only aether-data runtime".to_string(),
         )),
         #[cfg(feature = "sqlite")]
         DatabaseDriver::Sqlite => Ok(()),
@@ -99,14 +84,6 @@ fn ensure_driver_enabled(driver: DatabaseDriver) -> Result<(), DataLayerError> {
 }
 
 impl DataBackends {
-    fn sql_backend(&self) -> Option<SqlBackendRef<'_>> {
-        #[cfg(feature = "sqlite")]
-        if let Some(sqlite) = self.sqlite.as_ref() {
-            return Some(SqlBackendRef::Sqlite(sqlite));
-        }
-        None
-    }
-
     pub fn from_config(config: DataLayerConfig) -> Result<Self, DataLayerError> {
         config.validate()?;
 
@@ -188,15 +165,23 @@ mod tests {
     use crate::{DataLayerConfig, DatabaseDriver, SqlDatabaseConfig, SqlPoolConfig};
 
     #[test]
-    #[cfg(not(feature = "mysql"))]
-    fn rejects_mysql_when_driver_is_not_enabled() {
-        let error = DataBackends::from_config(DataLayerConfig::from_database(SqlDatabaseConfig {
-            driver: DatabaseDriver::Mysql,
-            url: "mysql://user:pass@localhost/aether".to_string(),
-            pool: SqlPoolConfig::default(),
-        }))
-        .expect_err("disabled mysql should fail explicitly");
-        assert!(error.to_string().contains("MySQL driver is not enabled"));
+    fn rejects_unsupported_sql_drivers() {
+        for (driver, url) in [
+            (DatabaseDriver::Mysql, "mysql://user:pass@localhost/aether"),
+            (
+                DatabaseDriver::Postgres,
+                "postgres://user:pass@localhost/aether",
+            ),
+        ] {
+            let error =
+                DataBackends::from_config(DataLayerConfig::from_database(SqlDatabaseConfig {
+                    driver,
+                    url: url.to_string(),
+                    pool: SqlPoolConfig::default(),
+                }))
+                .expect_err("unsupported SQL drivers should fail explicitly");
+            assert!(error.to_string().contains("SQLite-only"));
+        }
     }
 
     #[test]

@@ -60,6 +60,12 @@ pub struct ResolvedRoutingPolicy {
     pub matched_rules: Vec<MatchedRoutingRule>,
 }
 
+#[derive(Clone, Copy)]
+enum RoutingPolicyScope {
+    Complete,
+    Simplified,
+}
+
 pub fn resolve_routing_policy(
     config: &RoutingGroupConfig,
     input: RoutingPolicyInput<'_>,
@@ -93,18 +99,15 @@ pub fn resolve_routing_policy(
         apply_model_policy(&mut policy, model_policy);
     }
 
-    resolve_routing_rules_and_actions(&mut policy, config, input)?;
+    resolve_routing_rules_and_actions(&mut policy, config, input, RoutingPolicyScope::Complete)?;
     Ok(policy)
 }
 
 /// R11: simplified policy resolution for the single-strategy configuration
-/// surface. Per-model policies (区分模型) and the model allowlist gate
-/// (RestrictModels) are configuration dimensions the slim product no longer
-/// exposes; this entry keeps resolving legacy configs that still carry them
-/// by ignoring those dimensions instead of erroring — the group's unified
-/// default policy wins. Rules/actions still apply (headers/body patches,
-/// provider priority, scheduling mode) because those are the surviving
-/// configuration surface.
+/// surface. Model policies, model restrictions, global-key ordering and key
+/// priority overlays are retired here. Provider priority and the key entity's
+/// priority remain authoritative; other rules retain their conditions, phase
+/// and stop-processing behavior. The complete resolver keeps its legacy API.
 pub fn resolve_routing_policy_simplified(
     config: &RoutingGroupConfig,
     input: RoutingPolicyInput<'_>,
@@ -112,25 +115,23 @@ pub fn resolve_routing_policy_simplified(
     validate_routing_group_config(config)
         .map_err(|error| RoutingPolicyError::InvalidConfig(error.to_string()))?;
 
-    // Deliberately silent (no tracing dependency in this crate): legacy
-    // configs carrying model_policies/allowed_models resolve to the unified
-    // default policy here; the gateway's routing trace already records the
-    // resolved policy fields, which is the observable signal for operators.
-
     let mut policy = ResolvedRoutingPolicy {
         group_id: input.group_id.map(str::to_string),
         group_version: input.group_version,
         selection_source: input.selection_source.to_string(),
         requested_model: input.requested_model.to_string(),
         resolved_model: input.resolved_model.to_string(),
-        priority_mode: config.default_policy.priority_mode,
-        scheduling_mode: config.default_policy.scheduling_mode,
+        priority_mode: RoutingSetPriorityMode::Provider,
+        scheduling_mode: config
+            .default_policy
+            .scheduling_mode
+            .for_simplified_policy(),
         ranking_overlay: RankingOverlay::default(),
         mutation_plan: MutationPlan::default(),
         matched_rules: Vec::new(),
     };
 
-    resolve_routing_rules_and_actions(&mut policy, config, input)?;
+    resolve_routing_rules_and_actions(&mut policy, config, input, RoutingPolicyScope::Simplified)?;
     Ok(policy)
 }
 
@@ -138,6 +139,7 @@ fn resolve_routing_rules_and_actions(
     policy: &mut ResolvedRoutingPolicy,
     config: &RoutingGroupConfig,
     input: RoutingPolicyInput<'_>,
+    scope: RoutingPolicyScope,
 ) -> Result<(), RoutingPolicyError> {
     let condition_context = RoutingConditionContext {
         model: input.requested_model,
@@ -163,7 +165,18 @@ fn resolve_routing_rules_and_actions(
             continue;
         }
         for action in &rule.actions {
-            apply_action(policy, action, input.requested_model, input.resolved_model)?;
+            match scope {
+                RoutingPolicyScope::Complete => {
+                    apply_action(policy, action, input.requested_model, input.resolved_model)?;
+                }
+                RoutingPolicyScope::Simplified => apply_simplified_action(
+                    policy,
+                    action,
+                    &rule.id,
+                    input.requested_model,
+                    input.resolved_model,
+                )?,
+            }
         }
         policy.matched_rules.push(MatchedRoutingRule {
             id: rule.id.clone(),
@@ -240,12 +253,6 @@ fn apply_action(
                 .insert(provider_id.clone(), *priority);
         }
         RoutingAction::SetKeyPriority { key_id, priority } => {
-            // R11-4: key-level priority overrides are no longer part of the
-            // exposed configuration surface (key priority lives on the key
-            // entity). Legacy configs carrying this action still parse; the
-            // override is applied but the simplified UI never emits it — the
-            // action stays functional so old rule sets do not silently change
-            // behavior.
             policy
                 .ranking_overlay
                 .key_priority_overrides
@@ -263,6 +270,32 @@ fn apply_action(
         }
     }
     Ok(())
+}
+
+fn apply_simplified_action(
+    policy: &mut ResolvedRoutingPolicy,
+    action: &RoutingAction,
+    rule_id: &str,
+    requested_model: &str,
+    resolved_model: &str,
+) -> Result<(), RoutingPolicyError> {
+    match action {
+        RoutingAction::RestrictModels { .. } | RoutingAction::SetKeyPriority { .. } => Ok(()),
+        RoutingAction::SetScheduling {
+            scheduling_mode, ..
+        } => {
+            // This exact namespace belongs to the retired per-model UI helper.
+            // Mutations and the rule's conditions/stop gate remain independent.
+            if rule_id.starts_with("ui_model_scheduling:") {
+                return Ok(());
+            }
+            if let Some(mode) = scheduling_mode {
+                policy.scheduling_mode = mode.for_simplified_policy();
+            }
+            Ok(())
+        }
+        _ => apply_action(policy, action, requested_model, resolved_model),
+    }
 }
 
 fn matching_model_policies<'a>(
@@ -530,7 +563,10 @@ mod simplified_resolution_tests {
 
     use super::{resolve_routing_policy, resolve_routing_policy_simplified, RoutingPolicyInput};
     use crate::model::RoutingGroupConfig;
-    use crate::{RoutingRulePhase, RoutingSchedulingMode};
+    use crate::{
+        rank_vector_for_candidate, CandidateKind, RoutingCandidateFacts, RoutingRulePhase,
+        RoutingSchedulingMode, RoutingSetPriorityMode,
+    };
 
     fn input<'a>() -> RoutingPolicyInput<'a> {
         let headers = Box::leak(Box::new(json!({})));
@@ -555,28 +591,41 @@ mod simplified_resolution_tests {
         // Legacy config gating a model the request does not name: the legacy
         // entry errors, the simplified entry resolves with the unified
         // default policy (R11-1/R11-2).
-        let config: RoutingGroupConfig = serde_json::from_value(json!({
+        let mut config: RoutingGroupConfig = serde_json::from_value(json!({
             "default_policy": {
-                "priority_mode": "provider",
-                "scheduling_mode": "cache_affinity"
+                "priority_mode": "global_key",
+                "scheduling_mode": "load_balance"
             },
             "allowed_models": ["claude-*"],
             "model_policies": [],
-            "rules": []
+            "rules": [{
+                "id": "legacy-restriction",
+                "actions": [{ "type": "restrict_models", "models": ["claude-*"] }]
+            }]
         }))
         .expect("config should parse");
 
         assert!(resolve_routing_policy(&config, input()).is_err());
         let policy = resolve_routing_policy_simplified(&config, input())
             .expect("simplified resolution should succeed");
+        assert_eq!(policy.priority_mode, RoutingSetPriorityMode::Provider);
         assert_eq!(policy.scheduling_mode, RoutingSchedulingMode::CacheAffinity);
+
+        // The retired action must also be ignored without a top-level gate.
+        config.allowed_models.clear();
+        assert!(resolve_routing_policy(&config, input()).is_err());
+        assert_eq!(
+            resolve_routing_policy_simplified(&config, input())
+                .expect("retired restriction action should be ignored"),
+            policy
+        );
     }
 
     #[test]
     fn simplified_entry_ignores_model_policies() {
         // A per-model policy carries provider/key overlays in the legacy
         // entry; the simplified entry must not apply them (R11-1).
-        let config: RoutingGroupConfig = serde_json::from_value(json!({
+        let mut config: RoutingGroupConfig = serde_json::from_value(json!({
             "default_policy": {
                 "priority_mode": "provider",
                 "scheduling_mode": "fixed_order"
@@ -585,9 +634,28 @@ mod simplified_resolution_tests {
             "model_policies": [{
                 "model": "gpt-5",
                 "allowed_providers": ["provider-special"],
-                "provider_priority_overrides": {"provider-special": 1}
+                "provider_priority_overrides": {"provider-special": 1},
+                "key_priority_overrides": {"key-1": 1}
             }],
-            "rules": []
+            "rules": [{
+                "id": "ui_model_scheduling:gpt-5",
+                "priority": 10000,
+                "phase": "client_request",
+                "conditions": {"field": "model", "op": "eq", "value": "gpt-5"},
+                "actions": [{
+                    "type": "set_scheduling",
+                    "priority_mode": "global_key",
+                    "scheduling_mode": "load_balance"
+                }, {
+                    "type": "patch_headers",
+                    "patch": [{"op": "set", "name": "x-model", "value": "retained"}]
+                }],
+                "stop_processing": true
+            }, {
+                "id": "later-scheduling",
+                "priority": 10001,
+                "actions": [{"type": "set_scheduling", "scheduling_mode": "cost_based"}]
+            }]
         }))
         .expect("config should parse");
 
@@ -612,13 +680,44 @@ mod simplified_resolution_tests {
             simplified.scheduling_mode,
             RoutingSchedulingMode::FixedOrder
         );
+        let facts = RoutingCandidateFacts {
+            candidate_kind: CandidateKind::Provider,
+            provider_id: "provider-special".to_string(),
+            endpoint_id: "endpoint-1".to_string(),
+            model_id: "gpt-5".to_string(),
+            key_id: Some("key-1".to_string()),
+            provider_priority: 10,
+            key_priority: 20,
+        };
+        assert_eq!(
+            rank_vector_for_candidate(&legacy.ranking_overlay, &facts).key_priority_after,
+            1
+        );
+        assert_eq!(
+            rank_vector_for_candidate(&simplified.ranking_overlay, &facts).key_priority_after,
+            20
+        );
+        assert_eq!(legacy.scheduling_mode, RoutingSchedulingMode::LoadBalance);
+        assert_eq!(legacy.mutation_plan, simplified.mutation_plan);
+        assert_eq!(simplified.mutation_plan.header_patch.len(), 1);
+        assert_eq!(simplified.matched_rules.len(), 1);
+        assert_eq!(simplified.matched_rules[0].id, "ui_model_scheduling:gpt-5");
+
+        // Similar names outside the exact legacy namespace keep their actions.
+        config.rules[0].id = "ui_model_scheduling_custom:gpt-5".to_string();
+        assert_eq!(
+            resolve_routing_policy_simplified(&config, input())
+                .expect("external conditional scheduling should remain active")
+                .scheduling_mode,
+            RoutingSchedulingMode::CacheAffinity
+        );
     }
 
     #[test]
     fn simplified_entry_still_applies_rules_and_provider_priority() {
-        // The surviving configuration surface (rules → provider priority
-        // overlay) must keep working through the simplified entry.
-        let config: RoutingGroupConfig = serde_json::from_value(json!({
+        // Surviving actions keep their conditions, order, phase and stop gate;
+        // retired key overlays must not replace the key entity's priority.
+        let mut config: RoutingGroupConfig = serde_json::from_value(json!({
             "default_policy": {
                 "priority_mode": "provider",
                 "scheduling_mode": "cost_based"
@@ -626,15 +725,52 @@ mod simplified_resolution_tests {
             "allowed_models": [],
             "model_policies": [],
             "rules": [{
+                "id": "later-rule",
+                "priority": 2,
+                "actions": [{
+                    "type": "set_provider_priority",
+                    "provider_id": "provider-a",
+                    "priority": 99
+                }]
+            }, {
                 "id": "rule-1",
                 "priority": 1,
                 "enabled": true,
                 "phase": "client_request",
-                "conditions": {},
+                "conditions": {"field": "model", "op": "eq", "value": "gpt-5"},
+                "stop_processing": true,
                 "actions": [{
                     "type": "set_provider_priority",
                     "provider_id": "provider-a",
                     "priority": 5
+                }, {
+                    "type": "set_key_priority",
+                    "key_id": "key-1",
+                    "priority": 2
+                }, {
+                    "type": "set_scheduling",
+                    "priority_mode": "global_key",
+                    "scheduling_mode": "cost_based"
+                }, {
+                    "type": "json_patch_body",
+                    "patch": [{"op": "add", "path": "/metadata", "value": {"routed": true}}]
+                }, {
+                    "type": "patch_headers",
+                    "patch": [{"op": "set", "name": "x-routing", "value": "retained"}]
+                }]
+            }, {
+                "id": "non-matching-rule",
+                "priority": 0,
+                "conditions": {"field": "model", "op": "eq", "value": "claude"},
+                "actions": [{"type": "restrict_providers", "provider_ids": ["provider-b"]}],
+                "stop_processing": true
+            }, {
+                "id": "provider-phase",
+                "priority": 0,
+                "phase": "provider_request",
+                "actions": [{
+                    "type": "patch_headers",
+                    "patch": [{"op": "set", "name": "x-routing", "value": "provider"}]
                 }]
             }]
         }))
@@ -648,6 +784,37 @@ mod simplified_resolution_tests {
                 .provider_priority("provider-a", i32::MAX),
             5
         );
+        assert_eq!(policy.priority_mode, RoutingSetPriorityMode::Provider);
         assert_eq!(policy.scheduling_mode, RoutingSchedulingMode::CostBased);
+        assert!(policy.ranking_overlay.allowed_providers.is_empty());
+        assert!(policy.ranking_overlay.key_priority_overrides.is_empty());
+        assert_eq!(policy.ranking_overlay.key_priority("key-1", 20), 20);
+        assert_eq!(policy.matched_rules.len(), 1);
+        assert_eq!(policy.matched_rules[0].id, "rule-1");
+        assert_eq!(policy.mutation_plan.body_patch.len(), 1);
+        assert_eq!(policy.mutation_plan.header_patch.len(), 1);
+
+        let legacy = resolve_routing_policy(&config, input())
+            .expect("complete public resolver should keep legacy actions");
+        assert_eq!(legacy.priority_mode, RoutingSetPriorityMode::GlobalKey);
+        assert_eq!(legacy.ranking_overlay.key_priority("key-1", 20), 2);
+        assert_eq!(legacy.mutation_plan, policy.mutation_plan);
+
+        config.rules[1].actions[2] = crate::RoutingAction::SetScheduling {
+            priority_mode: Some(RoutingSetPriorityMode::GlobalKey),
+            scheduling_mode: Some(RoutingSchedulingMode::LoadBalance),
+        };
+        assert_eq!(
+            resolve_routing_policy_simplified(&config, input())
+                .expect("legacy scheduling action should normalize")
+                .scheduling_mode,
+            RoutingSchedulingMode::CacheAffinity
+        );
+        assert_eq!(
+            resolve_routing_policy(&config, input())
+                .expect("complete resolver should retain load balance")
+                .scheduling_mode,
+            RoutingSchedulingMode::LoadBalance
+        );
     }
 }

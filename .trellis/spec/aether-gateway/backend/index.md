@@ -14,6 +14,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
+| [Authenticated Wallet Summary](./auth-wallet-summary.md) | Authenticated wallet lookup, amounts, limits and failure behavior | Filled |
 | [Dashboard Stats API](./dashboard-stats-api.md) | `/api/dashboard/stats` card assembly contract (backend ↔ frontend) | Filled |
 | [Provider Model Test API](./model-test-api.md) | Model-test diagnostic contract: on/off state bypass, key-existence precondition, status-neutral probe pattern | Filled |
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |

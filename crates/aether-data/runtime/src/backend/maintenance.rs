@@ -1,7 +1,9 @@
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
-use super::{summarize_pool, DataBackends, SqlBackendRef};
+#[cfg(feature = "sqlite")]
+use super::summarize_pool;
+use super::DataBackends;
 use crate::maintenance::{
     DatabaseMaintenanceSummary, DatabasePoolSummary, DatabasePostgresActivityGroup,
     DatabasePostgresObservabilitySnapshot, StatsDailyAggregationInput,
@@ -16,6 +18,7 @@ use crate::repository::system::{
 use crate::DataLayerError;
 use sqlx::migrate::MigrateError;
 
+#[cfg(feature = "sqlite")]
 async fn warm_pool<DB>(pool: &sqlx::Pool<DB>, min_connections: u32) -> Result<(), DataLayerError>
 where
     DB: sqlx::Database,
@@ -27,6 +30,7 @@ where
     Ok(())
 }
 
+#[cfg(feature = "sqlite")]
 pub(super) fn maintenance_identifier(value: &str) -> Result<&str, DataLayerError> {
     let valid = !value.is_empty()
         && value
@@ -41,160 +45,195 @@ pub(super) fn maintenance_identifier(value: &str) -> Result<&str, DataLayerError
     }
 }
 
+// Without the SQLite feature, empty configurations keep the same optional-backend API.
+#[cfg_attr(not(feature = "sqlite"), allow(unused_variables))]
 impl DataBackends {
     pub fn has_database_maintenance_backend(&self) -> bool {
-        self.sql_backend().is_some()
+        #[cfg(feature = "sqlite")]
+        {
+            self.sqlite.is_some()
+        }
+        #[cfg(not(feature = "sqlite"))]
+        {
+            false
+        }
     }
 
     pub fn has_database_pool_summary(&self) -> bool {
-        self.sql_backend().is_some()
+        self.has_database_maintenance_backend()
     }
 
     /// Establishes the configured minimum number of SQL connections before the service reports
     /// ready. Driver pools are built lazily, so relying on request traffic to grow them can make
     /// the first concurrency ramp consume nearly every connection in the small cold pool.
     pub async fn warm_database_pool(&self) -> Result<(), DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.warm_database_pool().await,
-            None => Ok(()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return warm_pool(sqlite.pool(), sqlite.config().pool.min_connections).await;
         }
+        Ok(())
     }
 
     pub fn has_system_config_backend(&self) -> bool {
-        self.sql_backend().is_some()
+        self.has_database_maintenance_backend()
     }
 
     pub fn has_wallet_daily_usage_aggregation_backend(&self) -> bool {
-        self.sql_backend().is_some()
+        self.has_database_maintenance_backend()
     }
 
     pub fn has_stats_hourly_aggregation_backend(&self) -> bool {
-        self.sql_backend().is_some()
+        self.has_database_maintenance_backend()
     }
 
     pub fn has_stats_daily_aggregation_backend(&self) -> bool {
-        self.sql_backend().is_some()
+        self.has_database_maintenance_backend()
     }
 
     pub async fn run_database_maintenance(
         &self,
         table_names: &[&str],
     ) -> Result<DatabaseMaintenanceSummary, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.run_database_maintenance(table_names).await,
-            None => Ok(DatabaseMaintenanceSummary::default()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.run_table_maintenance(table_names).await;
         }
+        Ok(DatabaseMaintenanceSummary::default())
     }
 
     pub async fn run_database_migrations(&self) -> Result<bool, MigrateError> {
-        match self.sql_backend() {
-            Some(backend) => backend.run_database_migrations().await,
-            None => Ok(false),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            crate::lifecycle::migrate::run_sqlite_migrations(sqlite.pool()).await?;
+            return Ok(true);
         }
+        Ok(false)
     }
 
     pub async fn run_database_backfills(&self) -> Result<bool, MigrateError> {
-        match self.sql_backend() {
-            Some(backend) => backend.run_database_backfills().await,
-            None => Ok(false),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            crate::lifecycle::backfill::run_sqlite_backfills(sqlite.pool()).await?;
+            return Ok(true);
         }
+        Ok(false)
     }
 
     pub async fn pending_database_migrations(
         &self,
     ) -> Result<Option<Vec<crate::lifecycle::migrate::PendingMigrationInfo>>, MigrateError> {
-        match self.sql_backend() {
-            Some(backend) => backend.pending_database_migrations().await,
-            None => Ok(None),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return crate::lifecycle::migrate::pending_sqlite_migrations(sqlite.pool())
+                .await
+                .map(Some);
         }
+        Ok(None)
     }
 
     pub async fn prepare_database_for_startup(
         &self,
     ) -> Result<Option<Vec<crate::lifecycle::migrate::PendingMigrationInfo>>, MigrateError> {
-        match self.sql_backend() {
-            Some(backend) => backend.prepare_database_for_startup().await,
-            None => Ok(None),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return crate::lifecycle::migrate::prepare_sqlite_database_for_startup(sqlite.pool())
+                .await
+                .map(Some);
         }
+        Ok(None)
     }
 
     pub async fn pending_database_backfills(
         &self,
     ) -> Result<Option<Vec<crate::lifecycle::backfill::PendingBackfillInfo>>, MigrateError> {
-        match self.sql_backend() {
-            Some(backend) => backend.pending_database_backfills().await,
-            None => Ok(None),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return crate::lifecycle::backfill::pending_sqlite_backfills(sqlite.pool())
+                .await
+                .map(Some);
         }
+        Ok(None)
     }
 
     pub fn database_pool_summary(&self) -> Option<DatabasePoolSummary> {
-        self.sql_backend().map(SqlBackendRef::database_pool_summary)
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return Some(summarize_pool(
+                crate::DatabaseDriver::Sqlite,
+                usize::try_from(sqlite.pool().size()).unwrap_or(usize::MAX),
+                sqlite.pool().num_idle(),
+                sqlite.config().pool.max_connections,
+            ));
+        }
+        None
     }
 
     pub async fn postgres_observability_snapshot(
         &self,
     ) -> Result<Option<DatabasePostgresObservabilitySnapshot>, DataLayerError> {
-        #[cfg(not(feature = "postgres"))]
-        return Ok(None);
+        Ok(None)
     }
 
     pub async fn postgres_activity_groups(
         &self,
         limit: i64,
     ) -> Result<Vec<DatabasePostgresActivityGroup>, DataLayerError> {
-        #[cfg(not(feature = "postgres"))]
         let _ = limit;
-        #[cfg(not(feature = "postgres"))]
-        return Ok(Vec::new());
+        Ok(Vec::new())
     }
 
     pub async fn aggregate_wallet_daily_usage(
         &self,
         input: &WalletDailyUsageAggregationInput,
     ) -> Result<WalletDailyUsageAggregationResult, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.aggregate_wallet_daily_usage(input).await,
-            None => Ok(WalletDailyUsageAggregationResult::default()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.aggregate_wallet_daily_usage(input).await;
         }
+        Ok(WalletDailyUsageAggregationResult::default())
     }
 
     pub async fn aggregate_stats_hourly(
         &self,
         input: &StatsHourlyAggregationInput,
     ) -> Result<Option<StatsHourlyAggregationSummary>, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.aggregate_stats_hourly(input).await,
-            None => Ok(None),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.aggregate_stats_hourly(input).await;
         }
+        Ok(None)
     }
 
     pub async fn aggregate_stats_daily(
         &self,
         input: &StatsDailyAggregationInput,
     ) -> Result<Option<StatsDailyAggregationSummary>, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.aggregate_stats_daily(input).await,
-            None => Ok(None),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.aggregate_stats_daily(input).await;
         }
+        Ok(None)
     }
 
     pub async fn find_system_config_value(
         &self,
         key: &str,
     ) -> Result<Option<serde_json::Value>, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.find_system_config_value(key).await,
-            None => Ok(None),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.find_system_config_value(key).await;
         }
+        Ok(None)
     }
 
     pub async fn list_system_config_entries(
         &self,
     ) -> Result<Vec<StoredSystemConfigEntry>, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.list_system_config_entries().await,
-            None => Ok(Vec::new()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.list_system_config_entries().await;
         }
+        Ok(Vec::new())
     }
 
     pub async fn upsert_system_config_entry(
@@ -203,46 +242,51 @@ impl DataBackends {
         value: &serde_json::Value,
         description: Option<&str>,
     ) -> Result<Option<StoredSystemConfigEntry>, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite
                 .upsert_system_config_entry(key, value, description)
                 .await
-                .map(Some),
-            None => Ok(None),
+                .map(Some);
         }
+        Ok(None)
     }
 
     pub async fn delete_system_config_value(&self, key: &str) -> Result<bool, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.delete_system_config_value(key).await,
-            None => Ok(false),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.delete_system_config_value(key).await;
         }
+        Ok(false)
     }
 
     pub async fn read_admin_system_stats(&self) -> Result<AdminSystemStats, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.read_admin_system_stats().await,
-            None => Ok(AdminSystemStats::default()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.read_admin_system_stats().await;
         }
+        Ok(AdminSystemStats::default())
     }
 
     pub async fn purge_admin_system_data(
         &self,
         target: AdminSystemPurgeTarget,
     ) -> Result<AdminSystemPurgeSummary, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.purge_admin_system_data(target).await,
-            None => Ok(AdminSystemPurgeSummary::default()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.purge_admin_system_data(target).await;
         }
+        Ok(AdminSystemPurgeSummary::default())
     }
 
     pub async fn export_admin_system_usage_aggregates(
         &self,
     ) -> Result<AdminSystemUsageAggregateSnapshot, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.export_admin_system_usage_aggregates().await,
-            None => Ok(AdminSystemUsageAggregateSnapshot::default()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.export_admin_system_usage_aggregates().await;
         }
+        Ok(AdminSystemUsageAggregateSnapshot::default())
     }
 
     pub async fn import_admin_system_usage_aggregates(
@@ -252,327 +296,23 @@ impl DataBackends {
         api_key_id_map: &std::collections::BTreeMap<String, String>,
         mode: AdminSystemUsageAggregateImportMode,
     ) -> Result<AdminSystemUsageAggregateImportSummary, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => {
-                backend
-                    .import_admin_system_usage_aggregates(
-                        snapshot,
-                        user_id_map,
-                        api_key_id_map,
-                        mode,
-                    )
-                    .await
-            }
-            None => Ok(AdminSystemUsageAggregateImportSummary::default()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite
+                .import_admin_system_usage_aggregates(snapshot, user_id_map, api_key_id_map, mode)
+                .await;
         }
+        Ok(AdminSystemUsageAggregateImportSummary::default())
     }
 
     pub async fn purge_admin_request_bodies_batch(
         &self,
         batch_size: usize,
     ) -> Result<AdminSystemPurgeSummary, DataLayerError> {
-        match self.sql_backend() {
-            Some(backend) => backend.purge_admin_request_bodies_batch(batch_size).await,
-            None => Ok(AdminSystemPurgeSummary::default()),
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite) = self.sqlite.as_ref() {
+            return sqlite.purge_admin_request_bodies_batch(batch_size).await;
         }
-    }
-}
-
-impl<'a> SqlBackendRef<'a> {
-    async fn warm_database_pool(self) -> Result<(), DataLayerError> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => {
-                warm_pool(sqlite.pool(), sqlite.config().pool.min_connections).await
-            }
-        }
-    }
-
-    async fn run_database_maintenance(
-        self,
-        table_names: &[&str],
-    ) -> Result<DatabaseMaintenanceSummary, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.run_table_maintenance(table_names).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.run_table_maintenance(table_names).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.run_table_maintenance(table_names).await,
-        }
-    }
-
-    async fn run_database_migrations(self) -> Result<bool, MigrateError> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => {
-                crate::lifecycle::migrate::run_sqlite_migrations(sqlite.pool()).await?;
-                Ok(true)
-            }
-        }
-    }
-
-    async fn run_database_backfills(self) -> Result<bool, MigrateError> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => {
-                crate::lifecycle::backfill::run_sqlite_backfills(sqlite.pool()).await?;
-                Ok(true)
-            }
-        }
-    }
-
-    async fn pending_database_migrations(
-        self,
-    ) -> Result<Option<Vec<crate::lifecycle::migrate::PendingMigrationInfo>>, MigrateError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => Ok(Some(
-                crate::lifecycle::migrate::pending_migrations(postgres.pool()).await?,
-            )),
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => Ok(Some(
-                crate::lifecycle::migrate::pending_mysql_migrations(mysql.pool()).await?,
-            )),
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => Ok(Some(
-                crate::lifecycle::migrate::pending_sqlite_migrations(sqlite.pool()).await?,
-            )),
-        }
-    }
-
-    async fn prepare_database_for_startup(
-        self,
-    ) -> Result<Option<Vec<crate::lifecycle::migrate::PendingMigrationInfo>>, MigrateError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => Ok(Some(
-                crate::lifecycle::migrate::prepare_database_for_startup(postgres.pool()).await?,
-            )),
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => Ok(Some(
-                crate::lifecycle::migrate::prepare_mysql_database_for_startup(mysql.pool()).await?,
-            )),
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => Ok(Some(
-                crate::lifecycle::migrate::prepare_sqlite_database_for_startup(sqlite.pool())
-                    .await?,
-            )),
-        }
-    }
-
-    async fn pending_database_backfills(
-        self,
-    ) -> Result<Option<Vec<crate::lifecycle::backfill::PendingBackfillInfo>>, MigrateError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => Ok(Some(
-                crate::lifecycle::backfill::pending_backfills(postgres.pool()).await?,
-            )),
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => Ok(Some(
-                crate::lifecycle::backfill::pending_mysql_backfills(mysql.pool()).await?,
-            )),
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => Ok(Some(
-                crate::lifecycle::backfill::pending_sqlite_backfills(sqlite.pool()).await?,
-            )),
-        }
-    }
-
-    fn database_pool_summary(self) -> DatabasePoolSummary {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => summarize_pool(
-                crate::database::DatabaseDriver::Postgres,
-                usize::try_from(postgres.pool().size()).unwrap_or(usize::MAX),
-                postgres.pool().num_idle(),
-                postgres.config().max_connections,
-            ),
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => summarize_pool(
-                crate::database::DatabaseDriver::Mysql,
-                usize::try_from(mysql.pool().size()).unwrap_or(usize::MAX),
-                mysql.pool().num_idle(),
-                mysql.config().pool.max_connections,
-            ),
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => summarize_pool(
-                crate::database::DatabaseDriver::Sqlite,
-                usize::try_from(sqlite.pool().size()).unwrap_or(usize::MAX),
-                sqlite.pool().num_idle(),
-                sqlite.config().pool.max_connections,
-            ),
-        }
-    }
-
-    async fn aggregate_wallet_daily_usage(
-        self,
-        input: &WalletDailyUsageAggregationInput,
-    ) -> Result<WalletDailyUsageAggregationResult, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.aggregate_wallet_daily_usage(input).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.aggregate_wallet_daily_usage(input).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.aggregate_wallet_daily_usage(input).await,
-        }
-    }
-
-    async fn aggregate_stats_hourly(
-        self,
-        input: &StatsHourlyAggregationInput,
-    ) -> Result<Option<StatsHourlyAggregationSummary>, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.aggregate_stats_hourly(input).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.aggregate_stats_hourly(input).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.aggregate_stats_hourly(input).await,
-        }
-    }
-
-    async fn aggregate_stats_daily(
-        self,
-        input: &StatsDailyAggregationInput,
-    ) -> Result<Option<StatsDailyAggregationSummary>, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.aggregate_stats_daily(input).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.aggregate_stats_daily(input).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.aggregate_stats_daily(input).await,
-        }
-    }
-
-    async fn find_system_config_value(
-        self,
-        key: &str,
-    ) -> Result<Option<serde_json::Value>, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.find_system_config_value(key).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.find_system_config_value(key).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.find_system_config_value(key).await,
-        }
-    }
-
-    async fn list_system_config_entries(
-        self,
-    ) -> Result<Vec<StoredSystemConfigEntry>, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.list_system_config_entries().await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.list_system_config_entries().await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.list_system_config_entries().await,
-        }
-    }
-
-    async fn upsert_system_config_entry(
-        self,
-        key: &str,
-        value: &serde_json::Value,
-        description: Option<&str>,
-    ) -> Result<StoredSystemConfigEntry, DataLayerError> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => {
-                sqlite
-                    .upsert_system_config_entry(key, value, description)
-                    .await
-            }
-        }
-    }
-
-    async fn delete_system_config_value(self, key: &str) -> Result<bool, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.delete_system_config_value(key).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.delete_system_config_value(key).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.delete_system_config_value(key).await,
-        }
-    }
-
-    async fn read_admin_system_stats(self) -> Result<AdminSystemStats, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.read_admin_system_stats().await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.read_admin_system_stats().await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.read_admin_system_stats().await,
-        }
-    }
-
-    async fn purge_admin_system_data(
-        self,
-        target: AdminSystemPurgeTarget,
-    ) -> Result<AdminSystemPurgeSummary, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.purge_admin_system_data(target).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.purge_admin_system_data(target).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.purge_admin_system_data(target).await,
-        }
-    }
-
-    async fn export_admin_system_usage_aggregates(
-        self,
-    ) -> Result<AdminSystemUsageAggregateSnapshot, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.export_admin_system_usage_aggregates().await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.export_admin_system_usage_aggregates().await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.export_admin_system_usage_aggregates().await,
-        }
-    }
-
-    async fn import_admin_system_usage_aggregates(
-        self,
-        snapshot: &AdminSystemUsageAggregateSnapshot,
-        user_id_map: &std::collections::BTreeMap<String, String>,
-        api_key_id_map: &std::collections::BTreeMap<String, String>,
-        mode: AdminSystemUsageAggregateImportMode,
-    ) -> Result<AdminSystemUsageAggregateImportSummary, DataLayerError> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => {
-                sqlite
-                    .import_admin_system_usage_aggregates(
-                        snapshot,
-                        user_id_map,
-                        api_key_id_map,
-                        mode,
-                    )
-                    .await
-            }
-        }
-    }
-
-    async fn purge_admin_request_bodies_batch(
-        self,
-        batch_size: usize,
-    ) -> Result<AdminSystemPurgeSummary, DataLayerError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(postgres) => postgres.purge_admin_request_bodies_batch(batch_size).await,
-            #[cfg(feature = "mysql")]
-            Self::Mysql(mysql) => mysql.purge_admin_request_bodies_batch(batch_size).await,
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(sqlite) => sqlite.purge_admin_request_bodies_batch(batch_size).await,
-        }
+        Ok(AdminSystemPurgeSummary::default())
     }
 }

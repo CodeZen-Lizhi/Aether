@@ -140,9 +140,13 @@ pub(super) fn auth_token_identity_matches_user(
 }
 
 pub(crate) fn build_auth_wallet_summary_payload(
-    _wallet: Option<&aether_data::repository::wallet::StoredWalletSnapshot>,
+    wallet: Option<&aether_data::repository::wallet::StoredWalletSnapshot>,
 ) -> serde_json::Value {
-    // Wallets were removed from this personal build; every key is effectively unlimited.
+    if let Some(summary) = aether_admin::system::serialize_admin_system_users_export_wallet(wallet)
+    {
+        return summary;
+    }
+
     json!({
         "id": serde_json::Value::Null,
         "balance": 0.0,
@@ -151,8 +155,8 @@ pub(crate) fn build_auth_wallet_summary_payload(
         "refundable_balance": 0.0,
         "currency": "USD",
         "status": "active",
-        "limit_mode": "unlimited",
-        "unlimited": true,
+        "limit_mode": "finite",
+        "unlimited": false,
         "total_recharged": 0.0,
         "total_consumed": 0.0,
         "total_refunded": 0.0,
@@ -323,7 +327,16 @@ pub(crate) async fn handle_auth_me(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let wallet: Option<aether_data::repository::wallet::StoredWalletSnapshot> = None;
+    let wallet = match state.find_auth_user_wallet(&auth.user.id).await {
+        Ok(value) => value,
+        Err(err) => {
+            return build_auth_error_response(
+                http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("auth wallet lookup failed: {err:?}"),
+                false,
+            )
+        }
+    };
     let feature_settings = match state.read_user_feature_settings(&auth.user.id).await {
         Ok(value) => value,
         Err(err) => {

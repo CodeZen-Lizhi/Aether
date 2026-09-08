@@ -42,16 +42,18 @@ impl Default for SchedulerOrderingConfig {
 pub(crate) fn parse_scheduler_priority_mode(
     value: Option<&serde_json::Value>,
 ) -> SchedulerPriorityMode {
-    match value
+    if value
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_ascii_lowercase())
-        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case("global_key"))
     {
-        Some("global_key") => SchedulerPriorityMode::GlobalKey,
-        _ => SchedulerPriorityMode::Provider,
+        tracing::debug!(
+            event_name = "scheduler_global_key_soft_deleted",
+            log_type = "event",
+            "legacy provider_priority_mode=global_key mapped to provider ordering"
+        );
     }
+    SchedulerPriorityMode::Provider
 }
 
 pub(crate) fn parse_scheduler_scheduling_mode(

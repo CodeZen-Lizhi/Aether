@@ -27,6 +27,16 @@ pub enum RoutingSchedulingMode {
     CostBased,
 }
 
+impl RoutingSchedulingMode {
+    /// Keep legacy values readable while using the single-strategy modes.
+    pub fn for_simplified_policy(self) -> Self {
+        match self {
+            Self::LoadBalance => Self::CacheAffinity,
+            mode => mode,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "op")]
 pub enum RoutingJsonPatchOperation {

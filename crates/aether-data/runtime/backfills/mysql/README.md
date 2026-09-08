@@ -1,2 +1,3 @@
-MySQL-specific lifecycle backfills live here. Versions intentionally match the
-equivalent PostgreSQL backfills when they repair the same logical data.
+Historical MySQL backfills are retained here for inspection. Their versions
+match the corresponding PostgreSQL repairs where they handled the same data.
+The current SQLite-only runtime does not embed or execute these scripts.

@@ -221,8 +221,6 @@ const loadError = ref<string | null>(null)
 const mode = ref<SchedulingStrategyMode>('cache_affinity')
 const providers = ref<AdminProviderListItem[]>([])
 const orderedProviderIds = ref<string[]>([])
-// 保留已存在的 Key 优先级覆盖，页面不再提供重复编辑入口。
-const keyPriorities = ref<Record<string, number>>({})
 const systemDefaultGroup = ref<RoutingGroupRecord | null>(null)
 const savedSnapshot = ref<string | null>(null)
 
@@ -248,7 +246,6 @@ function currentSnapshot(): string {
   return JSON.stringify({
     mode: mode.value,
     order: orderedProviderIds.value,
-    keyPriorities: keyPriorities.value,
   })
 }
 
@@ -297,7 +294,6 @@ async function loadStrategy() {
     systemDefaultGroup.value = group
     const state = parseSchedulingStrategy(group?.config_json ?? null)
     mode.value = state.mode
-    keyPriorities.value = { ...state.keyPriorities }
 
     // 供应商顺序：overlay 优先级 → 顺排；未配置的按名称缀在尾部
     const sorted = [...providerList].sort((left, right) => {
@@ -318,16 +314,17 @@ async function loadStrategy() {
 
 async function saveStrategy() {
   const group = systemDefaultGroup.value
+  const snapshot = currentSnapshot()
   const config: RoutingGroupConfig = buildSchedulingStrategyConfig(
     mode.value,
     orderedProviderIds.value,
-    keyPriorities.value,
+    group?.config_json,
   )
   saving.value = true
   try {
     if (group) {
       await updateRoutingGroup(group.id, { config_json: config })
-      await publishRoutingGroup(group.id)
+      systemDefaultGroup.value = await publishRoutingGroup(group.id)
     } else {
       // 单份策略：首次保存自动创建系统默认组
       const created = await createRoutingGroup({
@@ -337,10 +334,9 @@ async function saveStrategy() {
         is_system_default: true,
         config_json: config,
       })
-      await publishRoutingGroup(created.id)
-      systemDefaultGroup.value = created
+      systemDefaultGroup.value = await publishRoutingGroup(created.id)
     }
-    savedSnapshot.value = currentSnapshot()
+    savedSnapshot.value = snapshot
     success('调度策略已保存并发布')
   } catch (err) {
     log.error('failed to save scheduling strategy', err)

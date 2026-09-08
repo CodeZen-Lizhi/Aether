@@ -47,9 +47,9 @@ ON CONFLICT(version) DO NOTHING
 "#;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct AppliedBackfill {
-    version: i64,
-    checksum: Vec<u8>,
+pub(super) struct AppliedBackfill {
+    pub(super) version: i64,
+    pub(super) checksum: Vec<u8>,
 }
 
 pub async fn run_backfills(pool: &SqlitePool) -> Result<(), MigrateError> {
@@ -235,7 +235,7 @@ fn validate_applied_backfills(applied_backfills: &[AppliedBackfill]) -> Result<(
     Ok(())
 }
 
-fn pending_backfills_from_applied(
+pub(super) fn pending_backfills_from_applied(
     applied_backfills: &[AppliedBackfill],
 ) -> Vec<PendingBackfillInfo> {
     let applied_versions: HashSet<_> = applied_backfills

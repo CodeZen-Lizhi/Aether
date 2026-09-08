@@ -774,10 +774,9 @@ fn generated_readme() -> String {
      bash crates/aether-data/runtime/schema/compose_schema.sh generate\n\
      ```\n\n\
      Runtime migrations are not loaded from this directory. The executable SQL lives under \
-     `crates/aether-data/adapters/{postgres,mysql,sqlite}/migrations`, and the Postgres bootstrap snapshot \
-     is generated at build time from `crates/aether-data/runtime/schema/bootstrap/postgres` into the crate \
-     build output until a generated fragment is deliberately promoted into the driver-specific \
-     schema manifests.\n"
+     `crates/aether-data/adapters/sqlite/migrations`. PostgreSQL and MySQL output is retained for \
+     historical dialect audits; those drivers are not supported by the runtime. The historical \
+     `schema/bootstrap/postgres` fragments are not runtime build inputs.\n"
         .to_string()
 }
 
