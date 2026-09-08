@@ -183,7 +183,7 @@ const dataItems = computed<DataItem[]>(() => [
   {
     key: 'config',
     title: '配置数据',
-    description: '提供商、端点、API Key、模型与系统配置',
+    description: '提供商、端点、渠道 Key、模型、代理节点、调度策略与系统配置',
     exportLabel: '导出配置',
     importLabel: '导入配置',
     icon: markRaw(Settings),
@@ -193,7 +193,7 @@ const dataItems = computed<DataItem[]>(() => [
   {
     key: 'aggregate',
     title: '完整备份',
-    description: '配置与用户数据的一体化备份，包含用户、用户组、API Keys 与钱包快照',
+    description: '配置、管理员资料与偏好、API Keys 及用量统计的一体化备份',
     exportLabel: '导出备份',
     importLabel: '导入备份',
     icon: markRaw(Layers3),

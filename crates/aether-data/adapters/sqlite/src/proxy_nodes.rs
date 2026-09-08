@@ -551,6 +551,16 @@ LIMIT ?
 
 #[async_trait]
 impl ProxyNodeWriteRepository for SqliteProxyNodeReadRepository {
+    async fn restore_proxy_node(&self, node: &StoredProxyNode) -> Result<(), DataLayerError> {
+        if let Some(existing) = self
+            .find_duplicate_proxy_node(&node.ip, node.port, Some(&node.id))
+            .await?
+        {
+            return Err(duplicate_proxy_node_error(&existing));
+        }
+        self.upsert_node(node).await
+    }
+
     async fn reset_stale_tunnel_statuses(&self) -> Result<usize, DataLayerError> {
         let now = current_unix_secs() as i64;
         let result = sqlx::query(

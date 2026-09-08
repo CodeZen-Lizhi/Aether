@@ -710,6 +710,10 @@ pub trait ProxyNodeReadRepository: Send + Sync {
 
 #[async_trait]
 pub trait ProxyNodeWriteRepository: Send + Sync {
+    /// Restore persisted node configuration; runtime connection state belongs to this deployment.
+    async fn restore_proxy_node(&self, node: &StoredProxyNode)
+        -> Result<(), crate::DataLayerError>;
+
     async fn reset_stale_tunnel_statuses(&self) -> Result<usize, crate::DataLayerError>;
 
     async fn create_manual_node(

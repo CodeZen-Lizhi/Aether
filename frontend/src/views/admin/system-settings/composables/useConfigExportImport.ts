@@ -3,6 +3,9 @@ import type { AxiosProgressEvent } from 'axios'
 import { useToast } from '@/composables/useToast'
 import {
   adminApi,
+  AGGREGATE_EXPORT_VERSION,
+  CONFIG_EXPORT_VERSION,
+  USERS_EXPORT_VERSION,
   type AggregateExportData,
   type AggregateImportResponse,
   type ConfigExportData,
@@ -35,15 +38,36 @@ function looksLikeConfigExport(value: JsonObject): boolean {
   return hasArrayField(value, 'global_models')
     || hasArrayField(value, 'providers')
     || hasArrayField(value, 'proxy_nodes')
-    || hasArrayField(value, 'oauth_providers')
     || hasArrayField(value, 'system_configs')
-    || Object.prototype.hasOwnProperty.call(value, 'ldap_config')
 }
 
 function looksLikeUsersExport(value: JsonObject): boolean {
   return hasArrayField(value, 'users')
     || hasArrayField(value, 'standalone_keys')
-    || hasArrayField(value, 'user_groups')
+}
+
+function isCurrentConfigExport(value: JsonObject): boolean {
+  return value.version === CONFIG_EXPORT_VERSION
+    && typeof value.exported_at === 'string'
+    && ['global_models', 'providers', 'proxy_nodes', 'system_configs'].every((key) => hasArrayField(value, key))
+    && (value.providers as unknown[]).every((provider) => {
+      const item = asJsonObject(provider)
+      return item != null && ['endpoints', 'api_keys', 'models'].every((key) => hasArrayField(item, key))
+    })
+}
+
+function isCurrentUsersExport(value: JsonObject): boolean {
+  const users = value.users
+  const user = Array.isArray(users) && users.length === 1 ? asJsonObject(users[0]) : null
+  const aggregates = asJsonObject(value.usage_aggregates)
+  return value.version === USERS_EXPORT_VERSION
+    && typeof value.exported_at === 'string'
+    && asJsonObject(value.provider_names) != null
+    && hasArrayField(value, 'standalone_keys')
+    && user?.role === 'admin'
+    && hasArrayField(user, 'api_keys')
+    && aggregates != null
+    && ['stats_daily', 'stats_user_daily', 'stats_daily_api_key'].every((key) => hasArrayField(aggregates, key))
 }
 
 function looksLikeAggregateExport(value: JsonObject): boolean {
@@ -119,8 +143,6 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
   const mergeModeSelectOpen = ref(false)
   const importProgress = ref<ImportProgressState | null>(null)
 
-  // 用户数据导出/导入相关
-
   // 完整备份导出/导入相关
   const exportAggregateLoading = ref(false)
   const importAggregateLoading = ref(false)
@@ -128,7 +150,7 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
   const aggregateImportResultDialogOpen = ref(false)
   const aggregateImportPreview = ref<AggregateExportData | null>(null)
   const aggregateImportResult = ref<AggregateImportResponse | null>(null)
-  const aggregateMergeMode = ref<'skip' | 'overwrite' | 'error'>('skip')
+  const aggregateMergeMode = ref<'skip' | 'overwrite'>('skip')
   const aggregateMergeModeSelectOpen = ref(false)
   const importAggregateProgress = ref<ImportProgressState | null>(null)
 
@@ -143,8 +165,8 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
       )
       success('配置已导出')
     } catch (err) {
-      error('导出配置失败')
-      log.error('导出配置失败:', err)
+      error(parseApiError(err, '导出配置失败'))
+      log.error('导出配置失败:', parseApiError(err))
     } finally {
       exportLoading.value = false
     }
@@ -160,6 +182,8 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     const input = event.target as HTMLInputElement
     const file = input.files?.[0]
     if (!file) return
+    importPreview.value = null
+    importDialogOpen.value = false
 
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -172,16 +196,16 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
         }
 
         if (looksLikeUsersExport(root) && !looksLikeConfigExport(root)) {
-          error('这是用户数据导出文件，请使用“导入用户数据”')
+          error('请使用完整备份导入用户资料和 API Keys')
           return
         }
 
-        if (!root.version) {
-          error('无效的配置文件：缺少版本信息')
+        if (root.version !== CONFIG_EXPORT_VERSION) {
+          error('仅支持当前版本导出的配置文件，请重新导出')
           return
         }
 
-        if (!looksLikeConfigExport(root)) {
+        if (!isCurrentConfigExport(root)) {
           error('无效的配置文件：未找到配置导出内容')
           return
         }
@@ -190,11 +214,12 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
         importPreview.value = data
         mergeMode.value = 'skip'
         importDialogOpen.value = true
-      } catch (err) {
+      } catch {
         error('解析配置文件失败，请确保是有效的 JSON 文件')
-        log.error('解析配置文件失败:', err)
+        log.error('解析配置文件失败')
       }
     }
+    reader.onerror = () => error('读取文件失败，请重新选择文件')
     reader.readAsText(file)
 
     input.value = ''
@@ -202,7 +227,7 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
 
   // 确认导入
   async function confirmImport() {
-    if (!importPreview.value) return
+    if (!importPreview.value || importLoading.value) return
 
     importLoading.value = true
     setImportProgress(importProgress, 5, '准备提交配置数据')
@@ -219,10 +244,14 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
       importDialogOpen.value = false
       mergeModeSelectOpen.value = false
       importResultDialogOpen.value = true
-      success('配置导入成功')
+      if (result.stats.errors.length > 0) {
+        error('部分数据未能导入，请查看结果详情')
+      } else {
+        success('配置导入成功')
+      }
     } catch (err: unknown) {
       error(parseApiError(err, '导入配置失败'))
-      log.error('导入配置失败:', err)
+      log.error('导入配置失败:', parseApiError(err))
     } finally {
       importLoading.value = false
       importProgress.value = null
@@ -240,8 +269,8 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
       )
       success('完整备份已导出')
     } catch (err) {
-      error('导出完整备份失败')
-      log.error('导出完整备份失败:', err)
+      error(parseApiError(err, '导出完整备份失败'))
+      log.error('导出完整备份失败:', parseApiError(err))
     } finally {
       exportAggregateLoading.value = false
     }
@@ -252,6 +281,8 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     const input = event.target as HTMLInputElement
     const file = input.files?.[0]
     if (!file) return
+    aggregateImportPreview.value = null
+    aggregateImportDialogOpen.value = false
 
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -267,25 +298,25 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
           if (looksLikeConfigExport(root)) {
             error('这是配置导出文件，请使用“导入配置数据”')
           } else if (looksLikeUsersExport(root)) {
-            error('这是用户数据导出文件，请使用“导入用户数据”')
+            error('请使用完整备份导入用户资料和 API Keys')
           } else {
             error('无效的完整备份文件：未找到配置数据和用户数据')
           }
           return
         }
 
-        if (!root.version) {
-          error('无效的完整备份文件：缺少版本信息')
+        if (root.version !== AGGREGATE_EXPORT_VERSION) {
+          error('仅支持当前版本导出的完整备份，请重新导出')
           return
         }
 
         const configData = asJsonObject(root.config_data)
         const userData = asJsonObject(root.user_data)
-        if (!configData || !looksLikeConfigExport(configData)) {
+        if (!configData || !isCurrentConfigExport(configData)) {
           error('无效的完整备份文件：config_data 格式不正确')
           return
         }
-        if (!userData || !looksLikeUsersExport(userData)) {
+        if (!userData || !isCurrentUsersExport(userData)) {
           error('无效的完整备份文件：user_data 格式不正确')
           return
         }
@@ -294,11 +325,12 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
         aggregateImportPreview.value = data
         aggregateMergeMode.value = 'skip'
         aggregateImportDialogOpen.value = true
-      } catch (err) {
+      } catch {
         error('解析完整备份文件失败，请确保是有效的 JSON 文件')
-        log.error('解析完整备份文件失败:', err)
+        log.error('解析完整备份文件失败')
       }
     }
+    reader.onerror = () => error('读取文件失败，请重新选择文件')
     reader.readAsText(file)
 
     input.value = ''
@@ -306,7 +338,7 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
 
   // 确认导入完整备份
   async function confirmImportAggregate() {
-    if (!aggregateImportPreview.value) return
+    if (!aggregateImportPreview.value || importAggregateLoading.value) return
 
     importAggregateLoading.value = true
     setImportProgress(importAggregateProgress, 5, '准备提交完整备份')
@@ -323,10 +355,14 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
       aggregateImportDialogOpen.value = false
       aggregateMergeModeSelectOpen.value = false
       aggregateImportResultDialogOpen.value = true
-      success('完整备份导入成功')
+      if (result.config.stats.errors.length > 0 || result.users.stats.errors.length > 0) {
+        error('部分数据未能导入，请查看结果详情')
+      } else {
+        success('完整备份导入成功')
+      }
     } catch (err: unknown) {
       error(parseApiError(err, '导入完整备份失败'))
-      log.error('导入完整备份失败:', err)
+      log.error('导入完整备份失败:', parseApiError(err))
     } finally {
       importAggregateLoading.value = false
       importAggregateProgress.value = null

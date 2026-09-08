@@ -648,6 +648,12 @@ pub trait AuthApiKeyReadRepository: Send + Sync {
 
 #[async_trait]
 pub trait AuthApiKeyWriteRepository: Send + Sync {
+    /// Restore all exported fields without deleting the key or changing its owner/hash.
+    async fn restore_exported_api_key(
+        &self,
+        record: &StoredAuthApiKeyExportRecord,
+    ) -> Result<bool, crate::DataLayerError>;
+
     async fn touch_last_used_at(&self, api_key_id: &str) -> Result<bool, crate::DataLayerError>;
 
     async fn create_user_api_key(

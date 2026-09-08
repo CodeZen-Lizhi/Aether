@@ -1131,6 +1131,17 @@ impl GatewayDataState {
         }
     }
 
+    pub(crate) async fn restore_proxy_node(
+        &self,
+        node: &StoredProxyNode,
+    ) -> Result<bool, DataLayerError> {
+        let Some(repository) = &self.proxy_node_writer else {
+            return Ok(false);
+        };
+        repository.restore_proxy_node(node).await?;
+        Ok(true)
+    }
+
     pub(crate) async fn register_proxy_node(
         &self,
         mutation: &ProxyNodeRegistrationMutation,
@@ -1458,6 +1469,26 @@ impl GatewayDataState {
                     .await
             }
             None => Ok(None),
+        }
+    }
+
+    pub(crate) async fn restore_exported_api_key(
+        &self,
+        record: &StoredAuthApiKeyExportRecord,
+    ) -> Result<bool, DataLayerError> {
+        match &self.auth_api_key_writer {
+            Some(repository) => repository.restore_exported_api_key(record).await,
+            None => Ok(false),
+        }
+    }
+
+    pub(crate) async fn restore_admin_profile(
+        &self,
+        profile: &aether_data::repository::users::StoredUserExportRow,
+    ) -> Result<bool, DataLayerError> {
+        match &self.user_reader {
+            Some(repository) => repository.restore_admin_profile(profile).await,
+            None => Ok(false),
         }
     }
 

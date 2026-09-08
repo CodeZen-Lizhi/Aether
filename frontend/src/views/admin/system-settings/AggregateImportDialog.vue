@@ -35,15 +35,12 @@
               用户数据
             </p>
             <ul class="space-y-1">
-              <li v-if="aggregateImportPreview.user_data.user_groups?.length">
-                用户组: {{ aggregateImportPreview.user_data.user_groups.length }} 个
-              </li>
-              <li>用户: {{ aggregateImportPreview.user_data.users?.length || 0 }} 个</li>
+              <li>管理员: {{ aggregateImportPreview.user_data.users[0]?.username }}</li>
               <li>
                 API Keys: {{ aggregateImportPreview.user_data.users?.reduce((sum: number, u: { api_keys?: unknown[] }) => sum + (u.api_keys?.length || 0), 0) }} 个
               </li>
               <li v-if="aggregateImportPreview.user_data.standalone_keys?.length">
-                独立余额 Keys: {{ aggregateImportPreview.user_data.standalone_keys.length }} 个
+                独立 Keys: {{ aggregateImportPreview.user_data.standalone_keys.length }} 个
               </li>
               <li v-if="usageAggregatePreviewCounts.total > 0">
                 统计聚合: {{ usageAggregatePreviewCounts.total }} 行
@@ -58,7 +55,7 @@
         <Select
           :model-value="aggregateMergeMode"
           :open="aggregateMergeModeSelectOpen"
-          @update:model-value="$emit('update:aggregateMergeMode', $event as 'skip' | 'overwrite' | 'error')"
+          @update:model-value="$emit('update:aggregateMergeMode', $event as 'skip' | 'overwrite')"
           @update:open="$emit('update:aggregateMergeModeSelectOpen', $event)"
         >
           <SelectTrigger>
@@ -71,26 +68,20 @@
             <SelectItem value="overwrite">
               覆盖 - 用导入数据替换
             </SelectItem>
-            <SelectItem value="error">
-              报错 - 遇到冲突时中止
-            </SelectItem>
           </SelectContent>
         </Select>
         <p class="mt-1 text-xs text-muted-foreground">
           <template v-if="aggregateMergeMode === 'skip'">
             已存在的数据将被保留，仅导入新数据
           </template>
-          <template v-else-if="aggregateMergeMode === 'overwrite'">
-            已存在的数据将被导入内容覆盖
-          </template>
           <template v-else>
-            如果发现任何冲突，导入将中止
+            覆盖当前管理员的账号、密码和偏好，并还原备份中的配置与 API Keys
           </template>
         </p>
       </div>
 
       <p class="text-xs text-muted-foreground">
-        注意：完整备份会先导入配置数据，再导入用户数据；文件包含用户、用户组、API Keys、Key 用量、钱包快照与统计聚合。正常导出的 API Keys 会在导入时使用目标系统密钥重新加密；仅当备份中包含 key_encrypted 等未解密密文字段时，才需要目标系统使用兼容的 ENCRYPTION_KEY。
+        仅支持当前版本导出的备份。密钥会使用目标系统的加密配置重新加密；管理员密码变化后，需使用备份中的账号密码重新登录。备份包含凭证，请妥善保存。
       </p>
 
       <div
@@ -157,15 +148,37 @@
             用户数据
           </p>
           <p class="text-muted-foreground">
-            用户创建 {{ aggregateImportResult.users.stats.users.created }}，
-            API Keys 创建 {{ aggregateImportResult.users.stats.api_keys.created }}，
-            跳过 {{ aggregateImportResult.users.stats.users.skipped }} 个用户
-            <template v-if="usageAggregateResultText">
-              ，统计聚合 {{ usageAggregateResultText }}
-            </template>
+            <span>管理员资料</span> ·
+            <span>更新: {{ aggregateImportResult.users.stats.users.updated }}</span>，
+            <span>跳过: {{ aggregateImportResult.users.stats.users.skipped }}</span>
+          </p>
+          <p class="text-muted-foreground">
+            API Keys ·
+            <span>创建: {{ aggregateImportResult.users.stats.api_keys.created }}</span>，
+            <span>更新: {{ aggregateImportResult.users.stats.api_keys.updated }}</span>，
+            <span>跳过: {{ aggregateImportResult.users.stats.api_keys.skipped }}</span>
+          </p>
+          <p class="text-muted-foreground">
+            <span>独立 Keys</span> ·
+            <span>创建: {{ aggregateImportResult.users.stats.standalone_keys.created }}</span>，
+            <span>更新: {{ aggregateImportResult.users.stats.standalone_keys.updated }}</span>，
+            <span>跳过: {{ aggregateImportResult.users.stats.standalone_keys.skipped }}</span>
+          </p>
+          <p
+            v-if="usageAggregateResultText"
+            class="text-muted-foreground"
+          >
+            <span>统计聚合</span> · {{ usageAggregateResultText }}
           </p>
         </div>
       </div>
+
+      <p
+        v-if="aggregateImportResult.users.reauthentication_required"
+        class="text-sm"
+      >
+        管理员密码已恢复，请使用备份中的账号密码重新登录。
+      </p>
 
       <div
         v-if="warningMessages.length > 0"
@@ -211,7 +224,7 @@ const props = defineProps<{
   aggregateImportResultDialogOpen: boolean
   aggregateImportPreview: AggregateExportData | null
   aggregateImportResult: AggregateImportResponse | null
-  aggregateMergeMode: 'skip' | 'overwrite' | 'error'
+  aggregateMergeMode: 'skip' | 'overwrite'
   aggregateMergeModeSelectOpen: boolean
   importAggregateLoading: boolean
   importAggregateProgress: ImportProgressState | null
@@ -221,7 +234,7 @@ defineEmits<{
   confirm: []
   'update:aggregateImportDialogOpen': [value: boolean]
   'update:aggregateImportResultDialogOpen': [value: boolean]
-  'update:aggregateMergeMode': [value: 'skip' | 'overwrite' | 'error']
+  'update:aggregateMergeMode': [value: 'skip' | 'overwrite']
   'update:aggregateMergeModeSelectOpen': [value: boolean]
 }>()
 

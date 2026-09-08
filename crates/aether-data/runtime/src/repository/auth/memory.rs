@@ -499,6 +499,90 @@ impl AuthApiKeyReadRepository for InMemoryAuthApiKeySnapshotRepository {
 
 #[async_trait]
 impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
+    async fn restore_exported_api_key(
+        &self,
+        record: &StoredAuthApiKeyExportRecord,
+    ) -> Result<bool, DataLayerError> {
+        let mut index = self
+            .index
+            .write()
+            .expect("auth api key snapshot repository lock");
+        if let Some(existing) = index.export_by_api_key_id.get(&record.api_key_id) {
+            if existing.user_id != record.user_id
+                || existing.key_hash != record.key_hash
+                || existing.is_standalone != record.is_standalone
+            {
+                return Ok(false);
+            }
+        }
+        if index
+            .by_key_hash
+            .get(&record.key_hash)
+            .is_some_and(|id| id != &record.api_key_id)
+        {
+            return Err(DataLayerError::InvalidInput(
+                "API Key already exists".to_string(),
+            ));
+        }
+        let mut snapshot = match index
+            .by_api_key_id
+            .get(&record.api_key_id)
+            .cloned()
+            .or_else(|| {
+                index
+                    .by_api_key_id
+                    .values()
+                    .find(|key| key.user_id == record.user_id)
+                    .cloned()
+            }) {
+            Some(snapshot) => snapshot,
+            None => StoredAuthApiKeySnapshot::new(
+                record.user_id.clone(),
+                record.user_id.clone(),
+                None,
+                "admin".to_string(),
+                "local".to_string(),
+                true,
+                false,
+                None,
+                None,
+                None,
+                record.api_key_id.clone(),
+                record.name.clone(),
+                record.is_active,
+                false,
+                record.is_standalone,
+                record.rate_limit,
+                record.concurrent_limit,
+                record.expires_at_unix_secs.map(|value| value as i64),
+                None,
+                None,
+                None,
+            )?,
+        };
+        snapshot.api_key_id = record.api_key_id.clone();
+        snapshot.api_key_name = record.name.clone();
+        snapshot.api_key_is_active = record.is_active;
+        snapshot.api_key_is_standalone = record.is_standalone;
+        snapshot.api_key_rate_limit = record.rate_limit;
+        snapshot.api_key_concurrent_limit = record.concurrent_limit;
+        snapshot.api_key_expires_at_unix_secs = record.expires_at_unix_secs;
+        snapshot.api_key_allowed_providers = record.allowed_providers.clone();
+        snapshot.api_key_allowed_api_formats = record.allowed_api_formats.clone();
+        snapshot.api_key_allowed_models = record.allowed_models.clone();
+        snapshot.api_key_ip_rules = record.ip_rules.clone();
+        index
+            .by_key_hash
+            .insert(record.key_hash.clone(), record.api_key_id.clone());
+        index
+            .by_api_key_id
+            .insert(record.api_key_id.clone(), snapshot);
+        index
+            .export_by_api_key_id
+            .insert(record.api_key_id.clone(), record.clone());
+        Ok(true)
+    }
+
     async fn touch_last_used_at(&self, api_key_id: &str) -> Result<bool, DataLayerError> {
         let mut index = self
             .index

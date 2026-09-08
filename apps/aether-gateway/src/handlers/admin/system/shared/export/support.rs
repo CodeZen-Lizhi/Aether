@@ -2,6 +2,7 @@ use super::super::configs::is_sensitive_admin_system_config_key;
 use crate::api::ai::admin_endpoint_signature_parts;
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::shared::decrypt_catalog_secret_with_fallbacks;
+use crate::GatewayError;
 pub(crate) use aether_admin::system::ADMIN_SYSTEM_CONFIG_EXPORT_VERSION;
 use aether_admin::system::ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogEndpoint;
@@ -11,8 +12,10 @@ pub(crate) const ADMIN_SYSTEM_EXPORT_PAGE_LIMIT: usize = 10_000;
 pub(crate) fn decrypt_admin_system_export_secret(
     state: &AdminAppState<'_>,
     ciphertext: &str,
-) -> Option<String> {
-    decrypt_catalog_secret_with_fallbacks(state.encryption_key(), ciphertext)
+) -> Result<String, GatewayError> {
+    decrypt_catalog_secret_with_fallbacks(state.encryption_key(), ciphertext).ok_or_else(|| {
+        GatewayError::Internal("备份凭证解密失败，请检查当前系统加密配置".to_string())
+    })
 }
 
 pub(super) fn normalize_admin_system_export_api_formats(
@@ -50,8 +53,10 @@ pub(super) fn collect_admin_system_export_provider_endpoint_formats(
 pub(super) fn decrypt_admin_system_export_provider_config(
     state: &AdminAppState<'_>,
     config: Option<&serde_json::Value>,
-) -> Option<serde_json::Value> {
-    let mut decrypted = config.cloned()?;
+) -> Result<Option<serde_json::Value>, GatewayError> {
+    let Some(mut decrypted) = config.cloned() else {
+        return Ok(None);
+    };
     let Some(credentials) = decrypted
         .get_mut("provider_ops")
         .and_then(serde_json::Value::as_object_mut)
@@ -60,17 +65,19 @@ pub(super) fn decrypt_admin_system_export_provider_config(
         .and_then(|connector| connector.get_mut("credentials"))
         .and_then(serde_json::Value::as_object_mut)
     else {
-        return Some(decrypted);
+        return Ok(Some(decrypted));
     };
 
     for field in ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS {
         let Some(serde_json::Value::String(ciphertext)) = credentials.get(*field).cloned() else {
             continue;
         };
-        if let Some(plaintext) = decrypt_admin_system_export_secret(state, &ciphertext) {
-            credentials.insert((*field).to_string(), serde_json::Value::String(plaintext));
+        if ciphertext.is_empty() {
+            continue;
         }
+        let plaintext = decrypt_admin_system_export_secret(state, &ciphertext)?;
+        credentials.insert((*field).to_string(), serde_json::Value::String(plaintext));
     }
 
-    Some(decrypted)
+    Ok(Some(decrypted))
 }

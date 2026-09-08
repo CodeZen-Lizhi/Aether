@@ -1076,6 +1076,16 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
+    pub(crate) async fn restore_proxy_node(
+        &self,
+        node: &StoredProxyNode,
+    ) -> Result<bool, GatewayError> {
+        self.data
+            .restore_proxy_node(node)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
     pub(crate) async fn register_proxy_node(
         &self,
         mutation: &aether_data::repository::proxy_nodes::ProxyNodeRegistrationMutation,

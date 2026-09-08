@@ -34,12 +34,10 @@ pub struct AdminEmailTemplateUpdate {
     pub html: Option<String>,
 }
 
-pub const ADMIN_SYSTEM_CONFIG_EXPORT_VERSION: &str = "2.3";
-pub const ADMIN_SYSTEM_CONFIG_SUPPORTED_VERSIONS: &[&str] =
-    &["2.0", "2.1", "2.2", ADMIN_SYSTEM_CONFIG_EXPORT_VERSION];
-pub const ADMIN_SYSTEM_USERS_EXPORT_VERSION: &str = "1.5";
-pub const ADMIN_SYSTEM_USERS_SUPPORTED_VERSIONS: &[&str] =
-    &["1.3", "1.4", ADMIN_SYSTEM_USERS_EXPORT_VERSION];
+pub const ADMIN_SYSTEM_CONFIG_EXPORT_VERSION: &str = "3.0";
+pub const ADMIN_SYSTEM_CONFIG_SUPPORTED_VERSIONS: &[&str] = &[ADMIN_SYSTEM_CONFIG_EXPORT_VERSION];
+pub const ADMIN_SYSTEM_USERS_EXPORT_VERSION: &str = "2.0";
+pub const ADMIN_SYSTEM_USERS_SUPPORTED_VERSIONS: &[&str] = &[ADMIN_SYSTEM_USERS_EXPORT_VERSION];
 pub const ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS: &[&str] = &[
     "api_key",
     "password",
@@ -226,64 +224,6 @@ fn invalid_request(detail: impl Into<String>) -> (http::StatusCode, serde_json::
     )
 }
 
-fn parse_finite_f64_import_value<E>(raw: &str) -> Result<f64, E>
-where
-    E: de::Error,
-{
-    let value = raw
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| E::custom("expected a finite number or numeric string"))?;
-    if value.is_finite() {
-        Ok(value)
-    } else {
-        Err(E::custom("expected a finite number or numeric string"))
-    }
-}
-
-fn deserialize_optional_f64_from_number<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Number(number)) => number
-            .as_f64()
-            .filter(|value| value.is_finite())
-            .map(Some)
-            .ok_or_else(|| de::Error::custom("expected a finite number or numeric string")),
-        Some(Value::String(raw)) if !raw.trim().is_empty() => {
-            parse_finite_f64_import_value::<D::Error>(&raw).map(Some)
-        }
-        Some(_) => Err(de::Error::custom(
-            "expected a finite number or numeric string",
-        )),
-    }
-}
-
-fn deserialize_optional_u64_from_number<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Number(number)) => number
-            .as_u64()
-            .map(Some)
-            .ok_or_else(|| de::Error::custom("expected a non-negative integer or numeric string")),
-        Some(Value::String(raw)) if !raw.trim().is_empty() => raw
-            .trim()
-            .parse::<u64>()
-            .map(Some)
-            .map_err(|_| de::Error::custom("expected a non-negative integer or numeric string")),
-        Some(_) => Err(de::Error::custom(
-            "expected a non-negative integer or numeric string",
-        )),
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AdminImportMergeMode {
@@ -350,8 +290,6 @@ pub struct AdminSystemConfigImportStats {
     pub endpoints: AdminSystemConfigImportCounter,
     pub keys: AdminSystemConfigImportCounter,
     pub models: AdminSystemConfigImportCounter,
-    pub ldap: AdminSystemConfigImportCounter,
-    pub oauth: AdminSystemConfigImportCounter,
     pub system_configs: AdminSystemConfigImportCounter,
     pub routing_strategy: AdminSystemConfigImportCounter,
     pub errors: Vec<String>,
@@ -361,9 +299,9 @@ pub struct AdminSystemConfigImportStats {
 pub struct AdminSystemConfigGlobalModel {
     pub name: String,
     pub display_name: String,
-    #[serde(default, deserialize_with = "deserialize_optional_u64_from_number")]
+    #[serde(default)]
     pub usage_count: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_optional_f64_from_number")]
+    #[serde(default)]
     pub default_price_per_request: Option<f64>,
     #[serde(default)]
     pub default_tiered_pricing: Option<Value>,
@@ -414,8 +352,6 @@ pub struct AdminSystemConfigProviderKey {
     #[serde(default)]
     pub api_formats: Option<Vec<String>>,
     #[serde(default)]
-    pub supported_endpoints: Option<Vec<String>>,
-    #[serde(default)]
     pub rate_multipliers: Option<Value>,
     #[serde(default)]
     pub internal_priority: Option<i32>,
@@ -427,6 +363,10 @@ pub struct AdminSystemConfigProviderKey {
     pub allow_auth_channel_mismatch_formats: Option<Vec<String>>,
     #[serde(default)]
     pub rpm_limit: Option<u32>,
+    #[serde(default)]
+    pub concurrent_limit: Option<i32>,
+    #[serde(default)]
+    pub expires_at_unix_secs: Option<u64>,
     #[serde(default)]
     pub allowed_models: Option<Vec<String>>,
     #[serde(default)]
@@ -458,7 +398,7 @@ pub struct AdminSystemConfigProviderModel {
     pub provider_model_name: String,
     #[serde(default)]
     pub provider_model_mappings: Option<Value>,
-    #[serde(default, deserialize_with = "deserialize_optional_f64_from_number")]
+    #[serde(default)]
     pub price_per_request: Option<f64>,
     #[serde(default)]
     pub tiered_pricing: Option<Value>,
@@ -491,10 +431,16 @@ pub struct AdminSystemConfigProvider {
     pub provider_type: Option<String>,
     #[serde(default)]
     pub billing_type: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_optional_f64_from_number")]
+    #[serde(default)]
     pub monthly_quota_usd: Option<f64>,
     #[serde(default)]
+    pub monthly_used_usd: Option<f64>,
+    #[serde(default)]
     pub quota_reset_day: Option<u64>,
+    #[serde(default)]
+    pub quota_last_reset_at_unix_secs: Option<u64>,
+    #[serde(default)]
+    pub quota_expires_at_unix_secs: Option<u64>,
     #[serde(default)]
     pub enable_format_conversion: Option<bool>,
     #[serde(default = "default_true")]
@@ -503,19 +449,16 @@ pub struct AdminSystemConfigProvider {
     pub concurrent_limit: Option<i32>,
     #[serde(default)]
     pub max_retries: Option<i32>,
-    #[serde(default, deserialize_with = "deserialize_optional_f64_from_number")]
+    #[serde(default)]
     pub stream_first_byte_timeout: Option<f64>,
-    #[serde(default, deserialize_with = "deserialize_optional_f64_from_number")]
+    #[serde(default)]
     pub request_timeout: Option<f64>,
     #[serde(default)]
     pub proxy: Option<Value>,
     #[serde(default)]
     pub config: Option<Value>,
-    #[serde(default)]
     pub endpoints: Vec<AdminSystemConfigEndpoint>,
-    #[serde(default)]
     pub api_keys: Vec<AdminSystemConfigProviderKey>,
-    #[serde(default)]
     pub models: Vec<AdminSystemConfigProviderModel>,
 }
 
@@ -568,56 +511,6 @@ pub struct AdminSystemConfigProxyNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AdminSystemConfigLdap {
-    pub server_url: String,
-    pub bind_dn: String,
-    #[serde(default)]
-    pub bind_password: Option<String>,
-    pub base_dn: String,
-    #[serde(default)]
-    pub user_search_filter: Option<String>,
-    #[serde(default)]
-    pub username_attr: Option<String>,
-    #[serde(default)]
-    pub email_attr: Option<String>,
-    #[serde(default)]
-    pub display_name_attr: Option<String>,
-    #[serde(default)]
-    pub is_enabled: bool,
-    #[serde(default)]
-    pub is_exclusive: bool,
-    #[serde(default)]
-    pub use_starttls: bool,
-    #[serde(default)]
-    pub connect_timeout: Option<i32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AdminSystemConfigOAuthProvider {
-    pub provider_type: String,
-    pub display_name: String,
-    pub client_id: String,
-    #[serde(default)]
-    pub client_secret: Option<String>,
-    #[serde(default)]
-    pub authorization_url_override: Option<String>,
-    #[serde(default)]
-    pub token_url_override: Option<String>,
-    #[serde(default)]
-    pub userinfo_url_override: Option<String>,
-    #[serde(default)]
-    pub scopes: Option<Vec<String>>,
-    pub redirect_uri: String,
-    pub frontend_callback_url: String,
-    #[serde(default)]
-    pub attribute_mapping: Option<Value>,
-    #[serde(default)]
-    pub extra_config: Option<Value>,
-    #[serde(default)]
-    pub is_enabled: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdminSystemConfigEntry {
     pub key: String,
     #[serde(default)]
@@ -629,19 +522,10 @@ pub struct AdminSystemConfigEntry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdminSystemConfigDocument {
     pub version: String,
-    #[serde(default)]
     pub exported_at: String,
-    #[serde(default)]
     pub global_models: Vec<AdminSystemConfigGlobalModel>,
-    #[serde(default)]
     pub providers: Vec<AdminSystemConfigProvider>,
-    #[serde(default)]
     pub proxy_nodes: Vec<AdminSystemConfigProxyNode>,
-    #[serde(default)]
-    pub ldap_config: Option<AdminSystemConfigLdap>,
-    #[serde(default)]
-    pub oauth_providers: Vec<AdminSystemConfigOAuthProvider>,
-    #[serde(default)]
     pub system_configs: Vec<AdminSystemConfigEntry>,
     #[serde(default)]
     pub routing_strategy: Option<AdminSystemConfigRoutingStrategy>,
@@ -1286,6 +1170,9 @@ pub fn parse_admin_system_config_import_request(
         };
         invalid_request(detail)
     })?;
+
+    chrono::DateTime::parse_from_rfc3339(&document.exported_at)
+        .map_err(|_| invalid_request("exported_at 必须是 RFC3339 时间"))?;
 
     Ok(ParsedAdminSystemConfigImportRequest {
         request: AdminSystemConfigImportRequest {
@@ -2913,6 +2800,8 @@ mod tests {
             let parsed = parse_admin_system_config_import_request(
                 json!({
                     "version": version,
+                    "exported_at": "2026-09-08T00:00:00Z",
+                    "proxy_nodes": [], "system_configs": [],
                     "global_models": [],
                     "providers": [],
                 })
@@ -2923,18 +2812,18 @@ mod tests {
 
             assert_eq!(parsed.request.document.version, *version);
             assert_eq!(parsed.request.merge_mode, AdminImportMergeMode::Skip);
-            assert!(parsed.request.document.oauth_providers.is_empty());
             assert!(parsed.request.document.system_configs.is_empty());
-            assert!(parsed.request.document.ldap_config.is_none());
         }
     }
 
     #[test]
     fn parse_admin_system_config_import_request_rejects_unknown_versions() {
-        for version in ["1.9", "2.4"] {
+        for version in ["1.9", "2.2", "2.3", "3.1"] {
             let err = parse_admin_system_config_import_request(
                 json!({
                     "version": version,
+                    "exported_at": "2026-09-08T00:00:00Z",
+                    "proxy_nodes": [], "system_configs": [],
                     "global_models": [],
                     "providers": [],
                 })
@@ -2958,7 +2847,9 @@ mod tests {
     fn parse_admin_system_config_import_request_rejects_invalid_merge_mode() {
         let err = parse_admin_system_config_import_request(
             json!({
-                "version": "2.2",
+                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
+                "exported_at": "2026-09-08T00:00:00Z",
+                "proxy_nodes": [], "system_configs": [],
                 "merge_mode": "replace_all",
             })
             .to_string()
@@ -2977,10 +2868,13 @@ mod tests {
     fn parse_admin_system_config_import_request_reports_field_path_for_shape_errors() {
         let err = parse_admin_system_config_import_request(
             json!({
-                "version": "2.2",
+                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
+                "exported_at": "2026-09-08T00:00:00Z",
+                "proxy_nodes": [], "system_configs": [],
                 "global_models": [],
                 "providers": [{
                     "name": "import-openai",
+                    "api_keys": [], "models": [],
                     "endpoints": [{
                         "api_format": "openai:chat",
                         "base_url": "https://api.example.com",
@@ -3000,32 +2894,35 @@ mod tests {
     }
 
     #[test]
-    fn parse_admin_system_config_import_request_accepts_numeric_string_fields() {
+    fn parse_admin_system_config_import_request_accepts_current_numeric_fields() {
         let parsed = parse_admin_system_config_import_request(
             json!({
-                "version": "2.2",
+                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
+                "exported_at": "2026-09-08T00:00:00Z",
+                "proxy_nodes": [], "system_configs": [],
                 "global_models": [{
                     "name": "veo3.1",
                     "display_name": "Veo 3.1",
-                    "usage_count": "42",
-                    "default_price_per_request": "1.80000000",
+                    "usage_count": 42,
+                    "default_price_per_request": 1.8,
                 }],
                 "providers": [{
                     "name": "undyapi",
-                    "monthly_quota_usd": "12.50",
-                    "stream_first_byte_timeout": "60",
-                    "request_timeout": "120",
+                    "endpoints": [], "api_keys": [],
+                    "monthly_quota_usd": 12.5,
+                    "stream_first_byte_timeout": 60,
+                    "request_timeout": 120,
                     "models": [{
                         "global_model_name": "veo3.1",
                         "provider_model_name": "veo3.1",
-                        "price_per_request": "0.70000000",
+                        "price_per_request": 0.7,
                     }]
                 }],
             })
             .to_string()
             .as_bytes(),
         )
-        .expect("numeric string fields from Python exports should parse");
+        .expect("current numeric fields should parse");
 
         let global_model = &parsed.request.document.global_models[0];
         assert_eq!(global_model.usage_count, Some(42));
@@ -3039,21 +2936,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_admin_system_config_import_request_rejects_invalid_numeric_string_fields() {
+    fn parse_admin_system_config_import_request_rejects_old_numeric_string_fields() {
         let err = parse_admin_system_config_import_request(
             json!({
-                "version": "2.2",
+                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
+                "exported_at": "2026-09-08T00:00:00Z",
+                "proxy_nodes": [], "system_configs": [],
                 "global_models": [{
                     "name": "veo3.1",
                     "display_name": "Veo 3.1",
-                    "default_price_per_request": "not-a-number",
+                    "default_price_per_request": "1.8",
                 }],
                 "providers": [],
             })
             .to_string()
             .as_bytes(),
         )
-        .expect_err("invalid numeric string fields should fail");
+        .expect_err("old numeric string fields should fail");
 
         assert_eq!(err.0, http::StatusCode::BAD_REQUEST);
         let detail = err.1["detail"].as_str().expect("detail should be a string");

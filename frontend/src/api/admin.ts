@@ -6,6 +6,9 @@ import type { BillingSummary } from './auth'
 
 const SYSTEM_DATA_IMPORT_TIMEOUT_MS = 10 * 60 * 1000
 const ALL_SYSTEM_CONFIGS_CACHE_KEY = 'admin:system:configs'
+export const CONFIG_EXPORT_VERSION = '3.0'
+export const USERS_EXPORT_VERSION = '2.0'
+export const AGGREGATE_EXPORT_VERSION = '2.0'
 
 export interface AdminSystemConfigItem {
   key: string
@@ -29,39 +32,6 @@ function extractConflictPayload(error: unknown): ManualUsageCleanupConflict | nu
   return data
 }
 
-// LDAP 配置导出结构
-export interface LDAPConfigExport {
-  server_url: string
-  bind_dn: string
-  bind_password?: string
-  base_dn: string
-  user_search_filter?: string
-  username_attr?: string
-  email_attr?: string
-  display_name_attr?: string
-  is_enabled?: boolean
-  is_exclusive?: boolean
-  use_starttls?: boolean
-  connect_timeout?: number
-}
-
-// OAuth Provider 导出结构
-export interface OAuthProviderExport {
-  provider_type: string
-  display_name: string
-  client_id: string
-  client_secret?: string
-  authorization_url_override?: string | null
-  token_url_override?: string | null
-  userinfo_url_override?: string | null
-  scopes?: string[] | null
-  redirect_uri: string
-  frontend_callback_url: string
-  attribute_mapping?: Record<string, unknown>
-  extra_config?: Record<string, unknown>
-  is_enabled?: boolean
-}
-
 export interface SystemConfigExport {
   key: string
   value: unknown
@@ -74,10 +44,8 @@ export interface ConfigExportData {
   exported_at: string
   global_models: GlobalModelExport[]
   providers: ProviderExport[]
-  proxy_nodes?: ProxyNodeExport[]
-  ldap_config?: LDAPConfigExport | null
-  oauth_providers?: OAuthProviderExport[]
-  system_configs?: SystemConfigExport[]
+  proxy_nodes: ProxyNodeExport[]
+  system_configs: SystemConfigExport[]
   routing_strategy?: RoutingStrategyExport | null
 }
 
@@ -112,10 +80,10 @@ export interface ProxyNodeExport {
 export interface UsersExportData {
   version: string
   exported_at: string
-  user_groups?: UserGroupExport[]
+  provider_names: Record<string, string>
   users: UserExport[]
-  standalone_keys?: StandaloneKeyExport[]
-  usage_aggregates?: UsageAggregateSnapshot
+  standalone_keys: UserApiKeyExport[]
+  usage_aggregates: UsageAggregateSnapshot
 }
 
 export interface AggregateExportData {
@@ -137,27 +105,14 @@ export interface S3BackupRunResponse {
   }
 }
 
-export interface UserGroupExport {
-  id?: string
-  name: string
-  description?: string | null
-  allowed_providers?: string[] | null
-  allowed_providers_mode?: 'inherit' | 'unrestricted' | 'specific' | 'deny_all'
-  allowed_api_formats?: string[] | null
-  allowed_api_formats_mode?: 'inherit' | 'unrestricted' | 'specific' | 'deny_all'
-  allowed_models?: string[] | null
-  allowed_models_mode?: 'inherit' | 'unrestricted' | 'specific' | 'deny_all'
-  rate_limit?: number | null
-  rate_limit_mode?: 'inherit' | 'system' | 'custom'
-}
-
 export interface UserExport {
-  id?: string
-  email: string
+  id: string
+  email: string | null
   email_verified?: boolean
   username: string
-  password_hash: string
+  password_hash: string | null
   role: string
+  auth_source: string
   allowed_providers?: string[] | null
   allowed_providers_mode?: 'inherit' | 'unrestricted' | 'specific' | 'deny_all'
   allowed_api_formats?: string[] | null
@@ -168,18 +123,30 @@ export interface UserExport {
   rate_limit_mode?: 'inherit' | 'system' | 'custom'
   model_capability_settings?: Record<string, Record<string, boolean>>
   feature_settings?: Record<string, unknown> | null
-  group_ids?: string[]
-  group_names?: string[]
-  unlimited?: boolean
-  wallet?: BillingSummary | null
+  preferences: UserPreferencesExport | null
   is_active: boolean
   request_count?: number
   total_tokens?: number
   api_keys: UserApiKeyExport[]
 }
 
+export interface UserPreferencesExport {
+  user_id: string
+  avatar_url: string | null
+  bio: string | null
+  default_provider_id: string | null
+  default_provider_name: string | null
+  theme: string
+  language: string
+  timezone: string
+  email_notifications: boolean
+  usage_alerts: boolean
+  announcement_notifications: boolean
+}
+
 export interface UserApiKeyExport {
-  api_key_id?: string
+  api_key_id: string
+  user_id: string
   key?: string | null
   key_hash: string
   key_encrypted?: string | null
@@ -189,20 +156,20 @@ export interface UserApiKeyExport {
   allowed_api_formats?: string[] | null
   allowed_models?: string[] | null
   ip_rules?: string[] | null
-  rate_limit?: number | null  // legacy/null 兼容；1.3+ standalone null = 跟随系统默认
+  rate_limit: number | null
   concurrent_limit?: number | null
   force_capabilities?: Record<string, boolean>
   feature_settings?: Record<string, unknown> | null
   is_active: boolean
-  expires_at?: string | null
+  expires_at_unix_secs: number | null
+  last_used_at_unix_secs: number | null
+  created_at_unix_secs: number | null
+  updated_at_unix_secs: number | null
   auto_delete_on_expiry?: boolean
   total_requests?: number
   total_tokens?: number
   total_cost_usd?: number
 }
-
-// 独立余额 Key 导出结构（与 UserApiKeyExport 相同，但不包含 is_standalone）
-export type StandaloneKeyExport = Omit<UserApiKeyExport, 'is_standalone'>
 
 export interface StatsDailyAggregateExport {
   date_unix_secs: number
@@ -286,7 +253,10 @@ export interface ProviderExport {
   provider_type?: string
   billing_type?: string | null
   monthly_quota_usd?: number | null
-  quota_reset_day?: number
+  monthly_used_usd?: number | null
+  quota_reset_day?: number | null
+  quota_last_reset_at_unix_secs?: number | null
+  quota_expires_at_unix_secs?: number | null
   enable_format_conversion?: boolean
   is_active: boolean
   concurrent_limit?: number | null
@@ -321,12 +291,13 @@ export interface ProviderKeyExport {
   name?: string | null
   note?: string | null
   api_formats: string[]
-  supported_endpoints?: string[]
   rate_multipliers?: Record<string, number> | null  // 遗留字段：按格式覆盖倍率已废弃，计费只读 default_rate_multiplier
   default_rate_multiplier?: number | null
   auth_type_by_format?: Record<string, 'api_key' | 'bearer'> | null
   allow_auth_channel_mismatch_formats?: string[] | null
   rpm_limit?: number | null
+  concurrent_limit?: number | null
+  expires_at_unix_secs?: number | null
   allowed_models?: string[] | null
   capabilities?: Record<string, boolean>
   cache_ttl_minutes?: number
@@ -614,18 +585,18 @@ export interface ConfigImportRequest extends ConfigExportData {
 
 export interface UsersImportResponse {
   message: string
+  reauthentication_required: boolean
   stats: {
-    user_groups?: { created: number; updated: number; skipped: number }
     users: { created: number; updated: number; skipped: number }
-    api_keys: { created: number; updated?: number; skipped: number }
-    standalone_keys?: { created: number; updated?: number; skipped: number }
+    api_keys: { created: number; updated: number; skipped: number }
+    standalone_keys: { created: number; updated: number; skipped: number }
     usage_aggregates?: UsageAggregateImportSummary
     errors: string[]
   }
 }
 
 export interface AggregateImportRequest extends AggregateExportData {
-  merge_mode: 'skip' | 'overwrite' | 'error'
+  merge_mode: 'skip' | 'overwrite'
 }
 
 export interface AggregateImportResponse {
@@ -643,8 +614,6 @@ export interface ConfigImportResponse {
     endpoints: { created: number; updated: number; skipped: number }
     keys: { created: number; updated: number; skipped: number }
     models: { created: number; updated: number; skipped: number }
-    ldap?: { created: number; updated: number; skipped: number }
-    oauth?: { created: number; updated: number; skipped: number }
     system_configs?: { created: number; updated: number; skipped: number }
     routing_strategy?: { created: number; updated: number; skipped: number }
     errors: string[]

@@ -392,6 +392,20 @@ export const messages = {
 } as const
 
 const legacyExactEnglishMessages: Record<string, string> = {
+  "提供商、端点、渠道 Key、模型、代理节点、调度策略与系统配置": "Providers, endpoints, channel keys, models, proxy nodes, routing strategy, and system settings",
+  "配置、管理员资料与偏好、API Keys 及用量统计的一体化备份": "A complete backup of settings, the admin profile and preferences, API keys, and usage statistics",
+  "仅支持当前版本导出的配置文件，请重新导出": "Only configuration files exported by the current version are supported. Please export again.",
+  "仅支持当前版本导出的完整备份，请重新导出": "Only full backups exported by the current version are supported. Please export again.",
+  "请使用完整备份导入用户资料和 API Keys": "Use a full backup to import the admin profile and API keys.",
+  "读取文件失败，请重新选择文件": "Unable to read the file. Please select it again.",
+  "部分数据未能导入，请查看结果详情": "Some data could not be imported. See the result details.",
+  "遇到冲突时停止导入，已写入的数据会保留": "Stop on a conflict. Data already written will be retained.",
+  "相同的 API Keys 按所选模式跳过或覆盖。仅支持当前版本导出的配置文件。": "Matching API keys are skipped or overwritten according to the selected mode. Only current-version exports are supported.",
+  "覆盖当前管理员的账号、密码和偏好，并还原备份中的配置与 API Keys": "Overwrite the current admin account, password, and preferences, and restore the backed-up settings and API keys.",
+  "仅支持当前版本导出的备份。密钥会使用目标系统的加密配置重新加密；管理员密码变化后，需使用备份中的账号密码重新登录。备份包含凭证，请妥善保存。": "Only current-version backups are supported. Keys are encrypted again using the target system configuration. If the admin password changes, sign in again with the backed-up credentials. Store the backup securely because it contains credentials.",
+  "管理员密码已恢复，请使用备份中的账号密码重新登录。": "The admin password has been restored. Sign in again with the backed-up credentials.",
+  "管理员资料": "Admin profile",
+  "独立 Keys": "Standalone keys",
   '关闭': 'Close',
   '取消': 'Cancel',
   '确定': 'Confirm',
@@ -2503,6 +2517,8 @@ const legacyPhraseEnglishMessages: Array<[string, string]> = [
 ]
 
 const legacyDynamicPatterns: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+  [/^管理员:\s*(.+)$/, (match) => `Admin: ${match[1]}`],
+  [/^独立 Keys:\s*(\d+)\s*个$/, (match) => `Standalone keys: ${match[1]}`],
   [/^(.+) 次请求 · (.+)$/u, match => `${match[1]} requests · ${match[2]}`],
   [/^暂无 (.+) 格式的 Key$/u, match => `No ${match[1]} format keys`],
   [/^会话剩余 (.+)$/u, match => `Session remaining ${match[1]}`],

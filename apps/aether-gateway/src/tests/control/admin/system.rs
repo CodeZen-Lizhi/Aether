@@ -225,7 +225,7 @@ async fn gateway_handles_admin_system_stats_locally_with_trusted_admin_principal
 }
 
 #[tokio::test]
-async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_principal() {
+async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
     let upstream = Router::new().route(
@@ -241,8 +241,8 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
 
     let provider_id = "provider-openai".to_string();
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![
-            sample_provider(&provider_id, "openai", 10).with_transport_fields(
+        vec![{
+            let mut provider = sample_provider(&provider_id, "openai", 10).with_transport_fields(
                 true,
                 true,
                 Some(8),
@@ -263,13 +263,20 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
                         }
                     }
                 })),
-            ),
-        ],
+            );
+            provider.billing_type = Some("monthly_quota".to_string());
+            provider.monthly_quota_usd = Some(100.0);
+            provider.monthly_used_usd = Some(12.5);
+            provider.quota_reset_day = Some(30);
+            provider.quota_last_reset_at_unix_secs = Some(1_710_000_000);
+            provider.quota_expires_at_unix_secs = Some(4_102_444_800);
+            provider
+        }],
         vec![
             sample_endpoint(
                 "endpoint-chat",
                 &provider_id,
-                "openai",
+                "openai:chat",
                 "https://api.openai.example",
             ),
             sample_endpoint(
@@ -279,19 +286,70 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
                 "https://api.openai.example",
             ),
         ],
-        vec![{
-            let mut key = sample_key("key-openai", &provider_id, "openai:chat", "live-api-key");
-            key.name = "primary".to_string();
-            key.allowed_models = Some(json!(["gpt-5"]));
-            key.encrypted_auth_config = Some(
-                encrypt_python_fernet_plaintext(
-                    DEVELOPMENT_ENCRYPTION_KEY,
-                    r#"{"refresh_token":"oauth-refresh"}"#,
-                )
-                .expect("auth config should encrypt"),
-            );
-            key
-        }],
+        vec![
+            {
+                let mut key = sample_key("key-openai", &provider_id, "openai:chat", "live-api-key");
+                key.name = "primary".to_string();
+                key.allowed_models = Some(json!(["gpt-5"]));
+                key.concurrent_limit = Some(7);
+                key.expires_at_unix_secs = Some(4_102_444_800);
+                key.proxy = Some(json!({"node_id": "node-1"}));
+                key.fingerprint = Some(json!({"user_agent": "backup-test-agent"}));
+                key.encrypted_auth_config = Some(
+                    encrypt_python_fernet_plaintext(
+                        DEVELOPMENT_ENCRYPTION_KEY,
+                        r#"{"refresh_token":"oauth-refresh"}"#,
+                    )
+                    .expect("auth config should encrypt"),
+                );
+                key
+            },
+            {
+                let mut key = sample_key(
+                    "key-z-oauth-a",
+                    &provider_id,
+                    "openai:responses",
+                    "oauth-access-a",
+                );
+                key.auth_type = "oauth".to_string();
+                key.name = "same-oauth-name".to_string();
+                key.expires_at_unix_secs = Some(4_102_444_800);
+                key.encrypted_auth_config = Some(
+                    encrypt_python_fernet_plaintext(
+                        DEVELOPMENT_ENCRYPTION_KEY,
+                        r#"{"refresh_token":"oauth-refresh-a","account_id":"account-a"}"#,
+                    )
+                    .unwrap(),
+                );
+                key
+            },
+            {
+                let mut key = sample_key(
+                    "key-z-oauth-b",
+                    &provider_id,
+                    "openai:responses",
+                    "oauth-access-b",
+                );
+                key.auth_type = "oauth".to_string();
+                key.name = "same-oauth-name".to_string();
+                key.expires_at_unix_secs = Some(4_102_444_800);
+                key
+            },
+            {
+                let mut key = sample_key("key-z-service", &provider_id, "openai:chat", "unused");
+                key.auth_type = "service_account".to_string();
+                key.name = "service-account".to_string();
+                key.encrypted_api_key = None;
+                key.encrypted_auth_config = Some(
+                    encrypt_python_fernet_plaintext(
+                        DEVELOPMENT_ENCRYPTION_KEY,
+                        r#"{"client_email":"backup@example.com","private_key":"test-private-key"}"#,
+                    )
+                    .unwrap(),
+                );
+                key
+            },
+        ],
     ));
     let global_model_repository = Arc::new(
         InMemoryGlobalModelReadRepository::seed(Vec::<StoredPublicGlobalModel>::new())
@@ -314,15 +372,21 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
     let oauth_provider_repository = Arc::new(InMemoryOAuthProviderRepository::seed(vec![
         sample_oauth_provider_config("linuxdo"),
     ]));
-    let proxy_node_repository =
-        Arc::new(InMemoryProxyNodeRepository::seed(vec![sample_proxy_node(
-            "node-1",
-        )
-        .with_manual_proxy_fields(
-            Some("http://proxy.local:8080".to_string()),
-            Some("proxy-user".to_string()),
-            Some("proxy-pass".to_string()),
-        )]));
+    let mut manual_proxy = sample_proxy_node("node-1").with_manual_proxy_fields(
+        Some("http://proxy.local:8080".to_string()),
+        Some("proxy-user".to_string()),
+        Some("proxy-pass".to_string()),
+    );
+    manual_proxy.is_manual = true;
+    manual_proxy.tunnel_mode = false;
+    manual_proxy.ip = "proxy.local".to_string();
+    manual_proxy.port = 8080;
+    manual_proxy.status = "online".to_string();
+    manual_proxy.remote_config = None;
+    let proxy_node_repository = Arc::new(InMemoryProxyNodeRepository::seed(vec![
+        manual_proxy.clone(),
+        sample_proxy_node("tunnel-node"),
+    ]));
 
     let data_state = GatewayDataState::disabled()
         .attach_provider_catalog_repository_for_tests(provider_catalog_repository)
@@ -340,6 +404,7 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
                 ),
             ),
             ("site_name".to_string(), json!("Aether Test")),
+            ("external_models_proxy_node_id".to_string(), json!("node-1")),
         ]);
 
     let (upstream_url, upstream_handle) = start_server(upstream).await;
@@ -362,7 +427,10 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
 
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(payload["version"], "2.3");
+    assert_eq!(
+        payload["version"],
+        aether_admin::system::ADMIN_SYSTEM_CONFIG_EXPORT_VERSION
+    );
     assert!(payload["exported_at"].as_str().is_some());
     assert_eq!(payload["global_models"][0]["name"], "gpt-5");
     assert_eq!(payload["global_models"][0]["usage_count"], json!(7));
@@ -378,23 +446,25 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
     );
     assert_eq!(
         payload["providers"][0]["api_keys"][0]["auth_config"],
-        r#"{"refresh_token":"oauth-refresh"}"#
+        json!({"refresh_token":"oauth-refresh"})
     );
     assert_eq!(
-        payload["providers"][0]["api_keys"][0]["supported_endpoints"],
+        payload["providers"][0]["api_keys"][0]["api_formats"],
         json!(["openai:chat"])
     );
     assert_eq!(
         payload["providers"][0]["models"][0]["global_model_name"],
         "gpt-5"
     );
-    assert_eq!(payload["ldap_config"]["bind_password"], "");
+    assert!(payload.get("ldap_config").is_none());
+    assert!(payload.get("oauth_providers").is_none());
     assert_eq!(
-        payload["oauth_providers"][0]["client_secret"],
-        "secret-value"
-    );
-    assert_eq!(
-        payload["proxy_nodes"][0]["proxy_url"],
+        payload["proxy_nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["id"] == "node-1")
+            .unwrap()["proxy_url"],
         "http://proxy.local:8080"
     );
     let smtp_password = payload["system_configs"]
@@ -406,6 +476,136 @@ async fn gateway_handles_admin_system_config_export_locally_with_trusted_admin_p
         .expect("smtp_password should exist");
     assert_eq!(smtp_password["value"], "smtp-secret");
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
+
+    // Restore the actual current export into an isolated SQLite database with another encryption key.
+    let pool = aether_data::SqlPoolConfig {
+        min_connections: 0,
+        max_connections: 1,
+        ..Default::default()
+    };
+    let database = aether_data::SqlDatabaseConfig::new(
+        aether_data::DatabaseDriver::Sqlite,
+        "sqlite::memory:",
+        pool,
+    )
+    .expect("sqlite config should build");
+    let target = AppState::new()
+        .unwrap()
+        .with_data_config(
+            crate::data::GatewayDataConfig::from_database_config(database)
+                .with_encryption_key("backup-target-encryption-key"),
+        )
+        .unwrap();
+    target.run_database_migrations().await.unwrap();
+    manual_proxy.id = "target-node".to_string();
+    target.restore_proxy_node(&manual_proxy).await.unwrap();
+    let target_admin = crate::admin_api::AdminAppState::new(&target);
+    let mut invalid = payload.clone();
+    invalid["providers"][0]["proxy"]["node_id"] = json!("missing-node");
+    assert!(target_admin
+        .import_admin_system_config(&axum::body::Bytes::from(invalid.to_string()),)
+        .await
+        .unwrap()
+        .is_err());
+    assert!(target
+        .list_provider_catalog_providers(false)
+        .await
+        .unwrap()
+        .is_empty());
+
+    let mut request = payload.clone();
+    request["merge_mode"] = json!("overwrite");
+    let result = target_admin
+        .import_admin_system_config(&axum::body::Bytes::from(request.to_string()))
+        .await
+        .unwrap()
+        .expect("current config export must import");
+    assert_eq!(result["stats"]["providers"]["created"], 1);
+    assert_eq!(result["stats"]["keys"]["created"], 4);
+    assert_eq!(result["stats"]["proxy_nodes"]["created"], 1);
+    assert_eq!(result["stats"]["proxy_nodes"]["updated"], 1);
+    assert_eq!(result["stats"]["errors"], json!([]));
+
+    let restored = target_admin
+        .build_admin_system_config_export_payload()
+        .await
+        .unwrap();
+    assert_eq!(restored["global_models"], payload["global_models"]);
+    let mut expected_provider = payload["providers"][0].clone();
+    expected_provider["id"] = restored["providers"][0]["id"].clone();
+    expected_provider["api_keys"][0]["id"] = restored["providers"][0]["api_keys"][0]["id"].clone();
+    expected_provider["proxy"]["node_id"] = json!("target-node");
+    expected_provider["api_keys"][0]["proxy"]["node_id"] = json!("target-node");
+    assert_eq!(restored["providers"][0], expected_provider);
+    for node in payload["proxy_nodes"].as_array().unwrap() {
+        let mut expected_node = node.clone();
+        if node["id"] == "node-1" {
+            expected_node["id"] = json!("target-node");
+        }
+        let restored_node = restored["proxy_nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["id"] == expected_node["id"])
+            .unwrap();
+        assert_eq!(restored_node, &expected_node);
+    }
+    assert_eq!(
+        target
+            .find_proxy_node("tunnel-node")
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        "offline"
+    );
+    for entry in payload["system_configs"].as_array().unwrap() {
+        let restored_entry = restored["system_configs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["key"] == entry["key"])
+            .unwrap();
+        let expected_value = if entry["key"] == "external_models_proxy_node_id" {
+            json!("target-node")
+        } else {
+            entry["value"].clone()
+        };
+        assert_eq!(restored_entry["value"], expected_value);
+    }
+    let stored_key = target
+        .list_provider_catalog_keys_by_provider_ids(&[restored["providers"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string()])
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|key| key.id == "key-openai")
+        .unwrap();
+    assert_eq!(
+        aether_crypto::decrypt_python_fernet_ciphertext(
+            "backup-target-encryption-key",
+            stored_key.encrypted_api_key.as_deref().unwrap(),
+        )
+        .unwrap(),
+        "live-api-key",
+    );
+    for mode in ["skip", "overwrite"] {
+        request["merge_mode"] = json!(mode);
+        let result = target_admin
+            .import_admin_system_config(&axum::body::Bytes::from(request.to_string()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result["stats"]["keys"]["created"], 0);
+        assert_eq!(result["stats"]["errors"], json!([]));
+        let repeated = target_admin
+            .build_admin_system_config_export_payload()
+            .await
+            .unwrap();
+        assert_eq!(repeated["providers"], restored["providers"]);
+    }
 
     gateway_handle.abort();
     upstream_handle.abort();

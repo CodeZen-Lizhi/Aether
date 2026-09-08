@@ -337,6 +337,17 @@ impl ProxyNodeReadRepository for InMemoryProxyNodeRepository {
 
 #[async_trait]
 impl ProxyNodeWriteRepository for InMemoryProxyNodeRepository {
+    async fn restore_proxy_node(&self, node: &StoredProxyNode) -> Result<(), DataLayerError> {
+        let mut nodes = self.nodes.write().expect("proxy node repository lock");
+        if let Some(existing) = nodes.values().find(|existing| {
+            existing.id != node.id && existing.ip == node.ip && existing.port == node.port
+        }) {
+            return Err(Self::duplicate_proxy_node_error(existing));
+        }
+        nodes.insert(node.id.clone(), node.clone());
+        Ok(())
+    }
+
     async fn reset_stale_tunnel_statuses(&self) -> Result<usize, DataLayerError> {
         let mut nodes = self.nodes.write().expect("proxy node repository lock");
         let now = Self::now_unix_secs();

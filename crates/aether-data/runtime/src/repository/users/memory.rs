@@ -1312,6 +1312,73 @@ impl UserReadRepository for InMemoryUserReadRepository {
         Ok(true)
     }
 
+    async fn restore_admin_profile(
+        &self,
+        profile: &StoredUserExportRow,
+    ) -> Result<bool, DataLayerError> {
+        if self.read_only {
+            return Ok(false);
+        }
+        let mut auth_by_id = self.auth_by_id.write().expect("user repository lock");
+        let Some(user) = auth_by_id.get_mut(&profile.id) else {
+            return Ok(false);
+        };
+        if user.role != "admin" || user.auth_source != "local" || !user.is_active || user.is_deleted
+        {
+            return Ok(false);
+        }
+        let mut identifiers = self
+            .auth_by_identifier
+            .write()
+            .expect("user repository lock");
+        identifiers.remove(&user.username);
+        if let Some(email) = &user.email {
+            identifiers.remove(email);
+        }
+        user.email = profile.email.clone();
+        user.email_verified = profile.email_verified;
+        user.username = profile.username.clone();
+        user.password_hash = profile.password_hash.clone();
+        user.allowed_providers = profile.allowed_providers.clone();
+        user.allowed_providers_mode = profile.allowed_providers_mode.clone();
+        user.allowed_api_formats = profile.allowed_api_formats.clone();
+        user.allowed_api_formats_mode = profile.allowed_api_formats_mode.clone();
+        user.allowed_models = profile.allowed_models.clone();
+        user.allowed_models_mode = profile.allowed_models_mode.clone();
+        identifiers.insert(user.username.clone(), user.id.clone());
+        if let Some(email) = &user.email {
+            identifiers.insert(email.clone(), user.id.clone());
+        }
+        self.by_id
+            .write()
+            .expect("user repository lock")
+            .insert(user.id.clone(), user.to_summary()?);
+        drop(identifiers);
+        drop(auth_by_id);
+        let mut rows = self.export_rows.write().expect("user repository lock");
+        rows.retain(|row| row.id != profile.id);
+        rows.push(profile.clone());
+        drop(rows);
+        for (store, settings) in [
+            (
+                &self.model_settings_by_user_id,
+                &profile.model_capability_settings,
+            ),
+            (&self.feature_settings_by_user_id, &profile.feature_settings),
+        ] {
+            let mut values = store.write().expect("user repository lock");
+            match settings {
+                Some(value) => {
+                    values.insert(profile.id.clone(), value.clone());
+                }
+                None => {
+                    values.remove(&profile.id);
+                }
+            }
+        }
+        Ok(true)
+    }
+
     async fn update_local_auth_user_profile(
         &self,
         user_id: &str,

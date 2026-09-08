@@ -3,11 +3,10 @@ use chrono::{DateTime, TimeZone, Utc};
 use sqlx::{sqlite::SqliteRow, QueryBuilder, Row, Sqlite};
 
 use aether_data_contracts::repository::users::{
-    LdapAuthUserProvisioningOutcome, StoredUserAuthRecord,
-    StoredUserExportRow, StoredUserGroup, StoredUserGroupMember, StoredUserGroupMembership,
-    StoredUserOAuthLinkSummary, StoredUserPreferenceRecord, StoredUserSessionRecord,
-    StoredUserSummary, UpsertUserGroupRecord, UserExportListQuery, UserExportSortBy,
-    UserExportSummary, UserReadRepository,
+    LdapAuthUserProvisioningOutcome, StoredUserAuthRecord, StoredUserExportRow, StoredUserGroup,
+    StoredUserGroupMember, StoredUserGroupMembership, StoredUserOAuthLinkSummary,
+    StoredUserPreferenceRecord, StoredUserSessionRecord, StoredUserSummary, UpsertUserGroupRecord,
+    UserExportListQuery, UserExportSortBy, UserExportSummary, UserReadRepository,
 };
 use aether_data_contracts::DataLayerError;
 
@@ -141,7 +140,6 @@ impl SqliteUserReadRepository {
         let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
         rows.iter().map(map_user_auth_row).collect()
     }
-
 }
 
 #[async_trait]
@@ -618,6 +616,57 @@ WHERE is_deleted = 0
             .await
             .map_sql_err()?;
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn restore_admin_profile(
+        &self,
+        profile: &StoredUserExportRow,
+    ) -> Result<bool, DataLayerError> {
+        let result = sqlx::query(
+            r#"
+UPDATE users SET email = ?, email_verified = ?, username = ?, password_hash = ?,
+  allowed_providers = ?, allowed_providers_mode = ?,
+  allowed_api_formats = ?, allowed_api_formats_mode = ?,
+  allowed_models = ?, allowed_models_mode = ?, rate_limit = ?, rate_limit_mode = ?,
+  model_capability_settings = ?, feature_settings = ?, updated_at = ?
+WHERE id = ? AND role = 'admin' AND auth_source = 'local' AND is_active = 1 AND is_deleted = 0
+"#,
+        )
+        .bind(&profile.email)
+        .bind(profile.email_verified)
+        .bind(&profile.username)
+        .bind(&profile.password_hash)
+        .bind(optional_string_list_json(
+            profile.allowed_providers.clone(),
+            "users.allowed_providers",
+        )?)
+        .bind(&profile.allowed_providers_mode)
+        .bind(optional_string_list_json(
+            profile.allowed_api_formats.clone(),
+            "users.allowed_api_formats",
+        )?)
+        .bind(&profile.allowed_api_formats_mode)
+        .bind(optional_string_list_json(
+            profile.allowed_models.clone(),
+            "users.allowed_models",
+        )?)
+        .bind(&profile.allowed_models_mode)
+        .bind(profile.rate_limit)
+        .bind(&profile.rate_limit_mode)
+        .bind(optional_json_string(
+            profile.model_capability_settings.clone(),
+            "users.model_capability_settings",
+        )?)
+        .bind(optional_json_string(
+            profile.feature_settings.clone(),
+            "users.feature_settings",
+        )?)
+        .bind(chrono::Utc::now().timestamp())
+        .bind(&profile.id)
+        .execute(&self.pool)
+        .await
+        .map_sql_err()?;
+        Ok(result.rows_affected() == 1)
     }
 
     async fn update_local_auth_user_profile(

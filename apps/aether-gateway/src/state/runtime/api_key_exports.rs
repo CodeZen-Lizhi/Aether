@@ -229,6 +229,21 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
+    pub(crate) async fn restore_exported_api_key(
+        &self,
+        record: &aether_data::repository::auth::StoredAuthApiKeyExportRecord,
+    ) -> Result<bool, GatewayError> {
+        let restored = self
+            .data
+            .restore_exported_api_key(record)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))?;
+        if restored {
+            self.invalidate_auth_context_cache();
+        }
+        Ok(restored)
+    }
+
     pub(crate) async fn create_user_api_key(
         &self,
         record: aether_data::repository::auth::CreateUserApiKeyRecord,

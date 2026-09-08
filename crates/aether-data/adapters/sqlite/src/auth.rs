@@ -393,6 +393,96 @@ FROM api_keys
 
 #[async_trait]
 impl AuthApiKeyWriteRepository for SqliteAuthApiKeyReadRepository {
+    async fn restore_exported_api_key(
+        &self,
+        record: &StoredAuthApiKeyExportRecord,
+    ) -> Result<bool, DataLayerError> {
+        let now = current_unix_secs();
+        let result = sqlx::query(
+            r#"
+INSERT INTO api_keys (
+  id, user_id, key_hash, key_encrypted, name, allowed_providers,
+  allowed_api_formats, allowed_models, ip_rules, rate_limit, concurrent_limit,
+  force_capabilities, feature_settings, is_active, expires_at, auto_delete_on_expiry,
+  total_requests, total_tokens, total_cost_usd, is_standalone,
+  last_used_at, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  key_encrypted = excluded.key_encrypted, name = excluded.name,
+  allowed_providers = excluded.allowed_providers,
+  allowed_api_formats = excluded.allowed_api_formats, allowed_models = excluded.allowed_models,
+  ip_rules = excluded.ip_rules, rate_limit = excluded.rate_limit,
+  concurrent_limit = excluded.concurrent_limit, force_capabilities = excluded.force_capabilities,
+  feature_settings = excluded.feature_settings, is_active = excluded.is_active,
+  expires_at = excluded.expires_at, auto_delete_on_expiry = excluded.auto_delete_on_expiry,
+  total_requests = excluded.total_requests, total_tokens = excluded.total_tokens,
+  total_cost_usd = excluded.total_cost_usd, last_used_at = excluded.last_used_at,
+  updated_at = excluded.updated_at
+WHERE api_keys.user_id = excluded.user_id
+  AND api_keys.key_hash = excluded.key_hash
+  AND api_keys.is_standalone = excluded.is_standalone
+"#,
+        )
+        .bind(&record.api_key_id)
+        .bind(&record.user_id)
+        .bind(&record.key_hash)
+        .bind(&record.key_encrypted)
+        .bind(&record.name)
+        .bind(json_string_from_string_list(
+            record.allowed_providers.as_ref(),
+            "api_keys.allowed_providers",
+        )?)
+        .bind(json_string_from_string_list(
+            record.allowed_api_formats.as_ref(),
+            "api_keys.allowed_api_formats",
+        )?)
+        .bind(json_string_from_string_list(
+            record.allowed_models.as_ref(),
+            "api_keys.allowed_models",
+        )?)
+        .bind(json_string_from_string_list(
+            record.ip_rules.as_ref(),
+            "api_keys.ip_rules",
+        )?)
+        .bind(record.rate_limit)
+        .bind(record.concurrent_limit)
+        .bind(optional_json_to_string(
+            &record.force_capabilities,
+            "api_keys.force_capabilities",
+        )?)
+        .bind(optional_json_to_string(
+            &record.feature_settings,
+            "api_keys.feature_settings",
+        )?)
+        .bind(record.is_active)
+        .bind(optional_i64_from_u64(
+            record.expires_at_unix_secs,
+            "api_keys.expires_at",
+        )?)
+        .bind(record.auto_delete_on_expiry)
+        .bind(i64_from_u64(
+            record.total_requests,
+            "api_keys.total_requests",
+        )?)
+        .bind(i64_from_u64(record.total_tokens, "api_keys.total_tokens")?)
+        .bind(record.total_cost_usd)
+        .bind(record.is_standalone)
+        .bind(optional_i64_from_u64(
+            record.last_used_at_unix_secs,
+            "api_keys.last_used_at",
+        )?)
+        .bind(i64_from_u64(
+            record.created_at_unix_secs.unwrap_or(now),
+            "api_keys.created_at",
+        )?)
+        .bind(i64_from_u64(now, "api_keys.updated_at")?)
+        .execute(&self.pool)
+        .await
+        .map_sql_err()?;
+        Ok(result.rows_affected() == 1)
+    }
+
     async fn touch_last_used_at(&self, api_key_id: &str) -> Result<bool, DataLayerError> {
         let now = current_unix_secs() as i64;
         let rows_affected = sqlx::query(

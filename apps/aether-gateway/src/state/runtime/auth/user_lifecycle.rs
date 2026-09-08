@@ -431,6 +431,21 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
+    pub(crate) async fn restore_admin_profile(
+        &self,
+        profile: &aether_data::repository::users::StoredUserExportRow,
+    ) -> Result<bool, GatewayError> {
+        let restored = self
+            .data
+            .restore_admin_profile(profile)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))?;
+        if restored {
+            self.invalidate_auth_context_cache();
+        }
+        Ok(restored)
+    }
+
     pub(crate) async fn update_local_auth_user_profile(
         &self,
         user_id: &str,

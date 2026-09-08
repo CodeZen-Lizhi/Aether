@@ -888,6 +888,12 @@ pub trait UserReadRepository: Send + Sync {
         logged_in_at: DateTime<Utc>,
     ) -> Result<bool, crate::DataLayerError>;
 
+    /// Restore a backup onto an existing active local administrator, retaining its identity and role.
+    async fn restore_admin_profile(
+        &self,
+        profile: &StoredUserExportRow,
+    ) -> Result<bool, crate::DataLayerError>;
+
     async fn update_local_auth_user_profile(
         &self,
         user_id: &str,

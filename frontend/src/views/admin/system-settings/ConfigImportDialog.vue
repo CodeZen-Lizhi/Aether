@@ -26,12 +26,6 @@
           <li v-if="importPreview.proxy_nodes?.length">
             代理节点: {{ importPreview.proxy_nodes.length }} 个
           </li>
-          <li v-if="importPreview.ldap_config">
-            LDAP 配置: 1 个
-          </li>
-          <li v-if="importPreview.oauth_providers?.length">
-            OAuth Providers: {{ importPreview.oauth_providers.length }} 个
-          </li>
           <li v-if="importPreview.routing_strategy">
             调度策略: 1 个
           </li>
@@ -69,13 +63,13 @@
             已存在的配置将被导入的配置覆盖
           </template>
           <template v-else>
-            如果发现任何冲突，导入将中止并回滚
+            遇到冲突时停止导入，已写入的数据会保留
           </template>
         </p>
       </div>
 
       <p class="text-xs text-muted-foreground">
-        注意：相同的 API Keys 会自动跳过，不会创建重复记录。
+        相同的 API Keys 按所选模式跳过或覆盖。仅支持当前版本导出的配置文件。
       </p>
 
       <div
@@ -158,6 +152,7 @@
           </p>
           <p class="text-muted-foreground">
             创建: {{ importResult.stats.keys.created }},
+            更新: {{ importResult.stats.keys.updated }},
             跳过: {{ importResult.stats.keys.skipped }}
           </p>
         </div>
@@ -169,26 +164,6 @@
             创建: {{ importResult.stats.models.created }},
             更新: {{ importResult.stats.models.updated }},
             跳过: {{ importResult.stats.models.skipped }}
-          </p>
-        </div>
-        <div v-if="importResult.stats.ldap">
-          <p class="font-medium">
-            LDAP 配置
-          </p>
-          <p class="text-muted-foreground">
-            创建: {{ importResult.stats.ldap.created }},
-            更新: {{ importResult.stats.ldap.updated }},
-            跳过: {{ importResult.stats.ldap.skipped }}
-          </p>
-        </div>
-        <div v-if="importResult.stats.oauth">
-          <p class="font-medium">
-            OAuth Providers
-          </p>
-          <p class="text-muted-foreground">
-            创建: {{ importResult.stats.oauth.created }},
-            更新: {{ importResult.stats.oauth.updated }},
-            跳过: {{ importResult.stats.oauth.skipped }}
           </p>
         </div>
         <div v-if="importResult.stats.proxy_nodes">

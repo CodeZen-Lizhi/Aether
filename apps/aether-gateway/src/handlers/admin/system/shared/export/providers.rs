@@ -1,7 +1,7 @@
 use super::support::{
     collect_admin_system_export_provider_endpoint_formats,
     decrypt_admin_system_export_provider_config, decrypt_admin_system_export_secret,
-    resolve_admin_system_export_key_api_formats, ADMIN_SYSTEM_EXPORT_PAGE_LIMIT,
+    resolve_admin_system_export_key_api_formats,
 };
 use crate::handlers::admin::request::AdminAppState;
 use crate::GatewayError;
@@ -9,7 +9,6 @@ use aether_admin::system::{
     AdminSystemConfigEndpoint, AdminSystemConfigProvider, AdminSystemConfigProviderKey,
     AdminSystemConfigProviderModel,
 };
-use aether_data_contracts::repository::global_models::AdminProviderModelListQuery;
 use std::collections::BTreeMap;
 
 pub(crate) async fn build_admin_system_export_providers_payload(
@@ -46,19 +45,14 @@ pub(crate) async fn build_admin_system_export_providers_payload(
     let mut provider_models_by_provider = BTreeMap::<String, Vec<_>>::new();
     for provider in &providers {
         let models = state
-            .list_admin_provider_models(&AdminProviderModelListQuery {
-                provider_id: provider.id.clone(),
-                is_active: None,
-                offset: 0,
-                limit: ADMIN_SYSTEM_EXPORT_PAGE_LIMIT,
-            })
+            .list_admin_system_backup_provider_models(&provider.id)
             .await?;
         provider_models_by_provider.insert(provider.id.clone(), models);
     }
 
-    Ok(providers
+    providers
         .iter()
-        .map(|provider| {
+        .map(|provider| -> Result<_, GatewayError> {
             let endpoints = endpoints_by_provider
                 .remove(&provider.id)
                 .unwrap_or_default();
@@ -89,7 +83,7 @@ pub(crate) async fn build_admin_system_export_providers_payload(
             });
             let keys_data = keys
                 .iter()
-                .map(|key| {
+                .map(|key| -> Result<_, GatewayError> {
                     let api_formats = resolve_admin_system_export_key_api_formats(
                         key.api_formats.as_ref(),
                         &provider_endpoint_formats,
@@ -97,22 +91,25 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                     let auth_config = key
                         .encrypted_auth_config
                         .as_deref()
-                        .and_then(|ciphertext| {
-                            decrypt_admin_system_export_secret(state, ciphertext)
-                        })
-                        .map(serde_json::Value::String);
-                    AdminSystemConfigProviderKey {
+                        .map(|ciphertext| decrypt_admin_system_export_secret(state, ciphertext))
+                        .transpose()?
+                        .map(|plaintext| serde_json::from_str::<serde_json::Value>(&plaintext))
+                        .transpose()
+                        .map_err(|_| {
+                            GatewayError::Internal("渠道认证配置不是有效 JSON".to_string())
+                        })?;
+                    Ok(AdminSystemConfigProviderKey {
                         id: Some(key.id.clone()),
-                        api_key: key.encrypted_api_key.as_deref().map(|ciphertext| {
-                            decrypt_admin_system_export_secret(state, ciphertext)
-                                .unwrap_or_default()
-                        }),
+                        api_key: key
+                            .encrypted_api_key
+                            .as_deref()
+                            .map(|ciphertext| decrypt_admin_system_export_secret(state, ciphertext))
+                            .transpose()?,
                         auth_type: Some(key.auth_type.clone()),
                         auth_config,
                         name: Some(key.name.clone()),
                         note: key.note.clone(),
-                        api_formats: Some(api_formats.clone()),
-                        supported_endpoints: Some(api_formats),
+                        api_formats: Some(api_formats),
                         rate_multipliers: key.rate_multipliers.clone(),
                         internal_priority: Some(key.internal_priority),
                         default_rate_multiplier: Some(key.default_rate_multiplier),
@@ -129,6 +126,8 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                                     .collect::<Vec<_>>()
                             }),
                         rpm_limit: key.rpm_limit,
+                        concurrent_limit: key.concurrent_limit,
+                        expires_at_unix_secs: key.expires_at_unix_secs,
                         allowed_models: key.allowed_models.as_ref().and_then(|value| {
                             value.as_array().map(|items| {
                                 items
@@ -176,9 +175,9 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         is_active: key.is_active,
                         proxy: key.proxy.clone(),
                         fingerprint: key.fingerprint.clone(),
-                    }
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
 
             let models_data = provider_models_by_provider
                 .remove(&provider.id)
@@ -200,7 +199,7 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                 })
                 .collect::<Vec<_>>();
 
-            AdminSystemConfigProvider {
+            Ok(AdminSystemConfigProvider {
                 id: Some(provider.id.clone()),
                 name: provider.name.clone(),
                 description: provider.description.clone(),
@@ -208,7 +207,10 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                 provider_type: Some(provider.provider_type.clone()),
                 billing_type: provider.billing_type.clone(),
                 monthly_quota_usd: provider.monthly_quota_usd,
+                monthly_used_usd: provider.monthly_used_usd,
                 quota_reset_day: provider.quota_reset_day,
+                quota_last_reset_at_unix_secs: provider.quota_last_reset_at_unix_secs,
+                quota_expires_at_unix_secs: provider.quota_expires_at_unix_secs,
                 enable_format_conversion: Some(provider.enable_format_conversion),
                 is_active: provider.is_active,
                 concurrent_limit: provider.concurrent_limit,
@@ -219,11 +221,11 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                 config: decrypt_admin_system_export_provider_config(
                     state,
                     provider.config.as_ref(),
-                ),
+                )?,
                 endpoints: endpoints_data,
                 api_keys: keys_data,
                 models: models_data,
-            }
+            })
         })
-        .collect::<Vec<_>>())
+        .collect()
 }
