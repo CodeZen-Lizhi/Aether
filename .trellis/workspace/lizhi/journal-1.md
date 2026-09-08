@@ -799,3 +799,40 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 30: 新版备份恢复修复与推送收尾
+<!-- trellis-session: v=2 fp=1b228f6c8f773f47 -->
+
+**Date**: 2026-09-08
+**Task**: 新版备份恢复修复与推送收尾
+**Branch**: `slim-personal`
+
+### Summary
+
+完成新版配置与用户资料备份恢复修复，移除旧格式兼容并推送；后端往返运行验证仍待完成。
+
+### Main Changes
+
+- 仅支持配置备份 3.0、用户数据 2.0、完整备份 2.0；修复管理员资料、密码和偏好、API Key、渠道凭证、代理引用及用量恢复，完善前端导入校验与失败提示。
+- 完成代码与 SQL 静态审查；无冲突合并远端 SQLite 数据复制优化，已核对 origin/slim-personal 与 ae38ce94a 一致。当前无活动任务需要归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b43b337a5` | fix(system): 修复新版配置与用户资料备份恢复 |
+| `ae38ce94a` | merge: 同步远端 SQLite 数据复制优化 |
+
+### Testing
+
+- [OK] Rust 源码及独立集成测试类型检查通过；6 个配置解析测试、5 个前端测试、TypeScript 类型检查、相关 ESLint 和 git diff --check 通过。
+- [OK] 后端真实路由往返用例仅类型检查通过，运行因编译超时未开始；未进行浏览器和上游渠道调用验证。完整备份导入仍非单一事务，无法映射的历史统计可能跳过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在允许更长编译时间的环境运行现有 current_backups_roundtrip_through_authenticated_sqlite_routes 用例，补齐新版导出后再导入的运行证据。
