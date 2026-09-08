@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 32
-- **Last Active**: 2026-09-08
+- **Total Sessions**: 34
+- **Last Active**: 2026-09-09
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~902 | Active |
+| `journal-1.md` | ~966 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 34 | 2026-09-09 | 记录上游修复提交与合并依据 | `1cc350828efe24ba12513e5b57ab8ac3819cb0f1` | `codex/upstream-bugfix-backport` |
+| 33 | 2026-09-09 | 移植上游心跳与传输诊断修复 | - | `codex/upstream-bugfix-backport` |
 | 32 | 2026-09-08 | 提交 SQLite 与单用户审查修复 | `ad7ac23ab199c736b9250e7895efa39bf10a17c9` | `slim-personal` |
 | 31 | 2026-09-08 | 接续审查并完成 SQLite 与单用户一致性修复 | - | `slim-personal` |
 | 30 | 2026-09-08 | 新版备份恢复修复与推送收尾 | `b43b337a5`, `ae38ce94a` | `slim-personal` |

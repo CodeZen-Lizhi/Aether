@@ -900,3 +900,67 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 33: 移植上游心跳与传输诊断修复
+<!-- trellis-session: v=2 fp=216c380b2619c333 -->
+
+**Date**: 2026-09-09
+**Task**: 移植上游心跳与传输诊断修复
+**Branch**: `codex/upstream-bugfix-backport`
+
+### Summary
+
+已完成适用上游缺陷修复与独立复核，保留 slim-personal 的功能和配置意图。任务已归档；代码、测试及记录保留在本地，未提交、未 push、未合并、未部署。
+
+### Main Changes
+
+- 修复 Responses ping 心跳转换失败，以及 URL userinfo/query/fragment 在传输错误 Display、Debug、source 中的凭据泄露。
+- 验证普通与 browser HTTP/WS 的 SOCKS DNS 语义；保留 socks5 与 socks5h 区别。Tunnel 缺少必要性证据，未引入其协议升级；Gemini 未改。
+- 更新 scoped specs，归档任务及完整验证依据：.trellis/tasks/archive/2026-09/09-08-upstream-bugfix-backport/research/verification.md。
+
+### Git Commits
+
+（未提交：本地修复与验证已完成，本次授权范围不包含 Git 提交。）
+
+### Testing
+
+- [OK] 通过：formats 730 项、诊断 14 项、SOCKS 4 项（8 种组合）、独立 sanitizer 20 项、gateway 普通 cargo check、本次 6 个 Rust 文件格式与 git diff --check。
+- [OK] 完成基线对照：最终 gateway 2547 passed / 26 failed / 7 ignored；其中 25 项与基线失败一致，另 1 项未改动 Gemini 用例独立复跑通过。全包未通过，波动根因未确定。
+- [OK] 完成格式与 lint 对照：整仓 5 个文件、8 处格式差异与基线一致；严格 Clippy 的依赖诊断及 no-deps 的 20 条诊断均与基线一致，无新增。
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 34: 记录上游修复提交与合并依据
+<!-- trellis-session: v=2 fp=ce4e0ad7c3890548 -->
+
+**Date**: 2026-09-09
+**Task**: 记录上游修复提交与合并依据
+**Branch**: `codex/upstream-bugfix-backport`
+
+### Summary
+
+按用户合并回 slim-personal 的明确授权，完成本任务代码、规范与归档记录的提交。合并目标为本地 slim-personal，采用快进方式；本次授权不包含 push 或部署。
+
+### Main Changes
+
+- 提交 Responses 心跳兼容与传输诊断凭据保护修复，保留个人分支现有功能和 SOCKS 配置语义；Gemini 与 Tunnel 协议未改。
+- 回填归档任务的实现提交号和后续合并授权，保留初次未提交交付的历史记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1cc350828efe24ba12513e5b57ab8ac3819cb0f1` | fix: 修复流式心跳与传输诊断凭据泄露 |
+
+### Testing
+
+- [OK] 复用 Session 33 的定向测试、编译和独立复核证据；全包的 25 项基线失败、1 项 Gemini 波动及既有 fmt/Clippy 问题均已记录。
+- [OK] 提交前核对文件范围、源码内容指纹和暂存区格式；归档上下文校验通过，源码未再修改。合并前 slim-personal 仍位于原基线，满足快进条件。
+
+### Status
+
+[OK] **Completed**
