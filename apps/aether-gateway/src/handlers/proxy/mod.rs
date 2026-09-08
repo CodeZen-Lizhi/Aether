@@ -11,6 +11,11 @@ use self::local::{
 };
 pub(crate) use self::websocket::realtime::realtime_websocket;
 pub(crate) use self::websocket::responses::responses_websocket;
+#[cfg(test)]
+pub(crate) use self::websocket::{
+    session::RESPONSES_WEBSOCKET_SESSION_LIMITS,
+    transport::{connect_upstream_websocket, UpstreamWebSocketErrorCodes},
+};
 use super::internal::resolve_local_proxy_execution_path;
 pub(crate) use super::public::matches_model_mapping_for_models;
 use crate::ai_serving::api::{

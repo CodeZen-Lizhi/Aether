@@ -1400,6 +1400,103 @@ mod tests {
     }
 
     #[test]
+    fn ignores_openai_responses_ping_without_interrupting_text_or_completion() {
+        for (provider_api_format, client_api_format) in [
+            ("openai:responses", "openai:chat"),
+            ("openai:chat", "openai:responses"),
+        ] {
+            let mut report_context = report_context(provider_api_format, client_api_format);
+            report_context["provider_stream_event_api_format"] = json!("openai:responses");
+            let mut matrix = StreamingStandardFormatMatrix::default();
+            let mut output = Vec::new();
+
+            for delta in ["po", "ng"] {
+                let ping = matrix
+                    .transform_line(
+                        &report_context,
+                        data_line(json!({
+                            "type": "ping",
+                            "cost": "0",
+                        })),
+                    )
+                    .expect("provider ping should be ignored");
+                assert!(
+                    ping.is_empty(),
+                    "{client_api_format}: {}",
+                    String::from_utf8_lossy(&ping)
+                );
+
+                output.extend(
+                    matrix
+                        .transform_line(
+                            &report_context,
+                            data_line(json!({
+                                "type": "response.output_text.delta",
+                                "response_id": "resp_ping_123",
+                                "output_index": 0,
+                                "content_index": 0,
+                                "delta": delta,
+                            })),
+                        )
+                        .expect("text around ping should convert"),
+                );
+            }
+
+            let text_events = json_data_events(&output);
+            let content = text_events
+                .iter()
+                .filter_map(|event| {
+                    if client_api_format == "openai:chat" {
+                        event.pointer("/choices/0/delta/content")
+                    } else if event["type"] == "response.output_text.delta" {
+                        event.get("delta")
+                    } else {
+                        None
+                    }
+                })
+                .filter_map(Value::as_str)
+                .collect::<String>();
+            assert_eq!(content, "pong", "{client_api_format}");
+            let sse = String::from_utf8(output).expect("sse should be utf8");
+            assert!(!sse.contains("[DONE]"), "{sse}");
+            assert!(!sse.contains("event: response.completed"), "{sse}");
+
+            let completion = matrix
+                .transform_line(
+                    &report_context,
+                    data_line(json!({
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_ping_123",
+                            "object": "response",
+                            "model": "gpt-5.4",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    })),
+                )
+                .expect("completion after ping should convert");
+            let completion_events = json_data_events(&completion);
+            if client_api_format == "openai:chat" {
+                assert_eq!(completion_events.len(), 1);
+                assert_eq!(completion_events[0]["choices"][0]["finish_reason"], "stop");
+                assert!(completion.ends_with(b"data: [DONE]\n\n"));
+            } else {
+                let completed = completion_events
+                    .iter()
+                    .filter(|event| event["type"] == "response.completed")
+                    .collect::<Vec<_>>();
+                assert_eq!(completed.len(), 1);
+                assert_eq!(completed[0]["response"]["status"], "completed");
+            }
+            assert!(matrix
+                .finish(&report_context)
+                .expect("finished stream should stay finished")
+                .is_empty());
+        }
+    }
+
+    #[test]
     fn transforms_provider_errors_to_claude_error_events() {
         let cases = [
             (

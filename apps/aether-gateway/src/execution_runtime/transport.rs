@@ -465,7 +465,7 @@ pub(crate) fn format_upstream_request_error(err: &reqwest::Error) -> String {
         detail.push(']');
     }
 
-    detail
+    sanitize_error_detail(&detail)
 }
 
 fn sanitize_upstream_request_error_detail(detail: &str, upstream_url: &str) -> (String, String) {
@@ -475,6 +475,8 @@ fn sanitize_upstream_request_error_detail(detail: &str, upstream_url: &str) -> (
 
 fn sanitize_upstream_url_text(upstream_url: &str) -> String {
     if let Ok(mut parsed_url) = reqwest::Url::parse(upstream_url) {
+        let _ = parsed_url.set_username("");
+        let _ = parsed_url.set_password(None);
         parsed_url.set_query(None);
         parsed_url.set_fragment(None);
         return parsed_url.to_string();
@@ -484,7 +486,201 @@ fn sanitize_upstream_url_text(upstream_url: &str) -> String {
         .char_indices()
         .find_map(|(offset, character)| matches!(character, '?' | '#').then_some(offset))
         .unwrap_or(upstream_url.len());
-    upstream_url[..suffix_offset].to_string()
+    let mut sanitized = upstream_url[..suffix_offset].to_string();
+    let authority_start = sanitized
+        .find("://")
+        .map(|offset| offset + 3)
+        .or_else(|| sanitized.starts_with("//").then_some(2));
+    if let Some(authority_start) = authority_start {
+        let authority_end = sanitized[authority_start..]
+            .find('/')
+            .map(|offset| authority_start + offset)
+            .unwrap_or(sanitized.len());
+        if let Some(at) = sanitized[authority_start..authority_end].rfind('@') {
+            sanitized.replace_range(authority_start..=authority_start + at, "");
+        }
+    }
+    sanitized
+}
+
+// Error sources may contain other URLs, including proxy URLs absent from the
+// top-level error metadata. Preserve the surrounding diagnostic text verbatim;
+// only URL credentials, queries, and fragments belong to this boundary.
+fn sanitize_error_detail(detail: &str) -> String {
+    static URL_START: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//")
+            .expect("diagnostic URL pattern should compile")
+    });
+
+    let mut sanitized = String::with_capacity(detail.len());
+    let mut cursor = 0;
+    let mut delimiters = Vec::new();
+    let urls = URL_START.find_iter(detail).filter(|url| {
+        url.as_str() != "//"
+            || detail[..url.start()]
+                .chars()
+                .next_back()
+                .is_none_or(|previous| {
+                    previous.is_whitespace()
+                        || matches!(
+                            previous,
+                            '(' | '[' | '{' | '=' | ':' | ',' | ';' | '"' | '\'' | '<' | '`'
+                        )
+                })
+    });
+    for url in urls {
+        if url.start() < cursor {
+            continue;
+        }
+        let prefix = &detail[cursor..url.start()];
+        for character in prefix.chars() {
+            match character {
+                '(' => delimiters.push(')'),
+                '[' => delimiters.push(']'),
+                '{' => delimiters.push('}'),
+                ')' | ']' | '}' if delimiters.last() == Some(&character) => {
+                    delimiters.pop();
+                }
+                _ => {}
+            }
+        }
+        sanitized.push_str(prefix);
+
+        let mut end = detail[url.end()..]
+            .find(|character: char| {
+                character.is_whitespace() || matches!(character, '"' | '`' | '<' | '>')
+            })
+            .map(|offset| url.end() + offset)
+            .unwrap_or(detail.len());
+        let closing = delimiters.last().copied();
+        let quoted = prefix.ends_with('\'');
+        for (offset, character) in detail[url.end()..end].char_indices() {
+            let offset = url.end() + offset;
+            let remaining_delimiters = if character == '\'' && quoted {
+                &delimiters[..]
+            } else if closing == Some(character) {
+                &delimiters[..delimiters.len() - 1]
+            } else {
+                continue;
+            };
+            let suffix = &detail[offset + 1..];
+            if !diagnostic_url_suffix(suffix) {
+                continue;
+            }
+            // Bound authority inspection to this candidate. Looking beyond a
+            // closing group could mistake a later peer=user@host field for
+            // URL userinfo, especially when the URL has no path or query.
+            let body = &detail[url.end()..offset];
+            let userinfo_end = diagnostic_url_userinfo_end(body);
+            let mut inner_delimiters = Vec::new();
+            for character in body[userinfo_end..].chars() {
+                match character {
+                    '(' => inner_delimiters.push(')'),
+                    '[' => inner_delimiters.push(']'),
+                    '{' => inner_delimiters.push('}'),
+                    ')' | ']' | '}' if inner_delimiters.last() == Some(&character) => {
+                        inner_delimiters.pop();
+                    }
+                    _ => {}
+                }
+            }
+            if character != '\'' && !inner_delimiters.is_empty() {
+                continue;
+            }
+            if diagnostic_url_suffix_is_balanced(suffix, remaining_delimiters) {
+                end = offset;
+                break;
+            }
+        }
+        // Commas/semicolons remain URL characters even inside a bare list.
+        // Only whitespace or independently quoted/grouped entries provide a
+        // reliable boundary; nested query/fragment URLs are consumed together.
+        end = url.start() + detail[url.start()..end].trim_end_matches([',', ';']).len();
+
+        let url_text = &detail[url.start()..end];
+        if url_text.contains(['@', '?', '#']) {
+            sanitized.push_str(&sanitize_upstream_url_text(url_text));
+        } else {
+            // Already safe URLs need no parsing/normalization. In particular,
+            // preserve the spelling of Unicode paths in ordinary diagnostics.
+            sanitized.push_str(url_text);
+        }
+        cursor = end;
+    }
+    sanitized.push_str(&detail[cursor..]);
+    sanitized
+}
+
+fn diagnostic_url_userinfo_end(body: &str) -> usize {
+    let authority_end = body
+        .find(|character: char| {
+            character.is_whitespace()
+                || matches!(character, '/' | '?' | '#' | '"' | '`' | '<' | '>')
+        })
+        .unwrap_or(body.len());
+    body[..authority_end]
+        .rfind('@')
+        .map(|offset| offset + 1)
+        .unwrap_or(0)
+}
+
+fn diagnostic_url_suffix_is_balanced(suffix: &str, outer_delimiters: &[char]) -> bool {
+    let mut delimiters = outer_delimiters.to_vec();
+    let mut quote = None;
+    let mut userinfo_end = 0;
+    for (offset, character) in suffix.char_indices() {
+        if offset < userinfo_end {
+            continue;
+        }
+        if suffix[offset..].starts_with("://") {
+            let body_start = offset + 3;
+            userinfo_end = body_start + diagnostic_url_userinfo_end(&suffix[body_start..]);
+        }
+        if let Some(closing_quote) = quote {
+            if character == closing_quote && diagnostic_url_suffix(&suffix[offset + 1..]) {
+                quote = None;
+            }
+            continue;
+        }
+        match character {
+            '\'' | '"' | '`' => quote = Some(character),
+            '(' => delimiters.push(')'),
+            '[' => delimiters.push(']'),
+            '{' => delimiters.push('}'),
+            ')' | ']' | '}' if delimiters.last() == Some(&character) => {
+                delimiters.pop();
+            }
+            ')' | ']' | '}' => return false,
+            _ => {}
+        }
+    }
+    quote.is_none() && delimiters.is_empty()
+}
+
+fn diagnostic_url_suffix(suffix: &str) -> bool {
+    let suffix = suffix.trim_start_matches([')', ']', '}']);
+    let Some(first) = suffix.chars().next() else {
+        return true;
+    };
+    if first.is_whitespace() || matches!(first, '"' | '\'' | '`' | '>') {
+        return true;
+    }
+    if matches!(first, ',' | ';' | ':') {
+        let remainder = &suffix[1..];
+        let Some(next) = remainder.chars().next() else {
+            return true;
+        };
+        if next.is_whitespace() || matches!(next, '"' | '\'' | '`' | '(' | '[' | '{') {
+            return true;
+        }
+        let label_end = remainder
+            .find(|character: char| {
+                !character.is_alphanumeric() && !matches!(character, '_' | '-' | '.')
+            })
+            .unwrap_or(remainder.len());
+        return label_end > 0 && remainder[label_end..].starts_with('=');
+    }
+    false
 }
 
 pub(crate) fn format_wreq_upstream_request_error(err: &wreq::Error) -> String {
@@ -534,7 +730,7 @@ pub(crate) fn format_wreq_upstream_request_error(err: &wreq::Error) -> String {
         detail.push(']');
     }
 
-    detail
+    sanitize_error_detail(&detail)
 }
 
 pub(crate) fn format_hyper_error_chain(err: &dyn std::error::Error) -> String {
@@ -548,52 +744,138 @@ pub(crate) fn format_hyper_error_chain(err: &dyn std::error::Error) -> String {
         }
         source = cause.source();
     }
-    detail
+    sanitize_error_detail(&detail)
 }
 
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub(crate) enum ExecutionRuntimeTransportError {
     #[error("request body must contain json_body or body_bytes_b64")]
     RequestBodyRequired,
     #[error("request body base64 is invalid: {0}")]
     BodyDecode(base64::DecodeError),
-    #[error("request content-encoding is not supported: {0}")]
+    #[error("request content-encoding is not supported: {}", sanitize_error_detail(.0))]
     UnsupportedContentEncoding(String),
     #[error("proxy execution is not supported")]
     ProxyUnsupported,
     #[error("invalid method: {0}")]
     InvalidMethod(#[from] http::method::InvalidMethod),
-    #[error("invalid upstream header name: {0}")]
+    #[error("invalid upstream header name: {}", sanitize_error_detail(.0))]
     InvalidHeaderName(String),
-    #[error("invalid upstream header value for {0}")]
+    #[error("invalid upstream header value for {}", sanitize_error_detail(.0))]
     InvalidHeaderValue(String),
-    #[error("invalid proxy configuration: {0}")]
+    #[error("invalid proxy configuration: {}", format_upstream_request_error(.0))]
     InvalidProxy(reqwest::Error),
-    #[error("unsupported transport profile backend: {0}")]
+    #[error("unsupported transport profile backend: {}", sanitize_error_detail(.0))]
     UnsupportedTransportProfile(String),
-    #[error("failed to encode request body: {0}")]
+    #[error("failed to encode request body: {}", sanitize_error_detail(&.0.to_string()))]
     BodyEncode(serde_json::Error),
-    #[error("failed to build HTTP client: {0}")]
+    #[error("failed to build HTTP client: {}", format_upstream_request_error(.0))]
     ClientBuild(reqwest::Error),
-    #[error("failed to build browser impersonation HTTP client: {0}")]
+    #[error("failed to build browser impersonation HTTP client: {}", format_wreq_upstream_request_error(.0))]
     BrowserClientBuild(wreq::Error),
-    #[error("browser impersonation response body failed: {0}")]
+    #[error("browser impersonation response body failed: {}", sanitize_error_detail(.0))]
     BrowserBody(String),
-    #[error("{message}")]
+    #[error("{}", sanitize_error_detail(message))]
     UpstreamHttpStatus { status_code: u16, message: String },
-    #[error("failed to execute upstream request: {0}")]
+    #[error("failed to execute upstream request: {}", sanitize_error_detail(.0))]
     UpstreamRequest(String),
     #[error("upstream response {phase} body exceeds {limit_bytes} bytes")]
     UpstreamResponseTooLarge {
         phase: UpstreamResponseBodyPhase,
         limit_bytes: usize,
     },
-    #[error("failed to decode upstream response body with content-encoding {encoding}: {message}")]
+    #[error(
+        "failed to decode upstream response body with content-encoding {}: {}",
+        sanitize_error_detail(encoding),
+        sanitize_error_detail(message)
+    )]
     UpstreamResponseDecode { encoding: String, message: String },
-    #[error("hub relay request failed: {0}")]
+    #[error("hub relay request failed: {}", sanitize_error_detail(.0))]
     RelayError(String),
-    #[error("upstream response is not valid JSON: {0}")]
+    #[error("upstream response is not valid JSON: {}", sanitize_error_detail(&.0.to_string()))]
     InvalidJson(serde_json::Error),
+}
+
+// Derived Debug would recursively expose the raw URL and source fields inside
+// reqwest/wreq errors. Keep variant/field names and rich formatted causes while
+// routing dynamic details through the same boundary used by Display.
+impl std::fmt::Debug for ExecutionRuntimeTransportError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RequestBodyRequired => formatter.write_str("RequestBodyRequired"),
+            Self::BodyDecode(error) => formatter.debug_tuple("BodyDecode").field(error).finish(),
+            Self::UnsupportedContentEncoding(encoding) => formatter
+                .debug_tuple("UnsupportedContentEncoding")
+                .field(&sanitize_error_detail(encoding))
+                .finish(),
+            Self::ProxyUnsupported => formatter.write_str("ProxyUnsupported"),
+            Self::InvalidMethod(error) => {
+                formatter.debug_tuple("InvalidMethod").field(error).finish()
+            }
+            Self::InvalidHeaderName(name) => formatter
+                .debug_tuple("InvalidHeaderName")
+                .field(&sanitize_error_detail(name))
+                .finish(),
+            Self::InvalidHeaderValue(name) => formatter
+                .debug_tuple("InvalidHeaderValue")
+                .field(&sanitize_error_detail(name))
+                .finish(),
+            Self::InvalidProxy(error) => formatter
+                .debug_tuple("InvalidProxy")
+                .field(&format_upstream_request_error(error))
+                .finish(),
+            Self::UnsupportedTransportProfile(profile) => formatter
+                .debug_tuple("UnsupportedTransportProfile")
+                .field(&sanitize_error_detail(profile))
+                .finish(),
+            Self::BodyEncode(error) => formatter
+                .debug_tuple("BodyEncode")
+                .field(&sanitize_error_detail(&error.to_string()))
+                .finish(),
+            Self::ClientBuild(error) => formatter
+                .debug_tuple("ClientBuild")
+                .field(&format_upstream_request_error(error))
+                .finish(),
+            Self::BrowserClientBuild(error) => formatter
+                .debug_tuple("BrowserClientBuild")
+                .field(&format_wreq_upstream_request_error(error))
+                .finish(),
+            Self::BrowserBody(detail) => formatter
+                .debug_tuple("BrowserBody")
+                .field(&sanitize_error_detail(detail))
+                .finish(),
+            Self::UpstreamHttpStatus {
+                status_code,
+                message,
+            } => formatter
+                .debug_struct("UpstreamHttpStatus")
+                .field("status_code", status_code)
+                .field("message", &sanitize_error_detail(message))
+                .finish(),
+            Self::UpstreamRequest(detail) => formatter
+                .debug_tuple("UpstreamRequest")
+                .field(&sanitize_error_detail(detail))
+                .finish(),
+            Self::UpstreamResponseTooLarge { phase, limit_bytes } => formatter
+                .debug_struct("UpstreamResponseTooLarge")
+                .field("phase", phase)
+                .field("limit_bytes", limit_bytes)
+                .finish(),
+            Self::UpstreamResponseDecode { encoding, message } => formatter
+                .debug_struct("UpstreamResponseDecode")
+                .field("encoding", &sanitize_error_detail(encoding))
+                .field("message", &sanitize_error_detail(message))
+                .finish(),
+            Self::RelayError(detail) => formatter
+                .debug_tuple("RelayError")
+                .field(&sanitize_error_detail(detail))
+                .finish(),
+            Self::InvalidJson(error) => formatter
+                .debug_tuple("InvalidJson")
+                .field(&sanitize_error_detail(&error.to_string()))
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4262,6 +4544,13 @@ pub(crate) fn build_execution_response_body(
     }))
 }
 
+#[cfg(test)]
+mod proxy_dns_tests;
+
+#[cfg(test)]
+mod diagnostic_tests;
+
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
     use std::io::{Read, Write};
