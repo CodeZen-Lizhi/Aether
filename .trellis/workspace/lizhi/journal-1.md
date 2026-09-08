@@ -964,3 +964,35 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 35: 完成上游修复合并与推送收尾
+<!-- trellis-session: v=2 fp=09bb1319bdebfe77 -->
+
+**Date**: 2026-09-09
+**Task**: 完成上游修复合并与推送收尾
+**Branch**: `slim-personal`
+
+### Summary
+
+上游缺陷修复已无冲突快进合并回 slim-personal，并按用户授权推送到 origin/slim-personal；远端已验证至 e1528b74a。任务已归档且无活动任务，本轮仅补齐最终状态与会话记录，源码未再修改。
+
+### Main Changes
+
+- 补齐归档任务中的后续 push 授权，以及快进合并、推送成功和远端提交核对结果；保留各阶段的历史交付记录。
+- 保留个人分支功能、裁剪和代理配置语义，Gemini 与 Tunnel 协议未改，未部署。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1cc350828efe24ba12513e5b57ab8ac3819cb0f1` | fix: 修复流式心跳与传输诊断凭据泄露 |
+
+### Testing
+
+- [OK] 复用 Session 33 的定向回归、编译及独立复核；保留全包 25 项基线失败、1 项 Gemini 波动和既有格式/Clippy 诊断的准确结论。
+- [OK] 合并后源码指纹与已验证版本一致，范围 diff 检查通过；推送后 ls-remote 确认远端提交，收尾开始时工作区干净且无活动任务。
+
+### Status
+
+[OK] **Completed**

@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-09-09 用户授权提交本任务改动并合并回本地 slim-personal；代码提交见 commit 字段。沿用已完成的独立复核与验证结果，不 push、不部署。",
+  "notes": "2026-09-09 用户先授权合并回 slim-personal，随后授权提交并 push；已无冲突快进合并并推送到 origin/slim-personal（e1528b74a）。代码提交见 commit 字段，完整验证与后续收尾见 research/verification.md。未部署。",
   "meta": {}
 }
