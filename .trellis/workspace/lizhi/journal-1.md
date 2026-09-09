@@ -1081,3 +1081,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 39: 修复批量映射提示和完整错误展示
+<!-- trellis-session: v=2 fp=d76f4694cb9f9894 -->
+
+**Date**: 2026-09-09
+**Task**: 修复批量映射提示和完整错误展示
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+移除单条编辑过时指引；完整保留多 Key 查询、HTTP 和所有保存失败详情。179 项测试、类型检查、定向 ESLint 及宽窄屏实际交互通过，共用功能同步并 push 到两分支，交付经签名和隔离启动验证的 Aether_0.1.0_aarch64_66c40e951.dmg。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `66c40e951` | 修复批量映射过时提示与错误信息截断 |
+
+### Status
+
+[OK] **Completed**

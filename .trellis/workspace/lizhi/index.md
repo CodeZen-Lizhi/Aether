@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 38
+- **Total Sessions**: 39
 - **Last Active**: 2026-09-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1083 | Active |
+| `journal-1.md` | ~1105 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 39 | 2026-09-09 | 修复批量映射提示和完整错误展示 | `66c40e951` | `codex/tauri-macos` |
 | 38 | 2026-09-09 | 修复完整备份代理显示和渠道信息恢复 | `bbab15f05`, `8670776fc` | `codex/tauri-macos` |
 | 37 | 2026-09-09 | 无版本原子备份导入导出与旧目录清理 | - | `slim-personal` |
 | 36 | 2026-09-09 | 模型映射添加交互调整 | `d3207c3fc` | `slim-personal` |
