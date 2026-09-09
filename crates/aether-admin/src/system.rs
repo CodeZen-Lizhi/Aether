@@ -366,6 +366,54 @@ pub struct AdminSystemConfigProviderKey {
     pub proxy: Option<Value>,
     #[serde(default)]
     pub fingerprint: Option<Value>,
+    #[serde(default)]
+    pub learned_rpm_limit: Option<u32>,
+    #[serde(default)]
+    pub concurrent_429_count: Option<u32>,
+    #[serde(default)]
+    pub rpm_429_count: Option<u32>,
+    #[serde(default)]
+    pub last_429_at_unix_secs: Option<u64>,
+    #[serde(default)]
+    pub last_429_type: Option<String>,
+    #[serde(default)]
+    pub adjustment_history: Option<Value>,
+    #[serde(default)]
+    pub utilization_samples: Option<Value>,
+    #[serde(default)]
+    pub last_probe_increase_at_unix_secs: Option<u64>,
+    #[serde(default)]
+    pub last_rpm_peak: Option<u32>,
+    #[serde(default)]
+    pub request_count: Option<u32>,
+    #[serde(default)]
+    pub total_tokens: Option<u64>,
+    #[serde(default)]
+    pub total_cost_usd: Option<f64>,
+    #[serde(default)]
+    pub success_count: Option<u32>,
+    #[serde(default)]
+    pub error_count: Option<u32>,
+    #[serde(default)]
+    pub total_response_time_ms: Option<u64>,
+    #[serde(default)]
+    pub last_used_at_unix_secs: Option<u64>,
+    #[serde(default)]
+    pub last_models_fetch_at_unix_secs: Option<u64>,
+    #[serde(default)]
+    pub last_models_fetch_error: Option<String>,
+    #[serde(default)]
+    pub upstream_metadata: Option<Value>,
+    #[serde(default)]
+    pub oauth_invalid_at_unix_secs: Option<u64>,
+    #[serde(default)]
+    pub oauth_invalid_reason: Option<String>,
+    #[serde(default)]
+    pub status_snapshot: Option<Value>,
+    #[serde(default)]
+    pub health_by_format: Option<Value>,
+    #[serde(default)]
+    pub circuit_breaker_by_format: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

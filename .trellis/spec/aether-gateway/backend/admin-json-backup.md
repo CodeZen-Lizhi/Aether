@@ -46,6 +46,18 @@ in [SQLite lifecycle](../../aether-data/backend/sqlite-lifecycle.md).
 - Source duplicates that normalize to one model, provider, endpoint, model mapping
   or config key are errors. Explicit target duplicate handling follows the selected
   merge mode; skipped duplicates are not failed rows.
+- Proxy definitions include manual URL/credentials and offline tunnel nodes.
+  Validate and remap both `system_proxy_node_id` and
+  `external_models_proxy_node_id`, plus provider, endpoint and channel Key proxy
+  references. Match an existing address to its target ID before restoring these
+  references; never leave the system default pointing at the source ID.
+- Channel Keys include upstream account metadata, model-fetch state, OAuth
+  invalidation, status/health/circuit snapshots, adaptive limits and cumulative
+  request/token/cost counters. For historical files, omitted state fields preserve
+  existing target values; explicit null/zero overwrites them. Restore these fields
+  through `restore_key_backup_state` in the backup transaction after the normal
+  credential CAS. Ordinary administrative edits must keep their runtime-writer
+  ownership boundary.
 - All configuration, Keys, profile/password/preferences, session revocations,
   routing history, and usage writes use one write transaction (`BEGIN IMMEDIATE`,
   deferred foreign keys). Repository-local transactions become SQLx savepoints on
@@ -65,6 +77,12 @@ in [SQLite lifecycle](../../aether-data/backend/sqlite-lifecycle.md).
   recorded names, costs, and `is_complete`; do not manufacture completion.
 - The UI creates downloads only after a complete successful response. Import
   failures retain the preview for retry and never display a completion result.
+- A committed import invalidates proxy/model caches and reloads proxy definitions,
+  system settings and site info. When password restoration revokes the session,
+  invalidate without fetching protected routes until login. A later display-refresh
+  failure is separate from import failure. Proxy management must distinguish loading
+  and load errors from an empty list, fetch all pages, and ignore responses started
+  before import invalidation.
 
 ## 4. Validation & Error Matrix
 
@@ -106,6 +124,11 @@ in [SQLite lifecycle](../../aether-data/backend/sqlite-lifecycle.md).
 - `aether-admin::system`, `request/system/user_backup::tests`, and the affected
   frontend import/export tests validate compatibility, error handling and downloads.
   Use only synthetic credentials in committed fixtures.
+- Cover cached-empty proxy lists, stale in-flight responses, duplicate creation,
+  list retry, pagination and revoked sessions. Cross-instance tests must exercise
+  address-based proxy ID remapping at all five reference locations, inactive
+  provider content, complete channel state, and failure during supplemental state
+  restoration with full-table rollback comparisons.
 
 ## 7. Wrong vs Correct
 

@@ -1,0 +1,3 @@
+{"file":".trellis/spec/aether-gateway/backend/admin-json-backup.md","reason":"原子导入导出与备份字段契约"}
+{"file":".trellis/spec/aether-data/backend/sqlite-lifecycle.md","reason":"SQLite 共享事务与失败回滚"}
+{"file":".trellis/spec/frontend/index.md","reason":"设置区与中文文案约定"}
