@@ -14,7 +14,7 @@
         variant="outline"
         size="icon"
         class="h-9 w-9 shrink-0 rounded-lg"
-        :disabled="loadingUpstream"
+        :disabled="saving || loadingUpstream"
         title="刷新提供商模型"
         aria-label="刷新提供商模型"
         @click="fetchUpstreamModels(true)"
@@ -58,6 +58,7 @@
               >客户端模型</Label>
               <Select
                 :model-value="selectedClientId"
+                :disabled="saving"
                 @update:model-value="selectClientModel"
               >
                 <SelectTrigger
@@ -107,7 +108,7 @@
                 <MultiSelect
                   v-model="selectedUpstreamNames"
                   :options="upstreamOptions"
-                  :disabled="!selectedClientId || loadingUpstream"
+                  :disabled="saving || !selectedClientId || loadingUpstream"
                   :placeholder="selectedClientId ? '选择一个或多个提供商模型' : '请先选择客户端模型'"
                   empty-text="暂无提供商模型"
                   no-results-text="无匹配提供商模型"
@@ -138,7 +139,7 @@
                     v-model="customModelName"
                     class="h-9 rounded-lg"
                     placeholder="输入自定义提供商模型名称..."
-                    :disabled="!selectedClientId"
+                    :disabled="saving || !selectedClientId"
                     @keydown.enter.prevent="addCustomModel"
                   />
                 </div>
@@ -147,7 +148,7 @@
                   variant="outline"
                   size="sm"
                   class="h-9 shrink-0"
-                  :disabled="!canAddCustom"
+                  :disabled="saving || !canAddCustom"
                   @click="addCustomModel"
                 >
                   <Plus
@@ -197,6 +198,7 @@
                   type="button"
                   class="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   :title="`继续编辑 ${clientModelLabel(entry.model)}`"
+                  :disabled="saving"
                   @click="selectClientModel(entry.model.id)"
                 >
                   <span class="block truncate text-sm font-medium">{{ clientModelLabel(entry.model) }}</span>
@@ -208,6 +210,7 @@
                   class="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   :aria-label="`清空 ${clientModelLabel(entry.model)} 的映射`"
                   title="清空映射"
+                  :disabled="saving"
                   @click="clearMapping(entry.model.id)"
                 >
                   <X
@@ -230,6 +233,7 @@
                     type="button"
                     class="shrink-0 rounded p-0.5 hover:bg-[var(--color-primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     :aria-label="`移除 ${upstreamName}`"
+                    :disabled="saving"
                     @click="removeMappingName(entry.model.id, upstreamName)"
                   >
                     <X
@@ -276,14 +280,6 @@
           role="alert"
         >
           {{ errorMessage }}
-        </p>
-        <p
-          v-if="successMessage"
-          class="mt-2 rounded-md bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300"
-          role="status"
-          aria-live="polite"
-        >
-          {{ successMessage }}
         </p>
       </div>
     </div>
@@ -394,7 +390,6 @@ const initialMappings = ref<Record<string, string[]>>({})
 const loadingUpstream = ref(false)
 const saving = ref(false)
 const errorMessage = ref('')
-const successMessage = ref('')
 
 const selectedClientModel = computed(() => {
   return props.models.find(model => model.id === selectedClientId.value) ?? null
@@ -487,7 +482,6 @@ function isMappingChanged(modelId: string): boolean {
 
 function clearSelectionFeedback() {
   errorMessage.value = ''
-  successMessage.value = ''
 }
 
 function selectClientModel(modelId: string) {
@@ -497,6 +491,7 @@ function selectClientModel(modelId: string) {
 }
 
 function updateDraftNames(modelId: string, names: string[]) {
+  if (saving.value) return
   const normalizedNames = normalizeUpstreamNames(names)
   const next = { ...drafts.value }
   if (normalizedNames.length > 0) {
@@ -605,7 +600,6 @@ function resetState() {
     Object.entries(initial).map(([modelId, names]) => [modelId, [...names]]),
   )
   errorMessage.value = ''
-  successMessage.value = ''
 }
 
 async function handleDialogUpdate(value: boolean) {
@@ -667,7 +661,6 @@ async function saveMappings() {
 
   saving.value = true
   errorMessage.value = ''
-  successMessage.value = ''
   const entries = changedEntries.value
 
   try {
@@ -699,8 +692,8 @@ async function saveMappings() {
       return
     }
 
-    successMessage.value = `已成功保存 ${successes.length} 个客户端模型的映射，可继续修改。`
-    showSuccess(successMessage.value)
+    showSuccess(`已成功保存 ${successes.length} 个客户端模型的映射。`)
+    emit('update:open', false)
   } finally {
     saving.value = false
   }

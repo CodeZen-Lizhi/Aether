@@ -34,5 +34,7 @@ describe('ModelMappingTab response contracts', () => {
 
     expect(html).toContain('模型映射')
     expect(html).toContain('暂无模型映射')
+    expect(html).toContain('批量映射')
+    expect(html).not.toContain('单条添加')
   })
 })

@@ -6,25 +6,14 @@
         <h3 class="text-sm font-semibold flex items-center gap-2">
           模型映射
         </h3>
-        <div class="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            class="h-8"
-            @click="openAddDialog"
-          >
-            <Plus class="w-3.5 h-3.5 mr-1.5" />
-            单条添加
-          </Button>
-          <Button
-            size="sm"
-            class="h-8"
-            @click="openBatchDialog"
-          >
-            <ListPlus class="w-3.5 h-3.5 mr-1.5" />
-            批量映射
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          class="h-8"
+          @click="openBatchDialog"
+        >
+          <ListPlus class="w-3.5 h-3.5 mr-1.5" />
+          批量映射
+        </Button>
       </div>
     </div>
 
@@ -312,7 +301,7 @@
     </div>
   </Card>
 
-  <!-- 添加/编辑映射对话框 -->
+  <!-- 编辑映射对话框 -->
   <ModelMappingDialog
     v-if="dialogOpen"
     v-model:open="dialogOpen"
@@ -320,7 +309,6 @@
     :models="models"
     :endpoints="endpoints"
     :editing-group="editingGroup"
-    :preselected-model-id="preselectedModelId"
     :has-auto-fetch-key="hasAutoFetchKey"
     @saved="onDialogSaved"
   />
@@ -379,7 +367,7 @@
 import { ref, computed } from 'vue'
 import { useSmartPagination } from '@/composables/useSmartPagination'
 import { useModelTest } from '@/composables/useModelTest'
-import { Tag, Plus, ListPlus, Edit, Trash2, ChevronRight, Loader2, Play } from 'lucide-vue-next'
+import { Tag, ListPlus, Edit, Trash2, ChevronRight, Loader2, Play } from 'lucide-vue-next'
 import {
   Card, Button, Badge,
 } from '@/components/ui'
@@ -472,7 +460,6 @@ const testingMapping = ref<string | null>(null)
 const pendingMappingKey = ref<string | null>(null)
 const testingModelName = ref<string | null>(null)
 const testingSourceModel = ref<Model | null>(null)
-const preselectedModelId = ref<string | null>(null)
 const selectedTestEndpoint = ref<ProviderEndpoint | null>(null)
 const testRequestHeadersDraft = ref('')
 const testRequestHeadersResetValue = ref('')
@@ -752,13 +739,6 @@ function getKeyPatterns(keyItem: MatchedKeyInfo): string[] {
   return Array.from(patterns)
 }
 
-// 打开添加对话框
-function openAddDialog() {
-  editingGroup.value = null
-  preselectedModelId.value = null
-  dialogOpen.value = true
-}
-
 // 打开批量映射工作台
 function openBatchDialog() {
   batchDialogOpen.value = true
@@ -767,7 +747,6 @@ function openBatchDialog() {
 // 编辑分组
 function editGroup(group: AliasGroup) {
   editingGroup.value = group
-  preselectedModelId.value = null
   dialogOpen.value = true
 }
 
