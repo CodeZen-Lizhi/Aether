@@ -30,4 +30,13 @@
 
 ## 分支和安装包
 
-待提交、同步及打包完成后记录。
+- `codex/tauri-macos` 功能提交：`66c40e951d4fba1929d0eac59376271839d16131`。
+- `slim-personal` 对应提交：`86ed429d4`。相关 25 项测试及类型检查通过；共用实现一致，原有客户端差异的文件集合与共享 i18n / spec 差异内容均未改变。
+- 两分支功能提交已通过一次 atomic push 推送。
+- 构建：`npm --prefix apps/aether-desktop run build` 通过；以干净提交 `66c40e951` 构建。
+- 交付：`/Users/zhenglizhi/Downloads/Aether_0.1.0_aarch64_66c40e951.dmg`，31,657,685 字节。
+- SHA256：`90c3c0f0ec43e82bf5665b951bbcddd8a24bf24ef6fe0c3a47b099733af18ccb`。
+- Apple Silicon / macOS 14+，本地 ad-hoc 签名，未 Apple 公证。
+- 签名、DMG 校验、两个可执行文件的 arm64 架构及系统库依赖、挂载安装包后 117 个文件与原始 app 一致性验证通过。包内网页资源与当前 frontend/dist 全量一致，未包含旧单条编辑提示。
+- 随包正式网关的隔离验收通过：管理页面、模型映射、备份导入导出、JSON / SSE 请求、会话续期及进程退出；临时数据目录 `/private/var/folders/fg/bzpd9ft96g976xqf_w4lwbrr0000gn/T/aether-cli-lifecycle-7kzcd33v`，未使用真实客户端数据。
+- 打包验证记录：`/var/folders/fg/bzpd9ft96g976xqf_w4lwbrr0000gn/T/aether-batch-mapping-release-jjd8guux`。
