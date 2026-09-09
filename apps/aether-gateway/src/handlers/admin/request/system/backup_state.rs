@@ -273,6 +273,17 @@ impl<'a> AdminBackupState<'a> {
             .map_err(backup_data_error)
     }
 
+    pub(crate) async fn restore_provider_catalog_key_state(
+        &self,
+        key: &aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey,
+    ) -> Result<(), GatewayError> {
+        self.data
+            .providers()
+            .restore_key_backup_state(key)
+            .await
+            .map_err(backup_data_error)
+    }
+
     pub(crate) async fn read_provider_catalog_keys_by_ids(
         &self,
         key_ids: &[String],

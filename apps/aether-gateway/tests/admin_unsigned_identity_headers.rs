@@ -401,6 +401,350 @@ async fn seed_backup_target(pool: &sqlx::SqlitePool) {
 }
 
 #[tokio::test]
+async fn full_backup_restores_visible_proxy_nodes_and_rebinds_all_proxy_settings() {
+    let (source, source_pool, _source_file) =
+        backup_gateway("source-admin", "source-password", "source-encryption").await;
+    seed_backup_source(&source_pool).await;
+    for statement in [
+        "INSERT INTO system_configs (id, key, value, created_at, updated_at) VALUES ('system-proxy', 'system_proxy_node_id', '\"source-manual\"', 1704067200, 1704067200)",
+        "UPDATE provider_endpoints SET proxy = '{\"node_id\":\"source-manual\",\"enabled\":true}'",
+        "UPDATE provider_api_keys SET proxy = '{\"node_id\":\"source-manual\",\"enabled\":true}'",
+    ] {
+        sqlx::query(statement).execute(&source_pool).await.unwrap();
+    }
+    let source_token = backup_login(&source, "source-admin", "source-password").await;
+    let backup = export_backup(&source, &source_token, "data").await;
+    assert_eq!(
+        backup["config_data"]["proxy_nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let manual = backup["config_data"]["proxy_nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["is_manual"] == true)
+        .unwrap();
+    assert_eq!(manual["proxy_url"], "http://proxy.example.com:8080");
+    assert_eq!(manual["proxy_username"], "proxy-user");
+    assert_eq!(manual["proxy_password"], "proxy-password");
+
+    for mode in ["skip", "overwrite"] {
+        let (target, target_pool, _target_file) =
+            backup_gateway("target-admin", "target-password", "target-encryption").await;
+        sqlx::query("INSERT INTO proxy_nodes (id, name, ip, port, is_manual, status, proxy_url, created_at, updated_at) VALUES ('target-manual', 'existing proxy', 'proxy.example.com', 8080, 1, 'online', 'http://proxy.example.com:8080', 1704067200, 1704067200)")
+            .execute(&target_pool).await.unwrap();
+        let target_token = backup_login(&target, "target-admin", "target-password").await;
+        let mut request = backup.clone();
+        request["merge_mode"] = json!(mode);
+        let (status, response) = backup_request(
+            &target,
+            http::Method::POST,
+            "/api/admin/system/data/import",
+            Some(&target_token),
+            Some(&request),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK, "{mode}: {response}");
+        let token = if mode == "overwrite" {
+            backup_login(&target, "source-admin", "source-password").await
+        } else {
+            target_token
+        };
+        let (status, nodes) = backup_request(
+            &target,
+            http::Method::GET,
+            "/api/admin/proxy-nodes?limit=1000",
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK);
+        assert_eq!(nodes["total"], 2);
+        assert!(nodes["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["id"] == "target-manual"));
+        assert!(nodes["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["id"] == "source-tunnel"));
+
+        let restored = export_backup(&target, &token, "config").await;
+        for key in ["system_proxy_node_id", "external_models_proxy_node_id"] {
+            let config = restored["system_configs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["key"] == key)
+                .unwrap();
+            assert_eq!(
+                config["value"], "target-manual",
+                "{mode}: {key} must reference the restored node"
+            );
+        }
+        let provider = &restored["providers"][0];
+        assert_eq!(provider["proxy"]["node_id"], "target-manual");
+        assert_eq!(
+            provider["endpoints"][0]["proxy"]["node_id"],
+            "target-manual"
+        );
+        for key in provider["api_keys"].as_array().unwrap() {
+            assert_eq!(key["proxy"]["node_id"], "target-manual");
+        }
+    }
+}
+
+#[tokio::test]
+async fn full_backup_preserves_provider_key_metadata_usage_and_state() {
+    let (source, source_pool, _source_file) =
+        backup_gateway("source-admin", "source-password", "source-encryption").await;
+    seed_backup_source(&source_pool).await;
+    for table in [
+        "providers",
+        "provider_endpoints",
+        "provider_api_keys",
+        "global_models",
+        "models",
+    ] {
+        sqlx::query(&format!("UPDATE {table} SET is_active = 0"))
+            .execute(&source_pool)
+            .await
+            .unwrap();
+    }
+    let key_state = json!({
+        "learned_rpm_limit": 40, "concurrent_429_count": 2, "rpm_429_count": 3,
+        "last_429_at_unix_secs": 1704067200, "last_429_type": "rpm",
+        "adjustment_history": [{"reason": "synthetic"}], "utilization_samples": [0.5],
+        "last_probe_increase_at_unix_secs": 1704067201, "last_rpm_peak": 25,
+        "request_count": 19, "total_tokens": 1234, "total_cost_usd": 4.25,
+        "success_count": 17, "error_count": 2, "total_response_time_ms": 4321,
+        "last_used_at_unix_secs": 1704067202,
+        "last_models_fetch_at_unix_secs": 1704067203, "last_models_fetch_error": "synthetic error",
+        "upstream_metadata": {"account": {"id": "synthetic-account", "balance": 12.5}, "models": ["upstream-model"]},
+        "oauth_invalid_at_unix_secs": 1704067204, "oauth_invalid_reason": "synthetic reason",
+        "status_snapshot": {"quota": {"remaining": 23}},
+        "health_by_format": {"openai:chat": {"score": 0.75}},
+        "circuit_breaker_by_format": {"openai:chat": {"state": "closed"}}
+    });
+    for (field, value) in key_state.as_object().unwrap() {
+        let column = field.strip_suffix("_unix_secs").unwrap_or(field);
+        sqlx::query(&format!(
+            "UPDATE provider_api_keys SET {column} = json_extract(?, '$') WHERE id = 'oauth-a'"
+        ))
+        .bind(value.to_string())
+        .execute(&source_pool)
+        .await
+        .unwrap();
+    }
+    let credentials = json!({"provider_ops": {"connector": {"credentials": {
+        "api_key": aether_crypto::encrypt_python_fernet_plaintext("source-encryption", "ops-synthetic-key").unwrap(),
+        "cookie": aether_crypto::encrypt_python_fernet_plaintext("source-encryption", "ops-synthetic-cookie").unwrap()
+    }}, "balance": {"enabled": true}}});
+    sqlx::query("UPDATE providers SET config = ? WHERE id = 'source-provider'")
+        .bind(credentials.to_string())
+        .execute(&source_pool)
+        .await
+        .unwrap();
+    let source_token = backup_login(&source, "source-admin", "source-password").await;
+    let backup = export_backup(&source, &source_token, "data").await;
+    let source_key = backup["config_data"]["providers"][0]["api_keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["id"] == "oauth-a")
+        .unwrap();
+    for (field, expected) in key_state.as_object().unwrap() {
+        assert_eq!(
+            &source_key[field], expected,
+            "missing exported key field {field}"
+        );
+    }
+    let (target, target_pool, _target_file) =
+        backup_gateway("target-admin", "target-password", "target-encryption").await;
+    let mut token = backup_login(&target, "target-admin", "target-password").await;
+    let tables = [CONFIG_BACKUP_TABLES, USER_BACKUP_TABLES].concat();
+    let empty_target = backup_table_snapshot(&target_pool, &tables).await;
+    for (field, value) in [
+        ("total_tokens", json!(u64::MAX)),
+        ("total_cost_usd", json!(-1)),
+        ("upstream_metadata", json!("invalid object")),
+        ("adjustment_history", json!({"invalid": "array"})),
+    ] {
+        let mut invalid = backup.clone();
+        invalid["merge_mode"] = json!("overwrite");
+        invalid["config_data"]["providers"][0]["api_keys"][0][field] = value;
+        let (status, _) = backup_request(
+            &target,
+            http::Method::POST,
+            "/api/admin/system/data/import",
+            Some(&token),
+            Some(&invalid),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::BAD_REQUEST, "{field}");
+        assert_eq!(
+            backup_table_snapshot(&target_pool, &tables).await,
+            empty_target
+        );
+    }
+    for mode in ["skip", "overwrite"] {
+        let mut request = backup.clone();
+        request["merge_mode"] = json!(mode);
+        let (status, response) = backup_request(
+            &target,
+            http::Method::POST,
+            "/api/admin/system/data/import",
+            Some(&token),
+            Some(&request),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK, "{mode}: {response}");
+        if mode == "overwrite" {
+            token = backup_login(&target, "source-admin", "source-password").await;
+        }
+        let restored = export_backup(&target, &token, "data").await;
+        assert_eq!(
+            config_backup_content(&restored["config_data"]),
+            config_backup_content(&backup["config_data"])
+        );
+        let restored_key = restored["config_data"]["providers"][0]["api_keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|key| key["id"] == "oauth-a")
+            .unwrap();
+        for (field, expected) in key_state.as_object().unwrap() {
+            assert_eq!(
+                &restored_key[field], expected,
+                "{mode}: lost key field {field}"
+            );
+        }
+        assert_eq!(restored_key["api_key"], "access-a");
+        assert_eq!(restored_key["auth_config"]["refresh_token"], "refresh-a");
+        let config: String =
+            sqlx::query_scalar("SELECT config FROM providers WHERE name = 'backup-channel'")
+                .fetch_one(&target_pool)
+                .await
+                .unwrap();
+        let config: Value = serde_json::from_str(&config).unwrap();
+        let encrypted_cookie = config["provider_ops"]["connector"]["credentials"]["cookie"]
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            aether_crypto::decrypt_python_fernet_ciphertext("target-encryption", encrypted_cookie)
+                .unwrap(),
+            "ops-synthetic-cookie"
+        );
+        sqlx::query("UPDATE provider_api_keys SET total_tokens = 9, total_cost_usd = 0, upstream_metadata = NULL, oauth_invalid_at = NULL WHERE id = 'oauth-a'")
+            .execute(&target_pool).await.unwrap();
+    }
+
+    // Supplemental key-state writes participate in the same all-or-nothing import.
+    sqlx::query("CREATE TRIGGER fail_key_backup_state BEFORE UPDATE OF upstream_metadata ON provider_api_keys WHEN NEW.id = 'oauth-a' AND NEW.upstream_metadata IS NOT NULL BEGIN SELECT RAISE(FAIL, 'synthetic key state failure'); END")
+        .execute(&target_pool).await.unwrap();
+    let before = backup_table_snapshot(&target_pool, &tables).await;
+    let mut request = backup.clone();
+    request["merge_mode"] = json!("overwrite");
+    let (status, _) = backup_request(
+        &target,
+        http::Method::POST,
+        "/api/admin/system/data/import",
+        Some(&token),
+        Some(&request),
+    )
+    .await;
+    assert_eq!(status, http::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(backup_table_snapshot(&target_pool, &tables).await, before);
+    sqlx::query("DROP TRIGGER fail_key_backup_state")
+        .execute(&target_pool)
+        .await
+        .unwrap();
+
+    // Historical backups lack runtime fields; importing one must not erase them.
+    let before = export_backup(&target, &token, "config").await;
+    for key in request["config_data"]["providers"][0]["api_keys"]
+        .as_array_mut()
+        .unwrap()
+    {
+        for field in key_state.as_object().unwrap().keys() {
+            key.as_object_mut().unwrap().remove(field);
+        }
+    }
+    let (status, response) = backup_request(
+        &target,
+        http::Method::POST,
+        "/api/admin/system/data/import",
+        Some(&token),
+        Some(&request),
+    )
+    .await;
+    assert_eq!(status, http::StatusCode::OK, "legacy import: {response}");
+    token = backup_login(&target, "source-admin", "source-password").await;
+    let restored = export_backup(&target, &token, "config").await;
+    assert_eq!(
+        config_backup_content(&restored),
+        config_backup_content(&before)
+    );
+}
+
+#[tokio::test]
+async fn backup_rejects_unresolved_system_proxy_without_committing_or_exporting_fragments() {
+    let (source, source_pool, _source_file) =
+        backup_gateway("source-admin", "source-password", "source-encryption").await;
+    seed_backup_source(&source_pool).await;
+    let source_token = backup_login(&source, "source-admin", "source-password").await;
+    let backup = export_backup(&source, &source_token, "config").await;
+    let (target, target_pool, _target_file) =
+        backup_gateway("target-admin", "target-password", "target-encryption").await;
+    seed_backup_target(&target_pool).await;
+    let target_token = backup_login(&target, "target-admin", "target-password").await;
+    let before = backup_table_snapshot(&target_pool, CONFIG_BACKUP_TABLES).await;
+    for key in ["system_proxy_node_id", "external_models_proxy_node_id"] {
+        for value in [json!("missing-node"), json!(true)] {
+            let mut request = backup.clone();
+            request["merge_mode"] = json!("overwrite");
+            let entries = request["system_configs"].as_array_mut().unwrap();
+            entries.retain(|entry| entry["key"] != key);
+            entries.push(json!({"key": key, "value": value}));
+            let (status, _) = backup_request(
+                &target,
+                http::Method::POST,
+                "/api/admin/system/config/import",
+                Some(&target_token),
+                Some(&request),
+            )
+            .await;
+            assert_eq!(status, http::StatusCode::BAD_REQUEST);
+            assert_eq!(
+                backup_table_snapshot(&target_pool, CONFIG_BACKUP_TABLES).await,
+                before
+            );
+        }
+    }
+    sqlx::query("INSERT INTO system_configs (id, key, value, created_at, updated_at) VALUES ('system-proxy', 'system_proxy_node_id', '\"missing-node\"', 1704067200, 1704067200)")
+        .execute(&source_pool).await.unwrap();
+    for scope in ["config", "data"] {
+        let (status, response) = backup_request(
+            &source,
+            http::Method::GET,
+            &format!("/api/admin/system/{scope}/export"),
+            Some(&source_token),
+            None,
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(response.get("config_data").is_none());
+        assert!(response.get("providers").is_none());
+        assert!(response.get("proxy_nodes").is_none());
+    }
+}
+
+#[tokio::test]
 async fn backups_roundtrip_through_authenticated_sqlite_routes() {
     use aether_crypto::decrypt_python_fernet_ciphertext;
 

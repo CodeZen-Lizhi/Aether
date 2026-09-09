@@ -304,6 +304,30 @@ export interface ProviderKeyExport {
   is_active: boolean
   proxy?: Record<string, unknown> | null
   fingerprint?: Record<string, unknown> | null
+  learned_rpm_limit?: number | null
+  concurrent_429_count?: number | null
+  rpm_429_count?: number | null
+  last_429_at_unix_secs?: number | null
+  last_429_type?: string | null
+  adjustment_history?: unknown[] | null
+  utilization_samples?: unknown[] | null
+  last_probe_increase_at_unix_secs?: number | null
+  last_rpm_peak?: number | null
+  request_count?: number | null
+  total_tokens?: number | null
+  total_cost_usd?: number | null
+  success_count?: number | null
+  error_count?: number | null
+  total_response_time_ms?: number | null
+  last_used_at_unix_secs?: number | null
+  last_models_fetch_at_unix_secs?: number | null
+  last_models_fetch_error?: string | null
+  upstream_metadata?: Record<string, unknown> | null
+  oauth_invalid_at_unix_secs?: number | null
+  oauth_invalid_reason?: string | null
+  status_snapshot?: Record<string, unknown> | null
+  health_by_format?: Record<string, unknown> | null
+  circuit_breaker_by_format?: Record<string, unknown> | null
 }
 
 export interface ModelExport {

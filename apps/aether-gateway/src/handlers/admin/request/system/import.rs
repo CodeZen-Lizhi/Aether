@@ -1,6 +1,6 @@
 use super::backup_keys::{
-    build_imported_provider_key_record, matches_imported_key_credentials,
-    validate_imported_provider_key,
+    apply_imported_provider_key_state, build_imported_provider_key_record,
+    matches_imported_key_credentials, validate_imported_provider_key,
 };
 use super::{AdminAppState, AdminBackupState};
 use crate::api::ai::admin_endpoint_signature_parts;
@@ -45,6 +45,26 @@ use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+
+const PROXY_NODE_CONFIG_KEYS: &[&str] = &[
+    "system_proxy_node_id",
+    ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY,
+];
+
+fn remap_proxy_node_setting(
+    key: &str,
+    value: &Value,
+    nodes: &BTreeMap<String, String>,
+) -> Result<Value, String> {
+    match value {
+        Value::Null => Ok(Value::Null),
+        Value::String(id) => nodes
+            .get(id)
+            .map(|id| json!(id))
+            .ok_or_else(|| format!("系统配置 '{key}' 引用的代理节点不在备份中")),
+        _ => Err(format!("{key} 必须是字符串或 null")),
+    }
+}
 
 fn remap_routing_strategy_config(
     value: &mut Value,
@@ -223,12 +243,8 @@ pub(super) fn validate_imported_config_references(
         if key.is_empty() || !config_keys.insert(key.clone()) {
             return Err("备份包含空白或重复系统配置项".to_string());
         }
-        if key == ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY {
-            match &config.value {
-                Value::Null => {}
-                Value::String(id) if nodes.contains_key(id) => {}
-                _ => return Err("外部模型目录引用的代理节点不在备份中".to_string()),
-            }
+        if PROXY_NODE_CONFIG_KEYS.contains(&key.as_str()) {
+            remap_proxy_node_setting(&key, &config.value, &nodes)?;
         }
     }
     if let Some(strategy) = &document.routing_strategy {
@@ -254,11 +270,10 @@ pub(super) fn invalid_request(detail: impl Into<String>) -> (http::StatusCode, V
 
 fn normalize_imported_system_config_key(key: &str) -> String {
     let normalized = normalize_admin_system_config_key(key);
-    if normalized.eq_ignore_ascii_case(ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY) {
-        ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY.to_string()
-    } else {
-        normalized
-    }
+    PROXY_NODE_CONFIG_KEYS
+        .iter()
+        .find(|key| normalized.eq_ignore_ascii_case(key))
+        .map_or(normalized.clone(), |key| (*key).to_string())
 }
 
 fn build_admin_system_data_import_part_body(
@@ -656,10 +671,10 @@ impl<'a> AdminBackupState<'a> {
 
         let mut stats = AdminSystemConfigImportStats::default();
 
-        let (imported_external_models_configs, imported_system_configs): (Vec<_>, Vec<_>) =
+        let (imported_proxy_configs, imported_system_configs): (Vec<_>, Vec<_>) =
             imported_system_configs.into_iter().partition(|item| {
-                normalize_imported_system_config_key(&item.value.key)
-                    == ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY
+                PROXY_NODE_CONFIG_KEYS
+                    .contains(&normalize_imported_system_config_key(&item.value.key).as_str())
             });
         let mut existing_system_config_keys = self
             .list_system_config_entries()
@@ -678,46 +693,30 @@ impl<'a> AdminBackupState<'a> {
             )
             .await?
         );
-        for imported_config_item in imported_external_models_configs {
+        for imported_config_item in imported_proxy_configs {
             let config = imported_config_item.value;
-            let exists =
-                existing_system_config_keys.contains(ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY);
+            let key = normalize_imported_system_config_key(&config.key);
+            let exists = existing_system_config_keys.contains(&key);
             match (exists, merge_mode) {
                 (true, AdminImportMergeMode::Skip) => {
                     stats.system_configs.skipped += 1;
                     continue;
                 }
                 (true, AdminImportMergeMode::Error) => {
-                    return Ok(Err(invalid_request("外部模型目录代理配置已存在")))
+                    return Ok(Err(invalid_request(format!("系统配置 '{key}' 已存在"))))
                 }
                 _ => {}
             }
-            let proxy_node_id = match config.value {
-                Value::Null => None,
-                Value::String(id) => {
-                    Some(routed!(node_id_map.get(&id).cloned().ok_or_else(|| {
-                        invalid_request(format!("外部模型目录引用的代理节点 '{id}' 不存在"))
-                    })))
-                }
-                _ => {
-                    return Ok(Err(invalid_request(
-                        "external_models_proxy_node_id 必须是字符串或 null",
-                    )))
-                }
-            };
-            self.upsert_system_config_entry(
-                ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY,
-                &json!(proxy_node_id),
-                config.description.as_deref(),
-            )
-            .await?;
+            let proxy_node_id =
+                invalid!(remap_proxy_node_setting(&key, &config.value, &node_id_map));
+            self.upsert_system_config_entry(&key, &proxy_node_id, config.description.as_deref())
+                .await?;
             if exists {
                 stats.system_configs.updated += 1;
             } else {
                 stats.system_configs.created += 1;
             }
-            existing_system_config_keys
-                .insert(ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY.to_string());
+            existing_system_config_keys.insert(key);
         }
 
         let mut global_models_by_name = self
@@ -1093,7 +1092,7 @@ impl<'a> AdminBackupState<'a> {
                 .collect::<BTreeSet<_>>();
             let mut matched_key_ids = BTreeSet::new();
             for imported_key_item in imported_keys {
-                let (_, imported_key) = imported_key_item.into_parts();
+                let (raw_key, imported_key) = imported_key_item.into_parts();
                 let source_id = imported_key.id.as_deref().expect("validated source key id");
                 let existing_key_index = existing_keys
                     .iter()
@@ -1126,7 +1125,7 @@ impl<'a> AdminBackupState<'a> {
                             ))));
                         }
                         AdminImportMergeMode::Overwrite => {
-                            let updated = invalid!(build_imported_provider_key_record(
+                            let mut updated = invalid!(build_imported_provider_key_record(
                                 self.admin(),
                                 &provider.id,
                                 &imported_key,
@@ -1134,6 +1133,11 @@ impl<'a> AdminBackupState<'a> {
                                 proxy,
                                 now_unix_secs
                             ));
+                            apply_imported_provider_key_state(
+                                &mut updated,
+                                &imported_key,
+                                &raw_key,
+                            );
                             let update = build_provider_catalog_key_admin_cas_update(
                                 &existing_key,
                                 updated,
@@ -1150,6 +1154,7 @@ impl<'a> AdminBackupState<'a> {
                                     }),
                                 )));
                             }
+                            self.restore_provider_catalog_key_state(&update.key).await?;
                             let Some(persisted) = self
                                 .read_provider_catalog_keys_by_ids(std::slice::from_ref(
                                     &existing_key.id,
@@ -1166,7 +1171,7 @@ impl<'a> AdminBackupState<'a> {
                     }
                     continue;
                 }
-                let record = invalid!(build_imported_provider_key_record(
+                let mut record = invalid!(build_imported_provider_key_record(
                     self.admin(),
                     &provider.id,
                     &imported_key,
@@ -1174,6 +1179,7 @@ impl<'a> AdminBackupState<'a> {
                     proxy,
                     now_unix_secs
                 ));
+                apply_imported_provider_key_state(&mut record, &imported_key, &raw_key);
                 let Some(created) = self.create_provider_catalog_key(&record).await? else {
                     return Ok(Err(invalid_request(format!(
                         "创建 Provider '{provider_name}' 的 Key 失败"

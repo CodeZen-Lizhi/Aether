@@ -1,6 +1,6 @@
 use aether_admin::system::AdminSystemConfigProviderKey;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use super::AdminAppState;
 use crate::api::ai::admin_endpoint_signature_parts;
@@ -84,10 +84,40 @@ pub(super) fn validate_imported_provider_key(
         ("capabilities", &key.capabilities),
         ("fingerprint", &key.fingerprint),
         ("proxy", &key.proxy),
+        ("upstream_metadata", &key.upstream_metadata),
+        ("status_snapshot", &key.status_snapshot),
+        ("health_by_format", &key.health_by_format),
+        ("circuit_breaker_by_format", &key.circuit_breaker_by_format),
     ] {
         normalize_json_object(value.clone(), field)?;
     }
     normalize_rate_multipliers(key.rate_multipliers.clone())?;
+    for (field, value) in [
+        ("adjustment_history", &key.adjustment_history),
+        ("utilization_samples", &key.utilization_samples),
+    ] {
+        if value.as_ref().is_some_and(|value| !value.is_array()) {
+            return Err(format!("渠道 Key {field} 必须是数组"));
+        }
+    }
+    if key
+        .total_cost_usd
+        .is_some_and(|cost| !cost.is_finite() || cost < 0.0)
+        || [
+            key.last_429_at_unix_secs,
+            key.last_probe_increase_at_unix_secs,
+            key.total_tokens,
+            key.total_response_time_ms,
+            key.last_used_at_unix_secs,
+            key.last_models_fetch_at_unix_secs,
+            key.oauth_invalid_at_unix_secs,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| value > i64::MAX as u64)
+    {
+        return Err("渠道 Key 状态或累计用量无效".to_string());
+    }
     normalize_internal_priority(key.internal_priority)?;
     normalize_default_rate_multiplier(key.default_rate_multiplier)?;
     normalize_optional_api_key_concurrent_limit(key.concurrent_limit)?;
@@ -110,6 +140,87 @@ pub(super) fn validate_imported_provider_key(
         return Err("渠道 Key 缓存时间或有效期无效".to_string());
     }
     Ok(())
+}
+
+/// Old backups omit these fields. Preserve existing target state only for omitted
+/// fields; explicit null/zero in a new backup must overwrite the target value.
+pub(super) fn apply_imported_provider_key_state(
+    record: &mut StoredProviderCatalogKey,
+    key: &AdminSystemConfigProviderKey,
+    raw: &Map<String, Value>,
+) {
+    if raw.contains_key("learned_rpm_limit") {
+        record.learned_rpm_limit = key.learned_rpm_limit;
+    }
+    if raw.contains_key("concurrent_429_count") {
+        record.concurrent_429_count = key.concurrent_429_count;
+    }
+    if raw.contains_key("rpm_429_count") {
+        record.rpm_429_count = key.rpm_429_count;
+    }
+    if raw.contains_key("last_429_at_unix_secs") {
+        record.last_429_at_unix_secs = key.last_429_at_unix_secs;
+    }
+    if raw.contains_key("last_429_type") {
+        record.last_429_type = key.last_429_type.clone();
+    }
+    if raw.contains_key("adjustment_history") {
+        record.adjustment_history = key.adjustment_history.clone();
+    }
+    if raw.contains_key("utilization_samples") {
+        record.utilization_samples = key.utilization_samples.clone();
+    }
+    if raw.contains_key("last_probe_increase_at_unix_secs") {
+        record.last_probe_increase_at_unix_secs = key.last_probe_increase_at_unix_secs;
+    }
+    if raw.contains_key("last_rpm_peak") {
+        record.last_rpm_peak = key.last_rpm_peak;
+    }
+    if raw.contains_key("request_count") {
+        record.request_count = key.request_count;
+    }
+    if raw.contains_key("total_tokens") {
+        record.total_tokens = key.total_tokens.unwrap_or(0);
+    }
+    if raw.contains_key("total_cost_usd") {
+        record.total_cost_usd = key.total_cost_usd.unwrap_or(0.0);
+    }
+    if raw.contains_key("success_count") {
+        record.success_count = key.success_count;
+    }
+    if raw.contains_key("error_count") {
+        record.error_count = key.error_count;
+    }
+    if raw.contains_key("total_response_time_ms") {
+        record.total_response_time_ms = key.total_response_time_ms;
+    }
+    if raw.contains_key("last_used_at_unix_secs") {
+        record.last_used_at_unix_secs = key.last_used_at_unix_secs;
+    }
+    if raw.contains_key("last_models_fetch_at_unix_secs") {
+        record.last_models_fetch_at_unix_secs = key.last_models_fetch_at_unix_secs;
+    }
+    if raw.contains_key("last_models_fetch_error") {
+        record.last_models_fetch_error = key.last_models_fetch_error.clone();
+    }
+    if raw.contains_key("upstream_metadata") {
+        record.upstream_metadata = key.upstream_metadata.clone();
+    }
+    if raw.contains_key("oauth_invalid_at_unix_secs") {
+        record.oauth_invalid_at_unix_secs = key.oauth_invalid_at_unix_secs;
+    }
+    if raw.contains_key("oauth_invalid_reason") {
+        record.oauth_invalid_reason = key.oauth_invalid_reason.clone();
+    }
+    if raw.contains_key("status_snapshot") {
+        record.status_snapshot = key.status_snapshot.clone();
+    }
+    if raw.contains_key("health_by_format") {
+        record.health_by_format = key.health_by_format.clone();
+    }
+    if raw.contains_key("circuit_breaker_by_format") {
+        record.circuit_breaker_by_format = key.circuit_breaker_by_format.clone();
+    }
 }
 
 /// Restore the exported configuration directly, including OAuth credentials that

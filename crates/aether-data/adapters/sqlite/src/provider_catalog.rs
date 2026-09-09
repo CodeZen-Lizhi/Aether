@@ -1104,6 +1104,123 @@ WHERE id = ?
         self.reload_key(&key.id, "updated").await
     }
 
+    /// Restore the non-admin fields inside an administrator backup transaction.
+    /// Normal key edits deliberately leave these fields to runtime writers.
+    pub async fn restore_key_backup_state(
+        &self,
+        key: &StoredProviderCatalogKey,
+    ) -> Result<(), DataLayerError> {
+        validate_key(key)?;
+        let affected = sqlx::query(
+            r#"
+UPDATE provider_api_keys SET
+  learned_rpm_limit = ?,
+  concurrent_429_count = ?,
+  rpm_429_count = ?,
+  last_429_at = ?,
+  last_429_type = ?,
+  adjustment_history = ?,
+  utilization_samples = ?,
+  last_probe_increase_at = ?,
+  last_rpm_peak = ?,
+  request_count = ?,
+  total_tokens = ?,
+  total_cost_usd = ?,
+  success_count = ?,
+  error_count = ?,
+  total_response_time_ms = ?,
+  last_used_at = ?,
+  last_models_fetch_at = ?,
+  last_models_fetch_error = ?,
+  upstream_metadata = ?,
+  oauth_invalid_at = ?,
+  oauth_invalid_reason = ?,
+  status_snapshot = ?,
+  health_by_format = ?,
+  circuit_breaker_by_format = ?
+WHERE id = ? AND provider_id = ?
+"#,
+        )
+        .bind(optional_i64_from_u32(key.learned_rpm_limit))
+        .bind(optional_i64_from_u32(key.concurrent_429_count).unwrap_or(0))
+        .bind(optional_i64_from_u32(key.rpm_429_count).unwrap_or(0))
+        .bind(optional_i64_from_u64(
+            key.last_429_at_unix_secs,
+            "provider_api_keys.last_429_at",
+        )?)
+        .bind(&key.last_429_type)
+        .bind(optional_json_to_string(
+            &key.adjustment_history,
+            "provider_api_keys.adjustment_history",
+        )?)
+        .bind(optional_json_to_string(
+            &key.utilization_samples,
+            "provider_api_keys.utilization_samples",
+        )?)
+        .bind(optional_i64_from_u64(
+            key.last_probe_increase_at_unix_secs,
+            "provider_api_keys.last_probe_increase_at",
+        )?)
+        .bind(optional_i64_from_u32(key.last_rpm_peak))
+        .bind(optional_i64_from_u32(key.request_count).unwrap_or(0))
+        .bind(optional_i64_from_u64(
+            Some(key.total_tokens),
+            "provider_api_keys.total_tokens",
+        )?)
+        .bind(key.total_cost_usd)
+        .bind(optional_i64_from_u32(key.success_count).unwrap_or(0))
+        .bind(optional_i64_from_u32(key.error_count).unwrap_or(0))
+        .bind(
+            optional_i64_from_u64(
+                key.total_response_time_ms,
+                "provider_api_keys.total_response_time_ms",
+            )?
+            .unwrap_or(0),
+        )
+        .bind(optional_i64_from_u64(
+            key.last_used_at_unix_secs,
+            "provider_api_keys.last_used_at",
+        )?)
+        .bind(optional_i64_from_u64(
+            key.last_models_fetch_at_unix_secs,
+            "provider_api_keys.last_models_fetch_at",
+        )?)
+        .bind(&key.last_models_fetch_error)
+        .bind(optional_json_to_string(
+            &key.upstream_metadata,
+            "provider_api_keys.upstream_metadata",
+        )?)
+        .bind(optional_i64_from_u64(
+            key.oauth_invalid_at_unix_secs,
+            "provider_api_keys.oauth_invalid_at",
+        )?)
+        .bind(&key.oauth_invalid_reason)
+        .bind(optional_json_to_string(
+            &key.status_snapshot,
+            "provider_api_keys.status_snapshot",
+        )?)
+        .bind(optional_json_to_string(
+            &key.health_by_format,
+            "provider_api_keys.health_by_format",
+        )?)
+        .bind(optional_json_to_string(
+            &key.circuit_breaker_by_format,
+            "provider_api_keys.circuit_breaker_by_format",
+        )?)
+        .bind(&key.id)
+        .bind(&key.provider_id)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
+        .await
+        .map_sql_err()?
+        .rows_affected();
+        if affected != 1 {
+            return Err(DataLayerError::UnexpectedValue(
+                "backup provider key state could not be restored".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn compare_and_update_key_admin_state(
         &self,
         update: &ProviderCatalogKeyAdminCasUpdate,
