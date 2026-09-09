@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 40
+- **Total Sessions**: 41
 - **Last Active**: 2026-09-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1141 | Active |
+| `journal-1.md` | ~1176 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-09-10 | 修复历史模型与供应商统计并交付安装包 | `e868096ba8446242893007ae4f67fe52bc1933d0`, `5490761aca9f6f1f53178674a4c23d3712baf1fd` | `codex/tauri-macos` |
 | 40 | 2026-09-10 | 窗口自适应与安装包交付 | `0793abfd3`, `9b1501081`, `a83d4a233` | `codex/tauri-macos` |
 | 39 | 2026-09-09 | 修复批量映射提示和完整错误展示 | `66c40e951` | `codex/tauri-macos` |
 | 38 | 2026-09-09 | 修复完整备份代理显示和渠道信息恢复 | `bbab15f05`, `8670776fc` | `codex/tauri-macos` |

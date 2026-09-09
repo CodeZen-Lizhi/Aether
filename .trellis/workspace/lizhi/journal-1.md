@@ -1139,3 +1139,38 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 41: 修复历史模型与供应商统计并交付安装包
+<!-- trellis-session: v=2 fp=e553387997e72d7e -->
+
+**Date**: 2026-09-10
+**Task**: 修复历史模型与供应商统计并交付安装包
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+修复每日总量被错误展示为 aggregate 的问题；恢复真实模型和供应商分组，缺失明细保留总量并单独标注。代码已同步两分支并交付新的 macOS 安装包。
+
+### Main Changes
+
+- SQLite 在同一读快照中组合每日总量、保存的真实分组与原始记录，修复日期空洞、部分分组及重复累计。
+- 网关区分总量与分组，前端保留完整模型名并标注未保留的历史明细。
+- 交付 Aether_0.1.0_aarch64_20260910_e868096ba.dmg；SHA256 da7da3f53be101d8f72ff6fd234eeeeca5552759709cd1609278811320ae96c5。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e868096ba8446242893007ae4f67fe52bc1933d0` | 修复历史统计的模型和供应商分组 |
+| `5490761aca9f6f1f53178674a4c23d3712baf1fd` | 修复历史统计的模型和供应商分组 |
+
+### Testing
+
+- [OK] SQLite 30 项、Gateway 5 项、Dashboard 4 项相关测试通过；类型、lint、格式与 diff 检查通过。
+- [OK] 独立 SQLite API 与浏览器验收通过，1600×1100 和 840×620 均无横向溢出，真实客户端数据未改动。
+- [OK] 新 DMG 签名、架构、117 个包文件一致性及包内网关完整生命周期通过，交付文件 SHA256 一致。
+
+### Status
+
+[OK] **Completed**
