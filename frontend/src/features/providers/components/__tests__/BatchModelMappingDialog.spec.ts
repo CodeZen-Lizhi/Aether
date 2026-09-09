@@ -11,13 +11,12 @@ const feedback = vi.hoisted(() => ({
   success: vi.fn(),
   warning: vi.fn(),
 }))
+const providerApi = vi.hoisted(() => ({ queryProviderModels: vi.fn() }))
 
 vi.mock('@/api/endpoints/models', () => ({ updateModel: vi.fn() }))
 vi.mock('@/composables/useToast', () => ({ useToast: () => feedback }))
 vi.mock('@/composables/useConfirm', () => ({ useConfirm: () => feedback }))
-vi.mock('../../composables/useUpstreamModelsCache', () => ({
-  useUpstreamModelsCache: () => ({ fetchModels: vi.fn() }),
-}))
+vi.mock('@/api/admin', () => ({ adminApi: providerApi }))
 
 const models: Model[] = [1, 2].map(index => ({
   id: `client-${index}`,
@@ -34,7 +33,7 @@ const models: Model[] = [1, 2].map(index => ({
 
 const mountedApps: Array<{ app: App, root: HTMLElement }> = []
 
-function mountDialog() {
+function mountDialog(hasAutoFetchKey = false) {
   const open = ref(true)
   const saved = vi.fn()
   const root = document.createElement('div')
@@ -44,6 +43,7 @@ function mountDialog() {
       open: open.value,
       providerId: 'provider-1',
       models,
+      hasAutoFetchKey,
       'onUpdate:open': (value: boolean) => { open.value = value },
       onSaved: saved,
     }) : null,
@@ -87,6 +87,41 @@ afterEach(() => {
 })
 
 describe('BatchModelMappingDialog saving', () => {
+  it.each([false, true])('keeps every upstream error visible without the removed single-item guidance (partial models: %s)', async (partialModels) => {
+    const error = `Key 渠道 A: openai:responses: failed to execute upstream request: error sending request for url (https://upstream.example.test/${'long-path-'.repeat(20)}/models): connection refused; Key 渠道 B: certificate verification failed\n最后一行错误详情`
+    providerApi.queryProviderModels.mockResolvedValue({
+      success: partialModels,
+      data: { models: partialModels ? [{ id: 'upstream-model' }] : [], error },
+    })
+    mountDialog(true)
+
+    await vi.waitFor(() => expect(document.querySelector(partialModels ? '[role="status"]' : '[role="alert"]')?.textContent).toContain('最后一行错误详情'))
+    expect(document.querySelector('pre')?.textContent).toBe(error)
+    expect(document.body.textContent).not.toContain('单条编辑')
+    expect(document.body.textContent).toContain('默认作用于全部端点和请求')
+  })
+
+  it('shows each failed client model and its complete save error', async () => {
+    const errors = [
+      `failed for https://upstream.example.test/${'path-'.repeat(30)}/models: first failure details`,
+      'second failure\nretry after updating the model',
+    ]
+    vi.mocked(updateModel)
+      .mockRejectedValueOnce(new Error(errors[0]))
+      .mockRejectedValueOnce(new Error(errors[1]))
+    const { open } = mountDialog()
+    await addMapping(1)
+    await addMapping(2)
+
+    buttonWithText('保存 2 项更改').click()
+    await vi.waitFor(() => expect(feedback.error).toHaveBeenCalledOnce())
+
+    const details = [...document.querySelectorAll('[role="alert"] pre')].map(item => item.textContent)
+    expect(details).toEqual(errors.map((error, index) => `Client ${index + 1}: ${error}`))
+    expect(open.value).toBe(true)
+    expect(buttonWithText('保存 2 项更改').disabled).toBe(false)
+  })
+
   it('closes automatically after every mapping is saved successfully', async () => {
     let finishSecondSave: ((model: Model) => void) | undefined
     vi.mocked(updateModel)

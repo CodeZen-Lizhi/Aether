@@ -270,17 +270,26 @@
         </section>
       </div>
 
-      <div class="border-t border-[var(--color-border)] bg-[var(--color-background-mute)] px-4 py-3 sm:px-6">
-        <p class="text-xs leading-5 text-muted-foreground">
-          此处仅管理默认范围映射；按端点或请求设置的映射请在单条编辑中调整。
-        </p>
-        <p
-          v-if="errorMessage"
-          class="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
-          role="alert"
+      <div
+        v-if="feedback"
+        class="border-t border-[var(--color-border)] bg-[var(--color-background-mute)] px-4 py-3 sm:px-6"
+      >
+        <div
+          class="min-w-0 rounded-md px-3 py-2 text-xs leading-5"
+          :class="feedback.warning ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-destructive/10 text-destructive'"
+          :role="feedback.warning ? 'status' : 'alert'"
         >
-          {{ errorMessage }}
-        </p>
+          <p class="font-medium">
+            {{ feedback.title }}
+          </p>
+          <div class="mt-2 space-y-3">
+            <pre
+              v-for="(detail, index) in feedback.details"
+              :key="index"
+              class="m-0 whitespace-pre-wrap font-sans [overflow-wrap:anywhere]"
+            >{{ detail }}</pre>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -368,6 +377,12 @@ interface MappingEntry {
   upstreamNames: string[]
 }
 
+interface MappingFeedback {
+  title: string
+  details: string[]
+  warning?: boolean
+}
+
 const props = defineProps<Props>()
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -389,7 +404,7 @@ const drafts = ref<Record<string, string[]>>({})
 const initialMappings = ref<Record<string, string[]>>({})
 const loadingUpstream = ref(false)
 const saving = ref(false)
-const errorMessage = ref('')
+const feedback = ref<MappingFeedback | null>(null)
 
 const selectedClientModel = computed(() => {
   return props.models.find(model => model.id === selectedClientId.value) ?? null
@@ -481,7 +496,7 @@ function isMappingChanged(modelId: string): boolean {
 }
 
 function clearSelectionFeedback() {
-  errorMessage.value = ''
+  feedback.value = null
 }
 
 function selectClientModel(modelId: string) {
@@ -573,18 +588,26 @@ function removeMappingName(modelId: string, upstreamName: string) {
 async function fetchUpstreamModels(forceRefresh = false) {
   if (!props.providerId) return
   loadingUpstream.value = true
-  errorMessage.value = ''
+  feedback.value = null
   try {
     const result = await fetchCachedModels(props.providerId, undefined, forceRefresh)
     upstreamModels.value = result.models
     if (result.warning) {
+      feedback.value = {
+        title: '获取提供商模型提示',
+        details: [result.warning],
+        warning: true,
+      }
       showWarning(result.warning, '获取提供商模型提示')
     }
     if (result.error) {
-      errorMessage.value = result.error
+      feedback.value = { title: '获取提供商模型失败', details: [result.error] }
     }
   } catch (error: unknown) {
-    errorMessage.value = parseApiError(error, '获取提供商模型失败')
+    feedback.value = {
+      title: '获取提供商模型失败',
+      details: [parseApiError(error, '获取提供商模型失败')],
+    }
   } finally {
     loadingUpstream.value = false
   }
@@ -599,7 +622,7 @@ function resetState() {
   drafts.value = Object.fromEntries(
     Object.entries(initial).map(([modelId, names]) => [modelId, [...names]]),
   )
-  errorMessage.value = ''
+  feedback.value = null
 }
 
 async function handleDialogUpdate(value: boolean) {
@@ -660,7 +683,7 @@ async function saveMappings() {
   if (saving.value || !hasUnsavedChanges.value) return
 
   saving.value = true
-  errorMessage.value = ''
+  feedback.value = null
   const entries = changedEntries.value
 
   try {
@@ -684,11 +707,17 @@ async function saveMappings() {
 
     if (failures.length > 0) {
       selectedClientId.value = failures[0].modelId
-      const firstError = parseApiError(failures[0].reason, '保存失败')
-      errorMessage.value = successes.length > 0
-        ? `已保存 ${successes.length} 个客户端模型，${failures.length} 个客户端模型的更改仍待保存。${firstError}`
-        : `${failures.length} 个客户端模型的更改保存失败，仍待保存。${firstError}`
-      showError(errorMessage.value, '批量保存失败')
+      const title = successes.length > 0
+        ? `已保存 ${successes.length} 个客户端模型，${failures.length} 个客户端模型的更改仍待保存。`
+        : `${failures.length} 个客户端模型的更改保存失败，仍待保存。`
+      feedback.value = {
+        title,
+        details: failures.map(failure => {
+          const model = props.models.find(item => item.id === failure.modelId)
+          return `${model ? clientModelLabel(model) : failure.modelId}: ${parseApiError(failure.reason, '保存失败')}`
+        }),
+      }
+      showError(title, '批量保存失败')
       return
     }
 

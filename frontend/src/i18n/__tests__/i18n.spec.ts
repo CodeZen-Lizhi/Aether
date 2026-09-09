@@ -117,5 +117,7 @@ describe('i18n infrastructure', () => {
     expect(translateLegacyText('0 (不限制)', 'en-US')).toBe('0 (unlimited)')
     expect(translateLegacyText('  发布于 2026-01-01  ', 'en-US')).toBe('  Published at 2026-01-01  ')
     expect(translateLegacyText('git clone https://github.com/fawney19/Aether.git', 'en-US')).toBe('git clone https://github.com/fawney19/Aether.git')
+    expect(translateLegacyText('已保存 1 个客户端模型，2 个客户端模型的更改仍待保存。', 'en-US')).toBe('1 client models saved; 2 client models still have pending changes.')
+    expect(translateLegacyText('2 个客户端模型的更改保存失败，仍待保存。', 'en-US')).toBe('Changes for 2 client models failed to save and remain pending.')
   })
 })

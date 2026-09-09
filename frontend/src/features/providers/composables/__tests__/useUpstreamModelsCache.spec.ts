@@ -29,6 +29,21 @@ describe('useUpstreamModelsCache', () => {
     adminApiMocks.queryProviderModelsForKeys.mockReset()
   })
 
+  it.each([false, true])('preserves both errors and warnings from the upstream response (success: %s)', async (success) => {
+    const error = 'Key A: openai:responses: connection refused'
+    const warning = 'Key B: claude:chat: certificate verification failed'
+    adminApiMocks.queryProviderModels.mockResolvedValue({
+      ...response('upstream-model'),
+      success,
+      data: { models: success ? [{ id: 'upstream-model' }] : [], error, warning },
+    })
+
+    const result = await useUpstreamModelsCache().fetchModels('provider-1')
+
+    expect(result[success ? 'warning' : 'error']).toBe(`${error}\n${warning}`)
+    expect(result.models).toHaveLength(success ? 1 : 0)
+  })
+
   it('deduplicates equivalent multi-key model requests', async () => {
     const request = deferred<ReturnType<typeof response>>()
     adminApiMocks.queryProviderModelsForKeys.mockReturnValue(request.promise)
