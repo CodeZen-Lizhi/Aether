@@ -13,7 +13,8 @@ pub(super) use self::catalog_routes::maybe_build_local_admin_model_catalog_respo
 pub(super) use self::external_cache::{
     acquire_admin_external_models_config_mutation_lock, apply_admin_external_models_config_update,
     build_admin_external_models_config_payload, clear_admin_external_models_cache,
-    read_admin_external_models_cache, release_admin_external_models_config_mutation_lock,
+    clear_admin_external_models_cache_entries, read_admin_external_models_cache,
+    release_admin_external_models_config_mutation_lock,
     ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY,
 };
 #[cfg(test)]

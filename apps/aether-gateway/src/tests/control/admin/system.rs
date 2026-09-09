@@ -5,19 +5,16 @@ use aether_crypto::{encrypt_python_fernet_plaintext, DEVELOPMENT_ENCRYPTION_KEY}
 use aether_data::repository::auth::{
     InMemoryAuthApiKeySnapshotRepository, StoredAuthApiKeyExportRecord,
 };
-use aether_data::repository::auth_modules::{
-    InMemoryAuthModuleReadRepository, StoredOAuthProviderModuleConfig,
-};
 use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
-use aether_data::repository::global_models::InMemoryGlobalModelReadRepository;
-use aether_data::repository::oauth_providers::InMemoryOAuthProviderRepository;
 use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
 use aether_data::repository::proxy_nodes::InMemoryProxyNodeRepository;
 use aether_data::repository::users::{
     InMemoryUserReadRepository, StoredUserAuthRecord, UpsertUserGroupRecord, UserReadRepository,
 };
 use aether_data::repository::wallet::{InMemoryWalletRepository, StoredWalletSnapshot};
-use aether_data_contracts::repository::global_models::StoredPublicGlobalModel;
+use aether_data_contracts::repository::global_models::{
+    CreateAdminGlobalModelRecord, UpsertAdminProviderModelRecord,
+};
 use axum::body::Body;
 use axum::routing::{any, delete, get, post, put};
 use axum::{extract::Request, Router};
@@ -26,8 +23,7 @@ use serde_json::json;
 
 use super::super::{
     build_router_with_state, issue_test_admin_access_token, sample_admin_global_model,
-    sample_admin_provider_model, sample_endpoint, sample_key, sample_ldap_module_config,
-    sample_oauth_provider_config, sample_provider, sample_proxy_node,
+    sample_admin_provider_model, sample_endpoint, sample_key, sample_provider, sample_proxy_node,
     sample_recent_key_rpm_candidate, start_server, AppState,
 };
 use crate::constants::{
@@ -240,138 +236,119 @@ async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
     );
 
     let provider_id = "provider-openai".to_string();
-    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-        vec![{
-            let mut provider = sample_provider(&provider_id, "openai", 10).with_transport_fields(
-                true,
-                true,
-                Some(8),
-                Some(3),
-                Some(json!({"node_id": "node-1"})),
-                Some(30.0),
-                Some(12.5),
-                Some(json!({
-                    "provider_ops": {
-                        "connector": {
-                            "credentials": {
-                                "refresh_token": encrypt_python_fernet_plaintext(
-                                    DEVELOPMENT_ENCRYPTION_KEY,
-                                    "provider-refresh-token",
-                                )
-                                .expect("provider credential should encrypt")
-                            }
+    let provider = {
+        let mut provider = sample_provider(&provider_id, "openai", 10).with_transport_fields(
+            true,
+            true,
+            Some(8),
+            Some(3),
+            Some(json!({"node_id": "node-1"})),
+            Some(30.0),
+            Some(12.5),
+            Some(json!({
+                "provider_ops": {
+                    "connector": {
+                        "credentials": {
+                            "refresh_token": encrypt_python_fernet_plaintext(
+                                DEVELOPMENT_ENCRYPTION_KEY,
+                                "provider-refresh-token",
+                            )
+                            .expect("provider credential should encrypt")
                         }
                     }
-                })),
+                }
+            })),
+        );
+        provider.billing_type = Some("monthly_quota".to_string());
+        provider.monthly_quota_usd = Some(100.0);
+        provider.monthly_used_usd = Some(12.5);
+        provider.quota_reset_day = Some(30);
+        provider.quota_last_reset_at_unix_secs = Some(1_710_000_000);
+        provider.quota_expires_at_unix_secs = Some(4_102_444_800);
+        provider
+    };
+    let endpoints = [
+        sample_endpoint(
+            "endpoint-chat",
+            &provider_id,
+            "openai:chat",
+            "https://api.openai.example",
+        ),
+        sample_endpoint(
+            "endpoint-cli",
+            &provider_id,
+            "openai:responses",
+            "https://api.openai.example",
+        ),
+    ];
+    let keys = [
+        {
+            let mut key = sample_key("key-openai", &provider_id, "openai:chat", "live-api-key");
+            key.name = "primary".to_string();
+            key.allowed_models = Some(json!(["gpt-5"]));
+            key.concurrent_limit = Some(7);
+            key.expires_at_unix_secs = Some(4_102_444_800);
+            key.proxy = Some(json!({"node_id": "node-1"}));
+            key.fingerprint = Some(json!({"user_agent": "backup-test-agent"}));
+            key.encrypted_auth_config = Some(
+                encrypt_python_fernet_plaintext(
+                    DEVELOPMENT_ENCRYPTION_KEY,
+                    r#"{"refresh_token":"oauth-refresh"}"#,
+                )
+                .expect("auth config should encrypt"),
             );
-            provider.billing_type = Some("monthly_quota".to_string());
-            provider.monthly_quota_usd = Some(100.0);
-            provider.monthly_used_usd = Some(12.5);
-            provider.quota_reset_day = Some(30);
-            provider.quota_last_reset_at_unix_secs = Some(1_710_000_000);
-            provider.quota_expires_at_unix_secs = Some(4_102_444_800);
-            provider
-        }],
-        vec![
-            sample_endpoint(
-                "endpoint-chat",
-                &provider_id,
-                "openai:chat",
-                "https://api.openai.example",
-            ),
-            sample_endpoint(
-                "endpoint-cli",
+            key
+        },
+        {
+            let mut key = sample_key(
+                "key-z-oauth-a",
                 &provider_id,
                 "openai:responses",
-                "https://api.openai.example",
-            ),
-        ],
-        vec![
-            {
-                let mut key = sample_key("key-openai", &provider_id, "openai:chat", "live-api-key");
-                key.name = "primary".to_string();
-                key.allowed_models = Some(json!(["gpt-5"]));
-                key.concurrent_limit = Some(7);
-                key.expires_at_unix_secs = Some(4_102_444_800);
-                key.proxy = Some(json!({"node_id": "node-1"}));
-                key.fingerprint = Some(json!({"user_agent": "backup-test-agent"}));
-                key.encrypted_auth_config = Some(
-                    encrypt_python_fernet_plaintext(
-                        DEVELOPMENT_ENCRYPTION_KEY,
-                        r#"{"refresh_token":"oauth-refresh"}"#,
-                    )
-                    .expect("auth config should encrypt"),
-                );
-                key
-            },
-            {
-                let mut key = sample_key(
-                    "key-z-oauth-a",
-                    &provider_id,
-                    "openai:responses",
-                    "oauth-access-a",
-                );
-                key.auth_type = "oauth".to_string();
-                key.name = "same-oauth-name".to_string();
-                key.expires_at_unix_secs = Some(4_102_444_800);
-                key.encrypted_auth_config = Some(
-                    encrypt_python_fernet_plaintext(
-                        DEVELOPMENT_ENCRYPTION_KEY,
-                        r#"{"refresh_token":"oauth-refresh-a","account_id":"account-a"}"#,
-                    )
-                    .unwrap(),
-                );
-                key
-            },
-            {
-                let mut key = sample_key(
-                    "key-z-oauth-b",
-                    &provider_id,
-                    "openai:responses",
-                    "oauth-access-b",
-                );
-                key.auth_type = "oauth".to_string();
-                key.name = "same-oauth-name".to_string();
-                key.expires_at_unix_secs = Some(4_102_444_800);
-                key
-            },
-            {
-                let mut key = sample_key("key-z-service", &provider_id, "openai:chat", "unused");
-                key.auth_type = "service_account".to_string();
-                key.name = "service-account".to_string();
-                key.encrypted_api_key = None;
-                key.encrypted_auth_config = Some(
-                    encrypt_python_fernet_plaintext(
-                        DEVELOPMENT_ENCRYPTION_KEY,
-                        r#"{"client_email":"backup@example.com","private_key":"test-private-key"}"#,
-                    )
-                    .unwrap(),
-                );
-                key
-            },
-        ],
-    ));
-    let global_model_repository = Arc::new(
-        InMemoryGlobalModelReadRepository::seed(Vec::<StoredPublicGlobalModel>::new())
-            .with_admin_global_models(vec![{
-                let mut model = sample_admin_global_model("global-gpt-5", "gpt-5", "GPT 5");
-                model.usage_count = 7;
-                model
-            }])
-            .with_admin_provider_models(vec![sample_admin_provider_model(
-                "model-gpt-5",
+                "oauth-access-a",
+            );
+            key.auth_type = "oauth".to_string();
+            key.name = "same-oauth-name".to_string();
+            key.expires_at_unix_secs = Some(4_102_444_800);
+            key.encrypted_auth_config = Some(
+                encrypt_python_fernet_plaintext(
+                    DEVELOPMENT_ENCRYPTION_KEY,
+                    r#"{"refresh_token":"oauth-refresh-a","account_id":"account-a"}"#,
+                )
+                .unwrap(),
+            );
+            key
+        },
+        {
+            let mut key = sample_key(
+                "key-z-oauth-b",
                 &provider_id,
-                "global-gpt-5",
-                "gpt-5",
-            )]),
-    );
-    let auth_module_repository = Arc::new(InMemoryAuthModuleReadRepository::seed(
-        Vec::<StoredOAuthProviderModuleConfig>::new(),
-        Some(sample_ldap_module_config()),
-    ));
-    let oauth_provider_repository = Arc::new(InMemoryOAuthProviderRepository::seed(vec![
-        sample_oauth_provider_config("linuxdo"),
-    ]));
+                "openai:responses",
+                "oauth-access-b",
+            );
+            key.auth_type = "oauth".to_string();
+            key.name = "same-oauth-name".to_string();
+            key.expires_at_unix_secs = Some(4_102_444_800);
+            key
+        },
+        {
+            let mut key = sample_key("key-z-service", &provider_id, "openai:chat", "unused");
+            key.auth_type = "service_account".to_string();
+            key.name = "service-account".to_string();
+            key.encrypted_api_key = None;
+            key.encrypted_auth_config = Some(
+                encrypt_python_fernet_plaintext(
+                    DEVELOPMENT_ENCRYPTION_KEY,
+                    r#"{"client_email":"backup@example.com","private_key":"test-private-key"}"#,
+                )
+                .unwrap(),
+            );
+            key
+        },
+    ];
+    let mut global_model = sample_admin_global_model("global-gpt-5", "gpt-5", "GPT 5");
+    global_model.usage_count = 7;
+    let provider_model =
+        sample_admin_provider_model("model-gpt-5", &provider_id, "global-gpt-5", "gpt-5");
     let mut manual_proxy = sample_proxy_node("node-1").with_manual_proxy_fields(
         Some("http://proxy.local:8080".to_string()),
         Some("proxy-user".to_string()),
@@ -383,36 +360,107 @@ async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
     manual_proxy.port = 8080;
     manual_proxy.status = "online".to_string();
     manual_proxy.remote_config = None;
-    let proxy_node_repository = Arc::new(InMemoryProxyNodeRepository::seed(vec![
-        manual_proxy.clone(),
-        sample_proxy_node("tunnel-node"),
-    ]));
-
-    let data_state = GatewayDataState::disabled()
-        .attach_provider_catalog_repository_for_tests(provider_catalog_repository)
-        .with_global_model_repository_for_tests(global_model_repository)
-        .attach_auth_module_reader_for_tests(auth_module_repository)
-        .attach_oauth_provider_repository_for_tests(oauth_provider_repository)
-        .attach_proxy_node_repository_for_tests(proxy_node_repository)
-        .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY)
-        .with_system_config_values_for_tests(vec![
-            (
-                "smtp_password".to_string(),
-                json!(
-                    encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "smtp-secret",)
-                        .expect("smtp secret should encrypt")
-                ),
+    let source_database = aether_data::SqlDatabaseConfig::new(
+        aether_data::DatabaseDriver::Sqlite,
+        "sqlite::memory:",
+        aether_data::SqlPoolConfig {
+            min_connections: 0,
+            max_connections: 1,
+            ..Default::default()
+        },
+    )
+    .expect("source sqlite config should build");
+    let source = AppState::new()
+        .expect("source gateway should build")
+        .with_data_config(
+            crate::data::GatewayDataConfig::from_database_config(source_database)
+                .with_encryption_key(DEVELOPMENT_ENCRYPTION_KEY),
+        )
+        .expect("source sqlite state should build");
+    source
+        .run_database_migrations()
+        .await
+        .expect("source sqlite migrations should run");
+    for node in [&manual_proxy, &sample_proxy_node("tunnel-node")] {
+        assert!(source
+            .restore_proxy_node(node)
+            .await
+            .expect("source proxy node should restore"));
+    }
+    source
+        .create_provider_catalog_provider(&provider, None)
+        .await
+        .expect("source provider should create")
+        .expect("source provider should persist");
+    for endpoint in &endpoints {
+        source
+            .create_provider_catalog_endpoint(endpoint)
+            .await
+            .expect("source endpoint should create")
+            .expect("source endpoint should persist");
+    }
+    for key in &keys {
+        source
+            .create_provider_catalog_key(key)
+            .await
+            .expect("source key should create")
+            .expect("source key should persist");
+    }
+    source
+        .create_admin_global_model(&CreateAdminGlobalModelRecord {
+            id: global_model.id,
+            name: global_model.name,
+            display_name: global_model.display_name,
+            is_active: global_model.is_active,
+            default_price_per_request: global_model.default_price_per_request,
+            default_tiered_pricing: global_model.default_tiered_pricing,
+            supported_capabilities: global_model.supported_capabilities,
+            config: global_model.config,
+            usage_count: Some(global_model.usage_count),
+        })
+        .await
+        .expect("source global model should create")
+        .expect("source global model should persist");
+    source
+        .create_admin_provider_model(&UpsertAdminProviderModelRecord {
+            id: provider_model.id,
+            provider_id: provider_model.provider_id,
+            global_model_id: provider_model.global_model_id,
+            provider_model_name: provider_model.provider_model_name,
+            provider_model_mappings: provider_model.provider_model_mappings,
+            price_per_request: provider_model.price_per_request,
+            tiered_pricing: provider_model.tiered_pricing,
+            supports_vision: provider_model.supports_vision,
+            supports_function_calling: provider_model.supports_function_calling,
+            supports_streaming: provider_model.supports_streaming,
+            supports_extended_thinking: provider_model.supports_extended_thinking,
+            supports_image_generation: provider_model.supports_image_generation,
+            is_active: provider_model.is_active,
+            is_available: provider_model.is_available,
+            config: provider_model.config,
+        })
+        .await
+        .expect("source provider model should create")
+        .expect("source provider model should persist");
+    for (key, value) in [
+        (
+            "smtp_password",
+            json!(
+                encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "smtp-secret")
+                    .expect("smtp secret should encrypt")
             ),
-            ("site_name".to_string(), json!("Aether Test")),
-            ("external_models_proxy_node_id".to_string(), json!("node-1")),
-        ]);
+        ),
+        ("site_name", json!("Aether Test")),
+        ("external_models_proxy_node_id", json!("node-1")),
+    ] {
+        source
+            .upsert_system_config_entry(key, &value, None)
+            .await
+            .expect("source system config should persist");
+    }
 
     let (upstream_url, upstream_handle) = start_server(upstream).await;
-    let gateway = build_router_with_state(
-        AppState::new()
-            .expect("gateway should build")
-            .with_data_state_for_tests(data_state),
-    );
+    let gateway = build_router_with_state(source);
     let (gateway_url, gateway_handle) = start_server(gateway).await;
 
     let response = reqwest::Client::new()
@@ -427,10 +475,7 @@ async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
-    assert_eq!(
-        payload["version"],
-        aether_admin::system::ADMIN_SYSTEM_CONFIG_EXPORT_VERSION
-    );
+    assert!(payload.get("version").is_none());
     assert!(payload["exported_at"].as_str().is_some());
     assert_eq!(payload["global_models"][0]["name"], "gpt-5");
     assert_eq!(payload["global_models"][0]["usage_count"], json!(7));
@@ -614,7 +659,7 @@ async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
 #[tokio::test]
 async fn gateway_handles_admin_system_unavailable_write_routes_locally_with_trusted_admin_principal(
 ) {
-    const DETAIL: &str = "Admin system data unavailable";
+    const MESSAGE: &str = "备份需要可用的 SQLite 数据库";
 
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
@@ -662,7 +707,11 @@ async fn gateway_handles_admin_system_unavailable_write_routes_locally_with_trus
             "path={path}"
         );
         let payload: serde_json::Value = response.json().await.expect("json body should parse");
-        assert_eq!(payload["detail"], DETAIL, "path={path}");
+        assert_eq!(
+            payload,
+            json!({"error": {"message": MESSAGE}}),
+            "path={path}"
+        );
     }
 
     for path in local_paths {

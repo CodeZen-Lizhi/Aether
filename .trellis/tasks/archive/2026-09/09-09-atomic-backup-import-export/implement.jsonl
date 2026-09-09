@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/index.md","reason":"前端中文源文案、字典同步和现有 UI 约定"}
+{"file":".trellis/spec/aether-data/backend/sqlite-lifecycle.md","reason":"SQLite 单事务、外键与非空历史数据完整性"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"导入导出跨前端、网关和数据库契约"}

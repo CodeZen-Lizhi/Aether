@@ -34,10 +34,6 @@ pub struct AdminEmailTemplateUpdate {
     pub html: Option<String>,
 }
 
-pub const ADMIN_SYSTEM_CONFIG_EXPORT_VERSION: &str = "3.0";
-pub const ADMIN_SYSTEM_CONFIG_SUPPORTED_VERSIONS: &[&str] = &[ADMIN_SYSTEM_CONFIG_EXPORT_VERSION];
-pub const ADMIN_SYSTEM_USERS_EXPORT_VERSION: &str = "2.0";
-pub const ADMIN_SYSTEM_USERS_SUPPORTED_VERSIONS: &[&str] = &[ADMIN_SYSTEM_USERS_EXPORT_VERSION];
 pub const ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS: &[&str] = &[
     "api_key",
     "password",
@@ -231,25 +227,6 @@ pub enum AdminImportMergeMode {
     Skip,
     Overwrite,
     Error,
-}
-
-impl AdminImportMergeMode {
-    fn parse_json_value(
-        value: Option<&serde_json::Value>,
-    ) -> Result<Self, (http::StatusCode, serde_json::Value)> {
-        match value
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("skip")
-            .trim()
-        {
-            "" | "skip" => Ok(Self::Skip),
-            "overwrite" => Ok(Self::Overwrite),
-            "error" => Ok(Self::Error),
-            _ => Err(invalid_request(
-                "merge_mode 仅支持 skip / overwrite / error",
-            )),
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for AdminImportMergeMode {
@@ -521,7 +498,6 @@ pub struct AdminSystemConfigEntry {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdminSystemConfigDocument {
-    pub version: String,
     pub exported_at: String,
     pub global_models: Vec<AdminSystemConfigGlobalModel>,
     pub providers: Vec<AdminSystemConfigProvider>,
@@ -1138,38 +1114,34 @@ pub fn serialize_admin_system_users_export_wallet(
 pub fn parse_admin_system_config_import_request(
     request_body: &[u8],
 ) -> Result<ParsedAdminSystemConfigImportRequest, (http::StatusCode, serde_json::Value)> {
-    let root = match serde_json::from_slice::<serde_json::Value>(request_body) {
+    let mut root = match serde_json::from_slice::<serde_json::Value>(request_body) {
         Ok(serde_json::Value::Object(root)) => root,
         _ => return Err(invalid_request("请求数据验证失败")),
     };
-
-    let version = root
-        .get("version")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| invalid_request("version 为必填字段"))?;
-    if !ADMIN_SYSTEM_CONFIG_SUPPORTED_VERSIONS.contains(&version) {
-        return Err(invalid_request(format!(
-            "不支持的配置版本: {version}，支持的版本: {}",
-            ADMIN_SYSTEM_CONFIG_SUPPORTED_VERSIONS.join(", ")
-        )));
-    }
-
-    let merge_mode = AdminImportMergeMode::parse_json_value(root.get("merge_mode"))?;
+    // Version is historical metadata; compatibility is determined by restorable content.
+    root.remove("version");
+    let merge_mode = serde_json::from_value::<AdminImportMergeMode>(
+        root.remove("merge_mode").unwrap_or(Value::Null),
+    )
+    .map_err(|_| invalid_request("merge_mode 仅支持 skip / overwrite / error"))?;
+    normalize_config_backup_content(&mut root)?;
     let document = serde_path_to_error::deserialize::<_, AdminSystemConfigDocument>(
         serde_json::Value::Object(root.clone()),
     )
     .map_err(|err| {
         let path = err.path().to_string();
-        let inner = err.into_inner();
-        let detail = if path.is_empty() {
-            format!("配置文件格式无效: {inner}")
+        // Deserialize errors can echo supplied values, including backup credentials.
+        let detail = if path.is_empty() || path == "." {
+            "配置文件格式无效，缺少必要字段或字段类型错误".to_string()
         } else {
-            format!("配置文件格式无效: {path}: {inner}")
+            format!("配置文件格式无效: {path}")
         };
         invalid_request(detail)
     })?;
+    let restored =
+        serde_json::to_value(&document).map_err(|_| invalid_request("配置文件无法完整解析"))?;
+    validate_admin_backup_fields(&Value::Object(root.clone()), &restored, "config_data")
+        .map_err(invalid_request)?;
 
     chrono::DateTime::parse_from_rfc3339(&document.exported_at)
         .map_err(|_| invalid_request("exported_at 必须是 RFC3339 时间"))?;
@@ -1181,6 +1153,128 @@ pub fn parse_admin_system_config_import_request(
         },
         root,
     })
+}
+
+/// Reject fields that deserialization would silently discard when they contain data.
+/// JSON-valued settings keep their complete shape in `restored` and remain extensible.
+pub fn validate_admin_backup_fields(
+    source: &Value,
+    restored: &Value,
+    path: &str,
+) -> Result<(), String> {
+    match (source, restored) {
+        (Value::Object(source), Value::Object(restored)) => {
+            for (field, value) in source {
+                let path = format!("{path}.{field}");
+                if let Some(restored) = restored.get(field) {
+                    validate_admin_backup_fields(value, restored, &path)?;
+                } else if !value.is_null()
+                    && !value.as_array().is_some_and(Vec::is_empty)
+                    && !value.as_object().is_some_and(Map::is_empty)
+                {
+                    return Err(format!("{path} 包含无法恢复的数据，导入已中止"));
+                }
+            }
+        }
+        (Value::Array(source), Value::Array(restored)) => {
+            if source.len() != restored.len() {
+                return Err(format!("{path} 包含无法恢复的数据，导入已中止"));
+            }
+            for (index, (source, restored)) in source.iter().zip(restored).enumerate() {
+                validate_admin_backup_fields(source, restored, &format!("{path}[{index}]"))?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn normalize_config_backup_content(
+    root: &mut Map<String, Value>,
+) -> Result<(), (http::StatusCode, Value)> {
+    let Some(providers) = root.get_mut("providers").and_then(Value::as_array_mut) else {
+        return Ok(()); // The document decoder reports missing or malformed sections.
+    };
+    let mut provider_ids = providers
+        .iter()
+        .filter_map(|provider| provider.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    let mut key_ids = providers
+        .iter()
+        .filter_map(|provider| provider.get("api_keys").and_then(Value::as_array))
+        .flatten()
+        .filter_map(|key| key.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    for (provider_index, provider) in providers.iter_mut().enumerate() {
+        let Some(provider) = provider.as_object_mut() else {
+            continue;
+        };
+        ensure_config_backup_source_id(
+            provider,
+            &mut provider_ids,
+            format!("import:provider:{provider_index}"),
+        );
+        let Some(keys) = provider.get_mut("api_keys").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for (key_index, key) in keys.iter_mut().enumerate() {
+            let Some(key) = key.as_object_mut() else {
+                continue;
+            };
+            ensure_config_backup_source_id(
+                key,
+                &mut key_ids,
+                format!("import:key:{provider_index}:{key_index}"),
+            );
+            if let Some(legacy) = key
+                .remove("supported_endpoints")
+                .filter(|value| !value.is_null())
+            {
+                let formats = serde_json::from_value::<Vec<String>>(legacy.clone()).map_err(|_| {
+                    invalid_request(format!(
+                        "providers[{provider_index}].api_keys[{key_index}].supported_endpoints 必须是字符串数组"
+                    ))
+                })?;
+                match key.get("api_formats") {
+                    None | Some(Value::Null) => {
+                        key.insert("api_formats".to_string(), legacy);
+                    }
+                    Some(current) => {
+                        let current = serde_json::from_value::<Vec<String>>(current.clone())
+                            .map_err(|_| invalid_request("api_formats 必须是字符串数组"))?;
+                        if current.iter().collect::<BTreeSet<_>>()
+                            != formats.iter().collect::<BTreeSet<_>>()
+                        {
+                            return Err(invalid_request(format!(
+                                "providers[{provider_index}].api_keys[{key_index}] 的 API 格式字段互相冲突"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ensure_config_backup_source_id(
+    object: &mut Map<String, Value>,
+    used: &mut BTreeSet<String>,
+    base: String,
+) {
+    if object.get("id").is_some_and(|id| !id.is_null()) {
+        return;
+    }
+    // Stable across preflight and execution; existing IDs are never changed.
+    let mut id = base.clone();
+    let mut suffix = 1;
+    while !used.insert(id.clone()) {
+        id = format!("{base}:{suffix}");
+        suffix += 1;
+    }
+    object.insert("id".to_string(), Value::String(id));
 }
 
 pub fn normalize_admin_system_config_key(requested_key: &str) -> String {
@@ -2795,8 +2889,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_admin_system_config_import_request_accepts_supported_versions() {
-        for version in ADMIN_SYSTEM_CONFIG_SUPPORTED_VERSIONS {
+    fn parse_admin_system_config_import_request_ignores_version_metadata() {
+        for version in [
+            json!("2.3"),
+            json!("3.0"),
+            json!("future"),
+            json!(27),
+            Value::Null,
+        ] {
             let parsed = parse_admin_system_config_import_request(
                 json!({
                     "version": version,
@@ -2808,46 +2908,144 @@ mod tests {
                 .to_string()
                 .as_bytes(),
             )
-            .expect("supported version should parse");
+            .expect("restorable content should parse regardless of version metadata");
 
-            assert_eq!(parsed.request.document.version, *version);
+            assert!(serde_json::to_value(&parsed.request.document)
+                .unwrap()
+                .get("version")
+                .is_none());
+            assert!(!parsed.root.contains_key("version"));
             assert_eq!(parsed.request.merge_mode, AdminImportMergeMode::Skip);
             assert!(parsed.request.document.system_configs.is_empty());
         }
     }
 
     #[test]
-    fn parse_admin_system_config_import_request_rejects_unknown_versions() {
-        for version in ["1.9", "2.2", "2.3", "3.1"] {
-            let err = parse_admin_system_config_import_request(
-                json!({
-                    "version": version,
-                    "exported_at": "2026-09-08T00:00:00Z",
-                    "proxy_nodes": [], "system_configs": [],
-                    "global_models": [],
-                    "providers": [],
-                })
-                .to_string()
-                .as_bytes(),
-            )
-            .expect_err("unknown versions should fail");
+    fn parse_admin_system_config_import_request_accepts_unversioned_content() {
+        let parsed = parse_admin_system_config_import_request(
+            json!({
+                "exported_at": "2026-09-08T00:00:00Z",
+                "proxy_nodes": [], "system_configs": [],
+                "global_models": [], "providers": [],
+                "ldap_config": null, "oauth_providers": [],
+                "merge_mode": "overwrite",
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .expect("unversioned backup with empty retired sections should parse");
+        assert_eq!(parsed.request.merge_mode, AdminImportMergeMode::Overwrite);
+        assert!(serde_json::to_value(parsed.request.document)
+            .unwrap()
+            .get("version")
+            .is_none());
+    }
 
-            assert_eq!(err.0, http::StatusCode::BAD_REQUEST);
-            assert_eq!(
-                err.1["detail"],
-                format!(
-                    "不支持的配置版本: {version}，支持的版本: {}",
-                    ADMIN_SYSTEM_CONFIG_SUPPORTED_VERSIONS.join(", ")
-                )
-            );
+    #[test]
+    fn config_backup_assigns_stable_missing_ids_and_preserves_legacy_key_formats() {
+        let value = json!({
+            "exported_at": "2026-09-08T00:00:00Z",
+            "global_models": [], "proxy_nodes": [], "system_configs": [],
+            "providers": [
+                {
+                    "name": "legacy-provider", "endpoints": [], "models": [],
+                    "api_keys": [{"supported_endpoints": ["openai:chat"]}],
+                },
+                {
+                    "id": "import:provider:0", "name": "identified-provider",
+                    "endpoints": [], "models": [],
+                    "api_keys": [{"id": "import:key:0:0", "api_formats": []}],
+                },
+            ],
+        });
+        let parse = || {
+            parse_admin_system_config_import_request(value.to_string().as_bytes())
+                .expect("known legacy fields should normalize")
+        };
+        let first = parse();
+        let second = parse();
+        assert_eq!(first.request.document, second.request.document);
+        let providers = &first.request.document.providers;
+        assert_eq!(providers[0].id.as_deref(), Some("import:provider:0:1"));
+        assert_eq!(providers[1].id.as_deref(), Some("import:provider:0"));
+        assert_eq!(
+            providers[0].api_keys[0].id.as_deref(),
+            Some("import:key:0:0:1")
+        );
+        assert_eq!(
+            providers[1].api_keys[0].id.as_deref(),
+            Some("import:key:0:0")
+        );
+        assert_eq!(
+            providers[0].api_keys[0].api_formats,
+            Some(vec!["openai:chat".to_string()])
+        );
+        assert_eq!(first.root["providers"][0]["id"], json!(providers[0].id));
+        assert!(first.root["providers"][0]["api_keys"][0]
+            .get("supported_endpoints")
+            .is_none());
+    }
+
+    #[test]
+    fn config_backup_rejects_conflicting_legacy_key_formats() {
+        let error = parse_admin_system_config_import_request(
+            json!({
+                "exported_at": "2026-09-08T00:00:00Z",
+                "global_models": [], "proxy_nodes": [], "system_configs": [],
+                "providers": [{
+                    "name": "provider", "endpoints": [], "models": [],
+                    "api_keys": [{
+                        "api_formats": ["openai:chat"],
+                        "supported_endpoints": ["claude:messages"],
+                    }],
+                }],
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .expect_err("conflicting restrictions cannot be silently discarded");
+        assert!(error.1["detail"].as_str().unwrap().contains("互相冲突"));
+    }
+
+    #[test]
+    fn config_backup_rejects_nonempty_unrestorable_fields() {
+        for (path, extra) in [
+            ("ldap_config", json!({"server": "ldap.example.invalid"})),
+            ("oauth_providers", json!([{"name": "legacy-oauth"}])),
+            ("unknown_data", json!([1])),
+        ] {
+            let mut backup = json!({
+                "exported_at": "2026-09-08T00:00:00Z",
+                "global_models": [], "proxy_nodes": [], "system_configs": [],
+                "providers": [],
+            });
+            backup[path] = extra;
+            let error = parse_admin_system_config_import_request(backup.to_string().as_bytes())
+                .expect_err("nonempty unsupported sections must fail");
+            assert!(error.1["detail"].as_str().unwrap().contains(path));
         }
+        let error = parse_admin_system_config_import_request(
+            json!({
+                "exported_at": "2026-09-08T00:00:00Z",
+                "global_models": [], "proxy_nodes": [], "system_configs": [],
+                "providers": [{
+                    "name": "provider", "endpoints": [], "models": [],
+                    "api_keys": [{"unsupported_secret": "synthetic-secret"}],
+                }],
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .expect_err("nested fields must not disappear on import");
+        let detail = error.1["detail"].as_str().unwrap();
+        assert!(detail.contains("providers[0].api_keys[0].unsupported_secret"));
+        assert!(!detail.contains("synthetic-secret"));
     }
 
     #[test]
     fn parse_admin_system_config_import_request_rejects_invalid_merge_mode() {
         let err = parse_admin_system_config_import_request(
             json!({
-                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
                 "exported_at": "2026-09-08T00:00:00Z",
                 "proxy_nodes": [], "system_configs": [],
                 "merge_mode": "replace_all",
@@ -2868,7 +3066,6 @@ mod tests {
     fn parse_admin_system_config_import_request_reports_field_path_for_shape_errors() {
         let err = parse_admin_system_config_import_request(
             json!({
-                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
                 "exported_at": "2026-09-08T00:00:00Z",
                 "proxy_nodes": [], "system_configs": [],
                 "global_models": [],
@@ -2897,7 +3094,6 @@ mod tests {
     fn parse_admin_system_config_import_request_accepts_current_numeric_fields() {
         let parsed = parse_admin_system_config_import_request(
             json!({
-                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
                 "exported_at": "2026-09-08T00:00:00Z",
                 "proxy_nodes": [], "system_configs": [],
                 "global_models": [{
@@ -2936,10 +3132,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_admin_system_config_import_request_rejects_old_numeric_string_fields() {
+    fn parse_admin_system_config_import_request_rejects_invalid_numeric_field_types() {
         let err = parse_admin_system_config_import_request(
             json!({
-                "version": ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
                 "exported_at": "2026-09-08T00:00:00Z",
                 "proxy_nodes": [], "system_configs": [],
                 "global_models": [{
@@ -2952,7 +3147,7 @@ mod tests {
             .to_string()
             .as_bytes(),
         )
-        .expect_err("old numeric string fields should fail");
+        .expect_err("invalid numeric field types should fail independent of version");
 
         assert_eq!(err.0, http::StatusCode::BAD_REQUEST);
         let detail = err.1["detail"].as_str().expect("detail should be a string");

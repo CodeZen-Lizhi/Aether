@@ -21,6 +21,15 @@ SELECT
 async fn export_sqlite_admin_system_usage_aggregates(
     pool: &sqlx::SqlitePool,
 ) -> Result<AdminSystemUsageAggregateSnapshot, DataLayerError> {
+    let mut tx = pool.begin().await.map_sql_err()?;
+    let snapshot = export_sqlite_admin_system_usage_aggregates_on(&mut tx).await?;
+    tx.commit().await.map_sql_err()?;
+    Ok(snapshot)
+}
+
+pub(super) async fn export_sqlite_admin_system_usage_aggregates_on(
+    connection: &mut sqlx::SqliteConnection,
+) -> Result<AdminSystemUsageAggregateSnapshot, DataLayerError> {
     let mut snapshot = AdminSystemUsageAggregateSnapshot::default();
 
     let daily_rows = sqlx::query(
@@ -39,16 +48,10 @@ SELECT
     is_complete,
     aggregated_at AS aggregated_at_unix_secs
 FROM stats_daily
-WHERE total_requests <> 0
-   OR input_tokens <> 0
-   OR output_tokens <> 0
-   OR cache_creation_tokens <> 0
-   OR cache_read_tokens <> 0
-   OR total_cost <> 0
 ORDER BY "date" ASC
 "#,
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await
     .map_sql_err()?;
     for row in daily_rows {
@@ -70,16 +73,10 @@ SELECT
     cache_read_tokens,
     total_cost
 FROM stats_user_daily
-WHERE total_requests <> 0
-   OR input_tokens <> 0
-   OR output_tokens <> 0
-   OR cache_creation_tokens <> 0
-   OR cache_read_tokens <> 0
-   OR total_cost <> 0
 ORDER BY user_id ASC, "date" ASC
 "#,
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await
     .map_sql_err()?;
     for row in user_daily_rows {
@@ -103,16 +100,10 @@ SELECT
     cache_read_tokens,
     total_cost
 FROM stats_daily_api_key
-WHERE total_requests <> 0
-   OR input_tokens <> 0
-   OR output_tokens <> 0
-   OR cache_creation_tokens <> 0
-   OR cache_read_tokens <> 0
-   OR total_cost <> 0
 ORDER BY api_key_id ASC, "date" ASC
 "#,
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await
     .map_sql_err()?;
     for row in api_key_daily_rows {
@@ -132,6 +123,25 @@ async fn import_sqlite_admin_system_usage_aggregates(
     mode: AdminSystemUsageAggregateImportMode,
 ) -> Result<AdminSystemUsageAggregateImportSummary, DataLayerError> {
     let mut tx = pool.begin().await.map_sql_err()?;
+    let summary = import_sqlite_admin_system_usage_aggregates_on(
+        &mut tx,
+        snapshot,
+        user_id_map,
+        api_key_id_map,
+        mode,
+    )
+    .await?;
+    tx.commit().await.map_sql_err()?;
+    Ok(summary)
+}
+
+pub(super) async fn import_sqlite_admin_system_usage_aggregates_on(
+    connection: &mut sqlx::SqliteConnection,
+    snapshot: &AdminSystemUsageAggregateSnapshot,
+    user_id_map: &BTreeMap<String, String>,
+    api_key_id_map: &BTreeMap<String, String>,
+    mode: AdminSystemUsageAggregateImportMode,
+) -> Result<AdminSystemUsageAggregateImportSummary, DataLayerError> {
     let mut summary = AdminSystemUsageAggregateImportSummary::default();
     let now = current_unix_secs();
 
@@ -139,7 +149,7 @@ async fn import_sqlite_admin_system_usage_aggregates(
         let existing: Option<String> =
             sqlx::query_scalar(r#"SELECT id FROM stats_daily WHERE "date" = ? LIMIT 1"#)
                 .bind(i64_from_u64(row.date_unix_secs, "stats_daily.date")?)
-                .fetch_optional(&mut *tx)
+                .fetch_optional(&mut *connection)
                 .await
                 .map_sql_err()?;
         if should_skip_imported_aggregate(
@@ -203,35 +213,29 @@ SET total_requests = excluded.total_requests,
         )?)
         .bind(row.total_cost)
         .bind(row.actual_total_cost)
-        .bind(if row.is_complete || row.total_requests > 0 {
-            1_i64
-        } else {
-            0_i64
-        })
+        .bind(row.is_complete)
         .bind(optional_i64_from_u64(
             row.aggregated_at_unix_secs,
             "stats_daily.aggregated_at",
         )?)
         .bind(i64_from_u64(now, "stats_daily.created_at")?)
         .bind(i64_from_u64(now, "stats_daily.updated_at")?)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await
         .map_sql_err()?;
         add_aggregate_import_count(&mut summary.stats_daily, existing.is_some());
     }
 
     for row in &snapshot.stats_user_daily {
-        let Some(target_user_id) = user_id_map.get(&row.user_id) else {
-            summary.skipped_unmapped_user_daily += 1;
-            summary.stats_user_daily.skipped += 1;
-            continue;
-        };
+        let target_user_id = user_id_map.get(&row.user_id).ok_or_else(|| {
+            DataLayerError::InvalidInput(format!("用量数据引用的用户 '{}' 无法还原", row.user_id))
+        })?;
         let existing: Option<String> = sqlx::query_scalar(
             r#"SELECT id FROM stats_user_daily WHERE user_id = ? AND "date" = ? LIMIT 1"#,
         )
         .bind(target_user_id)
         .bind(i64_from_u64(row.date_unix_secs, "stats_user_daily.date")?)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *connection)
         .await
         .map_sql_err()?;
         if should_skip_imported_aggregate(
@@ -299,18 +303,19 @@ SET username = excluded.username,
         .bind(row.total_cost)
         .bind(i64_from_u64(now, "stats_user_daily.created_at")?)
         .bind(i64_from_u64(now, "stats_user_daily.updated_at")?)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await
         .map_sql_err()?;
         add_aggregate_import_count(&mut summary.stats_user_daily, existing.is_some());
     }
 
     for row in &snapshot.stats_daily_api_key {
-        let Some(target_api_key_id) = api_key_id_map.get(&row.api_key_id) else {
-            summary.skipped_unmapped_api_key_daily += 1;
-            summary.stats_daily_api_key.skipped += 1;
-            continue;
-        };
+        let target_api_key_id = api_key_id_map.get(&row.api_key_id).ok_or_else(|| {
+            DataLayerError::InvalidInput(format!(
+                "用量数据引用的 API Key '{}' 无法还原",
+                row.api_key_id
+            ))
+        })?;
         let existing: Option<String> = sqlx::query_scalar(
             r#"SELECT id FROM stats_daily_api_key WHERE api_key_id = ? AND "date" = ? LIMIT 1"#,
         )
@@ -319,7 +324,7 @@ SET username = excluded.username,
             row.date_unix_secs,
             "stats_daily_api_key.date",
         )?)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *connection)
         .await
         .map_sql_err()?;
         if should_skip_imported_aggregate(
@@ -390,13 +395,12 @@ SET api_key_name = excluded.api_key_name,
         .bind(row.total_cost)
         .bind(i64_from_u64(now, "stats_daily_api_key.created_at")?)
         .bind(i64_from_u64(now, "stats_daily_api_key.updated_at")?)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await
         .map_sql_err()?;
         add_aggregate_import_count(&mut summary.stats_daily_api_key, existing.is_some());
     }
 
-    tx.commit().await.map_sql_err()?;
     Ok(summary)
 }
 
@@ -1023,6 +1027,74 @@ WHERE request_id IN (
     Ok(())
 }
 
+pub(super) async fn list_system_config_entries_on(
+    connection: &mut sqlx::SqliteConnection,
+) -> Result<Vec<StoredSystemConfigEntry>, DataLayerError> {
+    let rows = sqlx::query(
+        r#"
+SELECT key, value, description, updated_at
+FROM system_configs
+ORDER BY key ASC
+"#,
+    )
+    .fetch_all(&mut *connection)
+    .await
+    .map_sql_err()?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(StoredSystemConfigEntry {
+                key: row.try_get("key").map_sql_err()?,
+                value: parse_json_value(row.try_get("value").map_sql_err()?)?,
+                description: row.try_get("description").map_sql_err()?,
+                updated_at_unix_secs: row
+                    .try_get::<Option<i64>, _>("updated_at")
+                    .map_sql_err()?
+                    .map(|value| value.max(0) as u64),
+            })
+        })
+        .collect()
+}
+
+pub(super) async fn upsert_system_config_entry_on(
+    connection: &mut sqlx::SqliteConnection,
+    key: &str,
+    value: &serde_json::Value,
+    description: Option<&str>,
+) -> Result<StoredSystemConfigEntry, DataLayerError> {
+    let now = current_unix_secs();
+    let serialized = serialize_json_value(value)?;
+    sqlx::query(
+        r#"
+INSERT INTO system_configs (id, key, value, description, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (key) DO UPDATE
+SET value = excluded.value,
+    description = COALESCE(excluded.description, system_configs.description),
+    updated_at = excluded.updated_at
+"#,
+    )
+    .bind(uuid::Uuid::new_v4().to_string())
+    .bind(key)
+    .bind(serialized)
+    .bind(description)
+    .bind(now as i64)
+    .bind(now as i64)
+    .execute(&mut *connection)
+    .await
+    .map_sql_err()?;
+
+    list_system_config_entries_on(connection)
+        .await?
+        .into_iter()
+        .find(|entry| entry.key == key)
+        .ok_or_else(|| {
+            DataLayerError::UnexpectedValue(format!(
+                "system config key '{key}' missing after sqlite upsert"
+            ))
+        })
+}
+
 impl SqliteBackend {
     pub async fn purge_admin_system_data(
         &self,
@@ -1089,30 +1161,8 @@ LIMIT 1
     pub async fn list_system_config_entries(
         &self,
     ) -> Result<Vec<StoredSystemConfigEntry>, DataLayerError> {
-        let rows = sqlx::query(
-            r#"
-SELECT key, value, description, updated_at
-FROM system_configs
-ORDER BY key ASC
-"#,
-        )
-        .fetch_all(self.pool())
-        .await
-        .map_sql_err()?;
-
-        rows.into_iter()
-            .map(|row| {
-                Ok(StoredSystemConfigEntry {
-                    key: row.try_get("key").map_sql_err()?,
-                    value: parse_json_value(row.try_get("value").map_sql_err()?)?,
-                    description: row.try_get("description").map_sql_err()?,
-                    updated_at_unix_secs: row
-                        .try_get::<Option<i64>, _>("updated_at")
-                        .map_sql_err()?
-                        .map(|value| value.max(0) as u64),
-                })
-            })
-            .collect()
+        let mut connection = self.pool().acquire().await.map_sql_err()?;
+        list_system_config_entries_on(&mut connection).await
     }
 
     pub async fn upsert_system_config_entry(
@@ -1121,37 +1171,8 @@ ORDER BY key ASC
         value: &serde_json::Value,
         description: Option<&str>,
     ) -> Result<StoredSystemConfigEntry, DataLayerError> {
-        let now = current_unix_secs();
-        let serialized = serialize_json_value(value)?;
-        sqlx::query(
-            r#"
-INSERT INTO system_configs (id, key, value, description, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT (key) DO UPDATE
-SET value = excluded.value,
-    description = COALESCE(excluded.description, system_configs.description),
-    updated_at = excluded.updated_at
-"#,
-        )
-        .bind(uuid::Uuid::new_v4().to_string())
-        .bind(key)
-        .bind(serialized)
-        .bind(description)
-        .bind(now as i64)
-        .bind(now as i64)
-        .execute(self.pool())
-        .await
-        .map_sql_err()?;
-
-        self.list_system_config_entries()
-            .await?
-            .into_iter()
-            .find(|entry| entry.key == key)
-            .ok_or_else(|| {
-                DataLayerError::UnexpectedValue(format!(
-                    "system config key '{key}' missing after sqlite upsert"
-                ))
-            })
+        let mut connection = self.pool().acquire().await.map_sql_err()?;
+        upsert_system_config_entry_on(&mut connection, key, value, description).await
     }
 
     pub async fn delete_system_config_value(&self, key: &str) -> Result<bool, DataLayerError> {

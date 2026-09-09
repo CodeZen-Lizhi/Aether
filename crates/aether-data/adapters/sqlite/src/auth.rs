@@ -10,7 +10,7 @@ use aether_data_contracts::repository::auth::{
 use aether_data_contracts::DataLayerError;
 
 use crate::error::SqlResultExt;
-use crate::{sqlite_real, SqlitePool};
+use crate::{sqlite_real, SqliteConnectionSource};
 
 const SNAPSHOT_COLUMNS: &str = r#"
 SELECT
@@ -57,6 +57,7 @@ SELECT
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
+  api_keys.is_locked,
   api_keys.expires_at AS expires_at_unix_secs,
   api_keys.auto_delete_on_expiry,
   api_keys.total_requests,
@@ -71,19 +72,39 @@ FROM api_keys
 
 #[derive(Debug, Clone)]
 pub struct SqliteAuthApiKeyReadRepository {
-    pool: SqlitePool,
+    source: SqliteConnectionSource,
 }
 
 impl SqliteAuthApiKeyReadRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: impl Into<SqliteConnectionSource>) -> Self {
+        Self {
+            source: pool.into(),
+        }
+    }
+
+    /// Backups include both user and standalone keys, including disabled keys.
+    pub async fn list_backup_api_keys_by_user_ids(
+        &self,
+        user_ids: &[String],
+    ) -> Result<Vec<StoredAuthApiKeyExportRecord>, DataLayerError> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut builder = QueryBuilder::<Sqlite>::new(EXPORT_COLUMNS);
+        push_in_clause(&mut builder, " WHERE api_keys.user_id IN (", user_ids);
+        builder.push(" ORDER BY api_keys.user_id ASC, api_keys.id ASC");
+        self.fetch_export_rows(builder).await
     }
 
     async fn fetch_snapshot_rows(
         &self,
         mut builder: QueryBuilder<'_, Sqlite>,
     ) -> Result<Vec<StoredAuthApiKeySnapshot>, DataLayerError> {
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_auth_api_key_snapshot_row).collect()
     }
 
@@ -91,7 +112,11 @@ impl SqliteAuthApiKeyReadRepository {
         &self,
         mut builder: QueryBuilder<'_, Sqlite>,
     ) -> Result<Vec<StoredAuthApiKeyExportRecord>, DataLayerError> {
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_auth_api_key_export_row).collect()
     }
 
@@ -165,7 +190,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         .bind(record.is_standalone)
         .bind(now as i64)
         .bind(now as i64)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -325,7 +350,11 @@ impl AuthApiKeyReadRepository for SqliteAuthApiKeyReadRepository {
         if let Some(is_active) = is_active {
             builder.push(" AND is_active = ").push_bind(is_active);
         }
-        let row = builder.build().fetch_one(&self.pool).await.map_sql_err()?;
+        let row = builder
+            .build()
+            .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         Ok(row.try_get::<i64, _>("total").map_sql_err()?.max(0) as u64)
     }
 
@@ -353,21 +382,37 @@ FROM api_keys
         );
         push_in_clause(&mut builder, " WHERE user_id IN (", user_ids);
         builder.push(" AND is_standalone = 0");
-        summarize_row(builder.build().fetch_one(&self.pool).await.map_sql_err()?)
+        summarize_row(
+            builder
+                .build()
+                .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
+                .await
+                .map_sql_err()?,
+        )
     }
 
     async fn summarize_export_non_standalone_api_keys(
         &self,
         now_unix_secs: u64,
     ) -> Result<AuthApiKeyExportSummary, DataLayerError> {
-        summarize_api_keys(&self.pool, false, now_unix_secs).await
+        summarize_api_keys(
+            &mut *self.source.acquire().await.map_sql_err()?,
+            false,
+            now_unix_secs,
+        )
+        .await
     }
 
     async fn summarize_export_standalone_api_keys(
         &self,
         now_unix_secs: u64,
     ) -> Result<AuthApiKeyExportSummary, DataLayerError> {
-        summarize_api_keys(&self.pool, true, now_unix_secs).await
+        summarize_api_keys(
+            &mut *self.source.acquire().await.map_sql_err()?,
+            true,
+            now_unix_secs,
+        )
+        .await
     }
 
     async fn find_export_standalone_api_key_by_id(
@@ -405,9 +450,9 @@ INSERT INTO api_keys (
   allowed_api_formats, allowed_models, ip_rules, rate_limit, concurrent_limit,
   force_capabilities, feature_settings, is_active, expires_at, auto_delete_on_expiry,
   total_requests, total_tokens, total_cost_usd, is_standalone,
-  last_used_at, created_at, updated_at
+  last_used_at, created_at, updated_at, is_locked
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   key_encrypted = excluded.key_encrypted, name = excluded.name,
   allowed_providers = excluded.allowed_providers,
@@ -418,7 +463,7 @@ ON CONFLICT(id) DO UPDATE SET
   expires_at = excluded.expires_at, auto_delete_on_expiry = excluded.auto_delete_on_expiry,
   total_requests = excluded.total_requests, total_tokens = excluded.total_tokens,
   total_cost_usd = excluded.total_cost_usd, last_used_at = excluded.last_used_at,
-  updated_at = excluded.updated_at
+  updated_at = excluded.updated_at, is_locked = excluded.is_locked
 WHERE api_keys.user_id = excluded.user_id
   AND api_keys.key_hash = excluded.key_hash
   AND api_keys.is_standalone = excluded.is_standalone
@@ -477,7 +522,8 @@ WHERE api_keys.user_id = excluded.user_id
             "api_keys.created_at",
         )?)
         .bind(i64_from_u64(now, "api_keys.updated_at")?)
-        .execute(&self.pool)
+        .bind(record.is_locked)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected() == 1)
@@ -495,7 +541,7 @@ WHERE id = ?
         .bind(now)
         .bind(now)
         .bind(api_key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -587,7 +633,7 @@ WHERE id = ?
         .bind(now)
         .bind(&record.api_key_id)
         .bind(&record.user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.reload_export_by_id(&record.api_key_id).await
@@ -649,7 +695,7 @@ WHERE id = ?
         .bind(record.auto_delete_on_expiry)
         .bind(now)
         .bind(&record.api_key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.reload_export_by_id(&record.api_key_id).await
@@ -692,7 +738,7 @@ WHERE id = ?
         .bind(current_unix_secs() as i64)
         .bind(api_key_id)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -721,7 +767,7 @@ WHERE id = ?
         .bind(current_unix_secs() as i64)
         .bind(api_key_id)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.reload_export_by_id(api_key_id).await
@@ -749,7 +795,7 @@ WHERE id = ?
         .bind(current_unix_secs() as i64)
         .bind(api_key_id)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.reload_export_by_id(api_key_id).await
@@ -777,7 +823,7 @@ WHERE id = ?
         .bind(current_unix_secs() as i64)
         .bind(api_key_id)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.reload_export_by_id(api_key_id).await
@@ -805,7 +851,7 @@ WHERE id = ?
         .bind(total_cost_usd)
         .bind(current_unix_secs() as i64)
         .bind(api_key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.reload_export_by_id(api_key_id).await
@@ -842,7 +888,7 @@ WHERE id = ?
         )?)
         .bind(current_unix_secs() as i64)
         .bind(api_key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.reload_export_by_id(api_key_id).await
@@ -869,7 +915,11 @@ impl SqliteAuthApiKeyReadRepository {
         if let Some(user_id) = user_id {
             builder.push(" AND user_id = ").push_bind(user_id);
         }
-        builder.build().execute(&self.pool).await.map_sql_err()?;
+        builder
+            .build()
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         self.reload_export_by_id(api_key_id).await
     }
 
@@ -889,7 +939,7 @@ impl SqliteAuthApiKeyReadRepository {
         }
         let rows_affected = builder
             .build()
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -913,7 +963,7 @@ fn push_in_clause<'args>(
 }
 
 async fn summarize_api_keys(
-    pool: &SqlitePool,
+    connection: &mut sqlx::SqliteConnection,
     is_standalone: bool,
     now_unix_secs: u64,
 ) -> Result<AuthApiKeyExportSummary, DataLayerError> {
@@ -928,7 +978,7 @@ WHERE is_standalone = ?
     )
     .bind(now_unix_secs as i64)
     .bind(is_standalone)
-    .fetch_one(pool)
+    .fetch_one(connection)
     .await
     .map_sql_err()?;
     summarize_row(row)
@@ -1115,7 +1165,11 @@ fn map_auth_api_key_export_row(
             "api_keys.ip_rules",
         )?)
     })
-    .map(|record| record.with_feature_settings(feature_settings))
+    .and_then(|record| {
+        Ok(record
+            .with_feature_settings(feature_settings)
+            .with_locked(row.try_get("is_locked").map_sql_err()?))
+    })
     .and_then(|record| {
         record.with_activity_timestamps(
             row.try_get("last_used_at_unix_secs").map_sql_err()?,

@@ -1,9 +1,9 @@
 use super::support::{
     collect_admin_system_export_provider_endpoint_formats,
     decrypt_admin_system_export_provider_config, decrypt_admin_system_export_secret,
-    resolve_admin_system_export_key_api_formats,
+    read_admin_backup_string_list, resolve_admin_system_export_key_api_formats,
 };
-use crate::handlers::admin::request::AdminAppState;
+use crate::handlers::admin::request::AdminBackupState;
 use crate::GatewayError;
 use aether_admin::system::{
     AdminSystemConfigEndpoint, AdminSystemConfigProvider, AdminSystemConfigProviderKey,
@@ -12,7 +12,7 @@ use aether_admin::system::{
 use std::collections::BTreeMap;
 
 pub(crate) async fn build_admin_system_export_providers_payload(
-    state: &AdminAppState<'_>,
+    state: &AdminBackupState<'_>,
     global_model_name_by_id: &BTreeMap<String, String>,
 ) -> Result<Vec<AdminSystemConfigProvider>, GatewayError> {
     let providers = state.list_provider_catalog_providers(false).await?;
@@ -87,11 +87,13 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                     let api_formats = resolve_admin_system_export_key_api_formats(
                         key.api_formats.as_ref(),
                         &provider_endpoint_formats,
-                    );
+                    )?;
                     let auth_config = key
                         .encrypted_auth_config
                         .as_deref()
-                        .map(|ciphertext| decrypt_admin_system_export_secret(state, ciphertext))
+                        .map(|ciphertext| {
+                            decrypt_admin_system_export_secret(state.admin(), ciphertext)
+                        })
                         .transpose()?
                         .map(|plaintext| serde_json::from_str::<serde_json::Value>(&plaintext))
                         .transpose()
@@ -103,7 +105,9 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         api_key: key
                             .encrypted_api_key
                             .as_deref()
-                            .map(|ciphertext| decrypt_admin_system_export_secret(state, ciphertext))
+                            .map(|ciphertext| {
+                                decrypt_admin_system_export_secret(state.admin(), ciphertext)
+                            })
                             .transpose()?,
                         auth_type: Some(key.auth_type.clone()),
                         auth_config,
@@ -114,64 +118,33 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         internal_priority: Some(key.internal_priority),
                         default_rate_multiplier: Some(key.default_rate_multiplier),
                         auth_type_by_format: key.auth_type_by_format.clone(),
-                        allow_auth_channel_mismatch_formats: key
-                            .allow_auth_channel_mismatch_formats
-                            .as_ref()
-                            .and_then(serde_json::Value::as_array)
-                            .map(|items| {
-                                items
-                                    .iter()
-                                    .filter_map(serde_json::Value::as_str)
-                                    .map(ToOwned::to_owned)
-                                    .collect::<Vec<_>>()
-                            }),
+                        allow_auth_channel_mismatch_formats: read_admin_backup_string_list(
+                            key.allow_auth_channel_mismatch_formats.as_ref(),
+                            "provider_api_keys.allow_auth_channel_mismatch_formats",
+                        )?,
                         rpm_limit: key.rpm_limit,
                         concurrent_limit: key.concurrent_limit,
                         expires_at_unix_secs: key.expires_at_unix_secs,
-                        allowed_models: key.allowed_models.as_ref().and_then(|value| {
-                            value.as_array().map(|items| {
-                                items
-                                    .iter()
-                                    .filter_map(serde_json::Value::as_str)
-                                    .map(ToOwned::to_owned)
-                                    .collect::<Vec<_>>()
-                            })
-                        }),
+                        allowed_models: read_admin_backup_string_list(
+                            key.allowed_models.as_ref(),
+                            "provider_api_keys.allowed_models",
+                        )?,
                         capabilities: key.capabilities.clone(),
                         cache_ttl_minutes: Some(key.cache_ttl_minutes),
                         max_probe_interval_minutes: Some(key.max_probe_interval_minutes),
                         auto_fetch_models: Some(key.auto_fetch_models),
-                        locked_models: key.locked_models.as_ref().and_then(|value| {
-                            value.as_array().map(|items| {
-                                items
-                                    .iter()
-                                    .filter_map(serde_json::Value::as_str)
-                                    .map(ToOwned::to_owned)
-                                    .collect::<Vec<_>>()
-                            })
-                        }),
-                        model_include_patterns: key.model_include_patterns.as_ref().and_then(
-                            |value| {
-                                value.as_array().map(|items| {
-                                    items
-                                        .iter()
-                                        .filter_map(serde_json::Value::as_str)
-                                        .map(ToOwned::to_owned)
-                                        .collect::<Vec<_>>()
-                                })
-                            },
-                        ),
-                        model_exclude_patterns: key.model_exclude_patterns.as_ref().and_then(
-                            |value| {
-                                value.as_array().map(|items| {
-                                    items
-                                        .iter()
-                                        .filter_map(serde_json::Value::as_str)
-                                        .map(ToOwned::to_owned)
-                                        .collect::<Vec<_>>()
-                                })
-                            },
-                        ),
+                        locked_models: read_admin_backup_string_list(
+                            key.locked_models.as_ref(),
+                            "provider_api_keys.locked_models",
+                        )?,
+                        model_include_patterns: read_admin_backup_string_list(
+                            key.model_include_patterns.as_ref(),
+                            "provider_api_keys.model_include_patterns",
+                        )?,
+                        model_exclude_patterns: read_admin_backup_string_list(
+                            key.model_exclude_patterns.as_ref(),
+                            "provider_api_keys.model_exclude_patterns",
+                        )?,
                         is_active: key.is_active,
                         proxy: key.proxy.clone(),
                         fingerprint: key.fingerprint.clone(),
@@ -219,7 +192,7 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                 request_timeout: provider.request_timeout_secs,
                 proxy: provider.proxy.clone(),
                 config: decrypt_admin_system_export_provider_config(
-                    state,
+                    state.admin(),
                     provider.config.as_ref(),
                 )?,
                 endpoints: endpoints_data,

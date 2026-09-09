@@ -1,16 +1,13 @@
-use super::ADMIN_SYSTEM_DATA_EXPORT_VERSION;
-use crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY;
-use crate::handlers::admin::request::AdminAppState;
+use crate::handlers::admin::request::AdminBackupState;
 use crate::handlers::admin::system::shared::configs::is_sensitive_admin_system_config_key;
 use crate::handlers::admin::system::shared::export::{
     build_admin_system_export_providers_payload, decrypt_admin_system_export_secret,
-    ADMIN_SYSTEM_EXPORT_PAGE_LIMIT,
+    read_admin_backup_string_list, ADMIN_SYSTEM_EXPORT_PAGE_LIMIT,
 };
 use crate::GatewayError;
 use aether_admin::system::{
     AdminSystemConfigDocument, AdminSystemConfigEntry, AdminSystemConfigGlobalModel,
     AdminSystemConfigProxyNode, AdminSystemConfigRoutingStrategy,
-    ADMIN_SYSTEM_CONFIG_EXPORT_VERSION,
 };
 use aether_data_contracts::repository::global_models::{
     AdminGlobalModelListQuery, AdminProviderModelListQuery, StoredAdminGlobalModel,
@@ -19,9 +16,9 @@ use aether_data_contracts::repository::global_models::{
 use aether_data_contracts::repository::routing_profiles::RoutingGroupLookupKey;
 use chrono::Utc;
 use serde_json::json;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-impl<'a> AdminAppState<'a> {
+impl<'a> AdminBackupState<'a> {
     pub(crate) async fn list_admin_system_backup_global_models(
         &self,
     ) -> Result<Vec<StoredAdminGlobalModel>, GatewayError> {
@@ -77,60 +74,43 @@ impl<'a> AdminAppState<'a> {
             .collect::<BTreeMap<_, _>>();
         let global_models_data = global_models
             .iter()
-            .map(|model| AdminSystemConfigGlobalModel {
-                name: model.name.clone(),
-                display_name: model.display_name.clone(),
-                usage_count: Some(model.usage_count),
-                default_price_per_request: model.default_price_per_request,
-                default_tiered_pricing: model.default_tiered_pricing.clone(),
-                supported_capabilities: model.supported_capabilities.as_ref().and_then(|value| {
-                    value.as_array().map(|items| {
-                        items
-                            .iter()
-                            .filter_map(serde_json::Value::as_str)
-                            .map(ToOwned::to_owned)
-                            .collect::<Vec<_>>()
-                    })
-                }),
-                config: model.config.clone(),
-                is_active: model.is_active,
+            .map(|model| {
+                Ok(AdminSystemConfigGlobalModel {
+                    name: model.name.clone(),
+                    display_name: model.display_name.clone(),
+                    usage_count: Some(model.usage_count),
+                    default_price_per_request: model.default_price_per_request,
+                    default_tiered_pricing: model.default_tiered_pricing.clone(),
+                    supported_capabilities: read_admin_backup_string_list(
+                        model.supported_capabilities.as_ref(),
+                        "global_models.supported_capabilities",
+                    )?,
+                    config: model.config.clone(),
+                    is_active: model.is_active,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, GatewayError>>()?;
         let providers_data =
             build_admin_system_export_providers_payload(self, &global_model_name_by_id).await?;
 
-        let existing_user_group_ids = if self.has_user_data_reader() {
-            self.list_user_groups()
-                .await?
-                .into_iter()
-                .map(|group| group.id)
-                .collect::<BTreeSet<_>>()
-        } else {
-            BTreeSet::new()
-        };
         let system_configs = self.list_system_config_entries().await?;
         let system_configs_data = system_configs
             .iter()
             .map(|entry| -> Result<_, GatewayError> {
-                let mut value = if is_sensitive_admin_system_config_key(&entry.key) {
+                let value = if is_sensitive_admin_system_config_key(&entry.key) {
                     entry
                         .value
                         .as_str()
                         .filter(|ciphertext| !ciphertext.is_empty())
-                        .map(|ciphertext| decrypt_admin_system_export_secret(self, ciphertext))
+                        .map(|ciphertext| {
+                            decrypt_admin_system_export_secret(self.admin(), ciphertext)
+                        })
                         .transpose()?
                         .map(serde_json::Value::String)
                         .unwrap_or_else(|| entry.value.clone())
                 } else {
                     entry.value.clone()
                 };
-                if entry.key == DEFAULT_USER_GROUP_CONFIG_KEY
-                    && value
-                        .as_str()
-                        .is_some_and(|group_id| !existing_user_group_ids.contains(group_id))
-                {
-                    value = serde_json::Value::Null;
-                }
                 Ok(AdminSystemConfigEntry {
                     key: entry.key.clone(),
                     value,
@@ -174,7 +154,6 @@ impl<'a> AdminAppState<'a> {
             });
 
         let document = AdminSystemConfigDocument {
-            version: ADMIN_SYSTEM_CONFIG_EXPORT_VERSION.to_string(),
             exported_at: Utc::now().to_rfc3339(),
             global_models: global_models_data,
             providers: providers_data,
@@ -214,7 +193,6 @@ impl<'a> AdminAppState<'a> {
         }
 
         Ok(json!({
-            "version": ADMIN_SYSTEM_DATA_EXPORT_VERSION,
             "exported_at": Utc::now().to_rfc3339(),
             "config_data": config_data,
             "user_data": user_data,

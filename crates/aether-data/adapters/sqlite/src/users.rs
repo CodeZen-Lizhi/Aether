@@ -11,7 +11,7 @@ use aether_data_contracts::repository::users::{
 use aether_data_contracts::DataLayerError;
 
 use crate::error::SqlResultExt;
-use crate::SqlitePool;
+use crate::SqliteConnectionSource;
 
 const USER_SUMMARY_COLUMNS: &str = r#"
 SELECT
@@ -109,19 +109,25 @@ FROM user_sessions
 
 #[derive(Debug, Clone)]
 pub struct SqliteUserReadRepository {
-    pool: SqlitePool,
+    source: SqliteConnectionSource,
 }
 
 impl SqliteUserReadRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: impl Into<SqliteConnectionSource>) -> Self {
+        Self {
+            source: pool.into(),
+        }
     }
 
     async fn fetch_summary_rows(
         &self,
         mut builder: QueryBuilder<'_, Sqlite>,
     ) -> Result<Vec<StoredUserSummary>, DataLayerError> {
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_user_row).collect()
     }
 
@@ -129,7 +135,11 @@ impl SqliteUserReadRepository {
         &self,
         mut builder: QueryBuilder<'_, Sqlite>,
     ) -> Result<Vec<StoredUserExportRow>, DataLayerError> {
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_user_export_row).collect()
     }
 
@@ -137,7 +147,11 @@ impl SqliteUserReadRepository {
         &self,
         mut builder: QueryBuilder<'_, Sqlite>,
     ) -> Result<Vec<StoredUserAuthRecord>, DataLayerError> {
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_user_auth_row).collect()
     }
 }
@@ -295,7 +309,11 @@ impl UserReadRepository for SqliteUserReadRepository {
                 .push(")");
         }
 
-        let row = builder.build().fetch_one(&self.pool).await.map_sql_err()?;
+        let row = builder
+            .build()
+            .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         Ok(row.try_get::<i64, _>("total").map_sql_err()?.max(0) as u64)
     }
 
@@ -309,7 +327,7 @@ FROM users
 WHERE is_deleted = 0
 "#,
         )
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -612,7 +630,7 @@ WHERE is_deleted = 0
             .bind(logged_in_at.timestamp())
             .bind(logged_in_at.timestamp())
             .bind(user_id)
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         Ok(result.rows_affected() > 0)
@@ -663,7 +681,7 @@ WHERE id = ? AND role = 'admin' AND auth_source = 'local' AND is_active = 1 AND 
         )?)
         .bind(chrono::Utc::now().timestamp())
         .bind(&profile.id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected() == 1)
@@ -683,7 +701,7 @@ WHERE id = ? AND role = 'admin' AND auth_source = 'local' AND is_active = 1 AND 
         .bind(username)
         .bind(now)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         if result.rows_affected() == 0 {
@@ -702,7 +720,7 @@ WHERE id = ? AND role = 'admin' AND auth_source = 'local' AND is_active = 1 AND 
             .bind(password_hash)
             .bind(updated_at.timestamp())
             .bind(user_id)
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         if result.rows_affected() == 0 {
@@ -802,7 +820,7 @@ WHERE id = ?
         .bind(is_active)
         .bind(chrono::Utc::now().timestamp())
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         if result.rows_affected() == 0 {
@@ -840,7 +858,7 @@ WHERE id = ?
         .bind(rate_limit_mode)
         .bind(chrono::Utc::now().timestamp())
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         if result.rows_affected() == 0 {
@@ -864,7 +882,7 @@ WHERE id = ?
         )?)
         .bind(chrono::Utc::now().timestamp())
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         if result.rows_affected() == 0 {
@@ -887,7 +905,7 @@ WHERE id = ?
                 )?)
                 .bind(chrono::Utc::now().timestamp())
                 .bind(user_id)
-                .execute(&self.pool)
+                .execute(&mut *self.source.acquire().await.map_sql_err()?)
                 .await
                 .map_sql_err()?;
         if result.rows_affected() == 0 {
@@ -922,7 +940,7 @@ VALUES (?, ?, ?, ?, ?, 'user', 'local', 'inherit', 'inherit', 'inherit', 'inheri
         .bind(password_hash)
         .bind(now)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.find_user_auth_by_id(&user_id).await
@@ -1009,7 +1027,7 @@ VALUES (?, ?, ?, ?, ?, ?, 'local', ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
         .bind(rate_limit_mode)
         .bind(now)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.find_user_auth_by_id(&user_id).await
@@ -1018,7 +1036,7 @@ VALUES (?, ?, ?, ?, ?, ?, 'local', ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
     async fn delete_local_auth_user(&self, user_id: &str) -> Result<bool, DataLayerError> {
         let result = sqlx::query("DELETE FROM users WHERE id = ?")
             .bind(user_id)
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         Ok(result.rows_affected() > 0)
@@ -1034,7 +1052,7 @@ WHERE LOWER(role) = 'admin'
   AND is_active = 1
 "#,
         )
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(total.max(0) as u64)
@@ -1048,7 +1066,7 @@ WHERE LOWER(role) = 'admin'
         builder.push(" WHERE up.user_id = ").push_bind(user_id);
         let row = builder
             .build()
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         row.as_ref().map(map_user_preference_row).transpose()
@@ -1091,7 +1109,7 @@ ON CONFLICT(user_id) DO UPDATE SET
         .bind(preferences.announcement_notifications)
         .bind(now)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.read_user_preferences(&preferences.user_id).await
@@ -1111,7 +1129,7 @@ ON CONFLICT(user_id) DO UPDATE SET
             .push(" LIMIT 1");
         let row = builder
             .build()
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         row.as_ref().map(map_user_session_row).transpose()
@@ -1128,7 +1146,11 @@ ON CONFLICT(user_id) DO UPDATE SET
             .push(" AND revoked_at IS NULL AND expires_at > ")
             .push_bind(Utc::now().timestamp())
             .push(" ORDER BY last_seen_at DESC, created_at DESC");
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_user_session_row).collect()
     }
 
@@ -1153,7 +1175,7 @@ WHERE user_id = ? AND client_device_id = ? AND revoked_at IS NULL AND expires_at
         .bind(&session.user_id)
         .bind(&session.client_device_id)
         .bind(now.timestamp())
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         sqlx::query(
@@ -1175,7 +1197,7 @@ INSERT INTO user_sessions (
         .bind(session.expires_at.unwrap_or(now).timestamp())
         .bind(session.created_at.unwrap_or(now).timestamp())
         .bind(session.updated_at.unwrap_or(now).timestamp())
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         self.find_user_session(&session.user_id, &session.id).await
@@ -1203,7 +1225,7 @@ WHERE user_id = ? AND id = ?
         .bind(touched_at.timestamp())
         .bind(user_id)
         .bind(session_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected() > 0)
@@ -1227,7 +1249,7 @@ WHERE user_id = ? AND id = ?
         .bind(updated_at.timestamp())
         .bind(user_id)
         .bind(session_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected() > 0)
@@ -1263,7 +1285,7 @@ WHERE user_id = ? AND id = ?
         .bind(rotated_at.timestamp())
         .bind(user_id)
         .bind(session_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected() > 0)
@@ -1284,7 +1306,7 @@ WHERE user_id = ? AND id = ?
         .bind(revoked_at.timestamp())
         .bind(user_id)
         .bind(session_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected() > 0)
@@ -1303,7 +1325,7 @@ WHERE user_id = ? AND id = ?
         .bind(reason.chars().take(100).collect::<String>())
         .bind(revoked_at.timestamp())
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected())
@@ -1328,7 +1350,7 @@ WHERE LOWER(role) = 'admin'
   )
 "#,
         )
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(total.max(0) as u64)

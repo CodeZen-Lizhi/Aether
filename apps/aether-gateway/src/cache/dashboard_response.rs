@@ -18,6 +18,10 @@ impl Default for DashboardResponseCache {
 }
 
 impl DashboardResponseCache {
+    pub(crate) fn clear(&self) {
+        self.entries.clear();
+    }
+
     pub(crate) fn get(&self, key: &str, ttl: Duration) -> Option<Vec<u8>> {
         self.entries.get_fresh(&key.to_string(), ttl)
     }

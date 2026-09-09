@@ -197,7 +197,7 @@ fn parse_admin_external_models_config_update(
     }
 }
 
-async fn clear_admin_external_models_cache_entries(
+pub(crate) async fn clear_admin_external_models_cache_entries(
     state: &AdminAppState<'_>,
 ) -> Result<bool, GatewayError> {
     let cleared_current = state

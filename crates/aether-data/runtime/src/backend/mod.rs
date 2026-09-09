@@ -28,6 +28,8 @@ pub use leases::DataLeaseBackends;
 pub use read::DataReadRepositories;
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteBackend;
+#[cfg(feature = "sqlite")]
+pub use system::AdminBackupSession;
 pub use transactions::DataTransactionBackends;
 pub use write::DataWriteRepositories;
 

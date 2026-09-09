@@ -18,7 +18,7 @@ pub mod maintenance;
 pub mod repository;
 
 #[cfg(feature = "sqlite")]
-pub use backend::SqliteBackend;
+pub use backend::{AdminBackupSession, SqliteBackend};
 pub use backend::{
     DataBackends, DataLeaseBackends, DataReadRepositories, DataTransactionBackends,
     DataWriteRepositories,

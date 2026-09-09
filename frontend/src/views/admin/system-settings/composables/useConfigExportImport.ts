@@ -3,13 +3,11 @@ import type { AxiosProgressEvent } from 'axios'
 import { useToast } from '@/composables/useToast'
 import {
   adminApi,
-  AGGREGATE_EXPORT_VERSION,
-  CONFIG_EXPORT_VERSION,
-  USERS_EXPORT_VERSION,
-  type AggregateExportData,
+  type AggregateImportData,
   type AggregateImportResponse,
-  type ConfigExportData,
+  type ConfigImportData,
   type ConfigImportResponse,
+  type UsersImportData,
 } from '@/api/admin'
 import { parseApiError } from '@/utils/errorParser'
 import { log } from '@/utils/logger'
@@ -46,26 +44,29 @@ function looksLikeUsersExport(value: JsonObject): boolean {
     || hasArrayField(value, 'standalone_keys')
 }
 
-function isCurrentConfigExport(value: JsonObject): boolean {
-  return value.version === CONFIG_EXPORT_VERSION
-    && typeof value.exported_at === 'string'
-    && ['global_models', 'providers', 'proxy_nodes', 'system_configs'].every((key) => hasArrayField(value, key))
-    && (value.providers as unknown[]).every((provider) => {
+function isConfigImportData(value: unknown): value is ConfigImportData {
+  const data = asJsonObject(value)
+  return data != null
+    && ['global_models', 'proxy_nodes', 'system_configs'].every((key) => hasArrayField(data, key))
+    && Array.isArray(data.providers)
+    && data.providers.every((provider) => {
       const item = asJsonObject(provider)
       return item != null && ['endpoints', 'api_keys', 'models'].every((key) => hasArrayField(item, key))
     })
 }
 
-function isCurrentUsersExport(value: JsonObject): boolean {
-  const users = value.users
-  const user = Array.isArray(users) && users.length === 1 ? asJsonObject(users[0]) : null
-  const aggregates = asJsonObject(value.usage_aggregates)
-  return value.version === USERS_EXPORT_VERSION
-    && typeof value.exported_at === 'string'
-    && asJsonObject(value.provider_names) != null
-    && hasArrayField(value, 'standalone_keys')
-    && user?.role === 'admin'
-    && hasArrayField(user, 'api_keys')
+function isUsersImportData(value: unknown): value is UsersImportData {
+  const data = asJsonObject(value)
+  if (!data) return false
+  const aggregates = asJsonObject(data.usage_aggregates)
+  return Array.isArray(data.users)
+    && data.users.every((user) => {
+      const item = asJsonObject(user)
+      return item != null
+        && (item.username === undefined || typeof item.username === 'string')
+        && hasArrayField(item, 'api_keys')
+    })
+    && hasArrayField(data, 'standalone_keys')
     && aggregates != null
     && ['stats_daily', 'stats_user_daily', 'stats_daily_api_key'].every((key) => hasArrayField(aggregates, key))
 }
@@ -128,7 +129,7 @@ function downloadJson(data: unknown, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
+export function useConfigExportImport(systemConfig: { value: Pick<SystemConfig, 'site_name'> }) {
   const { success, error } = useToast()
 
   // 配置导出/导入相关
@@ -137,7 +138,7 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
   const importDialogOpen = ref(false)
   const importResultDialogOpen = ref(false)
   const configFileInput = ref<HTMLInputElement | null>(null)
-  const importPreview = ref<ConfigExportData | null>(null)
+  const importPreview = ref<ConfigImportData | null>(null)
   const importResult = ref<ConfigImportResponse | null>(null)
   const mergeMode = ref<'skip' | 'overwrite' | 'error'>('skip')
   const mergeModeSelectOpen = ref(false)
@@ -148,7 +149,7 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
   const importAggregateLoading = ref(false)
   const aggregateImportDialogOpen = ref(false)
   const aggregateImportResultDialogOpen = ref(false)
-  const aggregateImportPreview = ref<AggregateExportData | null>(null)
+  const aggregateImportPreview = ref<AggregateImportData | null>(null)
   const aggregateImportResult = ref<AggregateImportResponse | null>(null)
   const aggregateMergeMode = ref<'skip' | 'overwrite'>('skip')
   const aggregateMergeModeSelectOpen = ref(false)
@@ -184,11 +185,17 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     if (!file) return
     importPreview.value = null
     importDialogOpen.value = false
+    importResult.value = null
+    importResultDialogOpen.value = false
 
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const content = e.target?.result as string
+        const content = e.target?.result
+        if (typeof content !== 'string') {
+          error('读取文件失败，请重新选择文件')
+          return
+        }
         const root = asJsonObject(JSON.parse(content))
         if (!root) {
           error('无效的配置文件：JSON 顶层必须是对象')
@@ -200,18 +207,12 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
           return
         }
 
-        if (root.version !== CONFIG_EXPORT_VERSION) {
-          error('仅支持当前版本导出的配置文件，请重新导出')
-          return
-        }
-
-        if (!isCurrentConfigExport(root)) {
+        if (!isConfigImportData(root)) {
           error('无效的配置文件：未找到配置导出内容')
           return
         }
 
-        const data = root as unknown as ConfigExportData
-        importPreview.value = data
+        importPreview.value = root
         mergeMode.value = 'skip'
         importDialogOpen.value = true
       } catch {
@@ -230,6 +231,8 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     if (!importPreview.value || importLoading.value) return
 
     importLoading.value = true
+    importResult.value = null
+    importResultDialogOpen.value = false
     setImportProgress(importProgress, 5, '准备提交配置数据')
     await nextTick()
     try {
@@ -239,16 +242,15 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
       }, {
         onUploadProgress: buildUploadProgressHandler(importProgress, '配置数据'),
       })
+      if (result.stats.errors?.length) {
+        throw new Error('导入失败：服务端返回了错误，请检查目标系统中的数据后重试')
+      }
       setImportProgress(importProgress, 100, '配置数据导入完成')
       importResult.value = result
       importDialogOpen.value = false
       mergeModeSelectOpen.value = false
       importResultDialogOpen.value = true
-      if (result.stats.errors.length > 0) {
-        error('部分数据未能导入，请查看结果详情')
-      } else {
-        success('配置导入成功')
-      }
+      success('配置导入成功')
     } catch (err: unknown) {
       error(parseApiError(err, '导入配置失败'))
       log.error('导入配置失败:', parseApiError(err))
@@ -283,11 +285,17 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     if (!file) return
     aggregateImportPreview.value = null
     aggregateImportDialogOpen.value = false
+    aggregateImportResult.value = null
+    aggregateImportResultDialogOpen.value = false
 
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const content = e.target?.result as string
+        const content = e.target?.result
+        if (typeof content !== 'string') {
+          error('读取文件失败，请重新选择文件')
+          return
+        }
         const root = asJsonObject(JSON.parse(content))
         if (!root) {
           error('无效的完整备份文件：JSON 顶层必须是对象')
@@ -305,24 +313,18 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
           return
         }
 
-        if (root.version !== AGGREGATE_EXPORT_VERSION) {
-          error('仅支持当前版本导出的完整备份，请重新导出')
-          return
-        }
-
-        const configData = asJsonObject(root.config_data)
-        const userData = asJsonObject(root.user_data)
-        if (!configData || !isCurrentConfigExport(configData)) {
+        const configData = root.config_data
+        const userData = root.user_data
+        if (!isConfigImportData(configData)) {
           error('无效的完整备份文件：config_data 格式不正确')
           return
         }
-        if (!userData || !isCurrentUsersExport(userData)) {
+        if (!isUsersImportData(userData)) {
           error('无效的完整备份文件：user_data 格式不正确')
           return
         }
 
-        const data = root as unknown as AggregateExportData
-        aggregateImportPreview.value = data
+        aggregateImportPreview.value = { ...root, config_data: configData, user_data: userData }
         aggregateMergeMode.value = 'skip'
         aggregateImportDialogOpen.value = true
       } catch {
@@ -341,6 +343,8 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
     if (!aggregateImportPreview.value || importAggregateLoading.value) return
 
     importAggregateLoading.value = true
+    aggregateImportResult.value = null
+    aggregateImportResultDialogOpen.value = false
     setImportProgress(importAggregateProgress, 5, '准备提交完整备份')
     await nextTick()
     try {
@@ -350,16 +354,15 @@ export function useConfigExportImport(systemConfig: { value: SystemConfig }) {
       }, {
         onUploadProgress: buildUploadProgressHandler(importAggregateProgress, '完整备份'),
       })
+      if (result.config.stats.errors?.length || result.users.stats.errors?.length) {
+        throw new Error('导入失败：服务端返回了错误，请检查目标系统中的数据后重试')
+      }
       setImportProgress(importAggregateProgress, 100, '完整备份导入完成')
       aggregateImportResult.value = result
       aggregateImportDialogOpen.value = false
       aggregateMergeModeSelectOpen.value = false
       aggregateImportResultDialogOpen.value = true
-      if (result.config.stats.errors.length > 0 || result.users.stats.errors.length > 0) {
-        error('部分数据未能导入，请查看结果详情')
-      } else {
-        success('完整备份导入成功')
-      }
+      success('完整备份导入成功')
     } catch (err: unknown) {
       error(parseApiError(err, '导入完整备份失败'))
       log.error('导入完整备份失败:', parseApiError(err))

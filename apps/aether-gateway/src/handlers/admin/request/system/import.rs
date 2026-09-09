@@ -2,9 +2,8 @@ use super::backup_keys::{
     build_imported_provider_key_record, matches_imported_key_credentials,
     validate_imported_provider_key,
 };
-use super::{AdminAppState, ADMIN_SYSTEM_DATA_EXPORT_VERSION};
+use super::{AdminAppState, AdminBackupState};
 use crate::api::ai::admin_endpoint_signature_parts;
-use crate::constants::DEFAULT_USER_GROUP_CONFIG_KEY;
 use crate::handlers::admin::model::ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY;
 use crate::handlers::admin::provider::endpoints_admin::payloads::AdminProviderEndpointUpdatePatch;
 use crate::handlers::admin::provider::shared::payloads::{
@@ -14,7 +13,6 @@ use crate::handlers::admin::provider::write::keys::build_provider_catalog_key_ad
 use crate::handlers::admin::shared::{
     normalize_json_array, normalize_json_object, normalize_string_list,
 };
-use crate::handlers::admin::system::shared::configs::apply_admin_system_config_update;
 use crate::handlers::public::normalize_admin_base_url;
 use crate::GatewayError;
 use aether_admin::provider::endpoints as admin_provider_endpoints_pure;
@@ -140,7 +138,8 @@ pub(super) fn validate_imported_config_references(
     let mut provider_names = BTreeSet::new();
     let mut model_names = BTreeSet::new();
     for model in &document.global_models {
-        if !model_names.insert(&model.name) {
+        let name = trim_required(&model.name, "global_models.name")?;
+        if !model_names.insert(name) {
             return Err(format!("备份包含重复全局模型 '{}'", model.name));
         }
     }
@@ -161,7 +160,7 @@ pub(super) fn validate_imported_config_references(
             .filter(|id| !id.is_empty())
             .ok_or("提供商 id 为必填字段")?;
         if providers.insert(id.clone(), id.clone()).is_some()
-            || !provider_names.insert(&provider.name)
+            || !provider_names.insert(trim_required(&provider.name, "providers.name")?)
         {
             return Err("备份包含重复提供商标识或名称".to_string());
         }
@@ -179,7 +178,11 @@ pub(super) fn validate_imported_config_references(
             return Err("提供商配额或有效期无效".to_string());
         }
         remap_import_proxy(provider.proxy.clone(), &nodes)?;
+        let mut endpoint_formats = BTreeSet::new();
         for endpoint in &provider.endpoints {
+            if !endpoint_formats.insert(normalize_import_endpoint_format(&endpoint.api_format)?) {
+                return Err("备份在同一提供商中包含重复 Endpoint 格式".to_string());
+            }
             remap_import_proxy(endpoint.proxy.clone(), &nodes)?;
         }
         for key in &provider.api_keys {
@@ -200,20 +203,27 @@ pub(super) fn validate_imported_config_references(
             remap_import_proxy(key.proxy.clone(), &nodes)?;
             validate_imported_provider_key(key)?;
         }
+        let mut mapped_models = BTreeSet::new();
         for model in &provider.models {
             let name = model
                 .global_model_name
                 .as_ref()
                 .ok_or("模型缺少 global_model_name")?;
-            if !model_names.contains(name) {
+            if !model_names.contains(name.trim()) {
                 return Err(format!("模型引用的全局模型 '{name}' 不在备份中"));
+            }
+            if !mapped_models.insert(name.trim()) {
+                return Err("备份在同一提供商中包含重复模型映射".to_string());
             }
         }
     }
+    let mut config_keys = BTreeSet::new();
     for config in &document.system_configs {
-        if normalize_imported_system_config_key(&config.key)
-            == ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY
-        {
+        let key = normalize_imported_system_config_key(&config.key);
+        if key.is_empty() || !config_keys.insert(key.clone()) {
+            return Err("备份包含空白或重复系统配置项".to_string());
+        }
+        if key == ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY {
             match &config.value {
                 Value::Null => {}
                 Value::String(id) if nodes.contains_key(id) => {}
@@ -248,21 +258,6 @@ fn normalize_imported_system_config_key(key: &str) -> String {
         ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY.to_string()
     } else {
         normalized
-    }
-}
-
-fn normalize_imported_default_user_group_config(
-    config: &mut ImportedSystemConfig,
-    existing_user_group_ids: &BTreeSet<String>,
-) {
-    if normalize_imported_system_config_key(&config.key) != DEFAULT_USER_GROUP_CONFIG_KEY {
-        return;
-    }
-    let Some(group_id) = config.value.as_str() else {
-        return;
-    };
-    if !existing_user_group_ids.contains(group_id) {
-        config.value = Value::Null;
     }
 }
 
@@ -496,44 +491,33 @@ fn unix_day_start_secs(timestamp: i64) -> u64 {
     timestamp - (timestamp % 86_400)
 }
 
-impl<'a> AdminAppState<'a> {
+impl<'a> AdminBackupState<'a> {
     pub(crate) async fn import_admin_system_data(
         &self,
         request_body: &Bytes,
         operator_id: Option<&str>,
     ) -> Result<Result<Value, (http::StatusCode, Value)>, GatewayError> {
-        if !self.has_global_model_data_reader()
-            || !self.has_global_model_data_writer()
-            || !self.has_provider_catalog_data_reader()
-            || !self.has_provider_catalog_data_writer()
-            || !self.has_auth_user_write_capability()
-            || !self.has_auth_api_key_writer()
-        {
-            return Ok(Err((
-                http::StatusCode::SERVICE_UNAVAILABLE,
-                json!({ "detail": "Admin system data unavailable" }),
-            )));
-        }
-
         let root = match serde_json::from_slice::<Value>(request_body) {
             Ok(Value::Object(map)) => map,
             _ => return Ok(Err(invalid_request("请求数据验证失败"))),
         };
 
-        let version = root
-            .get("version")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| invalid_request("version 为必填字段"));
-        let version = match version {
-            Ok(value) => value,
-            Err(err) => return Ok(Err(err)),
-        };
-        if version != ADMIN_SYSTEM_DATA_EXPORT_VERSION {
-            return Ok(Err(invalid_request(format!(
-                "不支持的聚合数据版本: {version}，支持的版本: {ADMIN_SYSTEM_DATA_EXPORT_VERSION}"
-            ))));
+        let recognized = root
+            .iter()
+            .filter(|(key, _)| {
+                matches!(
+                    key.as_str(),
+                    "version" | "exported_at" | "merge_mode" | "config_data" | "user_data"
+                )
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<Map<_, _>>();
+        if let Err(detail) = aether_admin::system::validate_admin_backup_fields(
+            &Value::Object(root.clone()),
+            &Value::Object(recognized),
+            "backup",
+        ) {
+            return Ok(Err(invalid_request(detail)));
         }
 
         let merge_mode = match serde_json::from_value::<AdminImportMergeMode>(
@@ -566,14 +550,6 @@ impl<'a> AdminAppState<'a> {
         if let Err(detail) = validate_imported_config_references(&config) {
             return Ok(Err(invalid_request(detail)));
         }
-        let user_value = match serde_json::from_slice::<Value>(&users_body) {
-            Ok(value) => value,
-            Err(_) => return Ok(Err(invalid_request("用户备份格式无效"))),
-        };
-        let users = match super::user_backup::parse_users_backup(user_value) {
-            Ok(backup) => backup,
-            Err(err) => return Ok(Err(err)),
-        };
         let provider_names = config
             .providers
             .iter()
@@ -584,16 +560,32 @@ impl<'a> AdminAppState<'a> {
                     .map(|id| (id.clone(), provider.name.clone()))
             })
             .collect::<BTreeMap<_, _>>();
+        let mut user_value = match serde_json::from_slice::<Value>(&users_body) {
+            Ok(Value::Object(value)) => value,
+            _ => return Ok(Err(invalid_request("用户备份格式无效"))),
+        };
+        user_value
+            .entry("provider_names".to_string())
+            .or_insert_with(|| json!(provider_names));
+        let users = match super::user_backup::parse_users_backup(Value::Object(user_value.clone()))
+        {
+            Ok(backup) => backup,
+            Err(err) => return Ok(Err(err)),
+        };
         if users.provider_names != provider_names {
             return Ok(Err(invalid_request(
-                "完整备份中的配置与用户提供商映射不一致，请重新导出",
+                "完整备份中的配置与用户提供商映射不一致",
             )));
         }
-        if merge_mode == AdminImportMergeMode::Error {
+        if merge_mode == AdminImportMergeMode::Error && users.has_admin_profile() {
             return Ok(Err(invalid_request(
                 "当前管理员已存在，请选择跳过或覆盖模式",
             )));
         }
+        let users_body = Bytes::from(
+            serde_json::to_vec(&user_value)
+                .map_err(|err| GatewayError::Internal(err.to_string()))?,
+        );
         let config_result = match self.import_admin_system_config(&config_body).await? {
             Ok(payload) => payload,
             Err(err) => return Ok(Err(err)),
@@ -634,16 +626,6 @@ impl<'a> AdminAppState<'a> {
             };
         }
 
-        if !self.has_global_model_data_reader()
-            || !self.has_global_model_data_writer()
-            || !self.has_provider_catalog_data_reader()
-            || !self.has_provider_catalog_data_writer()
-        {
-            return Ok(Err((
-                http::StatusCode::SERVICE_UNAVAILABLE,
-                json!({ "detail": "Admin system data unavailable" }),
-            )));
-        }
         let parsed = routed!(parse_admin_system_config_import_request(request_body));
         invalid!(validate_imported_config_references(
             &parsed.request.document
@@ -662,7 +644,7 @@ impl<'a> AdminAppState<'a> {
             &root,
             "proxy_nodes"
         ));
-        let mut imported_system_configs = routed!(parse_admin_system_config_array::<
+        let imported_system_configs = routed!(parse_admin_system_config_array::<
             ImportedSystemConfig,
         >(&root, "system_configs",));
         let imported_routing_strategy = parsed.request.document.routing_strategy;
@@ -670,22 +652,6 @@ impl<'a> AdminAppState<'a> {
             if let Err(detail) = validate_imported_routing_strategy_config(&strategy.config_json) {
                 return Ok(Err(invalid_request(detail)));
             }
-        }
-
-        let existing_user_group_ids = if self.has_user_data_reader() {
-            self.list_user_groups()
-                .await?
-                .into_iter()
-                .map(|group| group.id)
-                .collect::<BTreeSet<_>>()
-        } else {
-            BTreeSet::new()
-        };
-        for config in &mut imported_system_configs {
-            normalize_imported_default_user_group_config(
-                &mut config.value,
-                &existing_user_group_ids,
-            );
         }
 
         let mut stats = AdminSystemConfigImportStats::default();
@@ -739,14 +705,12 @@ impl<'a> AdminAppState<'a> {
                     )))
                 }
             };
-            let request = Bytes::from(
-                serde_json::to_vec(&json!({"proxy_node_id": proxy_node_id}))
-                    .map_err(|err| GatewayError::Internal(err.to_string()))?,
-            );
-            routed!(
-                self.apply_admin_external_models_config_update(&request)
-                    .await?
-            );
+            self.upsert_system_config_entry(
+                ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY,
+                &json!(proxy_node_id),
+                config.description.as_deref(),
+            )
+            .await?;
             if exists {
                 stats.system_configs.updated += 1;
             } else {
@@ -891,7 +855,7 @@ impl<'a> AdminAppState<'a> {
                             &node_id_map
                         ));
                         updated.config = invalid!(encrypt_imported_provider_config(
-                            self,
+                            self.admin(),
                             imported_provider.config.clone(),
                         ));
                         let Some(persisted) =
@@ -934,7 +898,7 @@ impl<'a> AdminAppState<'a> {
                     &node_id_map
                 ));
                 record.config = invalid!(encrypt_imported_provider_config(
-                    self,
+                    self.admin(),
                     imported_provider.config.clone(),
                 ));
                 let Some(created) = self
@@ -1029,11 +993,15 @@ impl<'a> AdminAppState<'a> {
                             let mut updated = invalid!(
                                 admin_provider_endpoints_pure::apply_admin_provider_endpoint_update_fields(
                                     &existing_endpoint,
-                                    |field| fields.contains(field),
+                                    |field| fields.contains(field)
+                                        && (field != "max_retries" || imported_endpoint.max_retries.is_some()),
                                     |field| fields.is_null(field),
                                     &update_fields,
                                 )
                             );
+                            // Backups preserve the stored inheritance value; the
+                            // interactive endpoint editor requires an explicit count.
+                            updated.max_retries = imported_endpoint.max_retries;
                             if fields.contains("proxy") {
                                 updated.proxy = invalid!(remap_import_proxy(
                                     imported_endpoint.proxy.clone(),
@@ -1134,7 +1102,11 @@ impl<'a> AdminAppState<'a> {
                         existing_keys.iter().position(|key| {
                             initial_key_ids.contains(&key.id)
                                 && !matched_key_ids.contains(&key.id)
-                                && matches_imported_key_credentials(self, &imported_key, key)
+                                && matches_imported_key_credentials(
+                                    self.admin(),
+                                    &imported_key,
+                                    key,
+                                )
                         })
                     });
                 let proxy = invalid!(remap_import_proxy(imported_key.proxy.clone(), &node_id_map));
@@ -1155,7 +1127,7 @@ impl<'a> AdminAppState<'a> {
                         }
                         AdminImportMergeMode::Overwrite => {
                             let updated = invalid!(build_imported_provider_key_record(
-                                self,
+                                self.admin(),
                                 &provider.id,
                                 &imported_key,
                                 Some(&existing_key),
@@ -1195,7 +1167,7 @@ impl<'a> AdminAppState<'a> {
                     continue;
                 }
                 let record = invalid!(build_imported_provider_key_record(
-                    self,
+                    self.admin(),
                     &provider.id,
                     &imported_key,
                     None,
@@ -1230,19 +1202,17 @@ impl<'a> AdminAppState<'a> {
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                 else {
-                    stats.errors.push(format!(
-                        "跳过无 global_model_name 的模型 (Provider: {provider_name})"
-                    ));
-                    continue;
+                    return Ok(Err(invalid_request(format!(
+                        "模型缺少 global_model_name (Provider: {provider_name})"
+                    ))));
                 };
                 let Some(global_model_id) = global_models_by_name
                     .get(global_model_name)
                     .map(|model| model.id.clone())
                 else {
-                    stats.errors.push(format!(
-                        "GlobalModel '{global_model_name}' 不存在，跳过模型"
-                    ));
-                    continue;
+                    return Ok(Err(invalid_request(format!(
+                        "GlobalModel '{global_model_name}' 不存在"
+                    ))));
                 };
 
                 let provider_model_name = invalid!(trim_required(
@@ -1298,104 +1268,99 @@ impl<'a> AdminAppState<'a> {
         }
 
         if let Some(imported_strategy) = imported_routing_strategy {
-            if !self.has_routing_group_data_reader() || !self.has_routing_group_data_writer() {
-                stats.routing_strategy.skipped += 1;
-                stats
-                    .errors
-                    .push("当前运行环境不支持写入调度策略，已跳过 routing_strategy".to_string());
-            } else {
-                let mut config_json = imported_strategy.config_json;
-                invalid!(remap_routing_strategy_config(
-                    &mut config_json,
-                    &imported_provider_id_map,
-                    &imported_key_id_map,
-                ));
-                let existing = self
-                    .find_routing_group(RoutingGroupLookupKey::SystemDefault)
-                    .await?;
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .ok()
-                    .map(|duration| duration.as_secs() as i64)
-                    .unwrap_or(0);
-                let (persisted, should_record_version, was_existing) =
-                    if let Some(existing) = existing {
-                        match merge_mode {
-                            AdminImportMergeMode::Skip => (existing, false, true),
-                            AdminImportMergeMode::Error => {
-                                return Ok(Err(invalid_request("系统默认调度策略已存在")));
-                            }
-                            AdminImportMergeMode::Overwrite => {
-                                let latest_version = self
-                                    .list_routing_group_versions(&existing.id)
-                                    .await?
-                                    .into_iter()
-                                    .map(|version| version.version)
-                                    .max()
-                                    .unwrap_or(0);
-                                let next_version =
-                                    existing.version.max(latest_version).saturating_add(1);
-                                let Some(updated) = self
-                                    .update_routing_group(
-                                        &existing.id,
-                                        UpdateRoutingGroupRecord {
-                                            name: Some(imported_strategy.name),
-                                            description: Some(imported_strategy.description),
-                                            enabled: Some(imported_strategy.enabled),
-                                            is_system_default: Some(true),
-                                            config_json: Some(config_json),
-                                            version: Some(next_version),
-                                            updated_at: now,
-                                            published_at: Some(Some(now)),
-                                        },
-                                    )
-                                    .await?
-                                else {
-                                    return Ok(Err(invalid_request("更新系统默认调度策略失败")));
-                                };
-                                (updated, true, true)
-                            }
-                        }
-                    } else {
-                        let Some(created) = self
-                            .create_routing_group(CreateRoutingGroupRecord {
-                                id: Uuid::new_v4().to_string(),
-                                name: imported_strategy.name,
-                                description: imported_strategy.description,
-                                enabled: imported_strategy.enabled,
-                                is_system_default: true,
-                                config_json,
-                                version: imported_strategy.version.max(1),
-                                created_at: now,
-                                updated_at: now,
-                                published_at: Some(now),
-                            })
+            let mut config_json = imported_strategy.config_json;
+            invalid!(remap_routing_strategy_config(
+                &mut config_json,
+                &imported_provider_id_map,
+                &imported_key_id_map,
+            ));
+            let existing = self
+                .find_routing_group(RoutingGroupLookupKey::SystemDefault)
+                .await?;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .map(|duration| duration.as_secs() as i64)
+                .unwrap_or(0);
+            let (persisted, should_record_version, was_existing) = if let Some(existing) = existing
+            {
+                match merge_mode {
+                    AdminImportMergeMode::Skip => (existing, false, true),
+                    AdminImportMergeMode::Error => {
+                        return Ok(Err(invalid_request("系统默认调度策略已存在")));
+                    }
+                    AdminImportMergeMode::Overwrite => {
+                        let latest_version = self
+                            .list_routing_group_versions(&existing.id)
+                            .await?
+                            .into_iter()
+                            .map(|version| version.version)
+                            .max()
+                            .unwrap_or(0);
+                        let next_version = existing.version.max(latest_version).saturating_add(1);
+                        let Some(updated) = self
+                            .update_routing_group(
+                                &existing.id,
+                                UpdateRoutingGroupRecord {
+                                    name: Some(imported_strategy.name),
+                                    description: Some(imported_strategy.description),
+                                    enabled: Some(imported_strategy.enabled),
+                                    is_system_default: Some(true),
+                                    config_json: Some(config_json),
+                                    version: Some(next_version),
+                                    updated_at: now,
+                                    published_at: Some(Some(now)),
+                                },
+                            )
                             .await?
                         else {
-                            return Ok(Err(invalid_request("创建系统默认调度策略失败")));
+                            return Ok(Err(invalid_request("更新系统默认调度策略失败")));
                         };
-                        (created, true, false)
-                    };
-                if was_existing {
-                    if should_record_version {
-                        stats.routing_strategy.updated += 1;
-                    } else {
-                        stats.routing_strategy.skipped += 1;
+                        (updated, true, true)
                     }
-                } else {
-                    stats.routing_strategy.created += 1;
                 }
+            } else {
+                let Some(created) = self
+                    .create_routing_group(CreateRoutingGroupRecord {
+                        id: Uuid::new_v4().to_string(),
+                        name: imported_strategy.name,
+                        description: imported_strategy.description,
+                        enabled: imported_strategy.enabled,
+                        is_system_default: true,
+                        config_json,
+                        version: imported_strategy.version.max(1),
+                        created_at: now,
+                        updated_at: now,
+                        published_at: Some(now),
+                    })
+                    .await?
+                else {
+                    return Ok(Err(invalid_request("创建系统默认调度策略失败")));
+                };
+                (created, true, false)
+            };
+            if was_existing {
                 if should_record_version {
-                    let _ = self
-                        .create_routing_group_version(CreateRoutingGroupVersionRecord {
-                            id: Uuid::new_v4().to_string(),
-                            group_id: persisted.id.clone(),
-                            version: persisted.version,
-                            config_json: persisted.config_json.clone(),
-                            created_at: now,
-                            created_by: None,
-                        })
-                        .await?;
+                    stats.routing_strategy.updated += 1;
+                } else {
+                    stats.routing_strategy.skipped += 1;
+                }
+            } else {
+                stats.routing_strategy.created += 1;
+            }
+            if should_record_version {
+                let recorded = self
+                    .create_routing_group_version(CreateRoutingGroupVersionRecord {
+                        id: Uuid::new_v4().to_string(),
+                        group_id: persisted.id.clone(),
+                        version: persisted.version,
+                        config_json: persisted.config_json.clone(),
+                        created_at: now,
+                        created_by: None,
+                    })
+                    .await?;
+                if recorded.is_none() {
+                    return Ok(Err(invalid_request("调度策略历史记录未能写入，导入已中止")));
                 }
             }
         }
@@ -1409,10 +1374,8 @@ impl<'a> AdminAppState<'a> {
             } = system_config;
             let normalized_key = normalize_imported_system_config_key(&key);
             let exists = existing_system_config_keys.contains(&normalized_key);
-            let is_default_group_reset =
-                normalized_key == DEFAULT_USER_GROUP_CONFIG_KEY && value.is_null();
             match (exists, merge_mode) {
-                (true, AdminImportMergeMode::Skip) if !is_default_group_reset => {
+                (true, AdminImportMergeMode::Skip) => {
                     stats.system_configs.skipped += 1;
                     continue;
                 }
@@ -1431,8 +1394,9 @@ impl<'a> AdminAppState<'a> {
                 }))
                 .map_err(|err| GatewayError::Internal(err.to_string()))?,
             );
-            let update_result =
-                apply_admin_system_config_update(self, &key, &request_bytes).await?;
+            let update_result = self
+                .apply_backup_system_config(&key, &request_bytes)
+                .await?;
             match update_result {
                 Ok(_) => {
                     if exists {
@@ -1542,40 +1506,74 @@ mod tests {
     use super::{
         build_imported_provider_key_record, build_imported_user_usage_total_aggregates,
         matches_imported_key_credentials, normalize_import_endpoint_format,
-        normalize_imported_default_user_group_config, remap_routing_strategy_config,
-        validate_imported_provider_key, ImportedProviderKey, ImportedSystemConfig,
+        remap_routing_strategy_config, validate_imported_provider_key, ImportedProviderKey,
     };
     use crate::admin_api::AdminAppState;
     use crate::data::GatewayDataState;
     use crate::AppState;
 
     #[test]
-    fn users_import_rejects_previous_export_versions() {
-        for version in ["1.3", "1.4", "1.5", "2.2"] {
-            let error = super::super::user_backup::parse_users_backup(json!({"version": version}))
-                .expect_err("only current user backups are accepted");
-            assert_eq!(error.0, axum::http::StatusCode::BAD_REQUEST);
-            assert!(error.1["detail"]
-                .as_str()
+    fn backup_rejects_source_duplicates_after_import_normalization() {
+        let base = json!({
+            "exported_at": "2026-09-09T00:00:00Z",
+            "global_models": [{"name": "model", "display_name": "Model"}],
+            "providers": [{
+                "id": "provider", "name": "channel", "api_keys": [],
+                "endpoints": [{"api_format": "openai:chat", "base_url": "https://api.example.com"}],
+                "models": [{"global_model_name": "model", "provider_model_name": "upstream"}],
+            }],
+            "proxy_nodes": [],
+            "system_configs": [{"key": "site_name", "value": "test"}],
+        });
+        let parse = |value| {
+            serde_json::from_value::<aether_admin::system::AdminSystemConfigDocument>(value)
                 .unwrap()
-                .contains("仅支持当前版本"));
+        };
+        assert!(super::validate_imported_config_references(&parse(base.clone())).is_ok());
+        for field in [
+            "global_models",
+            "providers",
+            "endpoints",
+            "models",
+            "system_configs",
+        ] {
+            let mut value = base.clone();
+            match field {
+                "global_models" => value[field]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"name": " model ", "display_name": "Other"})),
+                "providers" => {
+                    let mut duplicate = value[field][0].clone();
+                    duplicate["id"] = json!("another-id");
+                    duplicate["name"] = json!(" channel ");
+                    value[field].as_array_mut().unwrap().push(duplicate);
+                }
+                "endpoints" => value["providers"][0][field].as_array_mut().unwrap().push(
+                    json!({"api_format": " openai:chat ", "base_url": "https://other.example.com"}),
+                ),
+                "models" => value["providers"][0][field]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"global_model_name": " model ", "provider_model_name": "other"})),
+                _ => value[field]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"key": " site_name ", "value": "other"})),
+            }
+            let error = super::validate_imported_config_references(&parse(value)).unwrap_err();
+            assert!(error.contains("重复"), "{field}: {error}");
         }
     }
 
     #[test]
-    fn import_clears_default_user_group_when_exported_group_is_missing() {
-        let mut config = ImportedSystemConfig {
-            key: "default_user_group_id".to_string(),
-            value: json!("missing-group"),
-            description: None,
-        };
-
-        normalize_imported_default_user_group_config(
-            &mut config,
-            &std::collections::BTreeSet::new(),
-        );
-
-        assert!(config.value.is_null());
+    fn users_import_validates_content_without_a_version_gate() {
+        for version in ["1.3", "1.4", "1.5", "2.2"] {
+            let error = super::super::user_backup::parse_users_backup(json!({"version": version}))
+                .expect_err("the empty document has no restorable content");
+            assert_eq!(error.0, axum::http::StatusCode::BAD_REQUEST);
+            assert!(!error.1["detail"].as_str().unwrap().contains("版本"));
+        }
     }
 
     #[test]
@@ -1687,6 +1685,20 @@ mod tests {
         use aether_data::{DatabaseDriver, SqlDatabaseConfig, SqlPoolConfig};
         use std::collections::BTreeMap;
 
+        async fn stored_backup_keys(
+            state: &AppState,
+            user_id: &str,
+        ) -> Vec<StoredAuthApiKeyExportRecord> {
+            let session = state.data.begin_admin_backup(false).await.unwrap();
+            let keys = session
+                .api_keys()
+                .list_backup_api_keys_by_user_ids(&[user_id.to_string()])
+                .await
+                .unwrap();
+            session.commit().await.unwrap();
+            keys
+        }
+
         let mut states = Vec::new();
         let mut admins = Vec::new();
         for name in ["source", "target"] {
@@ -1700,13 +1712,17 @@ mod tests {
                 },
             )
             .unwrap();
-            let state = AppState::new()
+            let mut state = AppState::new()
                 .unwrap()
                 .with_data_config(
                     GatewayDataConfig::from_database_config(database)
                         .with_encryption_key(format!("{name}-backup-encryption")),
                 )
                 .unwrap();
+            // This backup test exercises the persisted administrator and sessions,
+            // rather than the unit-test-only authentication stores.
+            state.auth_user_store = None;
+            state.auth_session_store = None;
             state.run_database_migrations().await.unwrap();
             let provider = StoredProviderCatalogProvider::new(
                 format!("{name}-provider"),
@@ -1805,6 +1821,7 @@ mod tests {
                 force_capabilities: Some(json!({"vision": true})),
                 feature_settings: None,
                 is_active: !standalone,
+                is_locked: false,
                 expires_at_unix_secs: Some(4_102_444_800),
                 auto_delete_on_expiry: standalone,
                 total_requests: 12,
@@ -1857,11 +1874,7 @@ mod tests {
             .await
             .unwrap()
             .is_err());
-        assert!(target
-            .list_auth_api_key_export_records_by_user_ids(&[target_user.id.clone()])
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(stored_backup_keys(target, &target_user.id).await.is_empty());
 
         let mut request = backup.clone();
         request["merge_mode"] = json!("skip");
@@ -1885,10 +1898,7 @@ mod tests {
                 .username,
             target_user.username
         );
-        let keys_before = target
-            .list_auth_api_key_export_records_by_user_ids(&[target_user.id.clone()])
-            .await
-            .unwrap();
+        let keys_before = stored_backup_keys(target, &target_user.id).await;
         let normal_id = keys_before
             .iter()
             .find(|key| !key.is_standalone)
@@ -1988,10 +1998,7 @@ mod tests {
             restored["user_data"]["usage_aggregates"]["stats_daily_api_key"][0]["total_requests"],
             12
         );
-        let persisted = target
-            .list_auth_api_key_export_records_by_user_ids(&[target_user.id.clone()])
-            .await
-            .unwrap();
+        let persisted = stored_backup_keys(target, &target_user.id).await;
         let normal = persisted.iter().find(|key| !key.is_standalone).unwrap();
         assert_eq!(
             aether_crypto::decrypt_python_fernet_ciphertext(
@@ -2022,14 +2029,7 @@ mod tests {
             .unwrap();
         assert_eq!(repeated["users"]["stats"]["api_keys"]["skipped"], 1);
         assert_eq!(repeated["users"]["stats"]["standalone_keys"]["skipped"], 1);
-        assert_eq!(
-            target
-                .list_auth_api_key_export_records_by_user_ids(&[target_user.id.clone()])
-                .await
-                .unwrap()
-                .len(),
-            2
-        );
+        assert_eq!(stored_backup_keys(target, &target_user.id).await.len(), 2);
     }
 
     #[test]

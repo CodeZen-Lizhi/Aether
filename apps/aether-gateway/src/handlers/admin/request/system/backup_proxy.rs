@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use serde_json::Value;
 
 use super::import::invalid_request;
-use super::AdminAppState;
+use super::AdminBackupState;
 use crate::GatewayError;
 
 fn decode_node(item: AdminSystemConfigProxyNode) -> Result<StoredProxyNode, (StatusCode, Value)> {
@@ -79,16 +79,13 @@ fn decode_node(item: AdminSystemConfigProxyNode) -> Result<StoredProxyNode, (Sta
     Ok(node)
 }
 
-impl<'a> AdminAppState<'a> {
+impl<'a> AdminBackupState<'a> {
     pub(super) async fn import_admin_system_proxy_nodes(
         &self,
         imported: Vec<AdminSystemConfigProxyNode>,
         mode: AdminImportMergeMode,
         counter: &mut AdminSystemConfigImportCounter,
     ) -> Result<Result<BTreeMap<String, String>, (StatusCode, Value)>, GatewayError> {
-        if !imported.is_empty() && !self.has_proxy_node_writer() {
-            return Ok(Err(invalid_request("当前环境无法写入代理节点")));
-        }
         let nodes = match imported
             .into_iter()
             .map(decode_node)
@@ -168,7 +165,7 @@ impl<'a> AdminAppState<'a> {
             planned.push(node);
         }
         for node in planned {
-            if !self.app().restore_proxy_node(&node).await? {
+            if !self.restore_proxy_node(&node).await? {
                 return Ok(Err(invalid_request("代理节点未能写入，导入已中止")));
             }
         }

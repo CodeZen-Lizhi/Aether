@@ -19,15 +19,25 @@ pub(crate) async fn build_admin_create_provider_record(
     state: &AdminAppState<'_>,
     payload: AdminProviderCreateRequest,
 ) -> Result<(StoredProviderCatalogProvider, Option<i32>), String> {
+    if payload.name.trim().is_empty() {
+        return Err("name 为必填字段".to_string());
+    }
+    let existing_providers = state
+        .list_provider_catalog_providers(false)
+        .await
+        .map_err(|err| format!("{err:?}"))?;
+    build_admin_create_provider_record_from_existing(&existing_providers, payload)
+}
+
+pub(crate) fn build_admin_create_provider_record_from_existing(
+    existing_providers: &[StoredProviderCatalogProvider],
+    payload: AdminProviderCreateRequest,
+) -> Result<(StoredProviderCatalogProvider, Option<i32>), String> {
     let name = payload.name.trim();
     if name.is_empty() {
         return Err("name 为必填字段".to_string());
     }
 
-    let existing_providers = state
-        .list_provider_catalog_providers(false)
-        .await
-        .map_err(|err| format!("{err:?}"))?;
     if existing_providers
         .iter()
         .any(|provider| provider.name == name)

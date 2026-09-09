@@ -6,9 +6,6 @@ import type { BillingSummary } from './auth'
 
 const SYSTEM_DATA_IMPORT_TIMEOUT_MS = 10 * 60 * 1000
 const ALL_SYSTEM_CONFIGS_CACHE_KEY = 'admin:system:configs'
-export const CONFIG_EXPORT_VERSION = '3.0'
-export const USERS_EXPORT_VERSION = '2.0'
-export const AGGREGATE_EXPORT_VERSION = '2.0'
 
 export interface AdminSystemConfigItem {
   key: string
@@ -40,7 +37,6 @@ export interface SystemConfigExport {
 
 // 配置导出数据结构
 export interface ConfigExportData {
-  version: string
   exported_at: string
   global_models: GlobalModelExport[]
   providers: ProviderExport[]
@@ -78,7 +74,6 @@ export interface ProxyNodeExport {
 
 // 用户导出数据结构
 export interface UsersExportData {
-  version: string
   exported_at: string
   provider_names: Record<string, string>
   users: UserExport[]
@@ -87,7 +82,6 @@ export interface UsersExportData {
 }
 
 export interface AggregateExportData {
-  version: string
   exported_at: string
   config_data: ConfigExportData
   user_data: UsersExportData
@@ -161,6 +155,7 @@ export interface UserApiKeyExport {
   force_capabilities?: Record<string, boolean>
   feature_settings?: Record<string, unknown> | null
   is_active: boolean
+  is_locked: boolean
   expires_at_unix_secs: number | null
   last_used_at_unix_secs: number | null
   created_at_unix_secs: number | null
@@ -579,7 +574,39 @@ export interface ProviderModelsQueryResponse {
   }
 }
 
-export interface ConfigImportRequest extends ConfigExportData {
+// 导入只保证预览所需的结构；原始字段完整提交，由服务端校验与兼容。
+export interface ConfigImportData {
+  exported_at?: unknown
+  global_models: unknown[]
+  providers: Array<{
+    endpoints: unknown[]
+    api_keys: unknown[]
+    models: unknown[]
+  }>
+  proxy_nodes: unknown[]
+  system_configs: unknown[]
+  routing_strategy?: unknown
+}
+
+export interface UsersImportData {
+  exported_at?: unknown
+  provider_names?: unknown
+  users: Array<{ username?: string; api_keys: unknown[] }>
+  standalone_keys: unknown[]
+  usage_aggregates: {
+    stats_daily: unknown[]
+    stats_user_daily: unknown[]
+    stats_daily_api_key: unknown[]
+  }
+}
+
+export interface AggregateImportData {
+  exported_at?: unknown
+  config_data: ConfigImportData
+  user_data: UsersImportData
+}
+
+export interface ConfigImportRequest extends ConfigImportData {
   merge_mode: 'skip' | 'overwrite' | 'error'
 }
 
@@ -591,11 +618,11 @@ export interface UsersImportResponse {
     api_keys: { created: number; updated: number; skipped: number }
     standalone_keys: { created: number; updated: number; skipped: number }
     usage_aggregates?: UsageAggregateImportSummary
-    errors: string[]
+    errors?: string[]
   }
 }
 
-export interface AggregateImportRequest extends AggregateExportData {
+export interface AggregateImportRequest extends AggregateImportData {
   merge_mode: 'skip' | 'overwrite'
 }
 
@@ -616,7 +643,7 @@ export interface ConfigImportResponse {
     models: { created: number; updated: number; skipped: number }
     system_configs?: { created: number; updated: number; skipped: number }
     routing_strategy?: { created: number; updated: number; skipped: number }
-    errors: string[]
+    errors?: string[]
   }
 }
 

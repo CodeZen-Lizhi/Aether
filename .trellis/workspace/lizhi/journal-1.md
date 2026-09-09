@@ -1023,3 +1023,33 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 37: 无版本原子备份导入导出与旧目录清理
+<!-- trellis-session: v=2 fp=66d7f9ecee154e66 -->
+
+**Date**: 2026-09-09
+**Task**: 无版本原子备份导入导出与旧目录清理
+**Branch**: `slim-personal`
+
+### Summary
+
+备份按内容兼容，全部写入在同一 SQLite 事务中提交或回滚；验证真实旧文件恢复，修复独立 Key、锁定状态、统计和取消收尾。旧目录已按授权删除，代码尚未提交、推送或部署。
+
+### Main Changes
+
+- 增加显式备份会话、提交后的缓存失效及取消时锁释放。
+- 移除前后端格式版本门槛，严格校验无法还原的非空内容。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 218 个范围内自动化测试通过；真实旧备份在临时数据库导入再导出通过。
+- [OK] 前端类型与 ESLint、Rust 格式、无默认特性与 SQLite schema 检查通过。
+
+### Status
+
+[OK] **Completed**

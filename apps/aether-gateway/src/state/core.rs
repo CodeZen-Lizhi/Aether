@@ -871,6 +871,16 @@ impl AppState {
         self.invalidate_scheduler_affinity_cache();
     }
 
+    pub(crate) fn invalidate_admin_backup_caches(&self) {
+        self.data.clear_admin_backup_caches();
+        self.background_data.clear_admin_backup_caches();
+        self.system_config_cache.clear();
+        self.invalidate_auth_context_cache();
+        self.invalidate_provider_routing_caches();
+        self.frontdoor_user_rpm.clear_system_default_cache();
+        self.dashboard_response_cache.clear();
+    }
+
     pub(crate) fn invalidate_provider_health_routing_caches(&self) {
         self.data.clear_minimal_candidate_selection_cache();
         self.data.clear_provider_catalog_cache();

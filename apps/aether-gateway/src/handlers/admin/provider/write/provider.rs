@@ -26,7 +26,9 @@ fn normalize_provider_stream_first_byte_timeout(value: Option<f64>) -> Result<Op
 }
 
 pub(crate) use self::create::build_admin_create_provider_record;
+pub(crate) use self::create::build_admin_create_provider_record_from_existing;
 pub(crate) use self::update::build_admin_update_provider_record;
+pub(crate) use self::update::build_admin_update_provider_record_from_existing;
 
 #[cfg(test)]
 mod tests {

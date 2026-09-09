@@ -35,7 +35,12 @@
               用户数据
             </p>
             <ul class="space-y-1">
-              <li>管理员: {{ aggregateImportPreview.user_data.users[0]?.username }}</li>
+              <li v-if="aggregateImportPreview.user_data.users.length">
+                管理员: {{ aggregateImportPreview.user_data.users[0]?.username || '-' }}
+              </li>
+              <li v-else>
+                未包含管理员资料，将保留当前管理员
+              </li>
               <li>
                 API Keys: {{ aggregateImportPreview.user_data.users?.reduce((sum: number, u: { api_keys?: unknown[] }) => sum + (u.api_keys?.length || 0), 0) }} 个
               </li>
@@ -74,14 +79,17 @@
           <template v-if="aggregateMergeMode === 'skip'">
             已存在的数据将被保留，仅导入新数据
           </template>
-          <template v-else>
+          <template v-else-if="aggregateImportPreview?.user_data.users.length">
             覆盖当前管理员的账号、密码和偏好，并还原备份中的配置与 API Keys
+          </template>
+          <template v-else>
+            还原备份中的配置与 API Keys，保留当前管理员资料
           </template>
         </p>
       </div>
 
       <p class="text-xs text-muted-foreground">
-        仅支持当前版本导出的备份。密钥会使用目标系统的加密配置重新加密；管理员密码变化后，需使用备份中的账号密码重新登录。备份包含凭证，请妥善保存。
+        任何数据导入失败时，整次导入都会撤销。密钥会使用目标系统的加密配置重新加密；管理员密码变化后，需使用备份中的账号密码重新登录。备份包含凭证，请妥善保存。
       </p>
 
       <div
@@ -179,23 +187,6 @@
       >
         管理员密码已恢复，请使用备份中的账号密码重新登录。
       </p>
-
-      <div
-        v-if="warningMessages.length > 0"
-        class="p-3 bg-destructive/10 rounded-lg"
-      >
-        <p class="font-medium text-destructive mb-2">
-          警告信息
-        </p>
-        <ul class="text-sm text-destructive space-y-1">
-          <li
-            v-for="(message, index) in warningMessages"
-            :key="index"
-          >
-            {{ message }}
-          </li>
-        </ul>
-      </div>
     </div>
 
     <template #footer>
@@ -216,13 +207,13 @@ import SelectValue from '@/components/ui/select-value.vue'
 import SelectContent from '@/components/ui/select-content.vue'
 import SelectItem from '@/components/ui/select-item.vue'
 import { Dialog } from '@/components/ui'
-import type { AggregateExportData, AggregateImportResponse } from '@/api/admin'
+import type { AggregateImportData, AggregateImportResponse } from '@/api/admin'
 import type { ImportProgressState } from './composables/useConfigExportImport'
 
 const props = defineProps<{
   aggregateImportDialogOpen: boolean
   aggregateImportResultDialogOpen: boolean
-  aggregateImportPreview: AggregateExportData | null
+  aggregateImportPreview: AggregateImportData | null
   aggregateImportResult: AggregateImportResponse | null
   aggregateMergeMode: 'skip' | 'overwrite'
   aggregateMergeModeSelectOpen: boolean
@@ -237,13 +228,6 @@ defineEmits<{
   'update:aggregateMergeMode': [value: 'skip' | 'overwrite']
   'update:aggregateMergeModeSelectOpen': [value: boolean]
 }>()
-
-const warningMessages = computed(() => {
-  if (!props.aggregateImportResult) return []
-  const configErrors = props.aggregateImportResult.config.stats.errors.map((message) => `配置数据: ${message}`)
-  const userErrors = props.aggregateImportResult.users.stats.errors.map((message) => `用户数据: ${message}`)
-  return [...configErrors, ...userErrors]
-})
 
 const usageAggregatePreviewCounts = computed(() => {
   const aggregates = props.aggregateImportPreview?.user_data.usage_aggregates

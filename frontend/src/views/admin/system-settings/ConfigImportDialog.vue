@@ -63,13 +63,13 @@
             已存在的配置将被导入的配置覆盖
           </template>
           <template v-else>
-            遇到冲突时停止导入，已写入的数据会保留
+            遇到冲突时停止导入，整次导入都会撤销
           </template>
         </p>
       </div>
 
       <p class="text-xs text-muted-foreground">
-        相同的 API Keys 按所选模式跳过或覆盖。仅支持当前版本导出的配置文件。
+        相同的 API Keys 按所选模式处理。任何数据导入失败时，整次导入都会撤销。
       </p>
 
       <div
@@ -187,23 +187,6 @@
           </p>
         </div>
       </div>
-
-      <div
-        v-if="importResult.stats.errors.length > 0"
-        class="p-3 bg-destructive/10 rounded-lg"
-      >
-        <p class="font-medium text-destructive mb-2">
-          警告信息
-        </p>
-        <ul class="text-sm text-destructive space-y-1">
-          <li
-            v-for="(err, index) in importResult.stats.errors"
-            :key="index"
-          >
-            {{ err }}
-          </li>
-        </ul>
-      </div>
     </div>
 
     <template #footer>
@@ -223,13 +206,13 @@ import SelectValue from '@/components/ui/select-value.vue'
 import SelectContent from '@/components/ui/select-content.vue'
 import SelectItem from '@/components/ui/select-item.vue'
 import { Dialog } from '@/components/ui'
-import type { ConfigExportData, ConfigImportResponse } from '@/api/admin'
+import type { ConfigImportData, ConfigImportResponse } from '@/api/admin'
 import type { ImportProgressState } from './composables/useConfigExportImport'
 
 defineProps<{
   importDialogOpen: boolean
   importResultDialogOpen: boolean
-  importPreview: ConfigExportData | null
+  importPreview: ConfigImportData | null
   importResult: ConfigImportResponse | null
   mergeMode: 'skip' | 'overwrite' | 'error'
   mergeModeSelectOpen: boolean

@@ -366,6 +366,8 @@ pub struct StoredAuthApiKeyExportRecord {
     pub force_capabilities: Option<serde_json::Value>,
     pub feature_settings: Option<serde_json::Value>,
     pub is_active: bool,
+    #[serde(default)]
+    pub is_locked: bool,
     pub expires_at_unix_secs: Option<u64>,
     pub auto_delete_on_expiry: bool,
     pub total_requests: u64,
@@ -438,6 +440,7 @@ impl StoredAuthApiKeyExportRecord {
             force_capabilities,
             feature_settings: None,
             is_active,
+            is_locked: false,
             expires_at_unix_secs: expires_at_unix_secs
                 .map(|value| parse_u64_i64(value, "api_keys.expires_at_unix_secs"))
                 .transpose()?,
@@ -472,6 +475,11 @@ impl StoredAuthApiKeyExportRecord {
 
     pub fn with_feature_settings(mut self, feature_settings: Option<serde_json::Value>) -> Self {
         self.feature_settings = normalize_optional_json(feature_settings);
+        self
+    }
+
+    pub fn with_locked(mut self, is_locked: bool) -> Self {
+        self.is_locked = is_locked;
         self
     }
 

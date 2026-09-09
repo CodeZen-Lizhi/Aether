@@ -3,11 +3,24 @@ use crate::api::ai::admin_endpoint_signature_parts;
 use crate::handlers::admin::request::AdminAppState;
 use crate::handlers::shared::decrypt_catalog_secret_with_fallbacks;
 use crate::GatewayError;
-pub(crate) use aether_admin::system::ADMIN_SYSTEM_CONFIG_EXPORT_VERSION;
 use aether_admin::system::ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS;
 use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogEndpoint;
 
 pub(crate) const ADMIN_SYSTEM_EXPORT_PAGE_LIMIT: usize = 10_000;
+
+pub(crate) fn read_admin_backup_string_list(
+    value: Option<&serde_json::Value>,
+    field: &str,
+) -> Result<Option<Vec<String>>, GatewayError> {
+    match value {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value::<Vec<String>>(value.clone())
+            .map(Some)
+            .map_err(|_| {
+                GatewayError::Internal(format!("{field} 不是有效的字符串数组，无法完整导出"))
+            }),
+    }
+}
 
 pub(crate) fn decrypt_admin_system_export_secret(
     state: &AdminAppState<'_>,
@@ -29,13 +42,27 @@ pub(super) fn normalize_admin_system_export_api_formats(
 pub(super) fn resolve_admin_system_export_key_api_formats(
     raw_formats: Option<&serde_json::Value>,
     provider_endpoint_formats: &[String],
-) -> Vec<String> {
-    aether_admin::system::resolve_admin_system_export_key_api_formats(
-        raw_formats,
-        provider_endpoint_formats,
-        |value| {
-            admin_endpoint_signature_parts(value).map(|(signature, _, _)| signature.to_string())
-        },
+) -> Result<Vec<String>, GatewayError> {
+    if let Some(formats) =
+        read_admin_backup_string_list(raw_formats, "provider_api_keys.api_formats")?
+    {
+        if formats
+            .iter()
+            .any(|format| admin_endpoint_signature_parts(format.trim()).is_none())
+        {
+            return Err(GatewayError::Internal(
+                "渠道 Key 包含无法导出的 API 格式".to_string(),
+            ));
+        }
+    }
+    Ok(
+        aether_admin::system::resolve_admin_system_export_key_api_formats(
+            raw_formats,
+            provider_endpoint_formats,
+            |value| {
+                admin_endpoint_signature_parts(value).map(|(signature, _, _)| signature.to_string())
+            },
+        ),
     )
 }
 

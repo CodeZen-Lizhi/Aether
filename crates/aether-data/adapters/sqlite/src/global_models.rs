@@ -13,7 +13,7 @@ use aether_data_contracts::repository::global_models::{
 use aether_data_contracts::DataLayerError;
 
 use crate::error::SqlResultExt;
-use crate::{sqlite_optional_real, SqlitePool};
+use crate::{sqlite_optional_real, SqliteConnectionSource};
 
 const LIST_PUBLIC_GLOBAL_MODELS_PREFIX: &str = r#"
 SELECT
@@ -167,12 +167,14 @@ WHERE provider_id IN (
 
 #[derive(Debug, Clone)]
 pub struct SqliteGlobalModelReadRepository {
-    pool: SqlitePool,
+    source: SqliteConnectionSource,
 }
 
 impl SqliteGlobalModelReadRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: impl Into<SqliteConnectionSource>) -> Self {
+        Self {
+            source: pool.into(),
+        }
     }
 
     pub async fn create_admin_provider_model(
@@ -227,7 +229,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         .bind(optional_json_to_string(&record.config, "models.config")?)
         .bind(now as i64)
         .bind(now as i64)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -284,7 +286,7 @@ WHERE id = ?
         .bind(now as i64)
         .bind(&record.id)
         .bind(&record.provider_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -310,7 +312,7 @@ WHERE provider_id = ?
         )
         .bind(provider_id)
         .bind(model_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -362,7 +364,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         )?)
         .bind(now as i64)
         .bind(now as i64)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -408,7 +410,7 @@ WHERE id = ?
         .bind(usage_count)
         .bind(now as i64)
         .bind(&record.id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -423,7 +425,10 @@ WHERE id = ?
         &self,
         global_model_id: &str,
     ) -> Result<bool, DataLayerError> {
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
 
         sqlx::query(
             r#"
@@ -448,6 +453,7 @@ WHERE id = ?
         .map_sql_err()?;
 
         tx.commit().await.map_sql_err()?;
+        drop(connection);
 
         Ok(deleted.rows_affected() > 0)
     }
@@ -463,7 +469,7 @@ impl GlobalModelReadRepository for SqliteGlobalModelReadRepository {
         apply_public_model_filters(&mut count_builder, query);
         let count_row = count_builder
             .build()
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         let total = count_row
@@ -480,7 +486,7 @@ impl GlobalModelReadRepository for SqliteGlobalModelReadRepository {
             .push_bind(query.offset as i64);
         let rows = list_builder
             .build()
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         let items = rows
@@ -513,7 +519,7 @@ LIMIT 1
             "#,
         )
         .bind(model_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -531,7 +537,11 @@ LIMIT 1
             .push_bind(query.limit as i64)
             .push(" OFFSET ")
             .push_bind(query.offset as i64);
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_public_catalog_model_row).collect()
     }
 
@@ -548,7 +558,11 @@ LIMIT 1
         builder
             .push(" ORDER BY p.created_at ASC, p.id ASC, p.name ASC, COALESCE(gm.name, m.provider_model_name) ASC, m.id ASC LIMIT ")
             .push_bind(query.limit as i64);
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_public_catalog_model_row).collect()
     }
 
@@ -560,7 +574,7 @@ LIMIT 1
         apply_admin_global_model_filters(&mut count_builder, query);
         let count_row = count_builder
             .build()
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         let total = count_row
@@ -577,7 +591,7 @@ LIMIT 1
             .push_bind(query.offset as i64);
         let rows = list_builder
             .build()
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         let items = rows
@@ -603,7 +617,11 @@ LIMIT 1
             .push_bind(query.limit as i64)
             .push(" OFFSET ")
             .push_bind(query.offset as i64);
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_admin_provider_model_row).collect()
     }
 
@@ -621,7 +639,7 @@ ORDER BY gm.name ASC, m.created_at DESC, m.id ASC
             "#
         ))
         .bind(provider_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_admin_provider_model_row).collect()
@@ -642,7 +660,7 @@ LIMIT 1
         ))
         .bind(provider_id)
         .bind(model_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -661,7 +679,7 @@ LIMIT 1
             "#
         ))
         .bind(global_model_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -680,7 +698,7 @@ LIMIT 1
             "#
         ))
         .bind(model_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -699,7 +717,7 @@ ORDER BY m.created_at DESC, m.id ASC
             "#
         ))
         .bind(global_model_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_admin_provider_model_row).collect()
@@ -718,7 +736,11 @@ ORDER BY m.created_at DESC, m.id ASC
             provider_ids,
             ")\nGROUP BY provider_id\nORDER BY provider_id ASC",
         );
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_provider_model_stats_row).collect()
     }
 
@@ -735,7 +757,11 @@ ORDER BY m.created_at DESC, m.id ASC
             provider_ids,
             ")\nAND is_active = 1\nAND global_model_id IS NOT NULL\nORDER BY provider_id ASC, global_model_id ASC",
         );
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_active_global_model_row).collect()
     }
 }

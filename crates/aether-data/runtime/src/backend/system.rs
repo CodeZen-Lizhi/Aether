@@ -10,7 +10,11 @@ use crate::repository::system::{
 use crate::DataLayerError;
 
 #[cfg(feature = "sqlite")]
+mod backup;
+#[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "sqlite")]
+pub use backup::AdminBackupSession;
 
 const ADMIN_CONFIG_PURGE_TABLES: &[&str] = &[
     "api_key_provider_mappings",

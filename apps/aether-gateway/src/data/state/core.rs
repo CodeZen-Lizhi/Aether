@@ -679,6 +679,28 @@ impl GatewayDataState {
         }
     }
 
+    pub(crate) async fn begin_admin_backup(
+        &self,
+        write: bool,
+    ) -> Result<aether_data::AdminBackupSession, DataLayerError> {
+        let backend = self
+            .backends
+            .as_ref()
+            .and_then(DataBackends::sqlite)
+            .ok_or_else(|| {
+                DataLayerError::InvalidConfiguration("备份需要可用的 SQLite 数据库".to_string())
+            })?;
+        backend.begin_admin_backup(write).await
+    }
+
+    pub(crate) fn clear_admin_backup_caches(&self) {
+        self.system_config_value_cache.clear();
+        self.clear_auth_api_key_read_cache();
+        self.clear_minimal_candidate_selection_cache();
+        self.clear_routing_group_cache();
+        self.clear_provider_catalog_cache();
+    }
+
     pub(crate) fn has_request_candidate_reader(&self) -> bool {
         self.request_candidate_reader.is_some()
     }

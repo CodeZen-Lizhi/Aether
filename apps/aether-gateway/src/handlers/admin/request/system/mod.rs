@@ -4,12 +4,13 @@ use crate::GatewayError;
 mod adaptive;
 mod backup_keys;
 mod backup_proxy;
+mod backup_state;
 mod export;
 mod import;
 mod proxy_nodes;
 mod user_backup;
 
-const ADMIN_SYSTEM_DATA_EXPORT_VERSION: &str = "2.0";
+pub(crate) use backup_state::AdminBackupState;
 
 impl<'a> AdminAppState<'a> {
     pub(crate) async fn upsert_system_config_json_value(

@@ -16,7 +16,7 @@ use aether_data_contracts::DataLayerError;
 use aether_data_query::{push_eq, push_limit, WhereClause};
 
 use crate::error::SqlResultExt;
-use crate::SqlitePool;
+use crate::SqliteConnectionSource;
 
 fn log_reported_tunnel_error_event(
     node_id: &str,
@@ -42,12 +42,14 @@ fn log_reported_tunnel_error_event(
 
 #[derive(Debug, Clone)]
 pub struct SqliteProxyNodeReadRepository {
-    pool: SqlitePool,
+    source: SqliteConnectionSource,
 }
 
 impl SqliteProxyNodeReadRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: impl Into<SqliteConnectionSource>) -> Self {
+        Self {
+            source: pool.into(),
+        }
     }
 
     async fn upsert_node(&self, node: &StoredProxyNode) -> Result<(), DataLayerError> {
@@ -137,7 +139,7 @@ ON CONFLICT(id) DO UPDATE SET
             &node.proxy_metadata,
             "proxy_nodes.proxy_metadata",
         )?)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(())
@@ -156,7 +158,7 @@ ON CONFLICT(id) DO UPDATE SET
             .bind(ip)
             .bind(port)
             .bind(excluding_node_id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
         } else {
@@ -165,7 +167,7 @@ ON CONFLICT(id) DO UPDATE SET
             ))
             .bind(ip)
             .bind(port)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
         };
@@ -194,7 +196,7 @@ VALUES (?, ?, ?, ?, ?)
             "proxy_node_events.event_metadata",
         )?)
         .bind(created_at_unix_secs.unwrap_or_else(current_unix_secs) as i64)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(())
@@ -258,7 +260,7 @@ ON CONFLICT(node_id, bucket_start_unix_secs) DO UPDATE SET
         .bind(sample.ws_out_bytes_delta)
         .bind(sample.ws_in_frames_delta)
         .bind(sample.ws_out_frames_delta)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(())
@@ -378,7 +380,11 @@ impl ProxyNodeReadRepository for SqliteProxyNodeReadRepository {
     async fn list_proxy_nodes(&self) -> Result<Vec<StoredProxyNode>, DataLayerError> {
         let mut builder = QueryBuilder::<Sqlite>::new(PROXY_NODE_COLUMNS);
         builder.push(" ORDER BY name ASC, id ASC");
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_proxy_node_row).collect()
     }
 
@@ -392,7 +398,7 @@ impl ProxyNodeReadRepository for SqliteProxyNodeReadRepository {
         push_limit(&mut builder, 1);
         let row = builder
             .build()
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         row.as_ref().map(map_proxy_node_row).transpose()
@@ -413,7 +419,11 @@ impl ProxyNodeReadRepository for SqliteProxyNodeReadRepository {
         );
         builder.push(" ORDER BY created_at DESC, id DESC");
         push_limit(&mut builder, i64::try_from(limit).unwrap_or(i64::MAX));
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_proxy_node_event_row).collect()
     }
 
@@ -451,7 +461,11 @@ impl ProxyNodeReadRepository for SqliteProxyNodeReadRepository {
         }
         builder.push(" ORDER BY created_at DESC, id DESC");
         push_limit(&mut builder, i64::try_from(query.limit).unwrap_or(i64::MAX));
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_proxy_node_event_row).collect()
     }
 
@@ -497,7 +511,7 @@ LIMIT ?
         .bind(i64::try_from(from_unix_secs).unwrap_or(i64::MAX))
         .bind(i64::try_from(to_unix_secs).unwrap_or(i64::MAX))
         .bind(i64::try_from(limit).unwrap_or(i64::MAX))
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_proxy_node_metric_row).collect()
@@ -542,7 +556,7 @@ LIMIT ?
         .bind(i64::try_from(from_unix_secs).unwrap_or(i64::MAX))
         .bind(i64::try_from(to_unix_secs).unwrap_or(i64::MAX))
         .bind(i64::try_from(limit).unwrap_or(i64::MAX))
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_proxy_fleet_metric_row).collect()
@@ -577,7 +591,7 @@ WHERE is_manual = 0
         )
         .bind(now)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(result.rows_affected() as usize)
@@ -698,7 +712,7 @@ WHERE is_manual = 0
         ))
         .bind(&mutation.ip)
         .bind(mutation.port)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -996,22 +1010,22 @@ WHERE is_manual = 0
         if existing.is_some() {
             sqlx::query("DELETE FROM proxy_node_events WHERE node_id = ?")
                 .bind(node_id)
-                .execute(&self.pool)
+                .execute(&mut *self.source.acquire().await.map_sql_err()?)
                 .await
                 .map_sql_err()?;
             sqlx::query("DELETE FROM proxy_node_metrics_1m WHERE node_id = ?")
                 .bind(node_id)
-                .execute(&self.pool)
+                .execute(&mut *self.source.acquire().await.map_sql_err()?)
                 .await
                 .map_sql_err()?;
             sqlx::query("DELETE FROM proxy_node_metrics_1h WHERE node_id = ?")
                 .bind(node_id)
-                .execute(&self.pool)
+                .execute(&mut *self.source.acquire().await.map_sql_err()?)
                 .await
                 .map_sql_err()?;
             sqlx::query("DELETE FROM proxy_nodes WHERE id = ?")
                 .bind(node_id)
-                .execute(&self.pool)
+                .execute(&mut *self.source.acquire().await.map_sql_err()?)
                 .await
                 .map_sql_err()?;
         }
@@ -1087,7 +1101,7 @@ WHERE (node_id, bucket_start_unix_secs) IN (
         )
         .bind(i64::try_from(retain_1m_from_unix_secs).unwrap_or(i64::MAX))
         .bind(delete_limit_i64)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected() as usize;
@@ -1106,7 +1120,7 @@ WHERE (node_id, bucket_start_unix_secs) IN (
         )
         .bind(i64::try_from(retain_1h_from_unix_secs).unwrap_or(i64::MAX))
         .bind(delete_limit_i64)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected() as usize;

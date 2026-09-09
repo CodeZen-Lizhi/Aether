@@ -19,7 +19,22 @@ pub(crate) async fn build_admin_update_provider_record(
     existing: &StoredProviderCatalogProvider,
     patch: AdminProviderUpdatePatch,
 ) -> Result<StoredProviderCatalogProvider, String> {
-    let state = state.as_ref();
+    let providers = if patch.contains("name") {
+        state
+            .list_provider_catalog_providers(false)
+            .await
+            .map_err(|err| format!("{err:?}"))?
+    } else {
+        Vec::new()
+    };
+    build_admin_update_provider_record_from_existing(&providers, existing, patch)
+}
+
+pub(crate) fn build_admin_update_provider_record_from_existing(
+    existing_providers: &[StoredProviderCatalogProvider],
+    existing: &StoredProviderCatalogProvider,
+    patch: AdminProviderUpdatePatch,
+) -> Result<StoredProviderCatalogProvider, String> {
     let mut updated = existing.clone();
     let (fields, payload) = patch.into_parts();
 
@@ -35,11 +50,8 @@ pub(crate) async fn build_admin_update_provider_record(
         if trimmed.is_empty() {
             return Err("name 不能为空".to_string());
         }
-        let duplicate = state
-            .list_provider_catalog_providers(false)
-            .await
-            .map_err(|err| format!("{err:?}"))?
-            .into_iter()
+        let duplicate = existing_providers
+            .iter()
             .any(|provider| provider.id != existing.id && provider.name == trimmed);
         if duplicate {
             return Err(format!("提供商名称 '{trimmed}' 已存在"));

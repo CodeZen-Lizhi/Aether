@@ -6,6 +6,11 @@ Use this contract when changing data backend features, gateway database argument
 schema maintenance, or JSONL export/import/copy. Executable SQLite migrations are
 the schema authority; logical/generated SQL also contains historical shapes.
 
+The system-settings administrator JSON format has a separate
+[backup contract](../../aether-gateway/backend/admin-json-backup.md). It uses
+`AdminBackupSession` and a shared `SqliteConnectionSource` for an entire operation;
+the CLI JSONL version metadata below does not apply to those UI documents.
+
 ## 2. Signatures
 
 - `export_database_jsonl(SqlDatabaseConfig, Vec<ExportDomain>, u64) -> Result<String, DataLayerError>`

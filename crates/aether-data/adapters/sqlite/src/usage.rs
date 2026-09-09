@@ -2086,6 +2086,18 @@ LEFT JOIN usage_settlement_snapshots AS settlement
         if user_ids.is_empty() {
             return Ok(Vec::new());
         }
+        let mut connection = self.pool.acquire().await.map_sql_err()?;
+        Self::summarize_usage_totals_by_user_ids_on(&mut connection, user_ids).await
+    }
+
+    /// Reads both persisted aggregates and remaining usage on the same connection.
+    pub async fn summarize_usage_totals_by_user_ids_on(
+        connection: &mut sqlx::SqliteConnection,
+        user_ids: &[String],
+    ) -> Result<Vec<StoredUsageUserTotals>, DataLayerError> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let unique_user_ids = user_ids
             .iter()
@@ -2118,7 +2130,7 @@ WHERE user_id IN (
 
         let aggregate_rows = aggregate_builder
             .build()
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *connection)
             .await
             .map_sql_err()?;
         for row in aggregate_rows {
@@ -2171,7 +2183,11 @@ ORDER BY "usage".user_id ASC
 "#,
         );
 
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *connection)
+            .await
+            .map_sql_err()?;
         for row in rows {
             let user_id: String = row.try_get("user_id").map_sql_err()?;
             let entry = totals

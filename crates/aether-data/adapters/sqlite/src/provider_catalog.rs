@@ -20,7 +20,7 @@ use aether_data_contracts::repository::provider_catalog::{
 use aether_data_contracts::DataLayerError;
 
 use crate::error::SqlResultExt;
-use crate::{sqlite_optional_real, SqlitePool};
+use crate::{sqlite_optional_real, SqliteConnectionSource};
 use aether_data_query::{
     push_ci_contains_any, push_eq, push_in, push_limit_offset, push_optional_eq, SqlDialect,
     WhereClause,
@@ -300,12 +300,14 @@ WHERE provider_id IN (
 
 #[derive(Debug, Clone)]
 pub struct SqliteProviderCatalogReadRepository {
-    pool: SqlitePool,
+    source: SqliteConnectionSource,
 }
 
 impl SqliteProviderCatalogReadRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: impl Into<SqliteConnectionSource>) -> Self {
+        Self {
+            source: pool.into(),
+        }
     }
 
     pub async fn list_providers_by_ids(
@@ -322,7 +324,7 @@ impl SqliteProviderCatalogReadRepository {
             " ORDER BY name ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_provider_row).collect()
@@ -339,7 +341,11 @@ impl SqliteProviderCatalogReadRepository {
             push_eq(&mut builder, &mut where_clause, "is_active", true);
         }
         builder.push(" ORDER BY created_at ASC, id ASC");
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        let rows = builder
+            .build()
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
         rows.iter().map(map_provider_row).collect()
     }
 
@@ -357,7 +363,7 @@ impl SqliteProviderCatalogReadRepository {
             " ORDER BY api_format ASC, id ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_endpoint_row).collect()
@@ -377,7 +383,7 @@ impl SqliteProviderCatalogReadRepository {
             " ORDER BY provider_id ASC, api_format ASC, id ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_endpoint_row).collect()
@@ -397,7 +403,7 @@ impl SqliteProviderCatalogReadRepository {
             " ORDER BY name ASC, id ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_key_row).collect()
@@ -417,7 +423,7 @@ impl SqliteProviderCatalogReadRepository {
             " ORDER BY provider_id ASC, name ASC, id ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_key_row).collect()
@@ -437,7 +443,7 @@ impl SqliteProviderCatalogReadRepository {
             " ORDER BY provider_id ASC, id ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_key_row).collect()
@@ -457,7 +463,7 @@ impl SqliteProviderCatalogReadRepository {
             " ORDER BY provider_id ASC, id ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_key_maintenance_summary_row).collect()
@@ -508,7 +514,7 @@ impl SqliteProviderCatalogReadRepository {
         apply_key_page_filters(&mut count_builder, &mut count_where, query);
         let total = count_builder
             .build_query_scalar::<i64>()
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .max(0) as usize;
@@ -521,7 +527,7 @@ impl SqliteProviderCatalogReadRepository {
         push_limit_offset(&mut list_builder, limit, offset);
         let rows = list_builder
             .build()
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         let items = rows
@@ -546,7 +552,7 @@ impl SqliteProviderCatalogReadRepository {
             "\nGROUP BY provider_id\nORDER BY provider_id ASC",
         )
         .build()
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_key_stats_row).collect()
@@ -561,7 +567,10 @@ impl SqliteProviderCatalogReadRepository {
         let now = current_unix_secs();
         let created_at = provider.created_at_unix_ms.unwrap_or(now) as i64;
         let updated_at = provider.updated_at_unix_secs.unwrap_or(now) as i64;
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
 
         sqlx::query(
             r#"
@@ -619,6 +628,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         .map_sql_err()?;
 
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         self.reload_provider(&provider.id, "created").await
     }
 
@@ -693,7 +703,7 @@ WHERE id = ?
         )?)
         .bind(updated_at)
         .bind(&provider.id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -711,7 +721,7 @@ WHERE id = ?
         validate_non_empty(provider_id, "provider catalog provider_id")?;
         let rows_affected = sqlx::query("DELETE FROM providers WHERE id = ?")
             .bind(provider_id)
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -726,7 +736,10 @@ WHERE id = ?
         key_ids: &[String],
     ) -> Result<(), DataLayerError> {
         validate_non_empty(provider_id, "provider catalog provider_id")?;
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
 
         if provider_deleted {
             sqlx::query(
@@ -775,6 +788,7 @@ WHERE id = ?
         }
 
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         Ok(())
     }
 
@@ -827,7 +841,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         )?)
         .bind(endpoint.created_at_unix_ms.unwrap_or(now) as i64)
         .bind(endpoint.updated_at_unix_secs.unwrap_or(now) as i64)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
 
@@ -897,7 +911,7 @@ WHERE id = ?
         )?)
         .bind(updated_at)
         .bind(&endpoint.id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -915,7 +929,7 @@ WHERE id = ?
         validate_non_empty(endpoint_id, "provider catalog endpoint_id")?;
         let rows_affected = sqlx::query("DELETE FROM provider_endpoints WHERE id = ?")
             .bind(endpoint_id)
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -1062,7 +1076,7 @@ WHERE id = ?
             )?)
             .bind(key.created_at_unix_ms.unwrap_or(now) as i64)
             .bind(key.updated_at_unix_secs.unwrap_or(now) as i64)
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
 
@@ -1076,7 +1090,7 @@ WHERE id = ?
         validate_key(key)?;
         let updated_at = key.updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64;
         let rows_affected = key_update_query(key, updated_at)?
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -1162,7 +1176,7 @@ WHERE id = ?
         }
         let rows_affected = builder
             .build()
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -1181,7 +1195,10 @@ WHERE id = ?
         }
 
         let updated_at = current_unix_secs() as i64;
-        let mut transaction = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut transaction = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
         for key in keys {
             let key_updated_at = key.updated_at_unix_secs.unwrap_or(updated_at as u64) as i64;
             let rows_affected = key_update_query(key, key_updated_at)?
@@ -1197,6 +1214,7 @@ WHERE id = ?
             }
         }
         transaction.commit().await.map_sql_err()?;
+        drop(connection);
         let key_ids = keys.iter().map(|key| key.id.clone()).collect::<Vec<_>>();
         let mut reloaded = self
             .list_keys_by_ids(&key_ids)
@@ -1220,7 +1238,7 @@ WHERE id = ?
         validate_non_empty(key_id, "provider catalog key_id")?;
         let rows_affected = sqlx::query("DELETE FROM provider_api_keys WHERE id = ?")
             .bind(key_id)
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -1303,7 +1321,7 @@ WHERE id = ?
         }
         let rows_affected = builder
             .build()
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -1330,7 +1348,7 @@ WHERE id = ?
         )?)
         .bind(updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1374,7 +1392,7 @@ WHERE id = ?
         .bind(value_json)
         .bind(updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1408,7 +1426,7 @@ WHERE id = ?
         .bind(last_models_fetch_error)
         .bind(updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1450,7 +1468,10 @@ WHERE id = ?
             })
             .collect::<Result<Vec<_>, DataLayerError>>()?;
         let updated_at = updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64;
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
         let rows_affected = sqlx::query(
             r#"
 UPDATE provider_api_keys
@@ -1492,6 +1513,7 @@ WHERE id = ?
             .map_sql_err()?;
         }
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         Ok(true)
     }
 
@@ -1509,7 +1531,7 @@ WHERE id = ?
         )
         .bind(current_unix_secs() as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1540,7 +1562,7 @@ WHERE id = ?
         )?)
         .bind(current_unix_secs() as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1572,7 +1594,7 @@ WHERE id = ?
         .bind(encrypted_auth_config_update)
         .bind(updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1778,7 +1800,7 @@ WHERE id = ?
         }
         let rows_affected = builder
             .build()
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -1811,7 +1833,7 @@ WHERE id = ?
         )?)
         .bind(current_unix_secs() as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1829,7 +1851,7 @@ WHERE id = ?
         )
         .bind(current_unix_secs() as i64)
         .bind(key_id)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();
@@ -1928,7 +1950,7 @@ WHERE id = ?
         }
         let rows_affected = builder
             .build()
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -2003,7 +2025,7 @@ WHERE id = ?
         }
         let rows_affected = builder
             .build()
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -2034,7 +2056,7 @@ WHERE id = ?
             .push_bind(&update.key_id);
         let rows_affected = builder
             .build()
-            .execute(&self.pool)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?
             .rows_affected();
@@ -2076,7 +2098,7 @@ WHERE id = ?
         )?)
         .bind(update.expected_encrypted_auth_config.as_deref())
         .bind(update.expected_encrypted_auth_config.as_deref())
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?
         .rows_affected();

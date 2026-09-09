@@ -6,7 +6,7 @@ use aether_data_contracts::repository::routing_profiles::*;
 use aether_data_contracts::DataLayerError;
 
 use crate::error::SqlResultExt;
-use crate::pool::SqlitePool;
+use crate::SqliteConnectionSource;
 
 const ROUTING_GROUP_SELECT: &str = r#"
 SELECT
@@ -49,12 +49,14 @@ FROM routing_group_versions
 
 #[derive(Debug, Clone)]
 pub struct SqliteRoutingGroupRepository {
-    pool: SqlitePool,
+    source: SqliteConnectionSource,
 }
 
 impl SqliteRoutingGroupRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: impl Into<SqliteConnectionSource>) -> Self {
+        Self {
+            source: pool.into(),
+        }
     }
 }
 
@@ -62,7 +64,7 @@ impl SqliteRoutingGroupRepository {
 impl RoutingGroupReadRepository for SqliteRoutingGroupRepository {
     async fn list_routing_groups(&self) -> Result<Vec<StoredRoutingGroup>, DataLayerError> {
         let rows = sqlx::query(&format!("{ROUTING_GROUP_SELECT} ORDER BY name ASC, id ASC"))
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         rows.iter().map(map_group_row).collect()
@@ -77,20 +79,20 @@ impl RoutingGroupReadRepository for SqliteRoutingGroupRepository {
                 "{ROUTING_GROUP_SELECT} WHERE id = ? LIMIT 1"
             ))
             .bind(id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?,
             RoutingGroupLookupKey::Name(name) => sqlx::query(&format!(
                 "{ROUTING_GROUP_SELECT} WHERE name = ? LIMIT 1"
             ))
             .bind(name)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?,
             RoutingGroupLookupKey::SystemDefault => sqlx::query(&format!(
                 "{ROUTING_GROUP_SELECT} WHERE is_system_default = 1 AND enabled = 1 ORDER BY updated_at DESC, id ASC LIMIT 1"
             ))
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?,
         };
@@ -116,7 +118,7 @@ ORDER BY created_at ASC, id ASC
         .bind(query.subject_type.map(binding_subject_to_database))
         .bind(query.subject_id.as_deref())
         .bind(query.subject_id.as_deref())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_binding_row).collect()
@@ -124,7 +126,7 @@ ORDER BY created_at ASC, id ASC
 
     async fn has_any_routing_group_binding(&self) -> Result<bool, DataLayerError> {
         let row = sqlx::query("SELECT 1 FROM routing_group_bindings LIMIT 1")
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *self.source.acquire().await.map_sql_err()?)
             .await
             .map_sql_err()?;
         Ok(row.is_some())
@@ -138,7 +140,7 @@ ORDER BY created_at ASC, id ASC
             "{ROUTING_GROUP_VERSION_SELECT} WHERE group_id = ? ORDER BY version DESC, created_at DESC, id ASC"
         ))
         .bind(group_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         rows.iter().map(map_version_row).collect()
@@ -152,7 +154,10 @@ impl RoutingGroupWriteRepository for SqliteRoutingGroupRepository {
         record: CreateRoutingGroupRecord,
     ) -> Result<StoredRoutingGroup, DataLayerError> {
         let group = StoredRoutingGroup::new(record)?;
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
         sqlx::query("UPDATE routing_groups SET is_system_default = is_system_default WHERE 0")
             .execute(&mut *tx)
             .await
@@ -191,6 +196,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         .await
         .map_sql_err()?;
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         Ok(group)
     }
 
@@ -199,7 +205,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         id: &str,
         patch: UpdateRoutingGroupRecord,
     ) -> Result<Option<StoredRoutingGroup>, DataLayerError> {
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
         sqlx::query("UPDATE routing_groups SET is_system_default = is_system_default WHERE 0")
             .execute(&mut *tx)
             .await
@@ -252,11 +261,15 @@ WHERE id = ?
         .await
         .map_sql_err()?;
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         Ok(Some(group))
     }
 
     async fn delete_routing_group(&self, id: &str) -> Result<bool, DataLayerError> {
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
         sqlx::query("DELETE FROM routing_group_bindings WHERE group_id = ?")
             .bind(id)
             .execute(&mut *tx)
@@ -274,6 +287,7 @@ WHERE id = ?
             .map_sql_err()?
             .rows_affected();
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         Ok(rows_affected > 0)
     }
 
@@ -282,7 +296,10 @@ WHERE id = ?
         record: CreateRoutingGroupBindingRecord,
     ) -> Result<StoredRoutingGroupBinding, DataLayerError> {
         let binding = StoredRoutingGroupBinding::new(record)?;
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
         sqlx::query("UPDATE routing_group_bindings SET is_default = is_default WHERE 0")
             .execute(&mut *tx)
             .await
@@ -322,6 +339,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         .await
         .map_sql_err()?;
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         Ok(binding)
     }
 
@@ -329,7 +347,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         Ok(
             sqlx::query("DELETE FROM routing_group_bindings WHERE id = ?")
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&mut *self.source.acquire().await.map_sql_err()?)
                 .await
                 .map_sql_err()?
                 .rows_affected()
@@ -342,7 +360,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         id: &str,
         patch: UpdateRoutingGroupBindingRecord,
     ) -> Result<Option<StoredRoutingGroupBinding>, DataLayerError> {
-        let mut tx = self.pool.begin().await.map_sql_err()?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
         sqlx::query("UPDATE routing_group_bindings SET is_default = is_default WHERE 0")
             .execute(&mut *tx)
             .await
@@ -399,6 +420,7 @@ WHERE id = ?
         .await
         .map_sql_err()?;
         tx.commit().await.map_sql_err()?;
+        drop(connection);
         Ok(Some(binding))
     }
 
@@ -424,7 +446,7 @@ VALUES (?, ?, ?, ?, ?, ?)
         )?)
         .bind(version.created_at)
         .bind(&version.created_by)
-        .execute(&self.pool)
+        .execute(&mut *self.source.acquire().await.map_sql_err()?)
         .await
         .map_sql_err()?;
         Ok(version)
