@@ -996,3 +996,30 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 36: 模型映射添加交互调整
+<!-- trellis-session: v=2 fp=0031b4a5b219150a -->
+
+**Date**: 2026-09-09
+**Task**: 模型映射添加交互调整
+**Branch**: `slim-personal`
+
+### Summary
+
+移除模型映射页的单条添加入口；批量映射全部保存成功后自动关闭弹窗，保存期间禁用编辑；失败时保留未保存项并支持重试。同步成功提示的英文翻译并补充回归验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d3207c3fc` | fix: 简化模型映射添加并在保存成功后关闭弹窗 |
+
+### Testing
+
+- [OK] 模型映射弹窗、映射页和 i18n 相关 14 项测试通过，修复前已复现保存成功后弹窗未关闭。
+- [OK] npm run type-check 通过；变更文件 ESLint 为 0 错误、1 条既有 any 类型警告；git diff --check 通过。
+
+### Status
+
+[OK] **Completed**

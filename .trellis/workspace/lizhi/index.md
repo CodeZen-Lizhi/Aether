@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-09-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~998 | Active |
+| `journal-1.md` | ~1025 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-09-09 | 模型映射添加交互调整 | `d3207c3fc` | `slim-personal` |
 | 35 | 2026-09-09 | 完成上游修复合并与推送收尾 | `1cc350828efe24ba12513e5b57ab8ac3819cb0f1` | `slim-personal` |
 | 34 | 2026-09-09 | 记录上游修复提交与合并依据 | `1cc350828efe24ba12513e5b57ab8ac3819cb0f1` | `codex/upstream-bugfix-backport` |
 | 33 | 2026-09-09 | 移植上游心跳与传输诊断修复 | - | `codex/upstream-bugfix-backport` |
