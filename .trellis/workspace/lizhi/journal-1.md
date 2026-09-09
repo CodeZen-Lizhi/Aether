@@ -1053,3 +1053,89 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 38: 修复完整备份代理显示和渠道信息恢复
+<!-- trellis-session: v=2 fp=d181dcda4a3ac3ee -->
+
+**Date**: 2026-09-09
+**Task**: 修复完整备份代理显示和渠道信息恢复
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+修复导入后代理列表缓存和默认代理引用；补齐渠道元数据、状态与用量，保持原子回滚。140 项测试及随包运行检查通过；两分支已同步 push，更新的 arm64 安装包已交付 Downloads。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bbab15f05` | 修复备份导入后代理列表和系统设置未刷新 |
+| `8670776fc` | 补齐完整备份渠道信息并修复默认代理引用 |
+
+### Testing
+
+- [OK] 前端 76 + 网关 API 12 + 网关备份 14 + 管理契约 32 + SQLite 事务 6 = 140 项通过
+- [OK] 签名、DMG 内容及临时数据库随包验收通过
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 39: 修复批量映射提示和完整错误展示
+<!-- trellis-session: v=2 fp=d76f4694cb9f9894 -->
+
+**Date**: 2026-09-09
+**Task**: 修复批量映射提示和完整错误展示
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+移除单条编辑过时指引；完整保留多 Key 查询、HTTP 和所有保存失败详情。179 项测试、类型检查、定向 ESLint 及宽窄屏实际交互通过，共用功能同步并 push 到两分支，交付经签名和隔离启动验证的 Aether_0.1.0_aarch64_66c40e951.dmg。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `66c40e951` | 修复批量映射过时提示与错误信息截断 |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 40: 窗口自适应与安装包交付
+<!-- trellis-session: v=2 fp=c0f46bb0d1269710 -->
+
+**Date**: 2026-09-10
+**Task**: 窗口自适应与安装包交付
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+管理页、列表和详情按容器宽度重排，消除横向滚动并隐藏滚动条；共用代码同步两个分支并交付新 macOS 安装包。
+
+### Main Changes
+
+- 表格归一化列宽，窄容器使用保留完整字段的卡片；请求头逐行对齐，长文本、价格输入和链路节点换行。
+- 共用前端 32 个文件在 codex/tauri-macos 与 slim-personal 一致，两分支已 push；客户端入口样式单独保留。
+- 安装包 Aether_0.1.0_aarch64_20260910_9b1501081.dmg 已放入 Downloads；响应式任务已归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0793abfd3` | 优化窗口自适应布局并消除横向滚动 |
+| `9b1501081` | 优化 macOS 客户端入口窗口布局 |
+| `a83d4a233` | 优化窗口自适应布局并消除横向滚动 |
+
+### Testing
+
+- [OK] 133 项相关测试、最终 49 项回归、类型检查、定向 ESLint 和 diff 检查通过。
+- [OK] 8 页面 × 4 尺寸与长内容交互验收通过，最小窗口为 840×620。
+- [OK] 包内资源、arm64 架构、系统库、ad-hoc 签名、DMG 与隔离网关生命周期全部通过；macOS 14+，未公证。
+
+### Status
+
+[OK] **Completed**

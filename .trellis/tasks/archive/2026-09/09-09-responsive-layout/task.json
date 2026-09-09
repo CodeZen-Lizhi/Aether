@@ -3,7 +3,7 @@
   "name": "responsive-layout",
   "title": "统一优化窗口自适应与无横向滚动布局",
   "description": "参考 CC Switch 的紧凑自适应布局，消除页面、表格、抽屉和弹窗的横向滚动，统一隐藏滚动条并保留纵向浏览；完成尺寸核验、两分支同步和客户端打包。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,16 +11,20 @@
   "creator": "lizhi",
   "assignee": "lizhi",
   "createdAt": "2026-09-09",
-  "completedAt": null,
+  "completedAt": "2026-09-10",
   "branch": "codex/tauri-macos",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "9b1501081df3339af00306e0d83063ff8bb2298f",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [],
-  "notes": "",
+  "relatedFiles": [
+    "frontend/src/style.css",
+    "frontend/src/features/usage/components/UsageRecordsTable.vue",
+    ".trellis/spec/frontend/index.md"
+  ],
+  "notes": "8 页面 × 4 尺寸、133 项相关测试、类型检查、lint、安装包与隔离生命周期通过；两个分支已同步 push。",
   "meta": {}
 }

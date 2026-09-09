@@ -34,4 +34,11 @@ frontend 类型检查、所有修改文件 ESLint、git diff --check 均通过�
 
 ## 分支与安装包
 
-待代码提交后记录共用提交、客户端独有提交、两个远端分支及本次安装包验证结果。
+- 共用功能提交：0793abfd3；macOS 客户端入口提交：9b1501081；slim-personal 同步提交：a83d4a233。两个分支已 push，本次 32 个共用前端文件内容一致；保留原有客户端专属差异。
+- 构建命令：npm --prefix apps/aether-desktop run build。构建及验包期间源码干净，构建提交为 9b1501081df3339af00306e0d83063ff8bb2298f。
+- 包内前端与本次 frontend/dist 完全一致，包含容器布局切换、完整错误换行和请求头共享行实现。DMG 挂载后的 117 个应用文件与构建产物一致，Applications 快捷入口存在。
+- codesign 深度严格校验、DMG 校验通过。网关和客户端均为 arm64，仅链接系统动态库；最低 macOS 14.0，ad-hoc 签名，未公证。
+- 使用包内网关与前端资源运行隔离 qa_lifecycle.py：供应商 / 端点 / 加密密钥 / 模型映射 / 客户端密钥、JSON / SSE 转发、会话刷新、配置导入导出、8 个管理路由均通过。stdin EOF、SIGTERM、父进程退出与数据持久化检查通过，无遗留网关进程。
+- 本次页面验收标签页已关闭、viewport 覆盖已恢复，临时 Vite / 网关服务已停止，组件验收 HTML 已移出仓库。
+- 安装包：`/Users/zhenglizhi/Downloads/Aether_0.1.0_aarch64_20260910_9b1501081.dmg`，31,616,747 bytes。
+- SHA-256：`ab7585626369fb4d16c8d946b81de42b8ce4fb307f0eeae20fc2a2cc1e65c6ee`。
