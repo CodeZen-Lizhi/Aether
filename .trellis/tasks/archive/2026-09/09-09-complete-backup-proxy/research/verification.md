@@ -27,4 +27,11 @@
 
 ## 收尾
 
-分支同步与安装包结果待追加。
+- 共 140 个范围内测试通过；客户端正式包额外通过独立运行验收。
+- 代码提交：`bbab15f05`、`8670776fc`；已同步到 slim-personal 的 `730742966`、`099bfae56` 并原子 push 两分支。
+- 比较修复前后两分支的完整差异（忽略 diff 行号和对象 ID），客户端专属差异完全一致，没有新增业务偏差。
+- 安装包：`/Users/zhenglizhi/Downloads/Aether_0.1.0_aarch64_8670776fc.dmg`，31,657,973 字节，arm64 / macOS 14+，本地 ad-hoc 签名，未 Apple 公证。
+- SHA256：`104bf44991e8065924856dab1adff0a8e9c155e7104d3a26c7d5db470369a31d`。
+- codesign 严格校验、DMG 校验、只读挂载内 117 个文件与构建 App 比对通过；系统库依赖和架构通过。
+- 随包正式网关在临时数据库通过配置往返、JSON/SSE、会话续期、八个管理路由、退出与持久化；正式导出包含新增渠道字段且无格式版本。随包前端也已包含节点刷新和缓存失效代码。
+- 构建与验收记录在 `/var/folders/fg/bzpd9ft96g976xqf_w4lwbrr0000gn/T/aether-backup-proxy-release-3txsm5ne/`；未启动或修改真实客户端的数据。
