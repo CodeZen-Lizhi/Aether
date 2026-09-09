@@ -1232,6 +1232,10 @@ pub struct UsageDashboardDailyBreakdownQuery {
 
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct StoredUsageDashboardDailyBreakdownRow {
+    /// Raw usage contributes to both totals and dimensions; retained rollups keep
+    /// them separate because model/provider rollups do not contain actual cost.
+    #[serde(default)]
+    pub kind: UsageDashboardDailyRowKind,
     pub date: String,
     pub model: String,
     pub provider: String,
@@ -1241,6 +1245,15 @@ pub struct StoredUsageDashboardDailyBreakdownRow {
     pub actual_total_cost_usd: f64,
     pub response_time_sum_ms: f64,
     pub response_time_samples: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageDashboardDailyRowKind {
+    #[default]
+    Usage,
+    Totals,
+    Breakdown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -21,12 +21,18 @@ vi.mock('@/api/announcements', () => ({
 
 vi.mock('@/components/charts/BarChart.vue', async () => {
   const { defineComponent, h } = await import('vue')
-  return { default: defineComponent({ name: 'BarChartStub', setup: () => () => h('div') }) }
+  return { default: defineComponent({
+    name: 'BarChartStub', props: { data: { type: Object, required: true } },
+    setup: props => () => h('div', { 'data-chart': 'bar', 'data-chart-data': JSON.stringify(props.data) }),
+  }) }
 })
 
 vi.mock('@/components/charts/DoughnutChart.vue', async () => {
   const { defineComponent, h } = await import('vue')
-  return { default: defineComponent({ name: 'DoughnutChartStub', setup: () => () => h('div') }) }
+  return { default: defineComponent({
+    name: 'DoughnutChartStub', props: { data: { type: Object, required: true } },
+    setup: props => () => h('div', { 'data-chart': 'doughnut', 'data-chart-data': JSON.stringify(props.data) }),
+  }) }
 })
 
 vi.mock('@/components/common', async () => {
@@ -128,6 +134,51 @@ afterEach(() => {
 })
 
 describe('Dashboard refresh controls', () => {
+  it('keeps real model names and marks missing historical costs separately', async () => {
+    dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
+    dashboardApiMocks.getDailyStats.mockResolvedValue({
+      daily_stats: [{
+        date: '2026-09-09', requests: 9, tokens: 37, cost: 1.25, actual_cost: 1.0,
+        avg_response_time: 1, unique_models: 1, unique_providers: 1,
+        model_breakdown: [{ model: 'gpt-model-one', requests: 4, tokens: 13, cost: 0.5 }],
+        unattributed_requests: 5, unattributed_cost: 0.75,
+      }],
+      model_summary: [],
+      provider_summary: [{ provider: 'Provider One', requests: 4, tokens: 13, cost: 0.5 }],
+      period: { start_date: '2026-09-09', end_date: '2026-09-09', days: 1 },
+    })
+    const root = mountDashboard()
+    await settle()
+    const bar = JSON.parse(root.querySelector('[data-chart="bar"]')!.getAttribute('data-chart-data')!)
+    const doughnut = JSON.parse(root.querySelector('[data-chart="doughnut"]')!.getAttribute('data-chart-data')!)
+    expect(bar.datasets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'gpt-model-one', data: [0.5] }),
+      expect.objectContaining({ label: '未保留模型明细', data: [0.75] }),
+    ]))
+    expect(doughnut.labels).toEqual(['Provider One', '未保留提供商明细'])
+    expect(doughnut.datasets[0].data).toEqual([0.5, 0.75])
+    expect(root.querySelector('[role="status"]')?.textContent).toContain('总请求和总费用已保留')
+  })
+
+  it('shows totals-only historical costs without inventing a supplier', async () => {
+    dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
+    dashboardApiMocks.getDailyStats.mockResolvedValue({
+      daily_stats: [{
+        date: '2026-09-09', requests: 9, tokens: 37, cost: 1.25, actual_cost: 1.0,
+        avg_response_time: 1, unique_models: 0, unique_providers: 0, model_breakdown: [],
+        unattributed_requests: 9, unattributed_cost: 1.25,
+      }],
+      model_summary: [], provider_summary: [],
+      period: { start_date: '2026-09-09', end_date: '2026-09-09', days: 1 },
+    })
+    const root = mountDashboard()
+    await settle()
+    const doughnut = JSON.parse(root.querySelector('[data-chart="doughnut"]')!.getAttribute('data-chart-data')!)
+    expect(doughnut.labels).toEqual(['未保留提供商明细'])
+    expect(doughnut.datasets[0].data).toEqual([1.25])
+    expect(root.textContent).not.toContain('aggregate')
+  })
+
   it('does not render or run automatic refresh', async () => {
     vi.useFakeTimers()
     dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })

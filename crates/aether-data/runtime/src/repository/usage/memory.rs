@@ -1659,6 +1659,7 @@ impl UsageReadRepository for InMemoryUsageReadRepository {
             .into_iter()
             .map(
                 |((date, model, provider), bucket)| StoredUsageDashboardDailyBreakdownRow {
+                    kind: Default::default(),
                     date,
                     model,
                     provider,

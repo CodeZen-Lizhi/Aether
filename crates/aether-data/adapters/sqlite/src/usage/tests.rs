@@ -5,9 +5,9 @@ use aether_data_contracts::repository::usage::{
     UsageAuditAggregationQuery, UsageAuditKeywordSearchQuery, UsageAuditListQuery,
     UsageAuditSummaryQuery, UsageBodyCaptureState, UsageBreakdownGroupBy,
     UsageBreakdownSummaryQuery, UsageCleanupExecutionMode, UsageCleanupTargets, UsageCleanupWindow,
-    UsageDailyHeatmapQuery, UsageDashboardDailyBreakdownQuery, UsageDashboardSummaryQuery,
-    UsageProviderPerformanceQuery, UsageReadRepository, UsageTimeSeriesGranularity,
-    UsageWriteRepository,
+    UsageDailyHeatmapQuery, UsageDashboardDailyBreakdownQuery, UsageDashboardDailyRowKind,
+    UsageDashboardSummaryQuery, UsageProviderPerformanceQuery, UsageReadRepository,
+    UsageTimeSeriesGranularity, UsageWriteRepository,
 };
 use chrono::{DateTime, Utc};
 
@@ -1955,6 +1955,256 @@ INSERT INTO "usage" (
 }
 
 #[tokio::test]
+async fn sqlite_dashboard_daily_stats_preserves_saved_model_provider_breakdown() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("sqlite pool should connect");
+    run_migrations(&pool).await.expect("migrations should run");
+    sqlx::query(
+        r#"
+INSERT INTO stats_daily (
+    id, "date", total_requests, input_tokens, output_tokens,
+    total_cost, actual_total_cost, is_complete, created_at, updated_at
+) VALUES ('day', 86400, 9, 17, 20, 1.25, 1.0, 1, 1, 1);
+INSERT INTO stats_daily_model_provider (
+    id, "date", model, provider_name, total_requests, total_tokens, total_cost,
+    response_time_sum_ms, response_time_samples, created_at, updated_at
+) VALUES
+    ('first', 86400, 'model-one', 'Provider One', 4, 13, 0.5, 4000, 4, 1, 1),
+    ('second', 86400, 'model-two', 'Provider Two', 5, 24, 0.75, 10000, 5, 1, 1);
+"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("historical totals and breakdown should seed");
+
+    let reader = SqliteUsageReadRepository::new(pool.clone());
+    let query = UsageDashboardDailyBreakdownQuery {
+        created_from_unix_secs: 0,
+        created_until_unix_secs: 172800,
+        tz_offset_minutes: 0,
+        user_id: None,
+    };
+    let rows = reader
+        .list_dashboard_daily_breakdown(&UsageDashboardDailyBreakdownQuery {
+            created_from_unix_secs: 0,
+            created_until_unix_secs: 172800,
+            tz_offset_minutes: 0,
+            user_id: None,
+        })
+        .await
+        .expect("daily breakdown should load");
+
+    let first = rows
+        .iter()
+        .find(|row| row.model == "model-one" && row.provider == "Provider One")
+        .expect("saved model and provider must not become aggregate");
+    assert_eq!(first.requests, 4);
+    assert_eq!(first.total_tokens, 13);
+    assert_eq!(first.total_cost_usd, 0.5);
+    let second = rows
+        .iter()
+        .find(|row| row.model == "model-two" && row.provider == "Provider Two")
+        .expect("second saved model and provider should remain distinct");
+    assert_eq!(second.requests, 5);
+    assert_eq!(second.total_cost_usd, 0.75);
+    assert!(rows
+        .iter()
+        .all(|row| row.model != "aggregate" && row.provider != "aggregate"));
+
+    sqlx::query("DELETE FROM stats_daily_model_provider WHERE id = 'second'")
+        .execute(&pool)
+        .await
+        .expect("remove one retained dimension");
+    for index in 0..6 {
+        let (model, provider, cost) = if index == 0 {
+            ("model-one", "Provider One", 0.1)
+        } else {
+            ("model-two", "Provider Two", 0.15)
+        };
+        sqlx::query(
+            r#"INSERT INTO "usage" (
+            request_id, id, user_id, api_key_id, model, provider_name, total_cost_usd,
+            status, billing_status, created_at_unix_ms, updated_at_unix_secs
+        ) VALUES (?, ?, 'user-1', 'key', ?, ?, ?, 'completed', 'settled', 90000, 1)"#,
+        )
+        .bind(format!("partial-{index}"))
+        .bind(format!("partial-{index}"))
+        .bind(model)
+        .bind(provider)
+        .bind(cost)
+        .execute(&pool)
+        .await
+        .expect("raw partial history");
+    }
+    let rows = reader
+        .list_dashboard_daily_breakdown(&query)
+        .await
+        .expect("recovered dimensions");
+    let one: Vec<_> = rows.iter().filter(|row| row.model == "model-one").collect();
+    assert_eq!(
+        one.len(),
+        1,
+        "raw overlap must not duplicate a retained group"
+    );
+    assert_eq!(one[0].requests, 4);
+    let two = rows
+        .iter()
+        .find(|row| row.model == "model-two")
+        .expect("raw missing group");
+    assert_eq!(two.kind, UsageDashboardDailyRowKind::Breakdown);
+    assert_eq!(two.requests, 5);
+    assert!((two.total_cost_usd - 0.75).abs() < 1e-9);
+}
+
+#[tokio::test]
+async fn sqlite_dashboard_daily_stats_uses_complete_raw_days_in_the_requested_timezone() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("pool");
+    run_migrations(&pool).await.expect("migrations");
+    sqlx::query(r#"
+INSERT INTO stats_daily (id, "date", total_requests, total_cost, actual_total_cost, is_complete, created_at, updated_at)
+VALUES ('day', 86400, 2, 1.25, 0.75, 1, 1, 1);
+INSERT INTO stats_daily_model_provider (id, "date", model, provider_name, total_requests, total_cost, created_at, updated_at)
+VALUES ('rollup', 86400, 'old-model', 'old-provider', 2, 1.25, 1, 1);
+INSERT INTO "usage" (request_id, id, user_id, api_key_id, model, provider_name, status, billing_status,
+    input_tokens, output_tokens, total_tokens, total_cost_usd, actual_total_cost_usd, created_at_unix_ms, updated_at_unix_secs)
+VALUES
+    ('early', 'early', 'user-1', 'key', 'model-one', 'Provider One', 'completed', 'settled', 5, 5, 10, 0.5, 0.25, 100000, 1),
+    ('late', 'late', 'user-1', 'key', 'aggregate', 'aggregate', 'completed', 'settled', 10, 5, 15, 0.75, 0.5, 165000, 1);
+"#).execute(&pool).await.expect("fixtures");
+    let reader = SqliteUsageReadRepository::new(pool);
+    let mut query = UsageDashboardDailyBreakdownQuery {
+        created_from_unix_secs: 86400,
+        created_until_unix_secs: 172800,
+        tz_offset_minutes: 480,
+        user_id: None,
+    };
+    let rows = reader
+        .list_dashboard_daily_breakdown(&query)
+        .await
+        .expect("rows");
+    assert_eq!(rows.len(), 2);
+    assert!(rows
+        .iter()
+        .all(|row| row.kind == UsageDashboardDailyRowKind::Usage));
+    assert_eq!(rows[0].date, "1970-01-02");
+    assert_eq!(rows[0].model, "model-one");
+    assert_eq!(rows[1].date, "1970-01-03");
+    // A real business name is preserved; no string blacklist hides it.
+    assert_eq!(rows[1].provider, "aggregate");
+    assert_eq!(rows.iter().map(|row| row.requests).sum::<u64>(), 2);
+    assert_eq!(rows.iter().map(|row| row.total_tokens).sum::<u64>(), 25);
+    assert_eq!(rows.iter().map(|row| row.total_cost_usd).sum::<f64>(), 1.25);
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.actual_total_cost_usd)
+            .sum::<f64>(),
+        0.75
+    );
+
+    query.created_from_unix_secs = 129600;
+    let rows = reader
+        .list_dashboard_daily_breakdown(&query)
+        .await
+        .expect("partial day");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].requests, 1);
+    assert_eq!(rows[0].total_cost_usd, 0.75);
+}
+
+#[tokio::test]
+async fn sqlite_dashboard_daily_stats_preserves_raw_days_between_rollups() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("pool");
+    run_migrations(&pool).await.expect("migrations");
+    sqlx::query(r#"
+INSERT INTO stats_daily (id, "date", total_requests, total_cost, actual_total_cost, is_complete, created_at, updated_at)
+VALUES ('first', 86400, 9, 1.25, 1.0, 1, 1, 1), ('last', 259200, 2, 0.5, 0.25, 1, 1, 1);
+INSERT INTO "usage" (request_id, id, user_id, api_key_id, model, provider_name, status, billing_status,
+    total_cost_usd, actual_total_cost_usd, created_at_unix_ms, updated_at_unix_secs)
+VALUES ('gap', 'gap', 'user-1', 'key', 'gap-model', 'Gap Provider', 'completed', 'settled', 0.25, 0.125, 172900, 1);
+"#).execute(&pool).await.expect("fixtures");
+    let rows = SqliteUsageReadRepository::new(pool)
+        .list_dashboard_daily_breakdown(&UsageDashboardDailyBreakdownQuery {
+            created_from_unix_secs: 0,
+            created_until_unix_secs: 345600,
+            tz_offset_minutes: 0,
+            user_id: None,
+        })
+        .await
+        .expect("rows");
+    assert_eq!(rows.len(), 3);
+    assert!(rows
+        .iter()
+        .any(|row| row.date == "1970-01-03" && row.model == "gap-model"));
+    assert_eq!(rows.iter().map(|row| row.requests).sum::<u64>(), 12);
+    assert_eq!(rows.iter().map(|row| row.total_cost_usd).sum::<f64>(), 2.0);
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.actual_total_cost_usd)
+            .sum::<f64>(),
+        1.375
+    );
+}
+
+#[tokio::test]
+async fn sqlite_dashboard_daily_stats_keeps_imported_user_breakdowns_scoped() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("pool");
+    run_migrations(&pool).await.expect("migrations");
+    sqlx::query(r#"
+INSERT INTO stats_user_daily (id, user_id, "date", total_requests, total_cost, actual_total_cost, created_at, updated_at)
+VALUES ('one', 'user-1', 86400, 4, 0.5, 0.25, 1, 1), ('two', 'user-2', 86400, 5, 0.75, 0.5, 1, 1);
+INSERT INTO stats_user_daily_model_provider (id, user_id, "date", model, provider_name, total_requests,
+    total_tokens, total_cost, created_at, updated_at)
+VALUES ('one', 'user-1', 86400, 'model-one', 'Provider One', 4, 13, 0.5, 1, 1),
+       ('two', 'user-2', 86400, 'model-two', 'Provider Two', 5, 24, 0.75, 1, 1);
+"#).execute(&pool).await.expect("fixtures");
+    let reader = SqliteUsageReadRepository::new(pool);
+    for (user, model, provider, requests, cost) in [
+        ("user-1", "model-one", "Provider One", 4, 0.5),
+        ("user-2", "model-two", "Provider Two", 5, 0.75),
+    ] {
+        let rows = reader
+            .list_dashboard_daily_breakdown(&UsageDashboardDailyBreakdownQuery {
+                created_from_unix_secs: 0,
+                created_until_unix_secs: 172800,
+                tz_offset_minutes: 0,
+                user_id: Some(user.to_string()),
+            })
+            .await
+            .expect("rows");
+        assert_eq!(rows.len(), 2);
+        let totals = rows
+            .iter()
+            .find(|row| row.kind == UsageDashboardDailyRowKind::Totals)
+            .expect("totals");
+        assert_eq!(totals.requests, requests);
+        assert_eq!(totals.total_cost_usd, cost);
+        let detail = rows
+            .iter()
+            .find(|row| row.kind == UsageDashboardDailyRowKind::Breakdown)
+            .expect("detail");
+        assert_eq!(detail.model, model);
+        assert_eq!(detail.provider, provider);
+        assert_eq!(detail.requests, requests);
+        assert_eq!(detail.total_cost_usd, cost);
+    }
+}
+
+#[tokio::test]
 async fn sqlite_dashboard_daily_stats_reads_imported_daily_aggregates() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
@@ -2003,10 +2253,29 @@ INSERT INTO stats_daily (
         .expect("dashboard daily breakdown should load");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].date, "1970-01-02");
-    assert_eq!(rows[0].model, "aggregate");
+    assert_eq!(rows[0].kind, UsageDashboardDailyRowKind::Totals);
+    assert!(rows[0].model.is_empty());
+    assert!(rows[0].provider.is_empty());
     assert_eq!(rows[0].requests, 9);
     assert_eq!(rows[0].total_tokens, 37);
     assert_eq!(rows[0].actual_total_cost_usd, 1.0);
+
+    let rows = reader
+        .list_dashboard_daily_breakdown(&UsageDashboardDailyBreakdownQuery {
+            created_from_unix_secs: 57600,
+            created_until_unix_secs: 144000,
+            tz_offset_minutes: 480,
+            user_id: None,
+        })
+        .await
+        .expect("retained local-day totals");
+    assert_eq!(
+        rows.len(),
+        1,
+        "a totals-only historical day must not disappear"
+    );
+    assert_eq!(rows[0].requests, 9);
+    assert_eq!(rows[0].total_cost_usd, 1.25);
 }
 
 #[tokio::test]
@@ -2066,6 +2335,17 @@ INSERT INTO stats_daily (
         .await
         .expect("dashboard daily breakdown should load");
 
+    let partial = rows
+        .iter()
+        .find(|row| row.kind == UsageDashboardDailyRowKind::Breakdown)
+        .expect("remaining raw history should recover its real model and provider");
+    assert_eq!(partial.date, "1970-01-02");
+    assert_eq!(partial.model, "model-1");
+    assert_eq!(partial.requests, 1);
+    let rows: Vec<_> = rows
+        .iter()
+        .filter(|row| row.kind != UsageDashboardDailyRowKind::Breakdown)
+        .collect();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].date, "1970-01-02");
     assert_eq!(rows[0].requests, 9);

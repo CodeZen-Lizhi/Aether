@@ -388,6 +388,8 @@ export interface DailyStat {
   unique_models: number
   unique_providers?: number // 仅管理员返回
   model_breakdown: ModelBreakdown[]
+  unattributed_requests?: number // 历史总量中未保留模型/供应商明细的请求
+  unattributed_cost?: number // 保留在总费用中，不能归入真实模型/供应商
 }
 
 export interface DailyStatsResponse {

@@ -5,8 +5,8 @@ use super::{
 use aether_data_contracts::repository::usage::{
     StoredUsageCostSavingsSummary, StoredUsageDashboardDailyBreakdownRow,
     StoredUsageDashboardStatsSummary, StoredUsageDashboardSummary,
-    UsageDashboardDailyBreakdownQuery, UsageDashboardProviderCountsQuery,
-    UsageDashboardSummaryQuery,
+    UsageDashboardDailyBreakdownQuery, UsageDashboardDailyRowKind,
+    UsageDashboardProviderCountsQuery, UsageDashboardSummaryQuery,
 };
 use axum::{
     body::Body,
@@ -567,6 +567,10 @@ fn dashboard_apply_daily_breakdown_rows(
         let aggregate = by_date.entry(date).or_default();
         dashboard_daily_aggregate_record(aggregate, row);
 
+        if row.kind == UsageDashboardDailyRowKind::Totals {
+            continue;
+        }
+
         let model = model_summary.entry(row.model.clone()).or_default();
         model.requests = model.requests.saturating_add(row.requests);
         model.tokens = model.tokens.saturating_add(row.total_tokens);
@@ -594,6 +598,11 @@ fn dashboard_build_daily_stats_payload(
     let mut cursor = range.start_date;
     while cursor <= range.end_date {
         let payload = if let Some(aggregate) = by_date.get(&cursor) {
+            let attributed_requests = aggregate
+                .models
+                .values()
+                .fold(0_u64, |total, value| total.saturating_add(value.requests));
+            let attributed_cost: f64 = aggregate.models.values().map(|value| value.cost).sum();
             let mut model_breakdown = aggregate
                 .models
                 .iter()
@@ -629,6 +638,8 @@ fn dashboard_build_daily_stats_payload(
                 "avg_response_time": aggregate.totals.avg_response_time_seconds(),
                 "unique_models": aggregate.models.len(),
                 "model_breakdown": model_breakdown,
+                "unattributed_requests": aggregate.totals.requests.saturating_sub(attributed_requests),
+                "unattributed_cost": dashboard_round_f64((aggregate.totals.total_cost_usd - attributed_cost).max(0.0), 4),
             });
             if is_admin {
                 item["unique_providers"] = json!(aggregate.providers.len());
@@ -644,6 +655,8 @@ fn dashboard_build_daily_stats_payload(
                 "avg_response_time": 0.0,
                 "unique_models": 0,
                 "model_breakdown": [],
+                "unattributed_requests": 0,
+                "unattributed_cost": 0.0,
             });
             if is_admin {
                 item["unique_providers"] = json!(0);
@@ -969,18 +982,24 @@ fn dashboard_daily_aggregate_record(
     aggregate: &mut DashboardDailyAggregate,
     row: &StoredUsageDashboardDailyBreakdownRow,
 ) {
-    aggregate.totals.requests = aggregate.totals.requests.saturating_add(row.requests);
-    aggregate.totals.total_tokens = aggregate
-        .totals
-        .total_tokens
-        .saturating_add(row.total_tokens);
-    aggregate.totals.total_cost_usd += row.total_cost_usd;
-    aggregate.totals.actual_total_cost_usd += row.actual_total_cost_usd;
-    aggregate.totals.response_time_sum_ms += row.response_time_sum_ms;
-    aggregate.totals.response_time_samples = aggregate
-        .totals
-        .response_time_samples
-        .saturating_add(row.response_time_samples);
+    if row.kind != UsageDashboardDailyRowKind::Breakdown {
+        aggregate.totals.requests = aggregate.totals.requests.saturating_add(row.requests);
+        aggregate.totals.total_tokens = aggregate
+            .totals
+            .total_tokens
+            .saturating_add(row.total_tokens);
+        aggregate.totals.total_cost_usd += row.total_cost_usd;
+        aggregate.totals.actual_total_cost_usd += row.actual_total_cost_usd;
+        aggregate.totals.response_time_sum_ms += row.response_time_sum_ms;
+        aggregate.totals.response_time_samples = aggregate
+            .totals
+            .response_time_samples
+            .saturating_add(row.response_time_samples);
+    }
+
+    if row.kind == UsageDashboardDailyRowKind::Totals {
+        return;
+    }
 
     let model = aggregate.models.entry(row.model.clone()).or_default();
     model.requests = model.requests.saturating_add(row.requests);
@@ -1346,7 +1365,121 @@ fn dashboard_format_time_hhmm(unix_secs: u64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::dashboard_format_token_compact;
+    use super::{
+        dashboard_apply_daily_breakdown_rows, dashboard_build_daily_stats_payload,
+        dashboard_format_token_compact, DashboardDateRange, StoredUsageDashboardDailyBreakdownRow,
+        UsageDashboardDailyRowKind,
+    };
+
+    fn daily_payload(rows: &[StoredUsageDashboardDailyBreakdownRow]) -> serde_json::Value {
+        let mut dates = std::collections::BTreeMap::new();
+        let mut models = std::collections::BTreeMap::new();
+        let mut providers = std::collections::BTreeMap::new();
+        dashboard_apply_daily_breakdown_rows(rows, &mut dates, &mut models, &mut providers);
+        let date = chrono::NaiveDate::from_ymd_opt(1970, 1, 2).unwrap();
+        dashboard_build_daily_stats_payload(
+            DashboardDateRange {
+                start_date: date,
+                end_date: date,
+                tz_offset_minutes: 0,
+            },
+            true,
+            &dates,
+            &models,
+            &providers,
+        )
+    }
+
+    fn retained_total() -> StoredUsageDashboardDailyBreakdownRow {
+        StoredUsageDashboardDailyBreakdownRow {
+            kind: UsageDashboardDailyRowKind::Totals,
+            date: "1970-01-02".to_string(),
+            requests: 9,
+            total_tokens: 37,
+            total_cost_usd: 1.25,
+            actual_total_cost_usd: 1.0,
+            response_time_sum_ms: 9000.0,
+            response_time_samples: 9,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn dashboard_daily_saved_breakdowns_do_not_duplicate_totals() {
+        let rows = [
+            retained_total(),
+            StoredUsageDashboardDailyBreakdownRow {
+                kind: UsageDashboardDailyRowKind::Breakdown,
+                date: "1970-01-02".to_string(),
+                model: "model-one".into(),
+                provider: "Provider One".into(),
+                requests: 4,
+                total_tokens: 13,
+                total_cost_usd: 0.5,
+                ..Default::default()
+            },
+            StoredUsageDashboardDailyBreakdownRow {
+                kind: UsageDashboardDailyRowKind::Breakdown,
+                date: "1970-01-02".to_string(),
+                model: "model-two".into(),
+                provider: "Provider Two".into(),
+                requests: 5,
+                total_tokens: 24,
+                total_cost_usd: 0.75,
+                ..Default::default()
+            },
+        ];
+        let payload = daily_payload(&rows);
+        let day = &payload["daily_stats"][0];
+        assert_eq!(day["requests"], 9);
+        assert_eq!(day["tokens"], 37);
+        assert_eq!(day["cost"], 1.25);
+        assert_eq!(day["actual_cost"], 1.0);
+        assert_eq!(day["avg_response_time"], 1.0);
+        assert_eq!(day["unique_models"], 2);
+        assert_eq!(day["unique_providers"], 2);
+        assert_eq!(day["unattributed_requests"], 0);
+        assert_eq!(day["unattributed_cost"], 0.0);
+        assert_eq!(payload["model_summary"].as_array().unwrap().len(), 2);
+        assert_eq!(payload["provider_summary"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn dashboard_daily_totals_without_details_are_not_model_or_provider_names() {
+        let payload = daily_payload(&[retained_total()]);
+        let day = &payload["daily_stats"][0];
+        assert_eq!(day["requests"], 9);
+        assert_eq!(day["cost"], 1.25);
+        assert_eq!(day["actual_cost"], 1.0);
+        assert_eq!(day["unique_models"], 0);
+        assert_eq!(day["unique_providers"], 0);
+        assert_eq!(day["unattributed_requests"], 9);
+        assert_eq!(day["unattributed_cost"], 1.25);
+        assert!(payload["model_summary"].as_array().unwrap().is_empty());
+        assert!(payload["provider_summary"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dashboard_daily_partial_history_marks_only_the_missing_remainder() {
+        let payload = daily_payload(&[
+            retained_total(),
+            StoredUsageDashboardDailyBreakdownRow {
+                kind: UsageDashboardDailyRowKind::Breakdown,
+                date: "1970-01-02".to_string(),
+                model: "aggregate".into(),
+                provider: "aggregate".into(),
+                requests: 4,
+                total_tokens: 13,
+                total_cost_usd: 0.5,
+                ..Default::default()
+            },
+        ]);
+        assert_eq!(payload["daily_stats"][0]["requests"], 9);
+        assert_eq!(payload["daily_stats"][0]["unattributed_requests"], 5);
+        assert_eq!(payload["daily_stats"][0]["unattributed_cost"], 0.75);
+        assert_eq!(payload["model_summary"][0]["model"], "aggregate");
+        assert_eq!(payload["provider_summary"][0]["provider"], "aggregate");
+    }
 
     #[test]
     fn dashboard_format_token_compact_promotes_above_millions() {
