@@ -183,9 +183,37 @@ afterEach(() => {
     root.remove()
   }
   vi.useRealTimers()
+  localStorage.clear()
 })
 
 describe('UsageRecordsTable', () => {
+  it('keeps all selected client fields in both layouts and shares the available column width', () => {
+    localStorage.setItem('usage-records-visible-columns-admin', JSON.stringify([
+      'user_agent', 'time', 'model', 'client_family', 'client_ip',
+    ]))
+    const userAgent = `layout-client/${'long-agent-'.repeat(40)}END`
+    const root = mountUsageRecordsTable([buildRecord({
+      client_family: 'codex',
+      client_ip: '2001:db8:1234:5678:90ab:cdef:1234:5678',
+      user_agent: userAgent,
+    })])
+
+    const columns = [...root.querySelectorAll<HTMLTableColElement>('colgroup col')]
+    expect(columns).toHaveLength(5)
+    expect(columns.reduce((width, column) => width + parseFloat(column.style.width), 0)).toBeCloseTo(100)
+    const headings = [...root.querySelectorAll('thead th')].map(cell => {
+      const label = cell.cloneNode(true) as HTMLElement
+      label.querySelector('[data-table-filter-menu]')?.remove()
+      return label.textContent?.trim()
+    })
+    expect(headings).toEqual([
+      '时间', '模型', '客户端', 'IP 地址', 'User-Agent',
+    ])
+    expect(root.querySelector('tbody')?.textContent).toContain(userAgent)
+    expect(root.querySelector('dl')?.textContent).toContain(userAgent)
+    expect(root.querySelector('dl')?.textContent).toContain('2001:db8:1234:5678:90ab:cdef:1234:5678')
+  })
+
   it('shows original and multiplier-adjusted costs to six decimal places in both layouts', () => {
     const root = mountUsageRecordsTable([buildRecord({
       cost: 0.0411234,

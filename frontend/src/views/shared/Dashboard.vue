@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6 px-4 sm:px-6 lg:px-0">
+  <div class="min-w-0 space-y-5">
     <!-- 页面头部：统计卡片 + 公告 -->
     <div class="flex flex-col lg:flex-row gap-6 lg:items-start">
       <!-- 左侧统计区域 -->
@@ -565,9 +565,7 @@ import type { DateRangeParams } from "@/features/usage/types";
 import {
   Card,
   Badge,
-  Button,
   Skeleton,
-  Dialog,
   Table,
   TableHeader,
   TableBody,
@@ -585,20 +583,13 @@ import {
   Key,
   Hash,
   Zap,
-  Bell,
-  AlertCircle,
   AlertTriangle,
-  Info,
-  Wrench,
-  Loader2,
   Clock,
   Database,
   Shuffle,
 } from "lucide-vue-next";
 import { formatTokens, formatCurrency } from "@/utils/format";
 import { parseDateLike } from "@/utils/date";
-import { marked } from "marked";
-import { sanitizeMarkdown } from "@/utils/sanitize";
 import type {
   ChartData,
   ChartOptions,
@@ -691,9 +682,6 @@ let dailyStatsRequestId = 0;
 let dailyStatsLoadPromise: Promise<void> | null = null;
 let hasPendingDailyStatsLoad = false;
 let dailyStatsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-// 公告
-const detailDialogOpen = ref(false);
 
 const iconMap: Record<string, Component> = {
   Activity,
@@ -1053,21 +1041,6 @@ function formatResponseTime(seconds: number): string {
   return `${seconds.toFixed(2)}s`;
 }
 
-function formatFullDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function renderMarkdown(content: string): string {
-  const rawHtml = marked(content) as string;
-  return sanitizeMarkdown(rawHtml);
-}
 </script>
 
 <style scoped>
@@ -1143,7 +1116,8 @@ function renderMarkdown(content: string): string {
   background: var(--color-code-background);
   padding: 1em;
   border-radius: 8px;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 :deep(.prose a) {
   color: var(--book-cloth);

@@ -14,11 +14,11 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   maxWidth: '2xl',
-  padding: 'md',
+  padding: 'none',
 })
 
 const containerClasses = computed(() => {
-  const classes = ['w-full mx-auto']
+  const classes = ['w-full min-w-0 mx-auto']
 
   // Max width
   const maxWidthMap = {

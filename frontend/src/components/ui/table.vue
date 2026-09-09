@@ -9,12 +9,12 @@ interface Props {
 const props = defineProps<Props>()
 
 const tableClass = computed(() =>
-  cn('w-full caption-bottom text-sm', props.class)
+  cn('w-full table-fixed caption-bottom text-sm [overflow-wrap:anywhere]', props.class)
 )
 </script>
 
 <template>
-  <div class="relative w-full overflow-auto">
+  <div class="relative w-full min-w-0">
     <table :class="tableClass">
       <slot />
     </table>

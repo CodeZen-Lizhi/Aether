@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="masked"
-    class="group relative"
+    class="group relative min-w-0"
   >
     <input
       ref="inputRef"
@@ -162,7 +162,7 @@ const sizeClasses = {
 
 const inputClass = computed(() =>
   cn(
-    'flex w-full rounded-xl border border-border/60 bg-muted/50 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:border-primary/60 text-foreground transition-all',
+    'flex w-full min-w-0 rounded-xl border border-border/60 bg-muted/50 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:border-primary/60 text-foreground transition-all',
     sizeClasses[props.size || 'default'],
     props.masked && 'pr-10',
     props.class

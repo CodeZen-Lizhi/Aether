@@ -5,7 +5,7 @@
         按API格式分析
       </h3>
     </div>
-    <div class="overflow-auto max-h-[320px]">
+    <div class="overflow-y-auto max-h-[320px]">
       <Table class="text-sm">
         <TableHeader>
           <TableRow>
@@ -16,7 +16,7 @@
               请求数
             </TableHead>
             <TableHead class="h-8 px-2 text-right">
-              <div class="flex flex-col text-xs gap-0.5 whitespace-nowrap">
+              <div class="flex flex-col text-xs gap-0.5 whitespace-normal">
                 <span>输入/输出</span>
                 <span class="text-muted-foreground font-normal">缓存</span>
               </div>
@@ -52,7 +52,7 @@
               {{ item.request_count }}
             </TableCell>
             <TableCell class="text-right py-2 px-2">
-              <div class="flex flex-col items-end text-xs gap-0.5 whitespace-nowrap">
+              <div class="flex flex-col items-end text-xs gap-0.5 whitespace-normal">
                 <span>{{ formatTokens(item.effective_input_tokens ?? item.total_input_context ?? 0) }} / {{ formatTokens(item.output_tokens || 0) }}</span>
                 <span class="text-muted-foreground">{{ formatTokens((item.cache_read_tokens || 0) + (item.cache_creation_tokens || 0)) }}</span>
               </div>

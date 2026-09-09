@@ -24,101 +24,36 @@
           </div>
         </div>
 
-        <!-- 并排 Diff 内容 -->
-        <div class="flex font-mono text-xs max-h-[500px]">
-          <!-- 左侧：客户端 -->
+        <!-- Each header pair shares a grid row so wrapped values stay aligned. -->
+        <div class="max-h-[500px] overflow-y-auto font-mono text-xs">
           <div
-            ref="leftPanelRef"
-            class="w-1/2 min-w-0 border-r overflow-x-auto overflow-y-auto"
-            @scroll="onLeftScroll"
+            v-for="entry in sortedEntries"
+            :key="entry.key"
+            class="header-diff-row grid grid-cols-2 [overflow-wrap:anywhere]"
           >
-            <template
-              v-for="entry in sortedEntries"
-              :key="'left-' + entry.key"
+            <div
+              class="min-w-0 border-r px-3 py-0.5"
+              :class="{
+                'bg-destructive/10 text-destructive': entry.status === 'removed',
+                'bg-amber-500/10 text-amber-600 dark:text-amber-400': entry.status === 'modified',
+                'bg-muted/30 text-muted-foreground/30 italic': entry.status === 'added',
+                'text-muted-foreground hover:bg-muted/50': entry.status === 'unchanged',
+              }"
             >
-              <!-- 删除的行 -->
-              <div
-                v-if="entry.status === 'removed'"
-                class="flex items-start bg-destructive/10 px-3 py-0.5"
-              >
-                <span class="text-destructive">
-                  "{{ entry.key }}": "{{ entry.clientValue }}"
-                </span>
-              </div>
-              <!-- 修改的行 - 旧值 -->
-              <div
-                v-else-if="entry.status === 'modified'"
-                class="flex items-start bg-amber-500/10 px-3 py-0.5"
-              >
-                <span class="text-amber-600 dark:text-amber-400">
-                  "{{ entry.key }}": "{{ entry.clientValue }}"
-                </span>
-              </div>
-              <!-- 新增的行 - 左侧空白占位 -->
-              <div
-                v-else-if="entry.status === 'added'"
-                class="flex items-start bg-muted/30 px-3 py-0.5"
-              >
-                <span class="text-muted-foreground/30 italic">（无）</span>
-              </div>
-              <!-- 未变化的行 -->
-              <div
-                v-else
-                class="flex items-start px-3 py-0.5 hover:bg-muted/50"
-              >
-                <span class="text-muted-foreground">
-                  "{{ entry.key }}": "{{ entry.clientValue }}"
-                </span>
-              </div>
-            </template>
-          </div>
-          <!-- 右侧：提供商 -->
-          <div
-            ref="rightPanelRef"
-            class="w-1/2 min-w-0 overflow-x-auto overflow-y-auto"
-            @scroll="onRightScroll"
-          >
-            <template
-              v-for="entry in sortedEntries"
-              :key="'right-' + entry.key"
+              <span v-if="entry.status === 'added'">（无）</span>
+              <span v-else>"{{ entry.key }}": "{{ entry.clientValue }}"</span>
+            </div>
+            <div
+              class="min-w-0 px-3 py-0.5"
+              :class="{
+                'bg-muted/30 text-muted-foreground/50 line-through': entry.status === 'removed',
+                'bg-amber-500/10 text-amber-600 dark:text-amber-400': entry.status === 'modified',
+                'bg-green-500/10 text-green-600 dark:text-green-400': entry.status === 'added',
+                'text-muted-foreground hover:bg-muted/50': entry.status === 'unchanged',
+              }"
             >
-              <!-- 删除的行 - 右侧空白占位 -->
-              <div
-                v-if="entry.status === 'removed'"
-                class="flex items-start bg-muted/30 px-3 py-0.5"
-              >
-                <span class="text-muted-foreground/50 line-through">
-                  "{{ entry.key }}": "{{ entry.clientValue }}"
-                </span>
-              </div>
-              <!-- 修改的行 - 新值 -->
-              <div
-                v-else-if="entry.status === 'modified'"
-                class="flex items-start bg-amber-500/10 px-3 py-0.5"
-              >
-                <span class="text-amber-600 dark:text-amber-400">
-                  "{{ entry.key }}": "{{ entry.providerValue }}"
-                </span>
-              </div>
-              <!-- 新增的行 -->
-              <div
-                v-else-if="entry.status === 'added'"
-                class="flex items-start bg-green-500/10 px-3 py-0.5"
-              >
-                <span class="text-green-600 dark:text-green-400">
-                  "{{ entry.key }}": "{{ entry.providerValue }}"
-                </span>
-              </div>
-              <!-- 未变化的行 -->
-              <div
-                v-else
-                class="flex items-start px-3 py-0.5 hover:bg-muted/50"
-              >
-                <span class="text-muted-foreground">
-                  "{{ entry.key }}": "{{ entry.providerValue }}"
-                </span>
-              </div>
-            </template>
+              <span>"{{ entry.key }}": "{{ entry.status === 'removed' ? entry.clientValue : entry.providerValue }}"</span>
+            </div>
           </div>
         </div>
       </Card>
@@ -147,8 +82,8 @@
         v-else
         class="bg-muted/30"
       >
-        <div class="p-4 overflow-x-auto">
-          <pre class="text-xs font-mono whitespace-pre-wrap">{{ JSON.stringify(currentHeaderData, null, 2) }}</pre>
+        <div class="p-4">
+          <pre class="text-xs font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{{ JSON.stringify(currentHeaderData, null, 2) }}</pre>
         </div>
       </Card>
     </div>
@@ -156,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import Card from '@/components/ui/card.vue'
 import JsonContent from './JsonContent.vue'
 import type { RequestDetail } from '@/api/dashboard'
@@ -191,28 +126,6 @@ const resolvedClientHeaders = computed(() =>
 const resolvedProviderHeaders = computed(() =>
   props.providerHeaders ?? props.detail.provider_request_headers ?? {}
 )
-
-const leftPanelRef = ref<HTMLElement | null>(null)
-const rightPanelRef = ref<HTMLElement | null>(null)
-let isSyncingScroll = false
-
-function onLeftScroll() {
-  if (isSyncingScroll) return
-  isSyncingScroll = true
-  if (leftPanelRef.value && rightPanelRef.value) {
-    rightPanelRef.value.scrollTop = leftPanelRef.value.scrollTop
-  }
-  requestAnimationFrame(() => { isSyncingScroll = false })
-}
-
-function onRightScroll() {
-  if (isSyncingScroll) return
-  isSyncingScroll = true
-  if (leftPanelRef.value && rightPanelRef.value) {
-    leftPanelRef.value.scrollTop = rightPanelRef.value.scrollTop
-  }
-  requestAnimationFrame(() => { isSyncingScroll = false })
-}
 
 // 合并并排序的条目（用于并排显示）
 const sortedEntries = computed(() => {
