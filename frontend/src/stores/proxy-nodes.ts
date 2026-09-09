@@ -14,6 +14,16 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
   const error = ref<string | null>(null)
   /** 标记是否已加载过（避免重复请求） */
   const fetched = ref(false)
+  let fetchGeneration = 0
+
+  function invalidate() {
+    fetchGeneration += 1
+    nodes.value = []
+    total.value = 0
+    fetched.value = false
+    loading.value = false
+    error.value = null
+  }
 
   /** 在线节点（可用于代理选择） */
   const onlineNodes = computed(() =>
@@ -25,18 +35,32 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
   )
 
   async function fetchNodes(params?: { status?: string }) {
+    const generation = ++fetchGeneration
     loading.value = true
     error.value = null
 
     try {
-      const data = await proxyNodesApi.listProxyNodes({ ...params, limit: 1000 })
-      nodes.value = data.items
-      total.value = data.total
-      fetched.value = true
+      const items: ProxyNode[] = []
+      let expectedTotal = 0
+      do {
+        const data = await proxyNodesApi.listProxyNodes({ ...params, skip: items.length, limit: 1000 })
+        if (generation !== fetchGeneration) return
+        items.push(...data.items)
+        expectedTotal = data.total
+        if (data.items.length === 0 && items.length < expectedTotal) {
+          throw new Error('代理节点列表不完整，请重试')
+        }
+      } while (items.length < expectedTotal)
+      nodes.value = items
+      total.value = expectedTotal
+      fetched.value = !params?.status
     } catch (err: unknown) {
-      error.value = parseApiError(err, '获取代理节点列表失败')
+      if (generation === fetchGeneration) {
+        fetched.value = false
+        error.value = parseApiError(err, '获取代理节点列表失败')
+      }
     } finally {
-      loading.value = false
+      if (generation === fetchGeneration) loading.value = false
     }
   }
 
@@ -57,7 +81,9 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
       await fetchNodes()
       return result
     } catch (err: unknown) {
-      error.value = parseApiError(err, '创建手动代理节点失败')
+      // A duplicate (or a lost create response) may already exist in the database.
+      // Reconcile the list while the dialog reports the original mutation error.
+      await fetchNodes()
       throw err
     } finally {
       loading.value = false
@@ -72,9 +98,6 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
       await proxyNodesApi.deleteProxyNode(nodeId)
       nodes.value = nodes.value.filter(n => n.id !== nodeId)
       total.value = Math.max(0, total.value - 1)
-    } catch (err: unknown) {
-      error.value = parseApiError(err, '删除代理节点失败')
-      throw err
     } finally {
       loading.value = false
     }
@@ -86,6 +109,7 @@ export const useProxyNodesStore = defineStore('proxy-nodes', () => {
     loading,
     error,
     fetched,
+    invalidate,
     onlineNodes,
     fetchNodes,
     ensureLoaded,
