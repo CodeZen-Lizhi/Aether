@@ -144,6 +144,7 @@ function highlightPlaceholders(html: string): string {
 <style scoped>
 .code-highlight {
   width: 100%;
+  min-width: 0;
 }
 
 .code-highlight pre {
@@ -156,7 +157,8 @@ function highlightPlaceholders(html: string): string {
   font-size: 0.875rem;
   line-height: 1.6;
   color: var(--color-code-text);
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   letter-spacing: 0.01em;
 }
@@ -165,6 +167,7 @@ function highlightPlaceholders(html: string): string {
   font-family: inherit;
   font-size: inherit;
   font-weight: 400;
+  white-space: inherit;
 }
 
 .code-highlight--dense pre {

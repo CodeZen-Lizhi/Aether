@@ -345,6 +345,15 @@
 
 * {
   font-variant-ligatures: normal;
+  /* Keep native scrolling available without drawing tracks, including in dialogs. */
+  scrollbar-width: none !important;
+  scrollbar-gutter: auto !important;
+}
+
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Literary Tech 全局字体规则 */
@@ -390,6 +399,8 @@ nav,
 
 #app {
   min-height: 100vh;
+  min-width: 0;
+  width: 100%;
 }
 
 ::selection {
@@ -468,7 +479,8 @@ pre {
   color: var(--color-code-text) !important;
   padding: 0 !important;
   border-radius: 0 !important;
-  white-space: nowrap !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
   font-weight: 500 !important;
   margin: 0 !important;
 }
@@ -937,7 +949,7 @@ body[theme-mode='dark'] .literary-annotation {
   }
 
   .app-shell__body {
-    @apply relative flex h-screen;
+    @apply relative flex min-w-0 h-screen;
   }
 
   .app-shell__sidebar {
@@ -976,8 +988,74 @@ body[theme-mode='dark'] .literary-annotation {
   }
 
   .app-shell__main {
-    /* Main content area with padding */
-    @apply flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8;
+    @apply flex-1 min-w-0;
+    padding: clamp(1rem, 2vw, 1.5rem);
+  }
+
+  /* Switch dense lists using their available width, including a collapsed sidebar. */
+  .responsive-list {
+    container-type: inline-size;
+    container-name: list;
+    min-width: 0;
+  }
+
+  .responsive-list--wide {
+    container-name: wide-list;
+  }
+
+  .responsive-list .table-card-actions {
+    width: 100%;
+  }
+
+  .responsive-list .responsive-list-table,
+  .responsive-list .responsive-list-desktop {
+    display: none;
+  }
+
+  @container list (min-width: 56rem) {
+    .responsive-list .table-card-actions {
+      width: auto;
+    }
+
+    .responsive-list .responsive-list-cards,
+    .responsive-list .responsive-list-mobile {
+      display: none;
+    }
+
+    .responsive-list .responsive-list-table {
+      display: block;
+    }
+
+    .responsive-list table.responsive-list-table {
+      display: table;
+    }
+
+    .responsive-list .responsive-list-desktop {
+      display: flex;
+    }
+  }
+
+  @container wide-list (min-width: 80rem) {
+    .responsive-list .table-card-actions {
+      width: auto;
+    }
+
+    .responsive-list .responsive-list-cards,
+    .responsive-list .responsive-list-mobile {
+      display: none;
+    }
+
+    .responsive-list .responsive-list-table {
+      display: block;
+    }
+
+    .responsive-list table.responsive-list-table {
+      display: table;
+    }
+
+    .responsive-list .responsive-list-desktop {
+      display: flex;
+    }
   }
 
   .surface-glass {

@@ -27,7 +27,7 @@
           />
         </div>
 
-        <!-- 横向提供商 Logo 与模型列表 -->
+        <!-- 提供商 Logo 与模型列表 -->
         <div class="flex-1 min-h-0 overflow-hidden border rounded-lg flex flex-col">
           <div
             v-if="loading"
@@ -36,31 +36,19 @@
             <Loader2 class="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
           <template v-else>
-            <!-- 提供商 Logo 横向选择 -->
+            <!-- 提供商 Logo 选择 -->
             <div
               v-if="groupedModels.length > 0"
               class="relative shrink-0 border-b"
             >
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                class="absolute left-1 top-1/2 z-10 h-8 w-8 -translate-y-1/2 bg-background/95 shadow-sm"
-                title="向左滚动"
-                aria-label="向左滚动提供商"
-                @click="scrollProviderLogos(-1)"
-              >
-                <ChevronLeft class="h-4 w-4" />
-              </Button>
               <div
-                ref="providerLogoScroller"
-                class="mx-11 flex gap-2 overflow-x-auto p-2 scrollbar-hide"
+                class="grid max-h-40 grid-cols-[repeat(auto-fit,minmax(4.75rem,1fr))] gap-2 overflow-y-auto p-2"
               >
                 <button
                   v-for="group in groupedModels"
                   :key="group.providerId"
                   type="button"
-                  class="w-[76px] shrink-0 rounded-md border px-2 py-1.5 flex flex-col items-center gap-1 transition-colors"
+                  class="min-w-0 rounded-md border px-2 py-1.5 flex flex-col items-center gap-1 transition-colors"
                   :class="expandedProvider === group.providerId
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-transparent hover:border-border hover:bg-muted'"
@@ -73,20 +61,9 @@
                     class="w-7 h-7 rounded object-contain dark:invert dark:brightness-90"
                     @error="handleLogoError"
                   >
-                  <span class="w-full truncate text-[10px] font-medium text-center">{{ group.providerName }}</span>
+                  <span class="w-full [overflow-wrap:anywhere] text-[10px] font-medium text-center">{{ group.providerName }}</span>
                 </button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                class="absolute right-1 top-1/2 z-10 h-8 w-8 -translate-y-1/2 bg-background/95 shadow-sm"
-                title="向右滚动"
-                aria-label="向右滚动提供商"
-                @click="scrollProviderLogos(1)"
-              >
-                <ChevronRight class="h-4 w-4" />
-              </Button>
             </div>
 
             <!-- 当前提供商模型 -->
@@ -761,7 +738,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import {
   Loader2, Layers, SquarePen,
-  Search, ChevronLeft, ChevronRight, Plus, Trash2, Check,
+  Search, Plus, Trash2, Check,
   BrainCircuit, Eye, Wrench, Braces, Database, PackageOpen, RefreshCw
 } from 'lucide-vue-next'
 import {
@@ -825,7 +802,6 @@ const allModelsCache = ref<ModelsDevModelItem[]>([]) // 全部模型（缓存）
 const existingModelsCache = ref<GlobalModelResponse[]>([])
 const selectedModel = ref<ModelsDevModelItem | null>(null)
 const expandedProvider = ref<string | null>(null)
-const providerLogoScroller = ref<HTMLElement | null>(null)
 const presetPanelCollapsed = ref(false)
 const billingMode = ref('token')
 const editingOnlinePricingSource = ref<{
@@ -979,12 +955,6 @@ function toggleProvider(providerId: string) {
   expandedProvider.value = expandedProvider.value === providerId ? null : providerId
 }
 
-function scrollProviderLogos(direction: -1 | 1) {
-  providerLogoScroller.value?.scrollBy({
-    left: direction * 280,
-    behavior: 'smooth',
-  })
-}
 
 function handleBillingModeChange(mode: string) {
   billingMode.value = mode

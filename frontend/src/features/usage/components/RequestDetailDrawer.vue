@@ -142,7 +142,7 @@
           </div>
 
           <!-- 可滚动内容区域 -->
-          <div class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 scrollbar-stable">
+          <div class="flex-1 min-h-0 min-w-0 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 [overflow-wrap:anywhere]">
             <!-- Loading State -->
             <div
               v-if="loading"
@@ -177,7 +177,7 @@
                     <div class="sm:hidden">
                       <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground/70">{{ detailPricingLabel }}</span>
                     </div>
-                    <div class="mt-2 grid grid-cols-[max-content_max-content_max-content_max-content_max-content] items-center gap-x-2 overflow-x-auto whitespace-nowrap text-xs sm:hidden">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:hidden">
                       <span>
                         <span class="text-muted-foreground">总费用</span>
                         <span
@@ -3183,30 +3183,5 @@ useEscapeKey(() => {
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-}
-</style>
-
-<style>
-/* 滚动条始终预留空间，保持宽度稳定 */
-.scrollbar-stable {
-  scrollbar-gutter: stable;
-}
-
-/* Webkit 浏览器滚动条样式 */
-.scrollbar-stable::-webkit-scrollbar {
-  width: 8px;
-}
-
-.scrollbar-stable::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollbar-stable::-webkit-scrollbar-thumb {
-  background-color: rgba(128, 128, 128, 0.5);
-  border-radius: 4px;
-}
-
-.scrollbar-stable::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(128, 128, 128, 0.7);
 }
 </style>

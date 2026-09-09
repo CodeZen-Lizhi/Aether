@@ -338,11 +338,11 @@ describe('HorizontalRequestTimeline', () => {
     const labels = [...root.querySelectorAll<HTMLElement>('.node-label')]
       .map(label => label.textContent?.trim())
     expect(labels).toEqual([
-      'Provider Available',
-      'Provider Skipped',
-      'Provider Pending',
-      'Provider Failed',
-      'Provider Success',
+      '1. Provider Available',
+      '2. Provider Skipped',
+      '3. Provider Pending',
+      '4. Provider Failed',
+      '5. Provider Success',
     ])
 
     const nodeDots = [...root.querySelectorAll<HTMLElement>('.node-dot')]
@@ -381,7 +381,7 @@ describe('HorizontalRequestTimeline', () => {
 
     const labels = [...root.querySelectorAll<HTMLElement>('.node-label')]
       .map(label => label.textContent?.trim())
-    expect(labels).toEqual(['CodexFree2'])
+    expect(labels).toEqual(['1. CodexFree2'])
     expect(root.querySelector<HTMLElement>('.node-dot')?.classList.contains('status-success'))
       .toBe(true)
     expect([...root.querySelectorAll<HTMLButtonElement>('.sub-dot')]

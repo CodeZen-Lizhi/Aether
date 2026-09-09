@@ -6,6 +6,20 @@
 
 ---
 
+## Convention: 窗口自适应与滚动条
+
+**What**: 管理页、表格、抽屉和弹窗不得依赖横向滚动。`style.css` 全局隐藏滚动条并取消 gutter 占位，保留纵向原生滚动。不能用 `overflow-x: hidden` 裁掉字段来通过验收。`AppShell` 负责页面间距；`PageContainer` 默认不重复加 padding。
+
+**Lists**: 公共 `Table` 使用 `table-fixed`、`w-full` 和 `overflow-wrap:anywhere`，外层不创建横向滚动容器。复杂列表在外层设置 `responsive-list`，内部用 `responsive-list-table` / `responsive-list-cards`、`responsive-list-desktop` / `responsive-list-mobile` 切换。容器达到 56rem 才显示表格；`responsive-list--wide` 将门槛提高到 80rem。以内容容器宽度判断，不能只根据 viewport 断点忽略侧边栏。CSS 选择器必须能覆盖 Tailwind 的 `grid` / `inline-flex` 显示类。
+
+**Usage records**: 列宽由可见列权重归一化到 100%，按实际 DOM 列顺序输出 colgroup；th / td 不再独立分配百分比。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
+
+**Details**: 代码和 JSON 采用 `pre-wrap` / `overflow-wrap:anywhere`，JSON 内容 flex 子项使用 `min-width:0`，视觉缩进最多占内容列 25%。请求头对比的两侧共享同一 grid 行和纵向滚动容器，长短值换行后仍须逐行对齐。链路节点及重试按钮参与流式布局，序号表示换行后的顺序；不得把节点放到横向滚动轨道里。
+
+**Verification**: 在 840×620、1024、1280、1920 px 宽度测量页面及可滚动容器的 `scrollWidth <= clientWidth`；检查所选字段、价格输入、长错误末尾、分页和保存按钮仍可达。使用记录单测验证列宽总和、列顺序和两种布局的完整元数据。真实浏览器核验长短请求头行高、深层 JSON、多个节点及多次重试，不能仅检查 CSS 字符串或把隐藏滚动条当成无溢出证据。
+
+---
+
 ## Convention: i18n 文案机制（中文源文案 + 映射字典）
 
 **What**: 组件模板/script 中**直接写中文**文案，不做 `t('key')` 调用。英文翻译由 `frontend/src/i18n/messages.ts` 的字典在渲染层完成：

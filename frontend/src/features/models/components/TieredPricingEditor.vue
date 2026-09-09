@@ -431,9 +431,9 @@
           <Label class="text-xs text-muted-foreground">精确分辨率覆盖</Label>
           <span class="text-[11px] text-muted-foreground">优先匹配 size + quality</span>
         </div>
-        <div class="overflow-x-auto pb-1">
-          <div class="min-w-[32rem] space-y-2">
-            <div class="grid grid-cols-[minmax(120px,1.1fr)_repeat(3,minmax(0,1fr))_32px] gap-2 text-xs text-muted-foreground">
+        <div class="min-w-0 pb-1">
+          <div class="min-w-0 space-y-2">
+            <div class="grid grid-cols-[minmax(0,1.1fr)_repeat(3,minmax(0,1fr))_32px] gap-2 text-xs text-muted-foreground">
               <span>分辨率</span>
               <span>low</span>
               <span>medium</span>
@@ -443,7 +443,7 @@
             <div
               v-for="(row, rowIndex) in imageOutputPriceRows"
               :key="row.id"
-              class="grid grid-cols-[minmax(120px,1.1fr)_repeat(3,minmax(0,1fr))_32px] items-center gap-2"
+              class="grid grid-cols-[minmax(0,1.1fr)_repeat(3,minmax(0,1fr))_32px] items-center gap-2"
             >
               <Input
                 :model-value="row.size"
@@ -495,9 +495,9 @@
           <Label class="text-xs text-muted-foreground">像素区间</Label>
           <span class="text-[11px] text-muted-foreground">矩阵未命中时按宽×高落档</span>
         </div>
-        <div class="overflow-x-auto pb-1">
-          <div class="min-w-[32rem] space-y-2">
-            <div class="grid grid-cols-[minmax(120px,1.1fr)_repeat(3,minmax(0,1fr))_32px] gap-2 text-xs text-muted-foreground">
+        <div class="min-w-0 pb-1">
+          <div class="min-w-0 space-y-2">
+            <div class="grid grid-cols-[minmax(0,1.1fr)_repeat(3,minmax(0,1fr))_32px] gap-2 text-xs text-muted-foreground">
               <span>上限像素</span>
               <span>low</span>
               <span>medium</span>
@@ -507,7 +507,7 @@
             <div
               v-for="(row, rowIndex) in imageOutputPriceRangeRows"
               :key="row.id"
-              class="grid grid-cols-[minmax(120px,1.1fr)_repeat(3,minmax(0,1fr))_32px] items-center gap-2"
+              class="grid grid-cols-[minmax(0,1.1fr)_repeat(3,minmax(0,1fr))_32px] items-center gap-2"
             >
               <Input
                 :model-value="row.upToPixels"

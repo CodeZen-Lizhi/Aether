@@ -1,6 +1,9 @@
 <template>
   <div class="space-y-6 pb-8">
-    <TableCard title="独立余额 API Keys">
+    <TableCard
+      title="独立余额 API Keys"
+      class="responsive-list"
+    >
       <template #actions>
         <!-- 搜索框 -->
         <div class="relative">
@@ -17,7 +20,7 @@
         <div class="hidden sm:block h-4 w-px bg-border" />
 
         <!-- 状态筛选 -->
-        <div class="xl:hidden">
+        <div class="responsive-list-mobile">
           <Select
             v-model="filterStatus"
           >
@@ -37,7 +40,7 @@
         </div>
 
         <!-- 余额类型筛选 -->
-        <div class="xl:hidden">
+        <div class="responsive-list-mobile">
           <Select
             v-model="filterBalance"
           >
@@ -85,11 +88,11 @@
       />
 
       <div v-else>
-        <div class="hidden xl:block overflow-x-auto">
+        <div class="responsive-list-table">
           <Table>
             <TableHeader>
               <TableRow class="border-b border-border/60 hover:bg-transparent">
-                <TableHead class="w-[200px] h-12 font-semibold">
+                <TableHead class="w-[22%] h-12 font-semibold">
                   密钥信息
                 </TableHead>
                 <SortableTableHead
@@ -109,17 +112,17 @@
                     />
                   </template>
                 </SortableTableHead>
-                <TableHead class="w-[140px] h-12 font-semibold">
+                <TableHead class="w-[16%] h-12 font-semibold">
                   创建时间
                 </TableHead>
-                <TableHead class="w-[110px] h-12 font-semibold">
+                <TableHead class="w-[12%] h-12 font-semibold">
                   有效期
                 </TableHead>
-                <TableHead class="w-[140px] h-12 font-semibold">
+                <TableHead class="w-[16%] h-12 font-semibold">
                   最近使用
                 </TableHead>
                 <SortableTableHead
-                  class="w-[100px] h-12 font-semibold"
+                  class="w-[10%] h-12 font-semibold"
                   column-key="status"
                   :sortable="false"
                   :filter-active="filterStatus !== 'all'"
@@ -135,7 +138,7 @@
                     />
                   </template>
                 </SortableTableHead>
-                <TableHead class="w-[130px] h-12 font-semibold text-center">
+                <TableHead class="w-[14%] h-12 font-semibold text-center">
                   操作
                 </TableHead>
               </TableRow>
@@ -268,7 +271,7 @@
                     >暂无记录</span>
                   </div>
                 </TableCell>
-                <TableCell class="w-[100px] py-4">
+                <TableCell class="w-[10%] py-4">
                   <div class="flex flex-col items-start gap-1.5">
                     <Badge
                       :variant="apiKey.is_active ? 'success' : 'destructive'"
@@ -314,7 +317,7 @@
           </Table>
         </div>
 
-        <div class="xl:hidden bg-muted/[0.14] p-3 sm:p-4">
+        <div class="responsive-list-mobile bg-muted/[0.14] p-3 sm:p-4">
           <EmptyState
             v-if="filteredApiKeys.length === 0"
             :type="hasActiveFilters ? 'filter' : 'empty'"

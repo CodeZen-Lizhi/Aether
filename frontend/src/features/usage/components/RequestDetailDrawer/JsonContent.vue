@@ -11,8 +11,8 @@
       v-else-if="typeof data === 'string'"
       class="bg-muted/30 overflow-hidden"
     >
-      <div class="p-4 overflow-x-auto max-h-[500px] overflow-y-auto">
-        <pre class="text-xs font-mono whitespace-pre-wrap">{{ data }}</pre>
+      <div class="p-4 max-h-[500px] overflow-y-auto">
+        <pre class="text-xs font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{{ data }}</pre>
       </div>
     </Card>
     <!-- 非 JSON 响应（如 HTML 错误页面） -->
@@ -26,8 +26,8 @@
           <span class="text-xs text-amber-700 dark:text-amber-300">{{ parseErrorMessage }}</span>
         </div>
       </div>
-      <div class="p-4 overflow-x-auto max-h-[500px] overflow-y-auto">
-        <pre class="text-xs font-mono whitespace-pre-wrap text-muted-foreground">{{ rawResponseContent }}</pre>
+      <div class="p-4 max-h-[500px] overflow-y-auto">
+        <pre class="text-xs font-mono whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground">{{ rawResponseContent }}</pre>
       </div>
     </Card>
     <Card
@@ -409,7 +409,7 @@ watch(() => props.expandDepth, () => {
 <style scoped>
 .json-viewer {
   max-height: 500px;
-  overflow: auto;
+  overflow-y: auto;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 20px;
@@ -470,6 +470,7 @@ watch(() => props.expandDepth, () => {
 
 .line-content-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   padding-left: 12px;
   padding-right: 12px;
@@ -477,11 +478,13 @@ watch(() => props.expandDepth, () => {
 
 .indent {
   flex-shrink: 0;
+  max-width: 25%;
 }
 
 .line-content {
+  min-width: 0;
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .line-content.clickable-collapsed {

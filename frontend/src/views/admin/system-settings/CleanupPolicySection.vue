@@ -340,24 +340,24 @@
       </div>
       <div
         v-else
-        class="overflow-x-auto"
+        class="min-w-0"
       >
-        <table class="w-full text-sm">
+        <table class="w-full table-fixed text-sm [overflow-wrap:anywhere]">
           <thead class="bg-muted/30 text-xs text-muted-foreground">
             <tr>
-              <th class="px-4 py-2 text-left font-medium">
+              <th class="px-2 py-2 text-left font-medium">
                 时间
               </th>
-              <th class="px-4 py-2 text-left font-medium">
+              <th class="px-2 py-2 text-left font-medium">
                 类型
               </th>
-              <th class="px-4 py-2 text-left font-medium">
+              <th class="px-2 py-2 text-left font-medium">
                 来源
               </th>
-              <th class="px-4 py-2 text-left font-medium">
+              <th class="px-2 py-2 text-left font-medium">
                 状态
               </th>
-              <th class="px-4 py-2 text-left font-medium">
+              <th class="px-2 py-2 text-left font-medium">
                 结果
               </th>
               <th class="px-4 py-2 text-right font-medium">
@@ -371,27 +371,27 @@
               :key="run.id"
               class="border-t border-border"
             >
-              <td class="px-4 py-2 whitespace-nowrap">
+              <td class="px-2 py-2">
                 {{ formatRunTime(run.started_at_unix_secs) }}
               </td>
-              <td class="px-4 py-2 whitespace-nowrap">
+              <td class="px-2 py-2">
                 {{ cleanupKindLabel(run.kind) }}
               </td>
-              <td class="px-4 py-2 whitespace-nowrap text-muted-foreground">
+              <td class="px-2 py-2 text-muted-foreground">
                 {{ run.trigger === 'manual' ? '手动' : '自动' }}
               </td>
-              <td class="px-4 py-2 whitespace-nowrap">
+              <td class="px-2 py-2">
                 <span :class="cleanupStatusClass(run.status)">
                   {{ cleanupStatusLabel(run.status) }}
                 </span>
               </td>
-              <td class="px-4 py-2 min-w-[18rem]">
+              <td class="px-2 py-2">
                 <div>{{ run.error || run.message }}</div>
                 <div class="text-xs text-muted-foreground">
                   {{ cleanupSummaryText(run.summary) }}
                 </div>
               </td>
-              <td class="px-4 py-2 text-right whitespace-nowrap text-muted-foreground">
+              <td class="px-2 py-2 text-right text-muted-foreground">
                 {{ formatDuration(run.duration_ms) }}
               </td>
             </tr>

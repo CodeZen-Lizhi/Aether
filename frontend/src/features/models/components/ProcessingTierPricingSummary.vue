@@ -45,9 +45,9 @@
 
     <div
       v-if="activeTokenTiers.length > 0"
-      class="overflow-x-auto rounded-md border"
+      class="min-w-0 rounded-md border"
     >
-      <Table class="min-w-[680px]">
+      <Table>
         <TableHeader>
           <TableRow class="bg-muted/30">
             <TableHead class="h-9 text-xs">
@@ -77,7 +77,7 @@
             class="text-xs"
             data-testid="processing-token-tier-row"
           >
-            <TableCell class="py-2 whitespace-nowrap">
+            <TableCell class="py-2 whitespace-normal">
               {{ formatTokenRange(activeTokenTiers, index) }}
             </TableCell>
             <TableCell class="py-2 text-right font-mono">
@@ -115,9 +115,9 @@
 
       <div
         v-if="activeImageRows.length > 0"
-        class="overflow-x-auto rounded-md border"
+        class="min-w-0 rounded-md border"
       >
-        <Table :class="imageTableMinWidthClass">
+        <Table>
           <TableHeader>
             <TableRow class="bg-muted/30">
               <TableHead class="h-9 text-xs">
@@ -138,7 +138,7 @@
               :key="row.size"
               class="text-xs"
             >
-              <TableCell class="py-2 font-mono whitespace-nowrap">
+              <TableCell class="py-2 font-mono whitespace-normal">
                 {{ formatImageSize(row.size) }}
               </TableCell>
               <TableCell
@@ -155,9 +155,9 @@
 
       <div
         v-if="activeImageRangeRows.length > 0"
-        class="overflow-x-auto rounded-md border"
+        class="min-w-0 rounded-md border"
       >
-        <Table :class="imageTableMinWidthClass">
+        <Table>
           <TableHeader>
             <TableRow class="bg-muted/30">
               <TableHead class="h-9 text-xs">
@@ -178,7 +178,7 @@
               :key="`${row.upToPixels ?? 'unbounded'}-${index}`"
               class="text-xs"
             >
-              <TableCell class="py-2 whitespace-nowrap">
+              <TableCell class="py-2 whitespace-normal">
                 {{ row.label || formatPixelRange(activeImageRangeRows, index) }}
               </TableCell>
               <TableCell
@@ -323,9 +323,6 @@ const hasActiveImagePricing = computed(() =>
   activeImageDefaultPrice.value !== null
   || activeImageRows.value.length > 0
   || activeImageRangeRows.value.length > 0,
-)
-const imageTableMinWidthClass = computed(() =>
-  activeImageQualities.value.length > 3 ? 'min-w-[620px]' : 'min-w-[460px]',
 )
 
 function processingPricingHasFacts(config: ProcessingTierPricingConfig): boolean {

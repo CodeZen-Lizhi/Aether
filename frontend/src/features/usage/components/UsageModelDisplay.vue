@@ -12,7 +12,7 @@
       :class="[modelRowClass, actualModel ? 'flex-wrap' : '']"
     >
       <span
-        class="min-w-0 truncate"
+        class="min-w-0 [overflow-wrap:anywhere]"
         :class="modelClass"
         data-usage-model-source
       >{{ record.model }}</span>

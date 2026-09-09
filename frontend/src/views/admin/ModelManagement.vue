@@ -1,12 +1,12 @@
 <template>
-  <div class="flex flex-col h-[calc(100vh-12rem)]">
+  <div class="flex min-w-0 flex-col">
     <!-- 主内容区 -->
     <div class="flex-1 flex flex-col min-w-0">
       <!-- 模型列表 -->
-      <Card class="overflow-hidden">
+      <Card class="responsive-list overflow-hidden">
         <!-- 标题和操作栏 -->
         <div class="px-4 sm:px-6 py-3 sm:py-3.5 border-b border-border/60">
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
             <!-- 左侧：标题 -->
             <h3 class="text-sm sm:text-base font-semibold shrink-0">
               模型管理
@@ -90,7 +90,7 @@
           </Button>
         </div>
 
-        <Table class="hidden xl:table">
+        <Table class="responsive-list-table">
           <TableHeader>
             <TableRow>
               <TableHead class="w-[40px]">
@@ -102,22 +102,22 @@
                   @update:checked="toggleSelectAllModels"
                 />
               </TableHead>
-              <TableHead class="w-[240px]">
+              <TableHead class="w-[28%]">
                 模型名称
               </TableHead>
-              <TableHead class="w-[160px] text-center">
+              <TableHead class="w-[20%] text-center">
                 价格 ($/M)
               </TableHead>
-              <TableHead class="w-[80px] text-center">
+              <TableHead class="w-[10%] text-center">
                 提供商
               </TableHead>
-              <TableHead class="w-[80px] text-center">
+              <TableHead class="w-[10%] text-center">
                 调用次数
               </TableHead>
-              <TableHead class="w-[70px]">
+              <TableHead class="w-[8%]">
                 状态
               </TableHead>
-              <TableHead class="w-[140px] text-center">
+              <TableHead class="text-center">
                 操作
               </TableHead>
             </TableRow>
@@ -273,7 +273,7 @@
         <!-- 移动端卡片列表 -->
         <div
           v-if="!loading && paginatedGlobalModels.length > 0"
-          class="xl:hidden divide-y divide-border/40"
+          class="responsive-list-cards divide-y divide-border/40"
         >
           <div
             v-for="model in paginatedGlobalModels"
@@ -576,11 +576,6 @@ import {
   Dialog,
   Pagination,
   RefreshButton,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from '@/components/ui'
 import {
   listGlobalModels,
@@ -645,7 +640,6 @@ const totalGlobalModels = ref(0)
 const batchOnlineModels = ref<ModelsDevModelItem[]>([])
 const batchOnlineLoading = ref(false)
 const batchOnlineLoaded = ref(false)
-const GLOBAL_MODELS_BATCH_FETCH_PAGE_SIZE = 1000
 let globalModelsRequestId = 0
 let modelSelectionRequestId = 0
 let modelProvidersRequestId = 0
@@ -1133,32 +1127,6 @@ function openAddProviderDialog() {
     // 同步选择状态
     syncBatchProviderSelection()
   })
-}
-
-// 批量关联提供商到当前模型
-async function linkProvidersToModel(providerIds: string[]) {
-  if (!selectedModel.value || providerIds.length === 0) return
-
-  try {
-    const result = await batchAssignToProviders(selectedModel.value.id, {
-      provider_ids: providerIds,
-      create_models: true
-    })
-
-    // 显示关联结果
-    if (result.errors.length > 0) {
-      showError(`${result.errors.length} 个提供商关联失败`, '部分失败')
-    } else {
-      success(`${providerIds.length} 个提供商已关联`)
-    }
-
-    // 刷新数据
-    await loadModelProviders(selectedModel.value.id)
-    await loadGlobalModels()
-    modelDetailDrawerRef.value?.refreshRoutingData?.()
-  } catch (err: unknown) {
-    showError(parseApiError(err, '关联失败'), '错误')
-  }
 }
 
 // 处理批量添加 Provider 对话框关闭事件

@@ -37,8 +37,8 @@
       </div>
 
       <!-- 分析统计 -->
-      <!-- 模型 + 提供商 + API格式（3列） -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <!-- 模型、提供商和 API 格式统计按可用宽度排列 -->
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,26rem),1fr))] gap-4">
         <UsageModelTable
           :data="enhancedModelStats"
         />

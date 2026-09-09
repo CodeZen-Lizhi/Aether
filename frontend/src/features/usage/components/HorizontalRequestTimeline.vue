@@ -28,7 +28,7 @@
       <Card>
         <div class="p-6">
           <!-- 概览信息 -->
-          <div class="flex items-center justify-between mb-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
             <div class="flex items-center gap-3">
               <h4 class="text-sm font-semibold">
                 请求链路追踪
@@ -60,6 +60,7 @@
               <div class="node-container">
                 <!-- 节点名称（在节点上方） -->
                 <div class="node-label">
+                  <span class="text-muted-foreground/60">{{ groupIndex + 1 }}.</span>
                   {{ group.providerName }}
                 </div>
 
@@ -2113,42 +2114,21 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .minimal-request-timeline {
   width: 100%;
 }
-/* 极简轨道 - 包装器实现溢出时居左、不溢出时居中 */
+/* Nodes and retries reflow together; sequence numbers preserve order across rows. */
 .minimal-track {
-  display: flex;
-  align-items: center;
-  justify-content: safe center;
-  gap: 64px;
-  padding: 2rem 2rem 2.75rem;
-  overflow-x: auto;
-  overflow-y: hidden;
-
-  /* 优化滚动体验 */
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: hsl(var(--border)) transparent;
-}
-
-/* Webkit 滚动条样式 */
-.minimal-track::-webkit-scrollbar {
-  height: 6px;
-}
-
-.minimal-track::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.minimal-track::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 3px;
-}
-
-.minimal-track::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  align-items: start;
+  gap: 1rem;
+  padding: 0.75rem 0;
 }
 
 .minimal-node-group {
   display: flex;
+  min-width: 0;
   align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
   position: relative;
   cursor: pointer;
 }
@@ -2158,21 +2138,19 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
+  width: 100%;
+  gap: 8px;
   position: relative;
 }
 
-/* 节点名称 - 绝对定位在节点上方 */
+/* Names remain in flow so long provider names do not overlap adjacent nodes. */
 .node-label {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
   font-size: 0.65rem;
   color: hsl(var(--muted-foreground));
-  white-space: nowrap;
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 /* 主节点 - 同心圆（外圈轮廓 + 间隙 + 内部实心圆） */
@@ -2208,13 +2186,12 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   transform: scale(1.1);
 }
 
-/* 子节点容器 - 绝对定位在主节点下方 */
+/* Retry buttons take part in layout even when there are many attempts. */
 .sub-dots {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
   padding: 0;
   background: transparent;
@@ -2225,6 +2202,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .sub-dot {
   width: 10px;
   height: 10px;
+  flex-shrink: 0;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -2314,10 +2292,10 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 /* 连接线容器 */
 .node-line-wrapper {
   position: absolute;
-  right: -64px;
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 64px;
+  width: 16px;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -2328,6 +2306,18 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   width: 100%;
   height: 2px;
   background: hsl(var(--border));
+}
+
+.node-line::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid hsl(var(--border));
+  border-right: 2px solid hsl(var(--border));
+  transform: rotate(45deg);
 }
 
 /* 格式转换分界线 */
@@ -2348,6 +2338,9 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 .panel-header {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 0rem;
@@ -2357,6 +2350,8 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 .panel-title {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.625rem;
 }
@@ -2377,6 +2372,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .title-text {
   font-weight: 600;
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
 .panel-nav {

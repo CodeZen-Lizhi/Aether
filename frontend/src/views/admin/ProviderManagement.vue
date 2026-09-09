@@ -13,6 +13,7 @@
     <!-- 提供商表格 -->
     <Card
       variant="default"
+      class="responsive-list"
     >
       <!-- 标题和操作栏 -->
       <ProviderTableHeader
@@ -56,19 +57,19 @@
       <!-- 桌面端表格 -->
       <div
         v-else
-        class="hidden xl:block overflow-x-auto"
+        class="responsive-list-table"
       >
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead class="w-[18%] min-w-[140px]">
+              <TableHead class="w-[18%]">
                 {{ legacyT('提供商信息') }}
               </TableHead>
-              <TableHead class="w-[20%] min-w-[180px]">
+              <TableHead class="w-[20%]">
                 {{ legacyT('余额监控') }}
               </TableHead>
               <SortableTableHead
-                class="w-[12%] min-w-[100px] text-center"
+                class="w-[12%] text-center"
                 column-key="model"
                 :sortable="false"
                 align="center"
@@ -86,7 +87,7 @@
                 </template>
               </SortableTableHead>
               <SortableTableHead
-                class="w-[24%] min-w-[260px]"
+                class="w-[24%]"
                 column-key="api_format"
                 :sortable="false"
                 :filter-active="filterApiFormat !== 'all'"
@@ -103,7 +104,7 @@
                 </template>
               </SortableTableHead>
               <SortableTableHead
-                class="w-[8%] min-w-[60px] text-center"
+                class="w-[8%] text-center"
                 column-key="status"
                 :sortable="false"
                 align="center"
@@ -120,7 +121,7 @@
                   />
                 </template>
               </SortableTableHead>
-              <TableHead class="w-[18%] min-w-[160px] text-center">
+              <TableHead class="w-[18%] text-center">
                 {{ legacyT('操作') }}
               </TableHead>
             </TableRow>
@@ -158,7 +159,7 @@
       <!-- 移动端卡片列表 -->
       <div
         v-if="!loading && providers.length > 0"
-        class="xl:hidden divide-y divide-border/40"
+        class="responsive-list-cards divide-y divide-border/40"
       >
         <ProviderMobileCard
           v-for="provider in displayedProviders"

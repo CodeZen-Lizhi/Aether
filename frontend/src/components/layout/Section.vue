@@ -5,8 +5,8 @@
       class="mb-6"
     >
       <slot name="header">
-        <div class="flex items-center justify-between">
-          <div>
+        <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0 [overflow-wrap:anywhere]">
             <h2
               v-if="title"
               class="text-lg font-medium text-foreground"
@@ -20,7 +20,10 @@
               {{ description }}
             </p>
           </div>
-          <div v-if="$slots.actions">
+          <div
+            v-if="$slots.actions"
+            class="flex max-w-full flex-wrap items-center gap-2"
+          >
             <slot name="actions" />
           </div>
         </div>

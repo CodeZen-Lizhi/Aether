@@ -169,7 +169,7 @@ const maxWidthClass = computed(() => {
 })
 
 const contentBodyClass = computed(() => [
-  'min-h-0 overflow-y-auto overscroll-contain',
+  'min-h-0 min-w-0 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]',
   props.noPadding ? '' : 'px-4 py-3 sm:px-6',
 ].filter(Boolean).join(' '))
 

@@ -40,6 +40,6 @@ const variants = {
 }
 
 const cardClass = computed(() =>
-  cn(variants[props.variant], props.class)
+  cn('min-w-0', variants[props.variant], props.class)
 )
 </script>
