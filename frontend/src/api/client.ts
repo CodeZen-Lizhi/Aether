@@ -5,9 +5,9 @@ import { getClientDeviceId } from '@/utils/deviceId'
 import { CrossTabRefreshCoordinator } from '@/utils/crossTabRefresh'
 import { log } from '@/utils/logger'
 import { cache } from '@/utils/cache'
+import { authenticateDesktopSession, desktopSessionState, failDesktopSession, hasDesktopSession } from '@/desktop/session'
+import { getApiBaseUrl } from '@/utils/url'
 
-// 在开发环境下使用代理,生产环境使用环境变量
-const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 export const AUTH_STATE_CHANGE_EVENT = 'aether-auth-state-change'
 
 /**
@@ -60,7 +60,7 @@ class ApiClient {
 
   constructor() {
     this.client = axios.create({
-      baseURL: API_BASE_URL,
+      baseURL: getApiBaseUrl(),
       timeout: NETWORK_CONFIG.API_TIMEOUT,
       withCredentials: true,
       headers: {
@@ -136,14 +136,18 @@ class ApiClient {
 
     const originalRequest = error.config
 
-    // 网络错误或服务器不可达
-    if (!error.response) {
-      log.warn('Network error or server unreachable', error.message)
+    // Refresh failures are handled by the shared recovery promise below.
+    if (isAuthRequest(originalRequest?.url)) {
       return Promise.reject(error)
     }
 
-    // 认证请求错误,直接返回
-    if (isAuthRequest(originalRequest?.url)) {
+    // 网络错误或服务器不可达
+    if (!error.response) {
+      log.warn('Network error or server unreachable', error.message)
+      if (hasDesktopSession() && originalRequest?.url?.includes('/api/')
+        && !isPublicEndpoint(originalRequest.url, originalRequest.method)) {
+        this.failDesktopAuth(originalRequest)
+      }
       return Promise.reject(error)
     }
 
@@ -155,8 +159,12 @@ class ApiClient {
       const errorDetail = typeof rawDetail === 'string' ? rawDetail : ''
       if (isAccountLevelForbidden(status, errorDetail)) {
         log.info('User account issue detected, clearing auth', { errorDetail })
-        this.clearAuth()
-        window.location.href = '/'
+        if (hasDesktopSession()) {
+          this.failDesktopAuth(originalRequest)
+        } else {
+          this.clearAuth()
+          window.location.href = '/'
+        }
         return Promise.reject(error)
       }
     }
@@ -179,7 +187,9 @@ class ApiClient {
     }
 
     // 如果已经重试过,不再重试
-    if (!originalRequest || originalRequest._retry) {
+    if (!originalRequest || originalRequest._retry
+      || (hasDesktopSession() && desktopSessionState.value.phase === 'failed')) {
+      if (hasDesktopSession()) this.failDesktopAuth(originalRequest)
       return Promise.reject(error)
     }
 
@@ -192,13 +202,22 @@ class ApiClient {
     // 超过最大重试次数
     if (originalRequest._retryCount > AUTH_CONFIG.MAX_RETRY_COUNT) {
       log.error('Max retry attempts reached')
+      if (hasDesktopSession()) this.failDesktopAuth(originalRequest)
       return Promise.reject(error)
+    }
+
+    // Another desktop request may already have replaced the rejected token.
+    const currentToken = this.getToken()
+    if (hasDesktopSession() && currentToken && originalRequest.headers.Authorization !== `Bearer ${currentToken}`) {
+      originalRequest.headers.Authorization = `Bearer ${currentToken}`
+      return this.client.request(originalRequest)
     }
 
     // 如果正在刷新,等待刷新完成
     if (this.isRefreshing) {
       try {
         const accessToken = await this.refreshPromise
+        if (hasDesktopSession() && desktopSessionState.value.phase === 'failed') throw new Error('Desktop session unavailable')
         originalRequest.headers.Authorization = `Bearer ${accessToken}`
         return this.client.request(originalRequest)
       } catch {
@@ -218,10 +237,14 @@ class ApiClient {
     originalError: import('axios').AxiosError
   ): Promise<AxiosResponse> {
     this.isRefreshing = true
+    const previousToken = this.getToken()
     this.refreshPromise = this.coordinatedRefresh()
 
     try {
-      const accessToken = await this.refreshPromise
+      let accessToken = await this.refreshPromise
+      if (hasDesktopSession() && desktopSessionState.value.phase === 'failed') throw new Error('Desktop session unavailable')
+      const latestToken = this.getToken()
+      if (hasDesktopSession() && latestToken && latestToken !== previousToken) accessToken = latestToken
       this.setToken(accessToken)
       this.isRefreshing = false
       this.refreshPromise = null
@@ -233,12 +256,25 @@ class ApiClient {
       log.error('Token refresh failed', refreshError instanceof Error ? refreshError.message : String(refreshError))
       this.isRefreshing = false
       this.refreshPromise = null
-      this.clearAuth()
+      if (hasDesktopSession()) this.failDesktopAuth(originalRequest)
+      else this.clearAuth()
       return Promise.reject(originalError)
     }
   }
 
   private async coordinatedRefresh(): Promise<string> {
+    if (hasDesktopSession()) {
+      if (desktopSessionState.value.phase === 'failed') throw new Error('Desktop session unavailable')
+      try {
+        const response = await this.refreshToken()
+        if (typeof response.data?.access_token !== 'string' || !response.data.access_token.trim()) {
+          throw new Error('Refresh response missing access token')
+        }
+        return response.data.access_token
+      } catch {
+        return (await authenticateDesktopSession()).access_token
+      }
+    }
     return this.refreshCoordinator.run(async () => {
       const response = await this.refreshToken()
       const accessToken = response.data.access_token
@@ -249,6 +285,15 @@ class ApiClient {
     })
   }
 
+  private failDesktopAuth(request?: InternalAxiosRequestConfig): void {
+    const currentToken = this.getToken()
+    const currentAuthorization = currentToken ? `Bearer ${currentToken}` : undefined
+    // Old failures cannot invalidate a reconnect, including while its token is still pending.
+    if (request && (request.headers.Authorization ?? undefined) !== currentAuthorization) return
+    failDesktopSession()
+    this.clearAuth()
+  }
+
   private syncTokenState(token: string | null): void {
     if (this.token !== token) {
       cache.clear()
@@ -257,11 +302,13 @@ class ApiClient {
   }
 
   setToken(token: string): void {
+    const changed = this.token !== token
     if (this.token === token) {
       cache.clear()
     }
     this.syncTokenState(token)
     localStorage.setItem('access_token', token)
+    if (changed && hasDesktopSession()) this.emitAuthStateChange(token)
   }
 
   getToken(): string | null {

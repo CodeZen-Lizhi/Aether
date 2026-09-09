@@ -1,12 +1,15 @@
 <template>
   <div class="container mx-auto px-4 py-8">
     <h2 class="text-2xl font-bold text-foreground mb-6">
-      账号设置
+      {{ desktopMode ? '偏好设置' : '账号设置' }}
     </h2>
 
     <div class="max-w-3xl space-y-6">
       <!-- 基本信息与密码：一个表单一起保存 -->
-      <Card class="p-6">
+      <Card
+        v-if="!desktopMode"
+        class="p-6"
+      >
         <form
           class="space-y-4"
           @submit.prevent="saveAccount"
@@ -94,7 +97,10 @@
         </form>
       </Card>
 
-      <Card class="p-6">
+      <Card
+        v-if="!desktopMode"
+        class="p-6"
+      >
         <div class="flex items-center justify-between mb-4">
           <div>
             <h3 class="text-lg font-medium text-foreground">
@@ -211,71 +217,14 @@
         <h3 class="text-lg font-medium text-foreground mb-4">
           偏好设置
         </h3>
-        <div class="space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label for="theme">主题</Label>
-              <Select
-                v-model="preferencesForm.theme"
-                v-model:open="themeSelectOpen"
-                @update:model-value="handleThemeChange"
-              >
-                <SelectTrigger
-                  id="theme"
-                  class="mt-1"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">
-                    浅色
-                  </SelectItem>
-                  <SelectItem value="dark">
-                    深色
-                  </SelectItem>
-                  <SelectItem value="system">
-                    跟随系统
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label for="language">语言</Label>
-              <Select
-                v-model="preferencesForm.language"
-                v-model:open="languageSelectOpen"
-                @update:model-value="handleLanguageChange"
-              >
-                <SelectTrigger
-                  id="language"
-                  class="mt-1"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="zh-CN">
-                    简体中文
-                  </SelectItem>
-                  <SelectItem value="en">
-                    English
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label for="timezone">时区</Label>
-              <Input
-                id="timezone"
-                v-model="preferencesForm.timezone"
-                placeholder="Asia/Shanghai"
-                class="mt-1"
-                @change="updatePreferences"
-              />
-            </div>
-          </div>
-        </div>
+        <UserPreferenceFields
+          v-model:timezone="preferencesForm.timezone"
+          :theme="preferencesForm.theme"
+          :language="preferencesForm.language"
+          @update:theme="handleThemeChange"
+          @update:language="handleLanguageChange"
+          @timezone-change="updatePreferences"
+        />
       </Card>
     </div>
   </div>
@@ -295,23 +244,23 @@ import {
   type PasswordPolicyLevel,
 } from '@/utils/passwordPolicy'
 import Card from '@/components/ui/card.vue'
+import UserPreferenceFields from '@/components/common/UserPreferenceFields.vue'
 import Button from '@/components/ui/button.vue'
 import Badge from '@/components/ui/badge.vue'
 import Input from '@/components/ui/input.vue'
 import Label from '@/components/ui/label.vue'
-import Select from '@/components/ui/select.vue'
-import SelectTrigger from '@/components/ui/select-trigger.vue'
-import SelectValue from '@/components/ui/select-value.vue'
-import SelectContent from '@/components/ui/select-content.vue'
-import SelectItem from '@/components/ui/select-item.vue'
 import { useToast } from '@/composables/useToast'
 import { log } from '@/utils/logger'
 import { getErrorMessage } from '@/types/api-error'
+import { hasDesktopSession } from '@/desktop/session'
+import { useI18n } from '@/i18n'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const { success, error: showError } = useToast()
 const { setThemeMode } = useDarkMode()
+const { locale, setLocale } = useI18n()
+const desktopMode = hasDesktopSession()
 
 const profile = ref<Profile | null>(null)
 const userSessions = ref<UserSession[]>([])
@@ -343,8 +292,6 @@ const sessionActionLoading = ref<string | null>(null)
 const editingSessionId = ref<string | null>(null)
 const sessionLabelDraft = ref('')
 const passwordPolicyLevel = ref<PasswordPolicyLevel>('weak')
-const themeSelectOpen = ref(false)
-const languageSelectOpen = ref(false)
 
 // 原始用户名，用于检测是否有修改
 const originalUsername = ref('')
@@ -366,7 +313,6 @@ const otherSessionCount = computed(() => userSessions.value.filter((session) => 
 
 function handleThemeChange(value: string) {
   preferencesForm.value.theme = value
-  themeSelectOpen.value = false
   updatePreferences()
 
   // 使用 useDarkMode 统一切换主题
@@ -375,11 +321,15 @@ function handleThemeChange(value: string) {
 
 function handleLanguageChange(value: string) {
   preferencesForm.value.language = value
-  languageSelectOpen.value = false
+  if (desktopMode) setLocale(value === 'en' ? 'en-US' : 'zh-CN')
   updatePreferences()
 }
 
 onMounted(async () => {
+  if (desktopMode) {
+    await loadPreferences()
+    return
+  }
   const profilePromise = loadProfile()
   await Promise.all([
     loadPreferences(),
@@ -427,7 +377,7 @@ async function loadPreferences() {
 
     preferencesForm.value = {
       theme: localTheme,  // 使用本地主题，而非服务端返回值
-      language: prefs.language || 'zh-CN',
+      language: desktopMode ? (locale.value === 'en-US' ? 'en' : 'zh-CN') : prefs.language || 'zh-CN',
       timezone: prefs.timezone || 'Asia/Shanghai',
       notifications: {
         email: prefs.notifications?.email ?? true,
@@ -449,6 +399,7 @@ async function loadPreferences() {
 }
 
 async function saveAccount() {
+  if (desktopMode) return
   const hasPassword = profile.value?.has_password ?? false
   const wantsPassword = hasPassword
     ? !!(passwordForm.value.old_password && passwordForm.value.new_password && passwordForm.value.confirm_password)

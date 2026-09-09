@@ -414,7 +414,9 @@ async fn record_sync_terminal_usage_with_handoff_after_spawn<F>(
     let (context_seed, payload_seed) =
         build_sync_terminal_usage_seeds(plan, report_context, payload);
     let state = state.clone();
+    let usage_handoff = state.usage_runtime.track_persistence_handoff();
     let task = tokio::spawn(async move {
+        let _usage_handoff = usage_handoff;
         before_dispatch.await;
         state
             .usage_runtime
@@ -1412,7 +1414,9 @@ impl DirectPassthroughFinalizer {
         // client disconnect or an execution timeout may cancel this body
         // future while terminal admission is backpressured; the handoff must
         // continue independently so the usage row cannot remain streaming.
+        let usage_handoff = core.state.usage_runtime.track_persistence_handoff();
         let task = tokio::spawn(async move {
+            let _usage_handoff = usage_handoff;
             core.finalize(downstream_dropped).await;
         });
         if let Err(err) = task.await {
@@ -1433,7 +1437,9 @@ impl Drop for DirectPassthroughFinalizer {
         };
         observe_gateway_stage_ms("stream_finalizer_enqueue", 0);
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let usage_handoff = core.state.usage_runtime.track_persistence_handoff();
             handle.spawn(async move {
+                let _usage_handoff = usage_handoff;
                 core.finalize(true).await;
             });
         }
@@ -2098,7 +2104,12 @@ impl Drop for DirectPassthroughInlineBodyState {
         if let Some(finalizer) = self.finalizer.take() {
             observe_gateway_stage_ms("stream_finalizer_enqueue", 0);
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                let usage_handoff = finalizer
+                    .core
+                    .as_ref()
+                    .map(|core| core.state.usage_runtime.track_persistence_handoff());
                 handle.spawn(async move {
+                    let _usage_handoff = usage_handoff;
                     let mut finalizer = finalizer;
                     finalizer.finalize(true).await;
                 });
@@ -2375,7 +2386,9 @@ async fn execute_stream_from_direct_passthrough(
     let candidate_id_for_report = candidate_id.clone();
     let provider_pool_in_flight_guard_for_report = in_flight_guard;
     record_stream_pre_first_byte_spawn();
+    let usage_handoff = state_for_report.usage_runtime.track_persistence_handoff();
     tokio::spawn(async move {
+        let _usage_handoff = usage_handoff;
         let mut stage_trace_for_report = stage_trace_for_report;
         let _stream_total_guard =
             StageElapsedGuard::from_started_at("stream_total", stream_started_at_for_report);
@@ -5855,7 +5868,9 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     let stage_trace_for_report = stage_trace;
     let request_diagnostics_for_report = current_request_diagnostics();
     let provider_pool_in_flight_guard_for_report = in_flight_guard;
+    let usage_handoff = state_for_report.usage_runtime.track_persistence_handoff();
     tokio::spawn(async move {
+        let _usage_handoff = usage_handoff;
         let mut stage_trace_for_report = stage_trace_for_report;
         let _stream_total_guard =
             StageElapsedGuard::from_started_at("stream_total", stream_started_at_for_report);
@@ -8169,6 +8184,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sync_terminal_handoff_blocks_shutdown_before_event_submission() {
+        let request_id = "req-shutdown-terminal-handoff";
+        let usage_repository = Arc::new(InMemoryUsageReadRepository::default());
+        let state = AppState::new()
+            .expect("app state should build")
+            .with_data_state_for_tests(
+                crate::data::GatewayDataState::with_usage_repository_for_tests(Arc::clone(
+                    &usage_repository,
+                )),
+            )
+            .with_usage_runtime_for_tests(UsageRuntimeConfig {
+                enabled: true,
+                ..UsageRuntimeConfig::default()
+            });
+        let plan = codex_cyber_policy_plan(request_id);
+        let payload = build_stream_sync_payload(
+            "trace-shutdown-terminal-handoff",
+            "openai_responses_stream".to_string(),
+            Some(json!({
+                "request_id": request_id,
+                "provider_api_format": "openai:responses",
+                "client_api_format": "openai:responses"
+            })),
+            500,
+            BTreeMap::new(),
+            Some(json!({"error": "synthetic terminal failure"})),
+            None,
+            None,
+        );
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let child_started = Arc::clone(&started);
+        let child_release = Arc::clone(&release);
+        let handoff_state = state.clone();
+        let caller = tokio::spawn(async move {
+            record_sync_terminal_usage_with_handoff_after_spawn(
+                &handoff_state,
+                &plan,
+                payload.report_context.as_ref(),
+                &payload,
+                async move {
+                    child_started.notify_one();
+                    child_release.notified().await;
+                },
+            )
+            .await;
+        });
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("owned terminal task should begin before cancellation");
+        caller.abort();
+        assert!(caller.await.unwrap_err().is_cancelled());
+        assert_eq!(
+            state
+                .usage_runtime
+                .metrics_snapshot()
+                .terminal_submission_pending,
+            0
+        );
+        assert!(!state
+            .wait_for_usage_idle(Duration::from_millis(60))
+            .await
+            .expect("idle observation should succeed"));
+
+        release.notify_one();
+        assert!(state
+            .wait_for_usage_idle(Duration::from_secs(2))
+            .await
+            .expect("owned terminal task should drain after release"));
+        let record = usage_repository
+            .find_by_request_id(request_id)
+            .await
+            .expect("usage repository read should succeed")
+            .expect("terminal usage must be persisted before shutdown completes");
+        assert_eq!(record.status, "failed");
+    }
+
+    #[tokio::test]
     async fn sync_terminal_handoff_survives_cancellation_during_admission_backpressure() {
         let blocker_request_id = "req-sync-terminal-admission-blocker";
         let target_request_id = "req-sync-terminal-handoff-cancelled";
@@ -10241,14 +10334,14 @@ mod tests {
         let terminal_frame_drained_for_stream = Arc::clone(&terminal_frame_drained);
         let frame_stream = stream! {
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}\n",
+                b"{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"text/event-stream\"}}}\n",
             ));
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"first\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{\\\"content\\\":\\\"hello\\\"}]}\\n\\n\"}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"first\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{\\\"content\\\":\\\"hello\\\"}]}\\n\\n\"}}\n",
             ));
             release_terminal_for_stream.notified().await;
             yield Ok::<Bytes, std::io::Error>(Bytes::from_static(
-                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"terminal\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{},\\\"finish_reason\\\":\\\"stop\\\"}],\\\"usage\\\":{\\\"prompt_tokens\\\":7,\\\"completion_tokens\\\":11,\\\"total_tokens\\\":18}\\n\\ndata: [DONE]\\n\\n\"}\n",
+                b"{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"data: {\\\"id\\\":\\\"terminal\\\",\\\"object\\\":\\\"chat.completion.chunk\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"choices\\\":[{\\\"index\\\":0,\\\"delta\\\":{},\\\"finish_reason\\\":\\\"stop\\\"}],\\\"usage\\\":{\\\"prompt_tokens\\\":7,\\\"completion_tokens\\\":11,\\\"total_tokens\\\":18}\\n\\ndata: [DONE]\\n\\n\"}}\n",
             ));
             terminal_frame_drained_for_stream.notify_one();
         }

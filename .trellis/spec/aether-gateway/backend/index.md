@@ -14,6 +14,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
+| [Desktop Gateway Lifecycle](../../aether-desktop/backend/desktop-contract.md) | Loopback listener, host EOF, bounded connection/usage drain and desktop integration | Filled |
 | [Authenticated Wallet Summary](./auth-wallet-summary.md) | Authenticated wallet lookup, amounts, limits and failure behavior | Filled |
 | [Dashboard Stats API](./dashboard-stats-api.md) | `/api/dashboard/stats` card assembly contract (backend ↔ frontend) | Filled |
 | [Administrator JSON Backup](./admin-json-backup.md) | Version-free backup content, single-transaction restoration, cancellation and export completeness | Filled |

@@ -5,6 +5,7 @@ import apiClient from '@/api/client'
 import { log } from '@/utils/logger'
 import { parseApiError } from '@/utils/errorParser'
 import { getErrorStatus } from '@/types/api-error'
+import { authenticateDesktopSession, desktopSessionState, failDesktopSession, hasDesktopSession } from '@/desktop/session'
 
 export const useAuthStore = defineStore('auth', () => {
   const CURRENT_USER_FAILURE_BACKOFF_MS = 15_000
@@ -21,6 +22,10 @@ export const useAuthStore = defineStore('auth', () => {
   let lastCurrentUserFailureAt = 0
   let lastCurrentUserFailureToken: string | null = null
   let authStateVersion = 0
+  const desktopConnecting = ref(false)
+  const desktopVerified = ref(false)
+  let desktopConnectionPromise: Promise<boolean> | null = null
+  let desktopConnectionVersion = 0
 
   function resetCurrentUserFailure() {
     lastCurrentUserFailureAt = 0
@@ -51,6 +56,58 @@ export const useAuthStore = defineStore('auth', () => {
   }
   const isAdmin = computed(() => user.value?.role === 'admin')
   const canAccessAdmin = computed(() => isAdmin.value)
+  const desktopReady = computed(() => desktopVerified.value && !!token.value
+    && user.value?.role === 'admin' && user.value.is_active
+    && desktopSessionState.value.phase !== 'failed')
+
+  function failDesktopConnection(message?: string) {
+    failDesktopSession(message)
+    applyExternalLogout()
+    apiClient.clearAuth()
+  }
+
+  function connectDesktop(options: { retry?: boolean } = {}): Promise<boolean> {
+    if (!hasDesktopSession()) return Promise.resolve(false)
+    if (desktopConnectionPromise) return desktopConnectionPromise
+    if (!options.retry && desktopReady.value) return Promise.resolve(true)
+    if (!options.retry && desktopSessionState.value.phase === 'failed') return Promise.resolve(false)
+
+    desktopConnecting.value = true
+    const connectionVersion = ++desktopConnectionVersion
+    const request: Promise<boolean> = (async () => {
+      try {
+        // Even a persisted token must be verified against this managed gateway on startup.
+        const response = await authenticateDesktopSession(options)
+        if (connectionVersion !== desktopConnectionVersion) return false
+        apiClient.setToken(response.access_token)
+        syncToken()
+        const currentUser = await authApi.getCurrentUser()
+        if (connectionVersion !== desktopConnectionVersion || desktopSessionState.value.phase === 'failed') return false
+        if (!currentUser?.id || currentUser.role !== 'admin' || !currentUser.is_active) {
+          failDesktopConnection('无法验证本机网关的管理权限，请重试连接。')
+          return false
+        }
+        syncToken()
+        if (!token.value) {
+          failDesktopConnection()
+          return false
+        }
+        user.value = currentUser
+        error.value = null
+        desktopVerified.value = true
+        resetCurrentUserFailure()
+        return true
+      } catch {
+        if (connectionVersion === desktopConnectionVersion) failDesktopConnection()
+        return false
+      }
+    })().finally(() => {
+      desktopConnecting.value = false
+      if (desktopConnectionPromise === request) desktopConnectionPromise = null
+    })
+    desktopConnectionPromise = request
+    return request
+  }
 
   async function login(email: string, password: string, authType: 'local' | 'ldap' = 'local') {
     loading.value = true
@@ -89,6 +146,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
+    desktopVerified.value = false
+    desktopConnectionVersion += 1
     user.value = null
     token.value = null
     markAuthStateChanged()
@@ -96,6 +155,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function applyExternalLogout() {
+    desktopVerified.value = false
+    desktopConnectionVersion += 1
     user.value = null
     token.value = null
     error.value = null
@@ -124,9 +185,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     fetchCurrentUserToken = requestToken
     const requestAuthStateVersion = authStateVersion
-    // request 在内部 async 闭包的 finally 中自引用，需要 let + 延迟赋值以避免 TDZ
-    let request!: Promise<User | null>
-    request = (async () => {
+    const request: Promise<User | null> = (async () => {
       try {
         const userInfo = await authApi.getCurrentUser()
         if (requestAuthStateVersion !== authStateVersion || !token.value) {
@@ -154,13 +213,13 @@ export const useAuthStore = defineStore('auth', () => {
         // 保留登录状态；短暂退避后允许再次校验。
         log.info('Keeping session despite error, as per user requirement')
         return null
-      } finally {
-        if (fetchCurrentUserPromise === request) {
-          fetchCurrentUserPromise = null
-          fetchCurrentUserToken = null
-        }
       }
-    })()
+    })().finally(() => {
+      if (fetchCurrentUserPromise === request) {
+        fetchCurrentUserPromise = null
+        fetchCurrentUserToken = null
+      }
+    })
 
     fetchCurrentUserPromise = request
     return request
@@ -182,6 +241,10 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     isAdmin,
     canAccessAdmin,
+    desktopConnecting,
+    desktopReady,
+    connectDesktop,
+    failDesktopConnection,
     login,
     logout,
     applyExternalLogout,

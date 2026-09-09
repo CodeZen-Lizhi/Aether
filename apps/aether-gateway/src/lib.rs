@@ -66,6 +66,7 @@ mod roles;
 mod router;
 mod routing;
 mod scheduler;
+mod shutdown;
 mod stage_metrics;
 mod state;
 mod system_features;
@@ -113,7 +114,7 @@ pub(crate) use self::state::{
     GatewayUserPreferenceView, GatewayUserSessionView, LocalExecutionRuntimeMissDiagnostic,
     LocalMutationOutcome, LocalProviderDeleteTaskState,
 };
-pub use self::state::{AppState, FrontdoorCorsConfig};
+pub use self::state::{AppState, DesktopSessionConfig, FrontdoorCorsConfig};
 pub use self::tunnel::{
     build_tunnel_runtime_router_with_state, tunnel_protocol, TunnelConnConfig,
     TunnelControlPlaneClient, TunnelRuntimeState,

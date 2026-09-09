@@ -222,7 +222,9 @@ impl Drop for SyncAttemptTerminalGuard {
         let candidate_started_unix_ms = self.candidate_started_unix_ms;
         let candidate_started_at = self.candidate_started_at;
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let usage_handoff = state.usage_runtime.track_persistence_handoff();
             handle.spawn(async move {
+                let _usage_handoff = usage_handoff;
                 record_sync_attempt_forced_terminal_state(
                     state,
                     plan,
@@ -1506,7 +1508,9 @@ fn build_openai_image_sync_json_heartbeat_response(
     };
     let (tx, rx) = mpsc::channel::<Result<Bytes, IoError>>(1);
 
+    let usage_handoff = state.usage_runtime.track_persistence_handoff();
     tokio::spawn(async move {
+        let _usage_handoff = usage_handoff;
         let bytes = openai_image_sync_json_heartbeat_final_bytes(
             execute_execution_runtime_sync_impl(
                 &state,

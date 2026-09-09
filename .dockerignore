@@ -9,6 +9,9 @@ target/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+apps/aether-desktop/node_modules/
+apps/aether-desktop/src-tauri/binaries/
+apps/aether-desktop/src-tauri/gen/
 
 # Development
 .git/

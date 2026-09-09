@@ -25,6 +25,6 @@ pub(crate) use self::system_modules_helpers::{
 #[cfg(test)]
 pub(crate) use self::support::{build_auth_wallet_summary_payload, filter_eligible_model_rows};
 pub(crate) use self::support::{
-    build_unhandled_public_support_response, matches_model_mapping_for_models,
-    maybe_build_local_public_support_response,
+    build_unhandled_public_support_response, handle_desktop_session,
+    matches_model_mapping_for_models, maybe_build_local_public_support_response,
 };

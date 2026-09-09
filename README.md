@@ -38,6 +38,10 @@
 
 ## 部署
 
+### macOS 客户端
+
+桌面版使用 Tauri 2 和现有 Vue 后台，内置本机网关，打开即用，无需创建账号或登录。提供菜单栏、登录自启、钥匙串密钥管理和安装包。安装与构建方法见 [macOS 客户端文档](docs/desktop-macos.md)。
+
 ### Docker Compose
 
 ```bash

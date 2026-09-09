@@ -32,6 +32,9 @@ use crate::{
     UsageEvent, UsageQueue, UsageRecordWriter, UsageRuntimeConfig, UsageSettlementWriter,
 };
 
+mod shutdown;
+pub use shutdown::UsagePersistenceHandoff;
+
 #[async_trait]
 pub trait UsageBillingEventEnricher: Send + Sync {
     async fn enrich_usage_event(&self, event: &mut UsageEvent) -> Result<(), DataLayerError>;
@@ -86,6 +89,7 @@ pub trait UsageRuntimeAccess:
 #[derive(Debug, Clone)]
 pub struct UsageRuntime {
     config: UsageRuntimeConfig,
+    persistence_handoffs: Arc<AtomicUsize>,
     body_policy_cache: Arc<tokio::sync::Mutex<Option<UsageBodyCapturePolicyCacheEntry>>>,
     enqueue_retry: Arc<UsageEnqueueRetryDispatcher>,
     worker_supervisor_state: Arc<UsageWorkerSupervisorState>,
@@ -3289,6 +3293,7 @@ impl UsageRuntime {
         let terminal_execution = TerminalExecutionDispatcher::disabled();
         Self {
             config: UsageRuntimeConfig::disabled(),
+            persistence_handoffs: Arc::new(AtomicUsize::new(0)),
             body_policy_cache: Arc::new(tokio::sync::Mutex::new(None)),
             enqueue_retry: UsageEnqueueRetryDispatcher::disabled(),
             worker_supervisor_state: Arc::new(UsageWorkerSupervisorState::default()),
@@ -3345,6 +3350,7 @@ impl UsageRuntime {
         let first_byte_persistence = FirstBytePersistenceDispatcher::spawn(&config);
         Ok(Self {
             config,
+            persistence_handoffs: Arc::new(AtomicUsize::new(0)),
             body_policy_cache: Arc::new(tokio::sync::Mutex::new(None)),
             enqueue_retry,
             worker_supervisor_state: Arc::new(UsageWorkerSupervisorState::default()),
@@ -6075,6 +6081,8 @@ fn now_unix_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    mod shutdown_tests;
+
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};

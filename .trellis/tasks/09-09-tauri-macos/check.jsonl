@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/index.md","reason":"桌面入口与现有 Web 前端兼容性"}
+{"file":".trellis/spec/aether-gateway/backend/transport-diagnostics-and-proxy.md","reason":"日志与模拟代理测试不得泄露凭据或改变现有传输契约"}
+{"file":".trellis/tasks/09-09-tauri-macos/research/architecture.md","reason":"进程和持久化边界、官方 API 依据"}

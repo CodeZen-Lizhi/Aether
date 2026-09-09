@@ -1,5 +1,11 @@
 <template>
-  <RouterView />
+  <DesktopConnection
+    v-if="desktopMode && !authStore.desktopReady"
+    :connecting="authStore.desktopConnecting || desktopSessionState.phase !== 'failed'"
+    :error="desktopSessionState.error"
+    @retry="retryDesktopConnection"
+  />
+  <RouterView v-else />
   <ToastContainer />
   <ConfirmContainer />
 </template>
@@ -14,8 +20,21 @@ import { NETWORK_CONFIG, AUTH_CONFIG } from '@/config/constants'
 import router from '@/router'
 import { hasAuthIdentityChanged } from '@/utils/authToken'
 import { log } from '@/utils/logger'
+import DesktopConnection from '@/desktop/DesktopConnection.vue'
+import { desktopSessionState, failDesktopSession, hasDesktopSession } from '@/desktop/session'
 
 const authStore = useAuthStore()
+const desktopMode = hasDesktopSession()
+const desktopEntryPath = window.location.pathname + window.location.search + window.location.hash
+let authCheckTimer: ReturnType<typeof setTimeout> | undefined
+
+async function retryDesktopConnection(): Promise<void> {
+  if (!await authStore.connectDesktop({ retry: true })) return
+  const currentPath = router.currentRoute.value.fullPath
+  const target = currentPath.startsWith('/admin/') ? currentPath
+    : desktopEntryPath.startsWith('/admin/') ? desktopEntryPath : '/admin/dashboard'
+  await router.replace(target)
+}
 
 // 立即检查token,如果存在就设置到store中
 const storedToken = apiClient.getToken()
@@ -99,6 +118,17 @@ async function syncExternalAuthState(nextToken: string | null): Promise<void> {
 
   authStore.syncToken()
 
+  if (desktopMode) {
+    if (!nextToken) {
+      authStore.applyExternalLogout()
+      failDesktopSession()
+    } else if (!authStore.desktopConnecting && previousUser
+      && hasAuthIdentityChanged(previousToken, nextToken, previousUser)) {
+      authStore.failDesktopConnection()
+    }
+    return
+  }
+
   if (!nextToken) {
     if (previousToken || previousUser) {
       authStore.applyExternalLogout()
@@ -141,8 +171,13 @@ onMounted(async () => {
     window.addEventListener(AUTH_STATE_CHANGE_EVENT, handleLocalAuthStateChange as (event: Event) => void)
   }
 
+  if (desktopMode) {
+    await authStore.connectDesktop()
+    return
+  }
+
   // 延迟检查认证状态,让页面先加载
-  setTimeout(async () => {
+  authCheckTimer = setTimeout(async () => {
     try {
       await authStore.checkAuth()
     } catch (error) {
@@ -153,6 +188,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (authCheckTimer !== undefined) clearTimeout(authCheckTimer)
   if (typeof window !== 'undefined') {
     window.removeEventListener('storage', handleAuthStorageChange)
     window.removeEventListener(

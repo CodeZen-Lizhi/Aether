@@ -365,6 +365,7 @@ fn sample_public_catalog_model(
 
 mod ai;
 mod core;
+mod desktop_session;
 mod internal;
 mod ops;
 mod public_support;

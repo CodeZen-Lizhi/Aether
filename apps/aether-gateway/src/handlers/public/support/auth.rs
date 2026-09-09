@@ -18,6 +18,10 @@ pub(crate) use auth_helpers::*;
 pub(super) mod auth_session;
 use auth_session::*;
 
+#[path = "desktop_session.rs"]
+mod desktop_session;
+pub(crate) use desktop_session::handle_desktop_session;
+
 #[derive(Debug, Deserialize)]
 struct AuthLoginRequest {
     email: String,

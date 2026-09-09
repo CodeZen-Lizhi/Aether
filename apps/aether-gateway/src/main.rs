@@ -2,18 +2,12 @@
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+mod lifecycle;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::{body::Body, extract::Request};
 use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
-use hyper::body::Incoming;
-use hyper_util::{
-    rt::{TokioExecutor, TokioIo},
-    server::conn::auto::Builder as HyperServerBuilder,
-    service::TowerToHyperService,
-};
-use tower::{Service as _, ServiceExt as _};
 use tracing::{debug, info, warn};
 
 use aether_crypto::warm_python_fernet_secret;
@@ -25,8 +19,8 @@ use aether_data::{DatabaseDriver, SqlDatabaseConfig, SqlPoolConfig, DEFAULT_SQLI
 use aether_gateway::{
     attach_static_frontend, build_router_with_state,
     prewarm_direct_h2c_sender_cache_from_env_for_startup, set_gateway_frontdoor_app_port, AppState,
-    FrontdoorCorsConfig, FrontdoorUserRpmConfig, GatewayDataConfig, UsageRuntimeConfig,
-    VideoTaskTruthSourceMode,
+    DesktopSessionConfig, FrontdoorCorsConfig, FrontdoorUserRpmConfig, GatewayDataConfig,
+    UsageRuntimeConfig, VideoTaskTruthSourceMode,
 };
 use aether_runtime::{
     init_service_runtime, FileLoggingConfig, LogDestination, LogFormat, LogRotation,
@@ -1221,6 +1215,13 @@ struct Args {
     #[arg(long, env = "APP_PORT", default_value_t = 8084)]
     app_port: u16,
 
+    #[command(flatten)]
+    lifecycle: lifecycle::LifecycleArgs,
+
+    /// Allow the owning desktop process to establish a local administrator session.
+    #[arg(long, default_value_t = false)]
+    desktop_mode: bool,
+
     #[arg(
         long,
         env = "AETHER_GATEWAY_LISTEN_BACKLOG",
@@ -1496,11 +1497,14 @@ fn validate_app_port(app_port: u16) -> Result<u16, std::io::Error> {
     Ok(app_port)
 }
 
-fn gateway_bind_addr(app_port: u16) -> Result<std::net::SocketAddr, std::io::Error> {
-    Ok(std::net::SocketAddr::from((
-        [0, 0, 0, 0],
+fn gateway_bind_addr(
+    app_host: std::net::IpAddr,
+    app_port: u16,
+) -> Result<std::net::SocketAddr, std::io::Error> {
+    Ok(std::net::SocketAddr::new(
+        app_host,
         validate_app_port(app_port)?,
-    )))
+    ))
 }
 
 fn gateway_listen_backlog(backlog: i32) -> i32 {
@@ -1584,74 +1588,41 @@ fn gateway_listeners(
     Ok(listeners)
 }
 
-async fn serve_gateway_router(
-    listeners: Vec<tokio::net::TcpListener>,
-    router: axum::Router,
-    http2_max_concurrent_streams: u32,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let http2_max_concurrent_streams =
-        gateway_http2_max_concurrent_streams(http2_max_concurrent_streams);
-    let mut servers = tokio::task::JoinSet::new();
-    for listener in listeners {
-        let router = router.clone();
-        servers.spawn(async move {
-            serve_gateway_listener(listener, router, http2_max_concurrent_streams).await
-        });
-    }
-    if let Some(result) = servers.join_next().await {
-        servers.abort_all();
-        let serve_result = result
-            .map_err(|err| std::io::Error::other(format!("gateway listener task failed: {err}")))?;
-        serve_result?;
-    }
-    Ok(())
+fn resolve_local_http_base_url(
+    app_host: std::net::IpAddr,
+    app_port: u16,
+) -> Result<String, std::io::Error> {
+    let local_host = match app_host {
+        std::net::IpAddr::V4(ip) if ip.is_unspecified() => {
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+        }
+        std::net::IpAddr::V6(ip) if ip.is_unspecified() => {
+            std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+        }
+        ip => ip,
+    };
+    Ok(format!(
+        "http://{}",
+        gateway_bind_addr(local_host, app_port)?
+    ))
 }
 
-async fn serve_gateway_listener(
-    listener: tokio::net::TcpListener,
-    router: axum::Router,
-    http2_max_concurrent_streams: u32,
-) -> Result<(), std::io::Error> {
-    let mut make_service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
-    loop {
-        let (io, remote_addr) = listener.accept().await?;
-        let tower_service = make_service
-            .call(remote_addr)
-            .await
-            .unwrap_or_else(|err| match err {})
-            .map_request(|req: Request<Incoming>| req.map(Body::new));
-        let hyper_service = TowerToHyperService::new(tower_service);
-        let io = TokioIo::new(io);
-
-        tokio::spawn(async move {
-            let mut builder = HyperServerBuilder::new(TokioExecutor::new());
-            builder.http2().enable_connect_protocol();
-            builder
-                .http2()
-                .max_concurrent_streams(http2_max_concurrent_streams);
-            if let Err(err) = builder
-                .serve_connection_with_upgrades(io, hyper_service)
-                .await
-            {
-                tracing::trace!(error = ?err, "gateway connection closed with error");
-            }
-        });
-    }
-}
-
-fn resolve_local_http_base_url(app_port: u16) -> Result<String, std::io::Error> {
-    Ok(format!("http://127.0.0.1:{}", validate_app_port(app_port)?))
-}
-
-fn resolve_healthcheck_url(app_port: u16) -> Result<String, std::io::Error> {
-    Ok(format!("{}/health", resolve_local_http_base_url(app_port)?))
+fn resolve_healthcheck_url(
+    app_host: std::net::IpAddr,
+    app_port: u16,
+) -> Result<String, std::io::Error> {
+    Ok(format!(
+        "{}/health",
+        resolve_local_http_base_url(app_host, app_port)?
+    ))
 }
 
 async fn run_healthcheck(
+    app_host: std::net::IpAddr,
     app_port: u16,
     healthcheck_timeout_ms: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let url = resolve_healthcheck_url(app_port)?;
+    let url = resolve_healthcheck_url(app_host, app_port)?;
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(
             healthcheck_timeout_ms.max(1),
@@ -1713,12 +1684,38 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return run_explicit_backfills(&args).await;
     }
     let app_port = validate_app_port(args.app_port)?;
-    let bind_addr = gateway_bind_addr(app_port)?;
+    let bind_addr = gateway_bind_addr(args.lifecycle.app_host, app_port)?;
     set_gateway_frontdoor_app_port(app_port);
     if args.healthcheck {
-        return run_healthcheck(app_port, args.healthcheck_timeout_ms).await;
+        return run_healthcheck(
+            args.lifecycle.app_host,
+            app_port,
+            args.healthcheck_timeout_ms,
+        )
+        .await;
     }
     init_service_runtime(args.runtime_config()?)?;
+    lifecycle::run_with_shutdown(
+        lifecycle::wait_for_gateway_shutdown(args.lifecycle.exit_on_stdin_close),
+        |shutdown| run_gateway(args, app_port, bind_addr, shutdown),
+    )
+    .await
+}
+
+async fn run_gateway(
+    args: Args,
+    app_port: u16,
+    bind_addr: std::net::SocketAddr,
+    shutdown_request: lifecycle::ShutdownListener,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let desktop_session = if args.desktop_mode {
+        Some(DesktopSessionConfig::from_env(
+            bind_addr,
+            args.lifecycle.exit_on_stdin_close,
+        )?)
+    } else {
+        None
+    };
     let sql_database_config = args.data.effective_sql_database_config()?;
     let data_redis_url = args.data.effective_redis_url();
     let runtime_backend =
@@ -1991,7 +1988,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "reset stale tunnel-connected proxy nodes on startup"
         );
     }
-    state.bootstrap_admin_from_env().await?;
+    if let Some(config) = desktop_session {
+        state = state.with_desktop_session(config).await?;
+    } else {
+        state.bootstrap_admin_from_env().await?;
+    }
     match prewarm_direct_h2c_sender_cache_from_env_for_startup().await {
         Ok(Some(report)) => {
             if report.failed_targets > 0 {
@@ -2020,15 +2021,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let background_tasks = if args.node_role.spawns_background_tasks() {
-        Some(state.spawn_background_tasks())
-    } else {
-        info!(
-            node_role = args.node_role.as_str(),
-            "background workers disabled for this node role"
-        );
-        None
-    };
+    // Binding can fail (for example, a desktop port conflict). Do it before
+    // starting workers so every path after spawning reaches shutdown below.
+    let listen_backlog = gateway_listen_backlog(args.listen_backlog);
+    let listener_shards = gateway_listener_shards(args.listener_shards);
+    let listeners = gateway_listeners(bind_addr, listen_backlog, listener_shards)?;
+    let public_base_url = resolve_local_http_base_url(args.lifecycle.app_host, app_port)?;
     if state.prewarm_metric_snapshot().await {
         info!("gateway metric snapshot prewarmed");
     } else {
@@ -2036,12 +2034,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "gateway metric snapshot prewarm did not complete; continuing with fail-open metrics"
         );
     }
-    let listen_backlog = gateway_listen_backlog(args.listen_backlog);
-    let listener_shards = gateway_listener_shards(args.listener_shards);
-    let listeners = gateway_listeners(bind_addr, listen_backlog, listener_shards)?;
-    let public_base_url = resolve_local_http_base_url(app_port)?;
     let frontdoor_health_url = format!("{public_base_url}/_gateway/health");
-    let api_router = build_router_with_state(state);
+    let api_router = build_router_with_state(state.clone());
 
     // Compose the final router: API routes + optional static file serving.
     let router = if let Some(ref static_dir) = args.static_dir {
@@ -2051,6 +2045,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         attach_static_frontend(api_router, static_dir).layer(CompressionLayer::new())
     } else {
         api_router
+    };
+
+    shutdown_request.begin_serving();
+    let background_tasks = if args.node_role.spawns_background_tasks() {
+        Some(state.spawn_background_tasks())
+    } else {
+        info!(
+            node_role = args.node_role.as_str(),
+            "background workers disabled for this node role"
+        );
+        None
     };
 
     info!(
@@ -2067,10 +2072,58 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         "aether-gateway ready"
     );
 
-    serve_gateway_router(listeners, router, args.http2_max_concurrent_streams).await?;
+    let shutdown = lifecycle::serve_gateway_router(
+        listeners,
+        router,
+        gateway_http2_max_concurrent_streams(args.http2_max_concurrent_streams),
+        shutdown_request.requested(),
+        std::time::Duration::from_secs(args.lifecycle.shutdown_timeout_seconds),
+    )
+    .await;
+    let usage_drained = match state
+        .wait_for_usage_idle(
+            shutdown
+                .usage_deadline
+                .saturating_duration_since(tokio::time::Instant::now()),
+        )
+        .await
+    {
+        Ok(true) => true,
+        Ok(false) => {
+            warn!(
+                event_name = "gateway_shutdown_usage_timed_out",
+                "gateway usage persistence did not drain within the shutdown deadline"
+            );
+            false
+        }
+        Err(error) => {
+            warn!(
+                event_name = "gateway_shutdown_usage_failed",
+                error = %error,
+                "gateway could not verify usage persistence during shutdown"
+            );
+            false
+        }
+    };
     if let Some(background_tasks) = background_tasks {
-        background_tasks.shutdown().await;
+        background_tasks.cancel();
+        if tokio::time::timeout_at(shutdown.deadline, background_tasks.shutdown())
+            .await
+            .is_err()
+        {
+            warn!(
+                event_name = "gateway_shutdown_background_timed_out",
+                "gateway background tasks exceeded the shutdown deadline"
+            );
+        }
     }
+    info!(
+        event_name = "gateway_stopped",
+        connections_drained = shutdown.connections_drained,
+        usage_drained,
+        "aether-gateway stopped"
+    );
+    shutdown.result?;
     Ok(())
 }
 
@@ -2441,10 +2494,30 @@ mod tests {
     use aether_data::{DatabaseDriver, SqlDatabaseConfig, SqlPoolConfig};
     use aether_gateway::AppState;
 
+    #[test]
+    fn desktop_mode_is_disabled_without_explicit_cli_flag() {
+        use clap::Parser;
+        let normal = Args::try_parse_from(["aether-gateway"]).unwrap();
+        assert!(!normal.desktop_mode);
+        let desktop = Args::try_parse_from([
+            "aether-gateway",
+            "--desktop-mode",
+            "--app-host",
+            "127.0.0.1",
+            "--exit-on-stdin-close",
+        ])
+        .unwrap();
+        assert!(desktop.desktop_mode);
+        assert!(desktop.lifecycle.exit_on_stdin_close);
+        assert_eq!(desktop.lifecycle.app_host, std::net::Ipv4Addr::LOCALHOST);
+    }
+
     fn test_args() -> Args {
         Args {
             command: None,
             app_port: 8084,
+            lifecycle: Default::default(),
+            desktop_mode: false,
             listen_backlog: DEFAULT_GATEWAY_LISTEN_BACKLOG,
             listener_shards: DEFAULT_GATEWAY_LISTENER_SHARDS,
             http2_max_concurrent_streams: DEFAULT_GATEWAY_HTTP2_MAX_CONCURRENT_STREAMS,
@@ -2559,15 +2632,36 @@ mod tests {
     #[test]
     fn resolves_healthcheck_url_from_app_port() {
         assert_eq!(
-            resolve_healthcheck_url(8084).unwrap(),
+            resolve_healthcheck_url("0.0.0.0".parse().unwrap(), 8084).unwrap(),
             "http://127.0.0.1:8084/health"
         );
     }
 
     #[test]
     fn rejects_zero_app_port() {
-        let error = resolve_healthcheck_url(0).unwrap_err();
+        let error = resolve_healthcheck_url("0.0.0.0".parse().unwrap(), 0).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn binding_and_healthcheck_follow_configured_host() {
+        for (host, bind, health) in [
+            ("0.0.0.0", "0.0.0.0:8084", "http://127.0.0.1:8084/health"),
+            (
+                "127.0.0.1",
+                "127.0.0.1:8084",
+                "http://127.0.0.1:8084/health",
+            ),
+            ("::", "[::]:8084", "http://[::1]:8084/health"),
+            ("::1", "[::1]:8084", "http://[::1]:8084/health"),
+        ] {
+            let host = host.parse().unwrap();
+            assert_eq!(
+                super::gateway_bind_addr(host, 8084).unwrap().to_string(),
+                bind
+            );
+            assert_eq!(resolve_healthcheck_url(host, 8084).unwrap(), health);
+        }
     }
 
     #[test]

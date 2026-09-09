@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use serde_json::json;
@@ -18,6 +18,10 @@ pub(crate) fn mount_core_routes(router: Router<AppState>) -> Router<AppState> {
         .route(INTERNAL_FRONTDOOR_MANIFEST_PATH, get(frontdoor_manifest))
         .route(READYZ_PATH, get(readyz))
         .route("/_gateway/health", get(health))
+        .route(
+            "/_gateway/desktop/session",
+            post(crate::handlers::public::handle_desktop_session),
+        )
 }
 
 fn current_gateway_version() -> &'static str {

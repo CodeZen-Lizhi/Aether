@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "apps/aether-desktop/src-tauri",
     "apps/aether-tunnel",
     "crates/aether-ai/formats",
     "crates/aether-admin",

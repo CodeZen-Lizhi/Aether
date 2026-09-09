@@ -100,8 +100,10 @@ pub(super) async fn begin_responses_websocket_turn(
     // relay/session future is cancelled while awaiting it, Tokio detaches this
     // task; it still reaches either an explicitly cleaned-up error or an armed
     // guard whose dropped output finalizes the attempt.
+    let usage_handoff = state.usage_runtime.track_persistence_handoff();
     await_owned_turn_begin(
         async move {
+            let _usage_handoff = usage_handoff;
             let turn = begin_unowned_responses_websocket_turn(
                 &state,
                 &parts,
@@ -171,7 +173,9 @@ impl Drop for ActiveProviderAttempt {
                 websocket = true,
                 "gateway finalized a Responses WebSocket turn whose relay task went away"
             );
+            let usage_handoff = state.usage_runtime.track_persistence_handoff();
             handle.spawn(async move {
+                let _usage_handoff = usage_handoff;
                 turn.finalize_detached(&state, outcome).await;
             });
         }
@@ -296,7 +300,9 @@ fn spawn_guarded_turn_finalization(
 ) -> JoinHandle<()> {
     // Spawn synchronously while the armed guard is still owned here. Caller
     // cancellation cannot drop an unguarded attempt between cleanup awaits.
+    let usage_handoff = state.usage_runtime.track_persistence_handoff();
     tokio::spawn(async move {
+        let _usage_handoff = usage_handoff;
         let mut turn = turn;
         turn.release_admission().await;
         turn.disarm().finalize_detached(&state, outcome).await;

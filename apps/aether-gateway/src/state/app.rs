@@ -426,6 +426,7 @@ pub struct AppState {
     pub(crate) usage_counter_exact_health_metric_refresh: Arc<TokioMutex<()>>,
     pub(crate) request_candidate_queue: Option<Arc<RequestCandidateQueueRuntime>>,
     pub(crate) frontdoor_cors: Option<Arc<FrontdoorCorsConfig>>,
+    pub(crate) desktop_session: Option<Arc<super::desktop_session::DesktopSession>>,
     pub(crate) frontdoor_user_rpm: Arc<FrontdoorUserRpmLimiter>,
     pub(crate) tunnel: crate::tunnel::EmbeddedTunnelState,
     pub(crate) provider_transport_snapshot_cache:

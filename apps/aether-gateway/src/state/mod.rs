@@ -9,6 +9,7 @@ mod cache;
 mod catalog;
 mod core;
 mod cors;
+mod desktop_session;
 mod integrations;
 mod proxy;
 mod routing_profiles;
@@ -39,6 +40,8 @@ pub(crate) use self::cache::{
     PROVIDER_TRANSPORT_SNAPSHOT_CACHE_STALE_TTL, PROVIDER_TRANSPORT_SNAPSHOT_CACHE_TTL,
 };
 pub use self::cors::FrontdoorCorsConfig;
+pub(crate) use self::desktop_session::is_usable_desktop_admin;
+pub use self::desktop_session::DesktopSessionConfig;
 pub(crate) use self::types::{
     AdminWalletMutationOutcome, GatewayAdminPaymentCallbackView, GatewayUserPreferenceView,
     GatewayUserSessionView, LocalExecutionRuntimeMissDiagnostic, LocalMutationOutcome,

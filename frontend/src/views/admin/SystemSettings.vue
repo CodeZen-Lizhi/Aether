@@ -21,6 +21,11 @@
             系统配置加载中...
           </div>
 
+          <PreferencesSection
+            v-if="desktopMode"
+            id="section-preferences"
+          />
+
           <!-- 站点信息 -->
           <SiteInfoSection
             id="section-site-info"
@@ -206,8 +211,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { PageHeader, PageContainer } from '@/components/layout'
+import { hasDesktopSession } from '@/desktop/session'
 
 // Composables
 import { useSystemConfig } from './system-settings/composables/useSystemConfig'
@@ -221,13 +228,17 @@ import BasicConfigSection from './system-settings/BasicConfigSection.vue'
 import RequestLogSection from './system-settings/RequestLogSection.vue'
 import CleanupPolicySection from './system-settings/CleanupPolicySection.vue'
 import SystemInfoSection from './system-settings/SystemInfoSection.vue'
+import PreferencesSection from './system-settings/PreferencesSection.vue'
 
 // Dialog components
 import ConfigImportDialog from './system-settings/ConfigImportDialog.vue'
 import AggregateImportDialog from './system-settings/AggregateImportDialog.vue'
 
 // TOC 目录导航
+const desktopMode = hasDesktopSession()
+const route = useRoute()
 const tocItems = [
+  ...(desktopMode ? [{ id: 'section-preferences', label: '偏好设置' }] : []),
   { id: 'section-site-info', label: '站点信息' },
   { id: 'section-data-mgmt', label: '数据管理' },
   { id: 'section-proxy', label: '网络代理' },
@@ -244,15 +255,25 @@ function getScrollContainer(): HTMLElement | null {
   return document.querySelector('.app-shell__content')
 }
 
-function scrollToSection(id: string) {
+function scrollToSection(id: string, behavior: 'smooth' | 'auto' = 'smooth') {
   const el = document.getElementById(id)
   const container = getScrollContainer()
   if (el && container) {
     const offset = 80
     const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - offset
-    container.scrollTo({ top, behavior: 'smooth' })
+    container.scrollTo({ top, behavior })
   }
 }
+
+function scrollToHash() {
+  const id = route.hash.slice(1)
+  if (tocItems.some(item => item.id === id)) scrollToSection(id, 'auto')
+}
+
+watch(() => route.hash, async () => {
+  await nextTick()
+  scrollToHash()
+})
 
 function setupScrollSpy() {
   const sectionIds = tocItems.map(item => item.id)
@@ -363,6 +384,7 @@ onMounted(async () => {
   ])
   await nextTick()
   setupScrollSpy()
+  scrollToHash()
 })
 
 onBeforeUnmount(() => {

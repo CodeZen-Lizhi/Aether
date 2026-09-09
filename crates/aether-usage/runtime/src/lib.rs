@@ -41,9 +41,9 @@ pub use report_context::{
     build_locally_actionable_report_context_from_video_task, report_context_is_locally_actionable,
 };
 pub use runtime::{
-    UsageBillingEventEnricher, UsageBodyCapturePolicy, UsageQueueHealthSnapshot,
-    UsageRequestRecordLevel, UsageRuntime, UsageRuntimeAccess, UsageRuntimeMetricsSnapshot,
-    DEFAULT_USAGE_REQUEST_BODY_CAPTURE_LIMIT_BYTES,
+    UsageBillingEventEnricher, UsageBodyCapturePolicy, UsagePersistenceHandoff,
+    UsageQueueHealthSnapshot, UsageRequestRecordLevel, UsageRuntime, UsageRuntimeAccess,
+    UsageRuntimeMetricsSnapshot, DEFAULT_USAGE_REQUEST_BODY_CAPTURE_LIMIT_BYTES,
     DEFAULT_USAGE_RESPONSE_BODY_CAPTURE_LIMIT_BYTES,
 };
 pub use settlement::{settle_usage_if_needed, UsageSettlementWriter};

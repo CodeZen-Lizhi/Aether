@@ -7,6 +7,7 @@ import {
   checkAdminAccess
 } from './guards'
 import { routes } from './routes'
+import { hasDesktopSession } from '@/desktop/session'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -15,6 +16,21 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+
+  if (hasDesktopSession()) {
+    try {
+      if (!await authStore.connectDesktop()) return next(false)
+      if (to.path === '/admin/settings') {
+        return next({ path: '/admin/system', query: to.query, hash: '#section-preferences', replace: true })
+      }
+      if (to.path === '/' || to.path === '/admin') return next('/admin/dashboard')
+      return next()
+    } catch (error) {
+      log.error('Desktop connection guard failed', error)
+      authStore.failDesktopConnection()
+      return next(false)
+    }
+  }
 
   try {
     const isAuthenticated = await ensureUserLoaded(authStore)

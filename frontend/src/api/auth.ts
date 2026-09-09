@@ -12,7 +12,7 @@ export interface LoginResponse {
   token_type?: string
   expires_in?: number
   user_id?: string // UUID
-  email?: string
+  email?: string | null
   username?: string
   role?: string
 }

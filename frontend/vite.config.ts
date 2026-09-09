@@ -51,6 +51,10 @@ export default defineConfig(({ mode }) => {
       // 使用 esbuild 进行压缩（默认）
       minify: 'esbuild',
       rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          desktop: path.resolve(__dirname, 'desktop.html'),
+        },
         output: {
           // 手动分块以优化加载性能
           manualChunks: {

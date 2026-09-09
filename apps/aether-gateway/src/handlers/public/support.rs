@@ -40,6 +40,7 @@ pub(crate) use self::support_auth::auth_session::build_auth_wallet_summary_paylo
 use self::support_auth::auth_session::{
     handle_auth_me, resolve_authenticated_local_user, AuthenticatedLocalUserContext,
 };
+pub(crate) use self::support_auth::handle_desktop_session;
 use self::support_auth::{
     build_auth_error_response, build_auth_json_response, build_auth_settings_payload,
     extract_client_device_id, maybe_build_local_auth_response,

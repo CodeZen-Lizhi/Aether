@@ -4,6 +4,8 @@
 
 调度策略页的读写边界见 [Simplified Routing](../aether-routing-core/backend/simplified-routing.md)：保存须传入原分组配置，保留未退役规则的条件、阶段和执行语义；Key 优先级读取实体字段。
 
+桌面启动页 `src/desktop` 的 IPC、校验、状态与原生验收见 [Desktop Host Contract](../aether-desktop/backend/desktop-contract.md)。管理后台继续使用本机 HTTP 同源 API，不获得 Tauri 桌面命令权限。
+
 ---
 
 ## Convention: i18n 文案机制（中文源文案 + 映射字典）

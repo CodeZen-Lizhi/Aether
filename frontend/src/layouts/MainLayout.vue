@@ -117,6 +117,7 @@
 
         <!-- FOOTER (Profile) -->
         <Transition
+          v-if="!desktopMode"
           name="sidebar-mode"
           mode="out-in"
         >
@@ -135,7 +136,7 @@
               >
                 <div
                   class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-black/5 bg-[#f0f0eb] text-xs font-bold text-[#0f172a] dark:bg-white/10 dark:text-[#93c5fd]"
-                  :title="sidebarCollapsed ? authStore.user?.username : undefined"
+                  :title="sidebarCollapsed ? profileLabel : undefined"
                 >
                   {{ authStore.user?.username?.substring(0, 2).toUpperCase() }}
                 </div>
@@ -143,7 +144,7 @@
                   v-if="!sidebarCollapsed"
                   class="flex min-w-0 flex-col"
                 >
-                  <span class="truncate text-xs font-semibold leading-none text-foreground opacity-90">{{ authStore.user?.username }}</span>
+                  <span class="truncate text-xs font-semibold leading-none text-foreground opacity-90">{{ profileLabel }}</span>
                   <span class="mt-1.5 text-[10px] leading-none text-muted-foreground opacity-50">{{ currentRoleLabel }}</span>
                 </div>
               </div>
@@ -155,12 +156,13 @@
                 <RouterLink
                   to="/admin/settings"
                   class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                  :aria-label="sidebarCollapsed ? t('common.settings') : undefined"
-                  :title="t('common.settings')"
+                  :aria-label="settingsLabel"
+                  :title="settingsLabel"
                 >
                   <Settings class="h-4 w-4" />
                 </RouterLink>
                 <button
+                  v-if="!desktopMode"
                   class="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-red-500"
                   :aria-label="sidebarCollapsed ? t('common.logout') : undefined"
                   :title="t('common.logout')"
@@ -201,6 +203,8 @@
               <ThemeModeButton />
               <button
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
+                :aria-label="legacyT(mobileMenuOpen ? '关闭导航菜单' : '打开导航菜单')"
+                :aria-expanded="mobileMenuOpen"
                 @click="mobileMenuOpen = !mobileMenuOpen"
               >
                 <div class="relative w-5 h-5">
@@ -278,14 +282,17 @@
               </div>
 
               <!-- User Section -->
-              <div class="mt-4 pt-4 border-t border-[#cc785c]/10 dark:border-[rgba(227,224,211,0.12)]">
+              <div
+                v-if="!desktopMode"
+                class="mt-4 pt-4 border-t border-[#cc785c]/10 dark:border-[rgba(227,224,211,0.12)]"
+              >
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-3 min-w-0">
                     <div class="w-8 h-8 rounded-full bg-[#f0f0eb] dark:bg-white/10 border border-black/5 flex items-center justify-center text-xs font-bold text-[#0f172a] dark:text-[#93c5fd] shrink-0">
                       {{ authStore.user?.username?.substring(0, 2).toUpperCase() }}
                     </div>
                     <div class="flex flex-col min-w-0">
-                      <span class="text-sm font-semibold leading-none truncate text-[#191919] dark:text-white">{{ authStore.user?.username }}</span>
+                      <span class="text-sm font-semibold leading-none truncate text-[#191919] dark:text-white">{{ profileLabel }}</span>
                       <span class="text-[10px] text-[#91918d] dark:text-muted-foreground leading-none mt-1">{{ currentRoleLabel }}</span>
                     </div>
                   </div>
@@ -293,12 +300,14 @@
                     <RouterLink
                       to="/admin/settings"
                       class="p-2 hover:bg-muted/50 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
-                      :title="t('common.settings')"
+                      :aria-label="settingsLabel"
+                      :title="settingsLabel"
                       @click="mobileMenuOpen = false"
                     >
                       <Settings class="w-4 h-4" />
                     </RouterLink>
                     <button
+                      v-if="!desktopMode"
                       class="p-2 rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
                       :title="t('common.logout')"
                       @click="handleLogout"
@@ -385,12 +394,16 @@ import {
 import { prefetchNavigationTarget } from '@/utils/adminNavigationPrefetch'
 import { useI18n } from '@/i18n'
 import { buildBreadcrumbs, buildNavigation } from './main-layout/navigation'
+import { hasDesktopSession } from '@/desktop/session'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const { siteName, siteSubtitle } = useSiteInfo()
-const { t } = useI18n()
+const { t, legacyT } = useI18n()
+const desktopMode = hasDesktopSession()
+const profileLabel = computed(() => authStore.user?.username)
+const settingsLabel = computed(() => t('common.settings'))
 
 const showAuthError = ref(false)
 const mobileMenuOpen = ref(false)
@@ -398,7 +411,7 @@ const sidebarCollapsed = useLocalStorage('aether-sidebar-collapsed', false)
 
 function syncAuthNotice() {
   authStore.syncToken()
-  showAuthError.value = !!authStore.user && !authStore.token
+  showAuthError.value = !desktopMode && !!authStore.user && !authStore.token
 }
 
 function handleStorageChange(event: StorageEvent) {
@@ -416,7 +429,7 @@ function handleVisibilityChange() {
 watch(
   () => [authStore.user, authStore.token] as const,
   () => {
-    showAuthError.value = !!authStore.user && !authStore.token
+    showAuthError.value = !desktopMode && !!authStore.user && !authStore.token
   },
   { immediate: true }
 )
@@ -433,12 +446,14 @@ onUnmounted(() => {
 })
 
 async function handleRelogin() {
+  if (desktopMode) return
   showAuthError.value = false
   await authStore.logout()
   await router.push('/')
 }
 
 async function handleLogout() {
+  if (desktopMode) return
   await authStore.logout()
   await router.push('/')
 }
