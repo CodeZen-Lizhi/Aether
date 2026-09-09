@@ -1053,3 +1053,31 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 38: 修复完整备份代理显示和渠道信息恢复
+<!-- trellis-session: v=2 fp=d181dcda4a3ac3ee -->
+
+**Date**: 2026-09-09
+**Task**: 修复完整备份代理显示和渠道信息恢复
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+修复导入后代理列表缓存和默认代理引用；补齐渠道元数据、状态与用量，保持原子回滚。140 项测试及随包运行检查通过；两分支已同步 push，更新的 arm64 安装包已交付 Downloads。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bbab15f05` | 修复备份导入后代理列表和系统设置未刷新 |
+| `8670776fc` | 补齐完整备份渠道信息并修复默认代理引用 |
+
+### Testing
+
+- [OK] 前端 76 + 网关 API 12 + 网关备份 14 + 管理契约 32 + SQLite 事务 6 = 140 项通过
+- [OK] 签名、DMG 内容及临时数据库随包验收通过
+
+### Status
+
+[OK] **Completed**
