@@ -283,12 +283,13 @@ export function parseTestModelError(result: {
 
 /**
  * 解析上游模型查询错误信息
- * 将后端返回的原始错误信息（如 "HTTP 401: {json...}"）转换为友好的错误提示
+ * 为常见错误附加友好提示，保留后端返回的完整详情及多条错误。
  * @param error 错误字符串，格式可能是 "HTTP {status}: {json_body}" 或其他
- * @returns 友好的错误信息
+ * @returns 友好提示及未经截断的原始错误
  */
 export function parseUpstreamModelError(error: string): string {
   if (!error) return '获取上游模型失败'
+  const withDetails = (hint: string) => `${hint}\n${error}`
 
   // 匹配 "HTTP {status}: {body}" 格式
   const httpMatch = error.match(/^HTTP\s+(\d+):\s*(.*)$/s)
@@ -314,81 +315,47 @@ export function parseUpstreamModelError(error: string): string {
     if (body) {
       try {
         const parsed = JSON.parse(body)
-        // 常见的错误格式: {error: {message: "..."}} 或 {error: "..."} 或 {message: "..."}
-        let detailMsg = ''
-        if (parsed.error?.message) {
-          detailMsg = parsed.error.message
-        } else if (typeof parsed.error === 'string') {
-          detailMsg = parsed.error
-        } else if (parsed.message) {
-          detailMsg = parsed.message
-        } else if (parsed.detail) {
-          detailMsg = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail)
-        }
+        const detailMsg = typeof parsed?.error === 'string'
+          ? parsed.error
+          : parsed?.error?.message ?? parsed?.message ?? parsed?.detail
 
         // 如果提取到了详细消息，用它来丰富友好消息
-        if (detailMsg) {
+        if (typeof detailMsg === 'string') {
           // 检查是否是 token/认证相关的错误
           const lowerMsg = detailMsg.toLowerCase()
           if (lowerMsg.includes('invalid token') || lowerMsg.includes('invalid api key')) {
-            return '密钥无效，请检查密钥是否正确'
+            friendlyMsg = '密钥无效，请检查密钥是否正确'
+          } else if (lowerMsg.includes('expired')) {
+            friendlyMsg = '密钥已过期，请更新密钥'
+          } else if (lowerMsg.includes('quota') || lowerMsg.includes('exceeded')) {
+            friendlyMsg = '配额已用尽或超出限制'
+          } else if (lowerMsg.includes('rate limit')) {
+            friendlyMsg = '请求频率过高，请稍后重试'
           }
-          if (lowerMsg.includes('expired')) {
-            return '密钥已过期，请更新密钥'
-          }
-          if (lowerMsg.includes('quota') || lowerMsg.includes('exceeded')) {
-            return '配额已用尽或超出限制'
-          }
-          if (lowerMsg.includes('rate limit')) {
-            return '请求频率过高，请稍后重试'
-          }
-          // 没有匹配特定关键词，但有详细信息，使用它作为补充
-          if (friendlyMsg) {
-            const truncated = detailMsg.length > 80 ? `${detailMsg.substring(0, 80)  }...` : detailMsg
-            return `${friendlyMsg}: ${truncated}`
-          }
-          // 没有友好消息，直接使用详细信息
-          const truncated = detailMsg.length > 100 ? `${detailMsg.substring(0, 100)  }...` : detailMsg
-          return truncated
         }
       } catch {
         // JSON 解析失败，忽略
       }
     }
 
-    // 返回友好消息，附加状态码
-    if (friendlyMsg) {
-      return friendlyMsg
-    }
-    return `请求失败 (HTTP ${status})`
+    return withDetails(friendlyMsg || `请求失败 (HTTP ${status})`)
   }
 
   // 检查是否是请求错误
   if (error.startsWith('Request error:')) {
     const detail = error.replace('Request error:', '').trim()
     if (detail.toLowerCase().includes('timeout')) {
-      return '请求超时，上游服务响应过慢'
+      return withDetails('请求超时，上游服务响应过慢')
     }
     if (detail.toLowerCase().includes('connection')) {
-      return '无法连接到上游服务'
+      return withDetails('无法连接到上游服务')
     }
-    return '网络请求失败'
+    return withDetails('网络请求失败')
   }
 
   // 检查是否是未知 API 格式
   if (error.startsWith('Unknown API format:')) {
-    return '不支持的 API 格式'
-  }
-
-  // 如果包含分号，可能是多个错误合并的，取第一个
-  if (error.includes('; ')) {
-    const firstError = error.split('; ')[0]
-    return parseUpstreamModelError(firstError)
-  }
-
-  // 默认返回原始错误（截断过长的部分）
-  if (error.length > 100) {
-    return `${error.substring(0, 100)  }...`
+    return withDetails('不支持的 API 格式')
   }
   return error
 }

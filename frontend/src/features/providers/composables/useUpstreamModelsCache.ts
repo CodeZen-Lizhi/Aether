@@ -33,16 +33,15 @@ function getBatchRequestKey(providerId: string, apiKeyIds: string[]): string {
 }
 
 function providerModelsFetchResult(response: ProviderModelsQueryResponse): FetchResult {
+  const details = [...new Set([response.data?.error, response.data?.warning].filter(Boolean))].join('\n')
   if (response.success && response.data?.models) {
-    const partialWarning = response.data.warning ?? response.data.error
     return {
       models: response.data.models.map(model => ({ ...model, api_formats: model.api_formats ?? [] })),
-      warning: partialWarning ? parseUpstreamModelError(partialWarning) : undefined,
+      warning: details ? parseUpstreamModelError(details) : undefined,
       fromCache: response.data.from_cache,
     }
   }
-  const rawError = response.data?.error || response.data?.warning || '获取上游模型失败'
-  return { models: [], error: parseUpstreamModelError(rawError) }
+  return { models: [], error: parseUpstreamModelError(details || '获取上游模型失败') }
 }
 
 function fetchProviderModels(

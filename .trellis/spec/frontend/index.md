@@ -58,6 +58,18 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
+## Convention: 模型查询和批量映射错误保留完整详情
+
+**What**: `utils/errorParser.ts` 的 `parseUpstreamModelError(error: string): string` 可以为常见状态附加中文提示，但必须保留接口返回的完整原文；不按 80 / 100 字符截断，也不按分号只取第一个 Key 或格式的错误。`useUpstreamModelsCache` 合并 `data.error` 和 `data.warning`，避免其中一项覆盖另一项。
+
+**Why**: 批量映射弹窗曾只显示 `error sending request for ur...`，后续 Key 的失败和 HTTP 响应详情被前端丢弃，无法排查真实原因。
+
+**UI contract**: `BatchModelMappingDialog.vue` 使用可翻译的反馈标题和独立的原始详情。详情通过 `<pre class="whitespace-pre-wrap [overflow-wrap:anywhere]">` 的文本插值呈现，保留换行并使长 URL 换行；`pre` 会避开 legacy i18n 的标点与空白改写，不使用 `v-html`，不绕过已有脱敏。部分查询失败的详情留在弹窗中；批量保存按客户端模型列出所有失败原因，全部成功后自动关闭。
+
+**Verification**: `errorParser.spec.ts` 验证长错误、多 Key、HTTP 状态 / 响应及请求失败原文完整保留；`useUpstreamModelsCache.spec.ts` 验证 error / warning 同时存在；`BatchModelMappingDialog.spec.ts` 验证详情末尾、所有失败模型以及重试成功关闭。修改时同时检查窄窗口无水平溢出。
+
+---
+
 ## Convention: 供应商列表排序口径与调度策略对齐
 
 **What**: 供应商管理列表（`views/admin/ProviderManagement.vue`）的排序固定为三级：启用状态（启用在前）→ 调度优先级升序 → `created_at` 升序兜底。优先级只读系统默认分组：`listRoutingGroups()` → `findSystemDefaultRoutingGroup` → `parseSchedulingStrategy(group?.config_json).providerPriorities`（1 起越小越靠前），未配置的供应商用 `Number.MAX_SAFE_INTEGER` 缀尾。排序实现抽在 `features/providers/utils/providerPrioritySort.ts` 纯函数（含单测），桌面表格与移动端卡片共用同一 computed。
