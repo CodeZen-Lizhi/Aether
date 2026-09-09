@@ -30,11 +30,12 @@ use aether_data_contracts::repository::usage::{
     UsageCacheAffinityIntervalQuery, UsageCacheHitSummaryQuery, UsageCleanupExecutionMode,
     UsageCleanupPreviewCounts, UsageCleanupSummary, UsageCleanupTargets, UsageCleanupWindow,
     UsageCostSavingsSummaryQuery, UsageDailyHeatmapQuery, UsageDashboardDailyBreakdownQuery,
-    UsageDashboardProviderCountsQuery, UsageDashboardSummaryQuery, UsageErrorDistributionQuery,
-    UsageLeaderboardGroupBy, UsageLeaderboardQuery, UsageMonitoringErrorCountQuery,
-    UsageMonitoringErrorListQuery, UsagePerformancePercentilesQuery, UsageProviderPerformanceQuery,
-    UsageReadRepository, UsageSettledCostSummaryQuery, UsageTimeSeriesGranularity,
-    UsageTimeSeriesQuery, UsageWriteRepository,
+    UsageDashboardDailyRowKind, UsageDashboardProviderCountsQuery, UsageDashboardSummaryQuery,
+    UsageErrorDistributionQuery, UsageLeaderboardGroupBy, UsageLeaderboardQuery,
+    UsageMonitoringErrorCountQuery, UsageMonitoringErrorListQuery,
+    UsagePerformancePercentilesQuery, UsageProviderPerformanceQuery, UsageReadRepository,
+    UsageSettledCostSummaryQuery, UsageTimeSeriesGranularity, UsageTimeSeriesQuery,
+    UsageWriteRepository,
 };
 use aether_data_contracts::DataLayerError;
 
@@ -1320,30 +1321,22 @@ fn sqlite_usage_local_date_expr(tz_offset_minutes: i32) -> String {
     format!("date(created_at_unix_ms + ({offset}), 'unixepoch')")
 }
 
-fn sqlite_dashboard_raw_usage_start(
-    aggregate_rows: &[StoredUsageDashboardDailyBreakdownRow],
-    requested_start_unix_secs: u64,
-) -> Result<u64, DataLayerError> {
-    let Some(last_aggregate) = aggregate_rows.last() else {
-        return Ok(requested_start_unix_secs);
-    };
-    let date =
-        chrono::NaiveDate::parse_from_str(&last_aggregate.date, "%Y-%m-%d").map_err(|err| {
-            DataLayerError::UnexpectedValue(format!(
-                "invalid dashboard daily aggregate date {}: {err}",
-                last_aggregate.date
-            ))
-        })?;
-    let midnight = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
-        DataLayerError::UnexpectedValue(format!(
-            "invalid dashboard daily aggregate date {}",
-            last_aggregate.date
-        ))
-    })?;
-    let end_unix_secs = u64::try_from(midnight.and_utc().timestamp())
-        .map_err(|_| DataLayerError::UnexpectedValue("negative dashboard aggregate date".into()))?
-        .saturating_add(86_400);
-    Ok(requested_start_unix_secs.max(end_unix_secs))
+fn map_dashboard_daily_breakdown_row(
+    row: &SqliteRow,
+    kind: UsageDashboardDailyRowKind,
+) -> Result<StoredUsageDashboardDailyBreakdownRow, DataLayerError> {
+    Ok(StoredUsageDashboardDailyBreakdownRow {
+        kind,
+        date: row.try_get("date").map_sql_err()?,
+        model: row.try_get("model").map_sql_err()?,
+        provider: row.try_get("provider").map_sql_err()?,
+        requests: sqlite_aggregate_u64(row, "requests")?,
+        total_tokens: sqlite_aggregate_u64(row, "total_tokens")?,
+        total_cost_usd: sqlite_real(row, "total_cost_usd")?,
+        actual_total_cost_usd: sqlite_real(row, "actual_total_cost_usd")?,
+        response_time_sum_ms: sqlite_real(row, "response_time_sum_ms")?,
+        response_time_samples: sqlite_aggregate_u64(row, "response_time_samples")?,
+    })
 }
 
 fn sqlite_usage_breakdown_group_expr(group_by: UsageBreakdownGroupBy) -> &'static str {
@@ -2300,76 +2293,67 @@ WHERE "date" >= ?
     async fn list_dashboard_daily_breakdown_from_daily_aggregates(
         &self,
         query: &UsageDashboardDailyBreakdownQuery,
+        connection: &mut sqlx::SqliteConnection,
     ) -> Result<Vec<StoredUsageDashboardDailyBreakdownRow>, DataLayerError> {
-        let rows = if let Some(user_id) = query.user_id.as_deref() {
-            sqlx::query(
-                r#"
-SELECT
-  date("date", 'unixepoch') AS date,
-  'aggregate' AS model,
-  'aggregate' AS provider,
-  COALESCE(SUM(total_requests), 0) AS requests,
-  COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) AS total_tokens,
-  COALESCE(SUM(COALESCE(CAST(total_cost AS REAL), 0)), 0) AS total_cost_usd,
-  COALESCE(SUM(COALESCE(CAST(actual_total_cost AS REAL), 0)), 0) AS actual_total_cost_usd,
-  0.0 AS response_time_sum_ms,
-  0 AS response_time_samples
-FROM stats_user_daily
-WHERE user_id = ?
-  AND "date" >= ?
-  AND "date" < ?
-  AND total_requests > 0
-GROUP BY "date"
-ORDER BY "date" ASC
-"#,
-            )
-            .bind(user_id)
-            .bind(query.created_from_unix_secs as i64)
-            .bind(query.created_until_unix_secs as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_sql_err()?
+        let table = if query.user_id.is_some() {
+            "stats_user_daily"
         } else {
-            sqlx::query(
-                r#"
-SELECT
-  date("date", 'unixepoch') AS date,
-  'aggregate' AS model,
-  'aggregate' AS provider,
-  COALESCE(SUM(total_requests), 0) AS requests,
-  COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) AS total_tokens,
-  COALESCE(SUM(COALESCE(CAST(total_cost AS REAL), 0)), 0) AS total_cost_usd,
-  COALESCE(SUM(COALESCE(CAST(actual_total_cost AS REAL), 0)), 0) AS actual_total_cost_usd,
-  0.0 AS response_time_sum_ms,
-  0 AS response_time_samples
-FROM stats_daily
-WHERE "date" >= ?
-  AND "date" < ?
-  AND total_requests > 0
-GROUP BY "date"
-ORDER BY "date" ASC
-"#,
-            )
-            .bind(query.created_from_unix_secs as i64)
-            .bind(query.created_until_unix_secs as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_sql_err()?
+            "stats_daily"
         };
+        let mut builder = QueryBuilder::<Sqlite>::new(format!(
+            r#"
+SELECT date("date", 'unixepoch') AS date, '' AS model, '' AS provider,
+  total_requests AS requests,
+  input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens AS total_tokens,
+  total_cost AS total_cost_usd, actual_total_cost AS actual_total_cost_usd,
+  response_time_sum_ms, response_time_samples
+FROM {table}
+WHERE "date" >= "#
+        ));
+        builder.push_bind(query.created_from_unix_secs as i64);
+        // Retained rollups keep their stored UTC date labels, including when
+        // the UI's local-day upper bound precedes the following UTC midnight.
+        builder.push(" AND \"date\" < ");
+        builder.push_bind(query.created_until_unix_secs as i64);
+        if let Some(user_id) = query.user_id.as_deref() {
+            builder.push(" AND user_id = ").push_bind(user_id);
+        }
+        builder.push(" AND total_requests > 0 ORDER BY \"date\" ASC");
+        let rows = builder.build().fetch_all(connection).await.map_sql_err()?;
+        rows.iter()
+            .map(|row| map_dashboard_daily_breakdown_row(row, UsageDashboardDailyRowKind::Totals))
+            .collect()
+    }
 
+    async fn list_dashboard_saved_model_provider_breakdown(
+        &self,
+        query: &UsageDashboardDailyBreakdownQuery,
+        connection: &mut sqlx::SqliteConnection,
+    ) -> Result<Vec<StoredUsageDashboardDailyBreakdownRow>, DataLayerError> {
+        let table = if query.user_id.is_some() {
+            "stats_user_daily_model_provider"
+        } else {
+            "stats_daily_model_provider"
+        };
+        let mut builder = QueryBuilder::<Sqlite>::new(format!(
+            r#"
+SELECT date("date", 'unixepoch') AS date, model, provider_name AS provider,
+  total_requests AS requests, total_tokens, total_cost AS total_cost_usd,
+  0.0 AS actual_total_cost_usd, response_time_sum_ms, response_time_samples
+FROM {table}
+WHERE "date" >= "#
+        ));
+        builder.push_bind(query.created_from_unix_secs as i64);
+        builder.push(" AND \"date\" < ");
+        builder.push_bind(query.created_until_unix_secs as i64);
+        if let Some(user_id) = query.user_id.as_deref() {
+            builder.push(" AND user_id = ").push_bind(user_id);
+        }
+        builder.push(" AND total_requests > 0 ORDER BY \"date\", model, provider_name");
+        let rows = builder.build().fetch_all(connection).await.map_sql_err()?;
         rows.iter()
             .map(|row| {
-                Ok(StoredUsageDashboardDailyBreakdownRow {
-                    date: row.try_get("date").map_sql_err()?,
-                    model: row.try_get("model").map_sql_err()?,
-                    provider: row.try_get("provider").map_sql_err()?,
-                    requests: sqlite_aggregate_u64(row, "requests")?,
-                    total_tokens: sqlite_aggregate_u64(row, "total_tokens")?,
-                    total_cost_usd: sqlite_real(row, "total_cost_usd")?,
-                    actual_total_cost_usd: sqlite_real(row, "actual_total_cost_usd")?,
-                    response_time_sum_ms: sqlite_real(row, "response_time_sum_ms")?,
-                    response_time_samples: sqlite_aggregate_u64(row, "response_time_samples")?,
-                })
+                map_dashboard_daily_breakdown_row(row, UsageDashboardDailyRowKind::Breakdown)
             })
             .collect()
     }
@@ -2819,24 +2803,26 @@ LEFT JOIN usage_settlement_snapshots AS settlement
             return Ok(Vec::new());
         }
 
+        // Read one snapshot while maintenance may be replacing daily rollups.
+        let mut transaction = self.pool.begin().await.map_sql_err()?;
         let aggregate_rows = self
-            .list_dashboard_daily_breakdown_from_daily_aggregates(query)
+            .list_dashboard_daily_breakdown_from_daily_aggregates(query, &mut transaction)
             .await?;
-        let raw_created_from_unix_secs =
-            sqlite_dashboard_raw_usage_start(&aggregate_rows, query.created_from_unix_secs)?;
-
+        let saved_rows = self
+            .list_dashboard_saved_model_provider_breakdown(query, &mut transaction)
+            .await?;
         let date_expr = sqlite_usage_local_date_expr(query.tz_offset_minutes);
         let mut builder = QueryBuilder::<Sqlite>::new(format!(
             r#"
 SELECT
   {date_expr} AS date,
-  model,
-  provider_name AS provider,
+  date(created_at_unix_ms, 'unixepoch') AS aggregate_date,
+  model, provider_name AS provider,
   COUNT(*) AS requests,
   COALESCE(SUM({total_tokens_expr}), 0) AS total_tokens,
-  COALESCE(SUM(COALESCE(CAST(total_cost_usd AS REAL), 0)), 0) AS total_cost_usd,
-  COALESCE(SUM(COALESCE(CAST(actual_total_cost_usd AS REAL), 0)), 0) AS actual_total_cost_usd,
-  COALESCE(SUM(CASE WHEN response_time_ms IS NOT NULL THEN MAX(COALESCE(response_time_ms, 0), 0) ELSE 0 END), 0)
+  COALESCE(SUM(COALESCE(settlement.billing_total_cost_usd, CAST(total_cost_usd AS REAL), 0)), 0) AS total_cost_usd,
+  COALESCE(SUM(COALESCE(settlement.billing_actual_total_cost_usd, CAST(actual_total_cost_usd AS REAL), 0)), 0) AS actual_total_cost_usd,
+  COALESCE(SUM(CASE WHEN response_time_ms IS NOT NULL THEN MAX(response_time_ms, 0) ELSE 0 END), 0)
     AS response_time_sum_ms,
   COALESCE(SUM(CASE WHEN response_time_ms IS NOT NULL THEN 1 ELSE 0 END), 0)
     AS response_time_samples
@@ -2850,7 +2836,7 @@ LEFT JOIN usage_settlement_snapshots AS settlement
         push_sqlite_usage_range(
             &mut builder,
             &mut has_where,
-            raw_created_from_unix_secs,
+            query.created_from_unix_secs,
             query.created_until_unix_secs,
         );
         push_sqlite_usage_finalized_filter(&mut builder, &mut has_where);
@@ -2860,35 +2846,56 @@ LEFT JOIN usage_settlement_snapshots AS settlement
             "user_id",
             query.user_id.as_deref(),
         );
-        builder.push(
-            r#"
-GROUP BY date, model, provider
-ORDER BY date ASC, total_cost_usd DESC, model ASC, provider ASC
-"#,
-        );
+        builder
+            .push(" GROUP BY date, aggregate_date, model, provider ORDER BY date, model, provider");
+        let raw_rows = builder
+            .build()
+            .fetch_all(&mut *transaction)
+            .await
+            .map_sql_err()?;
+        transaction.commit().await.map_sql_err()?;
+        let mut raw_counts = BTreeMap::<String, u64>::new();
+        for row in &raw_rows {
+            let day: String = row.try_get("aggregate_date").map_sql_err()?;
+            let count = raw_counts.entry(day).or_default();
+            *count = count.saturating_add(sqlite_aggregate_u64(row, "requests")?);
+        }
 
-        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
-        let raw_rows = rows
+        // Complete raw days can be regrouped in the requested timezone. Retained
+        // rollups remain authoritative when some or all raw records were cleaned.
+        let mut rows: Vec<_> = aggregate_rows
+            .into_iter()
+            .filter(|row| raw_counts.get(&row.date).copied().unwrap_or(0) < row.requests)
+            .collect();
+        let aggregate_days: HashSet<_> = rows.iter().map(|row| row.date.clone()).collect();
+        let saved_rows: Vec<_> = saved_rows
+            .into_iter()
+            .filter(|row| aggregate_days.contains(&row.date))
+            .collect();
+        let saved_groups: HashSet<_> = saved_rows
             .iter()
-            .map(|row| {
-                Ok(StoredUsageDashboardDailyBreakdownRow {
-                    date: row.try_get("date").map_sql_err()?,
-                    model: row.try_get("model").map_sql_err()?,
-                    provider: row.try_get("provider").map_sql_err()?,
-                    requests: sqlite_aggregate_u64(row, "requests")?,
-                    total_tokens: sqlite_aggregate_u64(row, "total_tokens")?,
-                    total_cost_usd: sqlite_real(row, "total_cost_usd")?,
-                    actual_total_cost_usd: sqlite_real(row, "actual_total_cost_usd")?,
-                    response_time_sum_ms: sqlite_real(row, "response_time_sum_ms")?,
-                    response_time_samples: sqlite_aggregate_u64(row, "response_time_samples")?,
-                })
-            })
-            .collect::<Result<Vec<_>, DataLayerError>>()?;
-
-        // Daily aggregation intentionally trails live usage, so read only the
-        // unaggregated tail to avoid double-counting completed buckets.
-        let mut rows = aggregate_rows;
-        rows.extend(raw_rows);
+            .map(|row| (row.date.clone(), row.model.clone(), row.provider.clone()))
+            .collect();
+        rows.extend(saved_rows);
+        for raw in &raw_rows {
+            let aggregate_date: String = raw.try_get("aggregate_date").map_sql_err()?;
+            let mut row =
+                map_dashboard_daily_breakdown_row(raw, UsageDashboardDailyRowKind::Usage)?;
+            if aggregate_days.contains(&aggregate_date) {
+                if saved_groups.contains(&(
+                    aggregate_date.clone(),
+                    row.model.clone(),
+                    row.provider.clone(),
+                )) {
+                    continue;
+                }
+                // Old backups may retain totals but no grouped rollups. Existing
+                // raw records still identify part of the historical breakdown.
+                row.kind = UsageDashboardDailyRowKind::Breakdown;
+                row.date = aggregate_date;
+            }
+            rows.push(row);
+        }
         Ok(rows)
     }
 

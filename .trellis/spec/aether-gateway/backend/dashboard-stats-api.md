@@ -55,3 +55,13 @@ Adding a card only in the backend and assuming the frontend "will show it" — e
 #### Correct
 
 Treat the 4-card array as a versioned contract: backend json! block + integration test order assertion + `emptyStatPlaceholders` + `dashboard.ts` types updated in the same change.
+
+## Daily model and provider breakdown (`/api/dashboard/daily-stats`)
+
+- `StoredUsageDashboardDailyBreakdownRow.kind` distinguishes raw `Usage` (totals and dimensions), retained `Totals` (totals only), and `Breakdown` (dimensions only). Never encode a total as a synthetic model/provider named `aggregate`, or remove a real business name with a string blacklist.
+- SQLite reads totals, `stats_daily_model_provider` / `stats_user_daily_model_provider`, and grouped raw usage in one read transaction. Every source applies the same user scope. Complete raw UTC days take precedence and can be regrouped in the requested timezone; retained rollups keep their stored UTC date labels when raw history is incomplete.
+- Resolve coverage per day and model/provider group. Raw records fill gaps between retained dates and groups missing from old backups. A latest-aggregate cutoff loses historical holes; adding both a retained group and its raw records double-counts the dimension.
+- Retained totals and grouped rows are independent: grouped tables do not retain actual cost, so daily actual cost and total requests must be read from totals exactly once. Partial raw history must not replace a larger retained daily total.
+- Each daily response includes `unattributed_requests` and `unattributed_cost` for the retained remainder without model/provider details. It remains in daily totals, but is excluded from actual model/provider summaries and unique counts. The frontend labels the missing portion separately and explains the incomplete history. Never guess a provider or allocate its cost proportionally.
+- Chart labels preserve full stored model names. Prefix stripping can make different real models look like another model.
+- Regression evidence: SQLite usage tests cover saved dimensions, full raw days/timezone, partial history, retained-date gaps, user isolation and totals-only local-day queries. Gateway daily tests assert no double totals, real unique counts and the missing remainder; Dashboard tests verify chart labels and retained missing cost.

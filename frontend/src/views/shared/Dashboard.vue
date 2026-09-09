@@ -256,6 +256,14 @@
       />
     </div>
 
+    <p
+      v-if="hasIncompleteBreakdown"
+      role="status"
+      class="text-xs text-muted-foreground [overflow-wrap:anywhere]"
+    >
+      部分历史记录未保留模型或提供商明细，总请求和总费用已保留，缺失部分单独标注。
+    </p>
+
     <!-- 趋势图表区域 -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <!-- 每日模型成本（堆叠柱状图） -->
@@ -672,6 +680,12 @@ const costStats = ref<{
 
 const dailyStats = ref<DailyStat[]>([]);
 const providerSummary = ref<ProviderSummary[]>([]);
+const hasIncompleteBreakdown = computed(() => dailyStats.value.some(
+  (day) => (day.unattributed_requests ?? 0) > 0 || (day.unattributed_cost ?? 0) > 0,
+));
+const unattributedCost = computed(() => dailyStats.value.reduce(
+  (total, day) => total + (day.unattributed_cost ?? 0), 0,
+));
 const dailyTimeRange = ref<DateRangeParams>(
   getDateRangeFromPeriod("last7days"),
 );
@@ -783,7 +797,7 @@ const dailyModelCostChartData = computed<ChartData<"bar">>(() => {
   // 为每个模型创建一个 dataset
   const datasets: ChartDataset<"bar", number[]>[] = modelList.map(
     (model, index) => ({
-      label: model.replace("claude-", "").replace("gpt-", ""),
+      label: model,
       data: dailyStats.value.map((day) => {
         const found = day.model_breakdown?.find((mb) => mb.model === model);
         return found ? found.cost : 0;
@@ -795,6 +809,18 @@ const dailyModelCostChartData = computed<ChartData<"bar">>(() => {
       categoryPercentage: 0.7,
     }),
   );
+
+  if (unattributedCost.value > 0) {
+    datasets.push({
+      label: "未保留模型明细",
+      data: dailyStats.value.map((day) => day.unattributed_cost ?? 0),
+      backgroundColor: "rgba(148, 163, 184, 0.8)",
+      borderRadius: 2,
+      stack: "stack0",
+      barPercentage: 0.6,
+      categoryPercentage: 0.7,
+    });
+  }
 
   return {
     labels: dailyStats.value.map((stat) => formatDateForChart(stat.date)),
@@ -863,18 +889,25 @@ const PROVIDER_COLORS = [
 ];
 
 const providerCostChartData = computed<ChartData<"doughnut">>(() => {
-  if (providerSummary.value.length === 0) {
+  if (providerSummary.value.length === 0 && unattributedCost.value <= 0) {
     return { labels: [], datasets: [] };
   }
 
+  const labels = providerSummary.value.map((provider) => provider.provider);
+  const costs = providerSummary.value.map((provider) => provider.cost);
+  const colors = providerSummary.value.map((_, i) => PROVIDER_COLORS[i % PROVIDER_COLORS.length]);
+  if (unattributedCost.value > 0) {
+    labels.push("未保留提供商明细");
+    costs.push(unattributedCost.value);
+    colors.push("rgba(148, 163, 184, 0.8)");
+  }
+
   return {
-    labels: providerSummary.value.map((p) => p.provider),
+    labels,
     datasets: [
       {
-        data: providerSummary.value.map((p) => p.cost),
-        backgroundColor: providerSummary.value.map(
-          (_, i) => PROVIDER_COLORS[i % PROVIDER_COLORS.length],
-        ),
+        data: costs,
+        backgroundColor: colors,
         borderWidth: 2,
         borderColor: "rgba(255, 255, 255, 0.1)",
       },
