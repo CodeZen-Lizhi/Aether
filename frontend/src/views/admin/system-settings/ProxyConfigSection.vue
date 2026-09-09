@@ -57,17 +57,48 @@
               class="text-xs text-muted-foreground"
             >({{ nodes.length }})</span>
           </div>
+          <div class="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="store.loading"
+              @click="store.fetchNodes()"
+            >
+              刷新节点
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              @click="openAddDialog"
+            >
+              添加节点
+            </Button>
+          </div>
+        </div>
+
+        <p
+          v-if="store.loading"
+          role="status"
+          class="text-sm text-muted-foreground"
+        >
+          正在加载代理节点...
+        </p>
+        <div
+          v-else-if="store.error"
+          role="alert"
+          class="space-y-2 text-sm text-destructive"
+        >
+          <p>{{ store.error }}</p>
           <Button
             variant="outline"
             size="sm"
-            @click="openAddDialog"
+            @click="store.fetchNodes()"
           >
-            添加节点
+            重试
           </Button>
         </div>
-
         <div
-          v-if="nodes.length"
+          v-else-if="nodes.length"
           class="space-y-2"
         >
           <div
@@ -188,7 +219,7 @@ function onlineNodes() {
 }
 
 onMounted(() => {
-  void store.ensureLoaded()
+  void store.fetchNodes()
 })
 
 function nodeAddress(node: ProxyNode) {

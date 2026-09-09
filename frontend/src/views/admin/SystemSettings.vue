@@ -212,6 +212,7 @@ import { PageHeader, PageContainer } from '@/components/layout'
 // Composables
 import { useSystemConfig } from './system-settings/composables/useSystemConfig'
 import { useConfigExportImport } from './system-settings/composables/useConfigExportImport'
+import { useSiteInfo } from '@/composables/useSiteInfo'
 
 // Section components
 import SiteInfoSection from './system-settings/SiteInfoSection.vue'
@@ -311,6 +312,7 @@ const {
 } = useSystemConfig()
 
 // 数据导出/导入 composable
+const { refreshSiteInfo } = useSiteInfo()
 const {
   exportLoading,
   importLoading,
@@ -336,7 +338,9 @@ const {
   handleExportAggregate,
   handleAggregateFileSelect,
   confirmImportAggregate,
-} = useConfigExportImport(systemConfig)
+} = useConfigExportImport(systemConfig, async () => {
+  await Promise.all([loadSystemConfig(), refreshSiteInfo()])
+})
 
 type DataManagementKind = 'config' | 'aggregate'
 

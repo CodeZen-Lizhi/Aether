@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import type { AggregateImportResponse, ConfigImportResponse } from '@/api/admin'
+import { useProxyNodesStore } from '@/stores/proxy-nodes'
 
 const {
   errorMock,
@@ -9,6 +11,7 @@ const {
   importAggregateMock,
   exportConfigMock,
   exportAggregateMock,
+  listProxyNodesMock,
 } = vi.hoisted(() => ({
   errorMock: vi.fn(),
   successMock: vi.fn(),
@@ -16,6 +19,7 @@ const {
   importAggregateMock: vi.fn(),
   exportConfigMock: vi.fn(),
   exportAggregateMock: vi.fn(),
+  listProxyNodesMock: vi.fn(),
 }))
 
 vi.mock('@/composables/useToast', () => ({
@@ -23,6 +27,10 @@ vi.mock('@/composables/useToast', () => ({
 }))
 
 vi.mock('@/utils/logger', () => ({ log: { error: vi.fn() } }))
+
+vi.mock('@/api/proxy-nodes', () => ({
+  proxyNodesApi: { listProxyNodes: listProxyNodesMock },
+}))
 
 vi.mock('@/api/admin', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/admin')>(),
@@ -47,8 +55,8 @@ function buildFileInputEvent(content: string, size = content.length): Event {
   return event
 }
 
-function createState() {
-  return useConfigExportImport(ref({ site_name: 'Aether' }))
+function createState(onConfigImported?: () => Promise<void>) {
+  return useConfigExportImport(ref({ site_name: 'Aether' }), onConfigImported)
 }
 
 type ImportState = ReturnType<typeof createState>
@@ -116,6 +124,8 @@ function aggregateImportResult(): AggregateImportResponse {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  setActivePinia(createPinia())
+  listProxyNodesMock.mockResolvedValue({ items: [], total: 0, skip: 0, limit: 1000 })
   importConfigMock.mockResolvedValue(configImportResult())
   importAggregateMock.mockResolvedValue(aggregateImportResult())
 })
@@ -255,6 +265,86 @@ describe('useConfigExportImport file selection', () => {
 })
 
 describe('useConfigExportImport import results', () => {
+  it.each(['config', 'aggregate'] as const)('reloads system settings after a successful %s import', async (scope) => {
+    const reloadSettings = vi.fn().mockResolvedValue(undefined)
+    const state = createState(reloadSettings)
+    if (scope === 'config') {
+      await selectConfig(state)
+      await state.confirmImport()
+    } else {
+      await selectAggregate(state)
+      await state.confirmImportAggregate()
+    }
+    expect(reloadSettings).toHaveBeenCalledOnce()
+  })
+
+  it('invalidates cached nodes without using a revoked session when reauthentication is required', async () => {
+    const store = useProxyNodesStore()
+    await store.ensureLoaded()
+    listProxyNodesMock.mockClear()
+    const reloadSettings = vi.fn()
+    const state = createState(reloadSettings)
+    const result = aggregateImportResult()
+    result.users.reauthentication_required = true
+    importAggregateMock.mockResolvedValueOnce(result)
+    await selectAggregate(state)
+
+    await state.confirmImportAggregate()
+
+    expect(store.fetched).toBe(false)
+    expect(listProxyNodesMock).not.toHaveBeenCalled()
+    expect(reloadSettings).not.toHaveBeenCalled()
+    expect(state.aggregateImportResult.value).toEqual(result)
+    expect(state.aggregateImportDialogOpen.value).toBe(false)
+  })
+
+  it('keeps a committed import successful when the settings refresh fails', async () => {
+    const state = createState(vi.fn().mockRejectedValue(new Error('Refresh unavailable')))
+    await selectConfig(state)
+
+    await state.confirmImport()
+
+    expect(state.importDialogOpen.value).toBe(false)
+    expect(state.importResult.value).toEqual(configImportResult())
+    expect(successMock).toHaveBeenCalledWith('配置导入成功')
+    expect(errorMock).toHaveBeenCalledWith('数据已导入，但页面刷新失败，请刷新页面查看最新数据')
+  })
+
+  it('distinguishes a successful import from a subsequent proxy list failure', async () => {
+    const state = createState()
+    await selectAggregate(state)
+    listProxyNodesMock.mockRejectedValueOnce(new Error('Proxy list unavailable'))
+
+    await state.confirmImportAggregate()
+
+    expect(state.aggregateImportDialogOpen.value).toBe(false)
+    expect(state.aggregateImportResult.value).toEqual(aggregateImportResult())
+    expect(successMock).toHaveBeenCalledWith('完整备份导入成功')
+    expect(errorMock).toHaveBeenCalledWith('数据已导入，但页面刷新失败，请刷新页面查看最新数据')
+    expect(useProxyNodesStore().fetched).toBe(false)
+  })
+
+  it.each(['config', 'aggregate'] as const)('shows imported proxy nodes immediately after a %s import with a cached empty list', async (scope) => {
+    const store = useProxyNodesStore()
+    await store.ensureLoaded()
+    expect(store.nodes).toEqual([])
+    const restoredNode = { id: 'restored-proxy', name: 'Imported proxy', status: 'online', is_manual: true }
+    listProxyNodesMock.mockResolvedValue({ items: [restoredNode], total: 1, skip: 0, limit: 1000 })
+    const state = createState()
+
+    if (scope === 'config') {
+      await selectConfig(state)
+      await state.confirmImport()
+    } else {
+      await selectAggregate(state)
+      await state.confirmImportAggregate()
+    }
+
+    expect(store.nodes).toEqual([restoredNode])
+    expect(store.onlineNodes).toEqual([restoredNode])
+    expect(store.total).toBe(1)
+  })
+
   it('keeps a failed config import available for retry without showing a success result', async () => {
     const state = createState()
     await selectConfig(state)
@@ -278,7 +368,11 @@ describe('useConfigExportImport import results', () => {
   })
 
   it('keeps a failed full import available for retry without showing a success result', async () => {
-    const state = createState()
+    const reloadSettings = vi.fn()
+    const store = useProxyNodesStore()
+    await store.ensureLoaded()
+    listProxyNodesMock.mockClear()
+    const state = createState(reloadSettings)
     await selectAggregate(state)
     importAggregateMock.mockRejectedValueOnce(new Error('Full import failed'))
 
@@ -292,6 +386,9 @@ describe('useConfigExportImport import results', () => {
     expect(state.aggregateImportResult.value).toBeNull()
     expect(state.importAggregateLoading.value).toBe(false)
     expect(state.importAggregateProgress.value).toBeNull()
+    expect(store.fetched).toBe(true)
+    expect(listProxyNodesMock).not.toHaveBeenCalled()
+    expect(reloadSettings).not.toHaveBeenCalled()
 
     await state.confirmImportAggregate()
     expect(importAggregateMock).toHaveBeenCalledTimes(2)

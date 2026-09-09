@@ -11,6 +11,8 @@ import {
 } from '@/api/admin'
 import { parseApiError } from '@/utils/errorParser'
 import { log } from '@/utils/logger'
+import { clearModelsDevCache } from '@/api/models-dev'
+import { useProxyNodesStore } from '@/stores/proxy-nodes'
 import type { SystemConfig } from './useSystemConfig'
 
 const BYTES_PER_MB = 1024 * 1024
@@ -129,8 +131,26 @@ function downloadJson(data: unknown, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export function useConfigExportImport(systemConfig: { value: Pick<SystemConfig, 'site_name'> }) {
+export function useConfigExportImport(
+  systemConfig: { value: Pick<SystemConfig, 'site_name'> },
+  onConfigImported?: () => Promise<void>,
+) {
   const { success, error } = useToast()
+  const proxyNodes = useProxyNodesStore()
+
+  async function refreshImportedConfig(reauthenticationRequired = false) {
+    proxyNodes.invalidate()
+    clearModelsDevCache()
+    // Restoring a password revokes the current session. Fetch again after login.
+    if (reauthenticationRequired) return
+    const results = await Promise.allSettled([
+      proxyNodes.fetchNodes(),
+      Promise.resolve().then(() => onConfigImported?.()),
+    ])
+    if (proxyNodes.error || results.some(result => result.status === 'rejected')) {
+      error('数据已导入，但页面刷新失败，请刷新页面查看最新数据')
+    }
+  }
 
   // 配置导出/导入相关
   const exportLoading = ref(false)
@@ -251,6 +271,7 @@ export function useConfigExportImport(systemConfig: { value: Pick<SystemConfig, 
       mergeModeSelectOpen.value = false
       importResultDialogOpen.value = true
       success('配置导入成功')
+      await refreshImportedConfig()
     } catch (err: unknown) {
       error(parseApiError(err, '导入配置失败'))
       log.error('导入配置失败:', parseApiError(err))
@@ -363,6 +384,7 @@ export function useConfigExportImport(systemConfig: { value: Pick<SystemConfig, 
       aggregateMergeModeSelectOpen.value = false
       aggregateImportResultDialogOpen.value = true
       success('完整备份导入成功')
+      await refreshImportedConfig(result.users.reauthentication_required)
     } catch (err: unknown) {
       error(parseApiError(err, '导入完整备份失败'))
       log.error('导入完整备份失败:', parseApiError(err))

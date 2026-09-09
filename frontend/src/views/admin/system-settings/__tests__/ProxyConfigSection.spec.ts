@@ -175,6 +175,33 @@ afterEach(() => {
 })
 
 describe('ProxyConfigSection', () => {
+  it('does not show an empty list while nodes are still loading', async () => {
+    let resolveList!: (value: unknown) => void
+    apiMocks.listProxyNodes.mockReturnValueOnce(new Promise(resolve => { resolveList = resolve }))
+    const { root } = mountSection()
+    await nextTick()
+
+    expect(root.querySelector('[role="status"]')?.textContent).toContain('正在加载代理节点')
+    expect(root.textContent).not.toContain('暂无代理节点')
+    resolveList({ items: [makeNode()], total: 1, skip: 0, limit: 1000 })
+    await flushAsync()
+    expect(root.textContent).toContain('美西节点')
+  })
+
+  it('shows a list failure and can retry instead of reporting no nodes', async () => {
+    apiMocks.listProxyNodes.mockRejectedValueOnce(new Error('节点列表请求失败'))
+    const { root } = mountSection()
+    await flushAsync()
+
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('节点列表请求失败')
+    expect(root.textContent).not.toContain('暂无代理节点')
+    apiMocks.listProxyNodes.mockResolvedValueOnce({ items: [makeNode()], total: 1, skip: 0, limit: 1000 })
+    findButton(root, '重试')?.click()
+    await flushAsync()
+    expect(root.textContent).toContain('美西节点')
+    expect(root.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it('renders the default proxy save button with a disabled hint until changes exist', async () => {
     const { root } = mountSection({ hasChanges: false })
     await flushAsync()
