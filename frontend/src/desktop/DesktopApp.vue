@@ -11,7 +11,7 @@ import { useDesktopGateway } from './useDesktopGateway'
 import type { GatewayPhase } from './bridge'
 
 const gateway = useDesktopGateway()
-const { status, phase, loading, pendingAction, connectionError, errors, busy, available, canStart, canStop, canEditPort, logs, logsLoading, logsError } = gateway
+const { status, phase, loading, pendingAction, connectionError, errors, busy, available, canStart, canStop, logs, logsLoading, logsError } = gateway
 const { copyToClipboard } = useClipboard()
 const { legacyT } = useI18n()
 const copied = ref(false)
@@ -266,15 +266,13 @@ function toggleLogs(event: Event) {
       </div>
 
       <DesktopSettings
-        v-if="status"
+        v-if="status && phase === 'failed'"
+        recovery
         :status="status"
         :disabled="!available"
-        :can-edit-port="!!canEditPort"
+        :can-edit-port="!!canStart"
         :saving-port="pendingAction === 'port'"
         @set-port="gateway.setPort"
-        @set-autostart="gateway.setAutostart"
-        @open-data-dir="gateway.openDataDir"
-        @open-log-dir="gateway.openLogDir"
       />
 
       <details

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::{AppHandle, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -9,11 +9,23 @@ use crate::{
     windows,
 };
 
-/// Custom commands are also checked here: a capability alone is not an origin
-/// check for application commands. The HTTP dashboard never gets native access.
-fn authorize(window: &WebviewWindow) -> Result<(), String> {
+/// Check both the Tauri capability and the currently managed gateway origin.
+/// A random localhost page must not gain access just because it uses the same port.
+fn authorize(window: &WebviewWindow, app: &AppHandle) -> Result<(), String> {
     let url = window.url().map_err(|_| "无法验证窗口来源".to_string())?;
-    if window.label() != "main" || !windows::navigation::is_launcher_url(&url) {
+    let launcher = window.label() == "main" && windows::navigation::is_launcher_url(&url);
+    let dashboard = window.label().starts_with("dashboard-")
+        && app
+            .try_state::<Arc<Gateway>>()
+            .and_then(|gateway| gateway.status(false).ok())
+            .is_some_and(|status| {
+                url.scheme() == "http"
+                    && url.host_str() == Some("127.0.0.1")
+                    && url.port_or_known_default() == Some(status.port)
+                    && url.username().is_empty()
+                    && url.password().is_none()
+            });
+    if !launcher && !dashboard {
         return Err("此窗口没有桌面管理权限".into());
     }
     Ok(())
@@ -41,7 +53,7 @@ pub async fn desktop_status(
     app: AppHandle,
     gateway: State<'_, Arc<Gateway>>,
 ) -> Result<Status, String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     let gateway = gateway.inner().clone();
     blocking(move || status(&app, &gateway)).await
 }
@@ -52,7 +64,7 @@ pub async fn desktop_start(
     app: AppHandle,
     gateway: State<'_, Arc<Gateway>>,
 ) -> Result<Status, String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     let gateway = gateway.inner().clone();
     blocking(move || {
         gateway.start()?;
@@ -67,10 +79,13 @@ pub async fn desktop_stop(
     app: AppHandle,
     gateway: State<'_, Arc<Gateway>>,
 ) -> Result<Status, String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     let gateway = gateway.inner().clone();
     blocking(move || {
-        gateway.stop_with(|| windows::close_dashboard(&app))?;
+        gateway.stop_with(|| {
+            windows::close_dashboard(&app)?;
+            windows::show_launcher(&app)
+        })?;
         status(&app, &gateway)
     })
     .await
@@ -82,10 +97,17 @@ pub async fn desktop_restart(
     app: AppHandle,
     gateway: State<'_, Arc<Gateway>>,
 ) -> Result<Status, String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     let gateway = gateway.inner().clone();
     blocking(move || {
-        gateway.restart_with(|| windows::close_dashboard(&app))?;
+        if let Err(error) = gateway
+            .restart_with(|| windows::close_dashboard(&app))
+            .and_then(|_| windows::open_dashboard(&app))
+        {
+            gateway.record_error(error.clone());
+            let _ = windows::show_launcher(&app);
+            return Err(error);
+        }
         status(&app, &gateway)
     })
     .await
@@ -98,10 +120,24 @@ pub async fn desktop_set_port(
     gateway: State<'_, Arc<Gateway>>,
     port: u16,
 ) -> Result<Status, String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     let gateway = gateway.inner().clone();
     blocking(move || {
-        gateway.set_port(port)?;
+        let was_running = gateway.status(false)?.pid.is_some();
+        if was_running {
+            gateway.stop_with(|| windows::close_dashboard(&app))?;
+        }
+        if let Err(error) = gateway.set_port(port) {
+            let _ = windows::show_launcher(&app);
+            return Err(error);
+        }
+        if was_running {
+            if let Err(error) = gateway.start().and_then(|_| windows::open_dashboard(&app)) {
+                gateway.record_error(error.clone());
+                let _ = windows::show_launcher(&app);
+                return Err(error);
+            }
+        }
         status(&app, &gateway)
     })
     .await
@@ -114,7 +150,7 @@ pub async fn desktop_set_autostart(
     gateway: State<'_, Arc<Gateway>>,
     enabled: bool,
 ) -> Result<Status, String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     let gateway = gateway.inner().clone();
     blocking(move || {
         let launch = app.autolaunch();
@@ -131,7 +167,7 @@ pub async fn desktop_set_autostart(
 
 #[tauri::command]
 pub async fn desktop_open_dashboard(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     blocking(move || windows::open_dashboard(&app)).await
 }
 
@@ -141,7 +177,7 @@ pub fn desktop_open_data_dir(
     app: AppHandle,
     gateway: State<'_, Arc<Gateway>>,
 ) -> Result<(), String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     app.opener()
         .open_path(gateway.paths.data.display().to_string(), None::<&str>)
         .map_err(|error| format!("打开数据目录失败：{error}"))
@@ -153,7 +189,7 @@ pub fn desktop_open_log_dir(
     app: AppHandle,
     gateway: State<'_, Arc<Gateway>>,
 ) -> Result<(), String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     app.opener()
         .open_path(gateway.paths.logs.display().to_string(), None::<&str>)
         .map_err(|error| format!("打开日志目录失败：{error}"))
@@ -162,9 +198,10 @@ pub fn desktop_open_log_dir(
 #[tauri::command]
 pub fn desktop_logs(
     window: WebviewWindow,
+    app: AppHandle,
     gateway: State<'_, Arc<Gateway>>,
 ) -> Result<Vec<String>, String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     gateway
         .logs
         .lock()
@@ -174,7 +211,7 @@ pub fn desktop_logs(
 
 #[tauri::command]
 pub fn desktop_quit(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
-    authorize(&window)?;
+    authorize(&window, &app)?;
     windows::request_quit(&app);
     Ok(())
 }

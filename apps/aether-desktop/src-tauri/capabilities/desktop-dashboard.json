@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-dashboard",
+  "description": "Allow only the managed local dashboard to control its own gateway.",
+  "windows": ["dashboard-*"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*"]
+  },
+  "permissions": ["core:default"]
+}

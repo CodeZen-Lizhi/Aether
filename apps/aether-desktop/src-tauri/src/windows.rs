@@ -349,7 +349,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             let gateway = Gateway::new(paths(app.handle(), data.clone())?);
             app.manage(gateway.clone());
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("desktop.html".into()))
-                .title("Aether · 客户端设置")
+                .title("Aether")
                 .inner_size(960.0, 760.0)
                 .min_inner_size(740.0, 580.0)
                 .visible(false)

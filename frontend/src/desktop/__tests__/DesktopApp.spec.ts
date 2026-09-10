@@ -46,13 +46,6 @@ function button(root: HTMLElement, label: string) {
   return match!
 }
 
-async function fill(root: HTMLElement, id: string, value: string) {
-  const input = root.querySelector<HTMLInputElement>(`#${id}`)!
-  input.value = value
-  input.dispatchEvent(new Event('input', { bubbles: true }))
-  await nextTick()
-}
-
 beforeEach(() => {
   vi.useFakeTimers()
   nativeInvoke.mockReset()
@@ -98,39 +91,6 @@ describe('desktop initialization', () => {
     expect(nativeInvoke.mock.calls.filter(([command]) => command === 'desktop_open_dashboard')).toHaveLength(1)
   })
 
-  it('allows port correction and retry after first initialization fails', async () => {
-    let current = status({ ...initialSetup, phase: 'failed', error: '端口 8084 已被占用。' })
-    nativeInvoke.mockImplementation(async (command: string, args?: { port: number }) => {
-      if (command === 'desktop_set_port') current = status({ ...initialSetup, port: args!.port, gateway_url: `http://127.0.0.1:${args!.port}` })
-      if (command === 'desktop_start') current = status({ ...current, configured: true, phase: 'running', pid: 42 })
-      if (command === 'desktop_logs') return []
-      return current
-    })
-    const root = await mountApp()
-    expect(root.textContent).toContain('端口 8084 已被占用。')
-    expect(root.querySelector<HTMLInputElement>('#gateway-port')?.disabled).toBe(false)
-    await fill(root, 'gateway-port', '8085')
-    button(root, '保存端口').click()
-    await settle()
-    expect(nativeInvoke).toHaveBeenCalledWith('desktop_set_port', { port: 8085 })
-    button(root, '启动网关').click()
-    await settle()
-    expect(nativeInvoke).toHaveBeenCalledWith('desktop_start', undefined)
-    expect(nativeInvoke).toHaveBeenCalledWith('desktop_open_dashboard', undefined)
-    expect(root.textContent).toContain('http://127.0.0.1:8085')
-    expect(root.textContent).not.toContain('端口 8084 已被占用。')
-  })
-
-  it('focuses an invalid port error and does not send it to the host', async () => {
-    nativeInvoke.mockResolvedValue(initialSetup)
-    const root = await mountApp()
-    await fill(root, 'gateway-port', '80')
-    button(root, '保存端口').click()
-    await settle()
-    expect(root.querySelector('#gateway-port-error')).toBe(document.activeElement)
-    expect(root.querySelector('#gateway-port')?.getAttribute('aria-invalid')).toBe('true')
-    expect(nativeInvoke).toHaveBeenCalledTimes(1)
-  })
 })
 
 describe('gateway lifecycle and preferences', () => {
@@ -138,12 +98,10 @@ describe('gateway lifecycle and preferences', () => {
     const start = deferred<DesktopStatus>()
     nativeInvoke.mockImplementation(async (command: string) => command === 'desktop_start' ? start.promise : status())
     const root = await mountApp()
-    expect(root.querySelector<HTMLInputElement>('#gateway-port')?.disabled).toBe(false)
     button(root, '启动网关').click()
     await settle()
     expect(root.textContent).toContain('正在启动网关')
     expect(button(root, '正在启动…').disabled).toBe(true)
-    expect(root.querySelector<HTMLInputElement>('#gateway-port')?.disabled).toBe(true)
     button(root, '正在启动…').click()
     expect(nativeInvoke.mock.calls.filter(([command]) => command === 'desktop_start')).toHaveLength(1)
     start.resolve(running)
@@ -151,7 +109,6 @@ describe('gateway lifecycle and preferences', () => {
     expect(root.textContent).toContain('网关正在运行')
     expect(button(root, '打开管理界面').disabled).toBe(false)
     expect(button(root, '停止网关').disabled).toBe(false)
-    expect(root.querySelector<HTMLInputElement>('#gateway-port')?.disabled).toBe(true)
   })
 
   it('shows a stop operation until completion and sends restart through its own command', async () => {
@@ -168,46 +125,15 @@ describe('gateway lifecycle and preferences', () => {
     stop.resolve(status())
     await settle()
     expect(button(root, '启动网关').disabled).toBe(false)
-    expect(root.querySelector<HTMLInputElement>('#gateway-port')?.disabled).toBe(false)
-  })
-
-  it('preserves an unsaved port across polls and only sends settings on explicit action', async () => {
-    const root = await mountApp()
-    await fill(root, 'gateway-port', '8085')
-    await vi.advanceTimersByTimeAsync(6000)
-    expect(root.querySelector<HTMLInputElement>('#gateway-port')?.value).toBe('8085')
-    expect(nativeInvoke.mock.calls.every(([command]) => command === 'desktop_status')).toBe(true)
-    nativeInvoke.mockImplementation(async (command: string) => {
-      if (command === 'desktop_set_port') throw new Error('无法保存端口。')
-      return status()
-    })
-    button(root, '保存端口').click()
-    await settle()
-    expect(nativeInvoke).toHaveBeenCalledWith('desktop_set_port', { port: 8085 })
-    expect(root.querySelector<HTMLInputElement>('#gateway-port')?.value).toBe('8085')
-    expect(root.textContent).toContain('无法保存端口。')
-    expect(button(root, '保存端口').disabled).toBe(false)
-  })
-
-  it('keeps the confirmed autostart state when a native setting operation fails', async () => {
-    nativeInvoke.mockImplementation(async (command: string) => {
-      if (command === 'desktop_set_autostart') throw new Error('无法更新登录启动设置。')
-      return status()
-    })
-    const root = await mountApp()
-    const toggle = root.querySelector<HTMLButtonElement>('[role="switch"]')!
-    toggle.click()
-    await settle()
-    expect(nativeInvoke).toHaveBeenCalledWith('desktop_set_autostart', { enabled: true })
-    expect(toggle.getAttribute('aria-checked')).toBe('false')
-    expect(toggle.disabled).toBe(false)
-    expect(root.textContent).toContain('无法更新登录启动设置。')
   })
 
   it('offers retry and diagnostics for a failed gateway instead of hiding the native error', async () => {
     nativeInvoke.mockResolvedValue(status({ phase: 'failed', error: '网关进程意外退出。' }))
     const root = await mountApp()
     expect(root.textContent).toContain('网关进程意外退出。')
+    expect(root.textContent).toContain('恢复网关')
+    expect(root.textContent).not.toContain('登录 Mac 时自动启动')
+    expect(root.querySelector('#gateway-port')).not.toBeNull()
     expect(root.querySelector<HTMLDetailsElement>('details')?.open).toBe(true)
     expect(button(root, '启动网关').disabled).toBe(false)
     expect(Array.from(root.querySelectorAll('button')).find(element => element.textContent?.trim() === '打开管理界面')).toBeUndefined()
@@ -290,7 +216,7 @@ describe('status synchronization and bridge failures', () => {
     await vi.advanceTimersByTimeAsync(20)
     expect(root.textContent).toContain('Your gateway is running')
     expect(root.textContent).toContain('Open dashboard')
-    expect(root.textContent).toContain('Client settings')
+    expect(root.textContent).not.toContain('Client settings')
     const diagnostics = root.querySelector<HTMLDetailsElement>('details')!
     diagnostics.open = true
     diagnostics.dispatchEvent(new Event('toggle'))

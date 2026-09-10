@@ -146,7 +146,7 @@ impl Gateway {
         let connection = {
             let inner = self.inner()?;
             if inner.phase != Phase::Running {
-                return Err("网关尚未运行，请先在客户端设置中启动".into());
+                return Err("网关尚未运行，请先从右上角网关菜单启动".into());
             }
             inner
                 .process

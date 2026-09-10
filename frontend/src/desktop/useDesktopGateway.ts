@@ -28,8 +28,7 @@ export function useDesktopGateway() {
   const canStart = computed(() => available.value
     && (phase.value === 'setup' || phase.value === 'stopped' || phase.value === 'failed') && status.value?.pid === null)
   const canStop = computed(() => available.value && (phase.value === 'running' || status.value?.pid != null))
-  const canEditPort = computed(() => available.value
-    && (phase.value === 'setup' || phase.value === 'stopped' || phase.value === 'failed') && status.value?.pid === null)
+  const canEditPort = computed(() => available.value && !transitioning.value)
   const errors = computed(() => [...new Set([
     connectionError.value, operationError.value, status.value?.error,
   ].filter((error): error is string => !!error))])

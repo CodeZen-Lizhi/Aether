@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { FolderOpen, LoaderCircle, Settings2 } from 'lucide-vue-next'
+import { FolderOpen, LoaderCircle, Settings2, Wrench } from 'lucide-vue-next'
 import Button from '@/components/ui/button.vue'
 import Input from '@/components/ui/input.vue'
 import Switch from '@/components/ui/switch.vue'
@@ -12,6 +12,7 @@ const props = defineProps<{
   disabled: boolean
   canEditPort: boolean
   savingPort: boolean
+  recovery?: boolean
 }>()
 const emit = defineEmits<{
   setPort: [port: number]
@@ -49,12 +50,13 @@ async function savePort() {
     aria-labelledby="settings-title"
   >
     <div class="desktop-section-heading">
-      <Settings2
+      <component
+        :is="recovery ? Wrench : Settings2"
         class="h-4 w-4 text-muted-foreground"
         aria-hidden="true"
       />
       <h2 id="settings-title">
-        客户端设置
+        {{ recovery ? '恢复网关' : '桌面应用' }}
       </h2>
     </div>
 
@@ -94,7 +96,7 @@ async function savePort() {
           </Button>
         </div>
         <p id="gateway-port-hint">
-          停止网关后可修改，仅允许本机访问。
+          保存后会自动重启网关，仅允许本机访问。
         </p>
         <p
           v-if="portError"
@@ -108,7 +110,10 @@ async function savePort() {
         </p>
       </form>
 
-      <div class="desktop-autostart">
+      <div
+        v-if="!recovery"
+        class="desktop-autostart"
+      >
         <div>
           <label
             id="autostart-label"
@@ -129,7 +134,10 @@ async function savePort() {
       </div>
     </div>
 
-    <div class="desktop-directories">
+    <div
+      v-if="!recovery"
+      class="desktop-directories"
+    >
       <div class="desktop-directory">
         <div>
           <p class="desktop-directory-label">
@@ -175,3 +183,33 @@ async function savePort() {
     </div>
   </section>
 </template>
+
+<style scoped>
+.desktop-panel { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.desktop-settings { padding: 20px 24px; }
+.desktop-section-heading { display: flex; align-items: center; gap: 10px; }
+.desktop-section-heading h2 { font-size: 15px; font-weight: 600; }
+.desktop-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin-top: 20px; }
+.desktop-field { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
+.desktop-field label,
+.desktop-autostart label { font-size: 13px; font-weight: 500; }
+.desktop-field > p,
+.desktop-autostart p { font-size: 12px; color: var(--muted-foreground); }
+.desktop-port-input { display: flex; align-items: center; gap: 8px; }
+.desktop-port-input input { min-width: 0; }
+.desktop-autostart { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.desktop-autostart p { margin-top: 4px; }
+.desktop-autostart > button { flex-shrink: 0; margin-top: 2px; }
+.desktop-directories { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; }
+.desktop-directory { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.desktop-directory > div { min-width: 0; }
+.desktop-directory > button { flex-shrink: 0; }
+.desktop-directory-label { font-size: 12px; color: var(--muted-foreground); }
+.desktop-directory code { display: block; overflow-wrap: anywhere; font-size: 12px; user-select: text; }
+.desktop-field-error { color: var(--destructive); }
+
+@media (max-width: 640px) {
+  .desktop-settings { padding: 20px; }
+  .desktop-settings-grid { grid-template-columns: 1fr; gap: 20px; }
+}
+</style>

@@ -203,6 +203,7 @@
             </RouterLink>
 
             <div class="flex items-center gap-3">
+              <DesktopGatewayControl v-if="desktopMode" />
               <LanguageSwitcher />
               <ThemeModeButton />
               <button
@@ -365,6 +366,7 @@
             id="header-actions-right"
             class="flex items-center"
           />
+          <DesktopGatewayControl v-if="desktopMode" />
           <LanguageSwitcher />
           <ThemeModeButton />
         </div>
@@ -402,6 +404,7 @@ import { prefetchNavigationTarget } from '@/utils/adminNavigationPrefetch'
 import { useI18n } from '@/i18n'
 import { buildBreadcrumbs, buildNavigation } from './main-layout/navigation'
 import { hasDesktopSession } from '@/desktop/session'
+import DesktopGatewayControl from '@/desktop/DesktopGatewayControl.vue'
 
 const router = useRouter()
 const route = useRoute()

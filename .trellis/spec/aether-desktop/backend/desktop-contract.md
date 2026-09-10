@@ -1,5 +1,47 @@
 # Desktop Host and Gateway Contract
 
+## Scenario: Dashboard gateway controls
+
+### 1. Scope / Trigger
+
+Desktop port, autostart, and directory configuration belongs in the existing System Settings page. Gateway start, stop, and restart belongs in the dashboard header status menu. Do not add a “客户端设置” menu item or permanent standalone settings page; bundled `desktop.html` is only for stopped/failed recovery.
+
+### 2. Signatures
+
+Reuse `desktop_status/start/stop/restart/set_port/set_autostart/open_data_dir/open_log_dir/logs/quit`. `desktop_set_port({ port: u16 })` safely stops a running gateway, saves the port, restarts, and opens the new origin.
+
+### 3. Contracts
+
+- `desktop-local` matches only the bundled `main` recovery window.
+- `desktop-dashboard` matches `dashboard-*` and remote URLs under `http://127.0.0.1:*/*`.
+- Rust `authorize` must also match the dynamic dashboard label, credential-free loopback URL, and the current managed gateway port. A capability is not sufficient runtime authorization.
+- Web/Docker pages and every other localhost page have no desktop command access.
+
+### 4. Validation & Error Matrix
+
+- Other window label -> `此窗口没有桌面管理权限`.
+- Dashboard host, credentials, or port does not match the managed origin -> deny.
+- Running port save -> close old dashboard, stop child, persist, start child, open new dashboard.
+- Persist/start failure after closing the dashboard -> show the bundled recovery view and preserve the actionable error.
+
+### 5. Good/Base/Bad Cases
+
+- Good: save `8085` in System Settings; the `8084` dashboard closes and `8085` opens.
+- Base: save while stopped; only configuration changes and the next start uses it.
+- Bad: grant every localhost page a capability and rely on hidden frontend controls for authorization.
+
+### 6. Tests Required
+
+- Vue: header shows state and running actions; System Settings verifies port, autostart, and invalid-field focus.
+- Rust: `cargo check -p aether-desktop --locked`; native QA covers origin changes, stopped recovery, and IPC denial for an unmanaged page.
+- UI: at 840x620 and normal desktop widths, the header does not overflow and state/focus/danger styling remains legible in both themes.
+
+### 7. Wrong vs Correct
+
+Wrong: the app/tray menu opens a standalone client settings page and the dashboard cannot manage its own lifecycle.
+
+Correct: frequent lifecycle controls stay in the dashboard header, persistent configuration stays in System Settings, and the recovery view appears only when the service is unavailable.
+
 ## 1. Scope / Trigger
 
 Apply this contract to `apps/aether-desktop`, `frontend/src/desktop`, and gateway/usage shutdown changes. The host owns one local child and its data directory. The existing management UI remains an authenticated same-origin HTTP application.

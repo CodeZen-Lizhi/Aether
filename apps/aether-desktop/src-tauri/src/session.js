@@ -28,7 +28,7 @@
             },
           });
           if (!response.ok) {
-            throw new Error('无法建立本机连接，请在客户端设置中重启网关后重试');
+            throw new Error('无法建立本机连接，请从右上角网关菜单重启后重试');
           }
           const session = await response.json();
           if (typeof session.access_token !== 'string' || !session.access_token) {

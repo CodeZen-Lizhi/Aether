@@ -393,6 +393,10 @@ export const messages = {
 
 const legacyExactEnglishMessages: Record<string, string> = {
   '本机网关': 'Local gateway',
+  '网关状态与操作': 'Gateway status and controls',
+  '连接中': 'Connecting',
+  '正在读取状态…': 'Checking status…',
+  '重启网关': 'Restart gateway',
   '主题、语言和时区': 'Theme, language, and timezone',
   '正在加载偏好设置…': 'Loading preferences…',
   '加载偏好设置失败': 'Failed to load preferences',
@@ -458,9 +462,10 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '退出 Aether': 'Quit Aether',
   '网关端口': 'Gateway port',
   '管理员密码': 'Admin password',
-  '客户端设置': 'Client settings',
+  '桌面应用': 'Desktop app',
+  '恢复网关': 'Recover gateway',
   '保存端口': 'Save port',
-  '停止网关后可修改，仅允许本机访问。': 'Stop the gateway to change its port. Only local access is allowed.',
+  '保存后会自动重启网关，仅允许本机访问。': 'Saving restarts the gateway automatically. Only local access is allowed.',
   '登录 Mac 时自动启动': 'Start automatically at login',
   '启动 Aether 并运行本机网关。': 'Open Aether and start the local gateway.',
   '数据目录': 'Data folder',

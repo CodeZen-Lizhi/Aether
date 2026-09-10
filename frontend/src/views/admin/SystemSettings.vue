@@ -26,6 +26,11 @@
             id="section-preferences"
           />
 
+          <DesktopGatewaySection
+            v-if="desktopMode"
+            id="section-desktop-gateway"
+          />
+
           <!-- 站点信息 -->
           <SiteInfoSection
             id="section-site-info"
@@ -233,6 +238,7 @@ import RequestLogSection from './system-settings/RequestLogSection.vue'
 import CleanupPolicySection from './system-settings/CleanupPolicySection.vue'
 import SystemInfoSection from './system-settings/SystemInfoSection.vue'
 import PreferencesSection from './system-settings/PreferencesSection.vue'
+import DesktopGatewaySection from '@/desktop/DesktopGatewaySection.vue'
 
 // Dialog components
 import ConfigImportDialog from './system-settings/ConfigImportDialog.vue'
@@ -243,6 +249,7 @@ const desktopMode = hasDesktopSession()
 const route = useRoute()
 const tocItems = [
   ...(desktopMode ? [{ id: 'section-preferences', label: '偏好设置' }] : []),
+  ...(desktopMode ? [{ id: 'section-desktop-gateway', label: '桌面应用' }] : []),
   { id: 'section-site-info', label: '站点信息' },
   { id: 'section-data-mgmt', label: '数据管理' },
   { id: 'section-proxy', label: '网络代理' },

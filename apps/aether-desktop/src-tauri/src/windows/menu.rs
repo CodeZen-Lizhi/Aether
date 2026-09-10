@@ -22,10 +22,7 @@ pub fn phase_label(phase: Phase) -> &'static str {
 
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "退出 Aether", true, Some("CmdOrCtrl+Q"))?;
-    let settings = MenuItem::with_id(app, "settings", "客户端设置…", true, Some("CmdOrCtrl+,"))?;
     let application = SubmenuBuilder::new(app, "Aether")
-        .item(&settings)
-        .separator()
         .hide_with_text("隐藏 Aether")
         .hide_others_with_text("隐藏其他")
         .show_all_with_text("全部显示")
@@ -62,7 +59,6 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     )?;
     let tray_menu = MenuBuilder::new(app)
         .text("dashboard", "打开管理后台")
-        .text("settings", "客户端设置…")
         .separator()
         .text("start", "启动网关")
         .text("stop", "停止网关")
@@ -93,7 +89,6 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             let gateway = app.state::<Arc<Gateway>>();
             let result = match id.as_str() {
                 "dashboard" => super::open_dashboard(&app),
-                "settings" => super::show_launcher(&app),
                 "start" => gateway.start().and_then(|_| super::open_dashboard(&app)),
                 "stop" => gateway
                     .stop_with(|| super::close_dashboard(&app))

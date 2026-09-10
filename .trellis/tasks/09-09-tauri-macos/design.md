@@ -4,9 +4,9 @@
 
 新增 `apps/aether-desktop/src-tauri` 作为 Cargo workspace 成员，内置 `aether-gateway` sidecar 和编译后的 Vue 资源。桌面宿主管理进程、Keychain、菜单、窗口、登录自启、日志和固定目录。Vue 管理端仍由网关以本机 HTTP 同源提供，保留既有认证 Cookie、API、history 路由和 SSE 行为。
 
-另增加 `frontend/desktop.html` 与 `frontend/src/desktop/` 作为应用内的启动/设置页面。Tauri 的 `main` 窗口加载该内置页面，拥有有限桌面命令权限；管理窗口（label 为 `dashboard-<uuid>`）加载受管网关的 `http://127.0.0.1:<port>/`，不授予远程 IPC。外部 HTTP(S) 页面经系统浏览器打开，不允许在受信任窗口导航。业务界面不通过 FFI、不直接读 SQLite。
+另增加 `frontend/desktop.html` 与 `frontend/src/desktop/` 作为应用内的故障恢复页面。Tauri 的 `main` 窗口加载该内置页面，拥有有限桌面命令权限；管理窗口（label 为 `dashboard-<uuid>`）加载受管网关的 `http://127.0.0.1:<port>/`，仅获得网关生命周期与桌面配置命令。其他 HTTP 页面无 IPC 权限，Rust 命令层还会校验动态窗口标签与当前受管回环 origin。外部 HTTP(S) 页面经系统浏览器打开，不允许在受信任窗口导航。业务界面不直接读 SQLite。
 
-桌面主题、语言、时区偏好统一放入现有系统设置页面，复用原偏好控件；桌面侧栏和移动菜单移除底部身份入口，旧个人设置路径导向合并后的入口。Web/Docker 保留原个人设置和账号区域。客户端端口、启停和自启动仍由应用菜单里的客户端设置管理。
+桌面主题、语言、时区偏好以及端口、自启动、目录统一放入现有系统设置页面；桌面侧栏和移动菜单移除底部身份入口，旧个人设置路径导向合并后的入口。后台顶栏提供紧凑的网关状态菜单和启停/重启操作，应用菜单与菜单栏保留同类生命周期操作，但不再存在“客户端设置”入口或独立设置页。内置页面仅用于网关尚未启动或故障时恢复。Web/Docker 保留原个人设置和账号区域。
 
 ## 进程生命周期
 
