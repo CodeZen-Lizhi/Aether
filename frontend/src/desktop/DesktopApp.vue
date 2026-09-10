@@ -41,6 +41,7 @@ const statusDescription = computed(() => connectionError.value
   : phase.value ? phaseDescriptions[phase.value] : '正在连接 Aether 的本地服务。')
 const statusTone = computed(() => connectionError.value ? 'failed' : phase.value ?? 'loading')
 const loadingPhase = computed(() => phase.value === 'starting' || phase.value === 'stopping' || (!status.value && loading.value))
+const canInterruptStartup = computed(() => pendingAction.value === 'start' || pendingAction.value === 'restart')
 
 watch(() => status.value?.gateway_url, () => {
   copied.value = false
@@ -215,7 +216,7 @@ function toggleLogs(event: Event) {
             <Button
               variant="ghost"
               class="gap-2"
-              :disabled="!canStop"
+              :disabled="!canStop && !canInterruptStartup"
               @click="gateway.stop"
             >
               <Square

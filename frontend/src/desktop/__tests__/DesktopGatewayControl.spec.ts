@@ -2,18 +2,39 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 import DesktopGatewayControl from '../DesktopGatewayControl.vue'
 
-const actions = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), restart: vi.fn() }))
+const actions = vi.hoisted(() => ({
+  refreshStatus: vi.fn(), start: vi.fn(), stop: vi.fn(), restart: vi.fn(),
+}))
+const gatewayState = vi.hoisted(() => ({
+  phase: undefined as ReturnType<typeof import('vue')['ref']> | undefined,
+  status: undefined as ReturnType<typeof import('vue')['ref']> | undefined,
+  loading: undefined as ReturnType<typeof import('vue')['ref']> | undefined,
+  pendingAction: undefined as ReturnType<typeof import('vue')['ref']> | undefined,
+  connectionError: undefined as ReturnType<typeof import('vue')['ref']> | undefined,
+  errors: undefined as ReturnType<typeof import('vue')['ref']> | undefined,
+}))
 vi.mock('../useDesktopGateway', async () => {
   const { computed, ref } = await import('vue')
-  const phase = ref<'running' | 'stopped'>('running')
+  const phase = ref<'starting' | 'running' | 'stopped' | null>('running')
+  const status = ref<{ gateway_url: string; pid: number | null } | null>({
+    gateway_url: 'http://127.0.0.1:8084', pid: 42,
+  })
+  const loading = ref(false)
+  const pendingAction = ref<string | null>(null)
+  const connectionError = ref('')
+  const errors = ref<string[]>([])
+  Object.assign(gatewayState, { phase, status, loading, pendingAction, connectionError, errors })
   return {
     useDesktopGateway: () => ({
       phase,
-      status: ref({ gateway_url: 'http://127.0.0.1:8084' }),
+      status,
+      loading,
+      pendingAction,
+      connectionError,
       busy: ref(false),
       canStart: computed(() => phase.value === 'stopped'),
       canStop: computed(() => phase.value === 'running'),
-      errors: ref<string[]>([]),
+      errors,
       ...actions,
     }),
   }
@@ -49,5 +70,78 @@ describe('desktop gateway header control', () => {
     expect(items.map(item => item.textContent?.trim())).toEqual(['重启网关', '停止网关'])
     items[0].dispatchEvent(new Event('click', { bubbles: true }))
     expect(actions.restart).toHaveBeenCalledOnce()
+  })
+
+  it('keeps recovery actions reachable while the first status request is pending', async () => {
+    gatewayState.phase!.value = null
+    gatewayState.status!.value = null
+    gatewayState.loading!.value = true
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(DesktopGatewayControl)
+    app.mount(root)
+    mounted.push({ app, root })
+
+    const trigger = root.querySelector<HTMLButtonElement>('button')!
+    expect(trigger.disabled).toBe(false)
+    trigger.click()
+    await nextTick()
+    await Promise.resolve()
+
+    const items = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    expect(items.map(item => item.textContent?.trim())).toEqual([
+      '重新读取状态', '重启网关', '停止网关',
+    ])
+  })
+
+  it('shows a failed connection without leaving an indefinite spinner', async () => {
+    gatewayState.phase!.value = null
+    gatewayState.status!.value = null
+    gatewayState.loading!.value = false
+    gatewayState.connectionError!.value = '无法读取网关状态'
+    gatewayState.errors!.value = ['无法读取网关状态']
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(DesktopGatewayControl)
+    app.mount(root)
+    mounted.push({ app, root })
+
+    const trigger = root.querySelector<HTMLButtonElement>('button')!
+    expect(trigger.textContent).toContain('连接失败')
+    expect(trigger.querySelector('.animate-spin')).toBeNull()
+    trigger.click()
+    await nextTick()
+    await Promise.resolve()
+
+    const retry = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find(item => item.textContent?.trim() === '重新读取状态')!
+    retry.dispatchEvent(new Event('click', { bubbles: true }))
+    expect(actions.refreshStatus).toHaveBeenCalledOnce()
+  })
+
+  it('keeps stop enabled so a pending restart can be interrupted', async () => {
+    gatewayState.phase!.value = 'starting'
+    gatewayState.status!.value = { gateway_url: 'http://127.0.0.1:8084', pid: 42 }
+    gatewayState.pendingAction!.value = 'restart'
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(DesktopGatewayControl)
+    app.mount(root)
+    mounted.push({ app, root })
+
+    root.querySelector<HTMLButtonElement>('button')!.click()
+    await nextTick()
+    await Promise.resolve()
+
+    const items = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    const restart = items.find(item => item.textContent?.trim() === '重启网关')!
+    const stop = items.find(item => item.textContent?.trim() === '停止网关')!
+    expect(restart.getAttribute('data-disabled')).not.toBeNull()
+    expect(stop.getAttribute('data-disabled')).toBeNull()
+    stop.dispatchEvent(new Event('click', { bubbles: true }))
+    expect(actions.stop).toHaveBeenCalledOnce()
   })
 })

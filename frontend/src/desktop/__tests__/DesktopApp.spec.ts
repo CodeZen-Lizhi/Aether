@@ -111,6 +111,27 @@ describe('gateway lifecycle and preferences', () => {
     expect(button(root, '停止网关').disabled).toBe(false)
   })
 
+  it('allows stop to interrupt a pending start without stale action errors winning', async () => {
+    const start = deferred<DesktopStatus>()
+    nativeInvoke.mockImplementation(async (command: string) => {
+      if (command === 'desktop_start') return start.promise
+      if (command === 'desktop_stop') return status()
+      return status()
+    })
+    const root = await mountApp()
+    button(root, '启动网关').click()
+    await settle()
+    button(root, '停止网关').click()
+    await settle()
+    expect(nativeInvoke).toHaveBeenCalledWith('desktop_stop', undefined)
+    expect(button(root, '启动网关').disabled).toBe(false)
+
+    start.reject(new Error('网关启动已取消'))
+    await settle()
+    expect(root.textContent).not.toContain('网关启动已取消')
+    expect(button(root, '启动网关').disabled).toBe(false)
+  })
+
   it('shows a stop operation until completion and sends restart through its own command', async () => {
     const stop = deferred<DesktopStatus>()
     nativeInvoke.mockImplementation(async (command: string) => command === 'desktop_stop' ? stop.promise : running)

@@ -74,21 +74,23 @@ export function useDesktopGateway() {
   }
 
   async function perform<T>(action: DesktopAction, operation: () => Promise<T>, apply?: (value: T) => void): Promise<T | undefined> {
-    if (disposed || pendingAction.value) return undefined
+    const canInterruptStartup = action === 'stop'
+      && (pendingAction.value === 'start' || pendingAction.value === 'restart')
+    if (disposed || (pendingAction.value && !canInterruptStartup)) return undefined
     clearTimer()
-    revision += 1 // A poll started before a user action must never overwrite its result.
+    const actionRevision = ++revision // Older polls and interrupted actions must never overwrite this result.
     pendingAction.value = action
     operationError.value = ''
     try {
       const result = await operation()
-      if (!disposed) {
+      if (!disposed && actionRevision === revision) {
         apply?.(result)
         return result
       }
     } catch (error) {
-      if (!disposed) operationError.value = describeDesktopError(error)
+      if (!disposed && actionRevision === revision) operationError.value = describeDesktopError(error)
     } finally {
-      if (!disposed) {
+      if (!disposed && actionRevision === revision) {
         pendingAction.value = null
         schedule(0)
       }
