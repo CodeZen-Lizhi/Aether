@@ -1246,3 +1246,35 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 44: 自动递增桌面版本并交付 0.1.1
+<!-- trellis-session: v=2 fp=86e2737f32a10489 -->
+
+**Date**: 2026-09-10
+**Task**: 自动递增桌面版本并交付 0.1.1
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+打包自动递增并同步 npm、Tauri 和 Cargo 版本；仅提交当前分支，交付经过校验的 0.1.1 arm64 安装包。
+
+### Main Changes
+
+- 完整打包流程持有构建锁，版本失败不复用；dev 和 prepare 不递增。
+- 只 push codex/tauri-macos，不再自动同步 SLIM；更新桌面契约及文档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3bcb54b59` | 打包时自动递增客户端版本 |
+
+### Testing
+
+- [OK] Node 14/14、Rust 17 项通过；独立审查、ESLint、语法及差异检查通过。
+- [OK] 0.1.1 两个包内版本字段正确，签名/DMG/117 个文件及下载副本 SHA256 校验通过。
+
+### Status
+
+[OK] **Completed**
