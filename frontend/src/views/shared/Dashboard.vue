@@ -144,6 +144,7 @@
       </h3>
       <TimeRangePicker
         v-model="dailyTimeRange"
+        :show-granularity="true"
         :allow-hourly="true"
       />
     </div>
@@ -155,6 +156,15 @@
     >
       部分历史记录未保留模型或提供商明细，总请求和总费用已保留，缺失部分单独标注。
     </p>
+
+    <DashboardUsageTrend
+      :series="usageTimeSeries"
+      :daily-stats="dailyStats"
+      :granularity="dailyTimeRange.granularity ?? 'day'"
+      :loading="loadingDaily"
+      :error="usageTrendError"
+      @retry="loadDailyStats"
+    />
 
     <!-- 趋势图表区域 -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -476,6 +486,8 @@ import {
 import { TimeRangePicker } from "@/components/common";
 import BarChart from "@/components/charts/BarChart.vue";
 import DoughnutChart from "@/components/charts/DoughnutChart.vue";
+import DashboardUsageTrend from "./DashboardUsageTrend.vue";
+import { adminApi, type UsageTimeSeriesPoint } from "@/api/admin";
 import {
   Activity,
   TrendingUp,
@@ -554,6 +566,8 @@ const todayStats = ref<{
 }>({ requests: 0, tokens: 0, cost: 0 });
 
 const dailyStats = ref<DailyStat[]>([]);
+const usageTimeSeries = ref<UsageTimeSeriesPoint[]>([]);
+const usageTrendError = ref(false);
 const providerSummary = ref<ProviderSummary[]>([]);
 const hasIncompleteBreakdown = computed(() => dailyStats.value.some(
   (day) => (day.unattributed_requests ?? 0) > 0 || (day.unattributed_cost ?? 0) > 0,
@@ -879,17 +893,26 @@ async function loadDailyStats() {
     return dailyStatsLoadPromise;
   }
   const requestId = ++dailyStatsRequestId;
+  const params = { ...dailyTimeRange.value };
   loadingDaily.value = true;
+  usageTrendError.value = false;
   dailyStatsLoadPromise = (async () => {
     try {
-      const response = await dashboardApi.getDailyStats(dailyTimeRange.value);
+      const [dailyResult, seriesResult] = await Promise.allSettled([
+        dashboardApi.getDailyStats(params),
+        adminApi.getTimeSeries(params),
+      ]);
       if (requestId !== dailyStatsRequestId) return;
-      dailyStats.value = response.daily_stats;
-      providerSummary.value = response.provider_summary || [];
+      dailyStats.value = dailyResult.status === "fulfilled" ? dailyResult.value.daily_stats : [];
+      providerSummary.value = dailyResult.status === "fulfilled" ? dailyResult.value.provider_summary || [] : [];
+      usageTimeSeries.value = seriesResult.status === "fulfilled" ? seriesResult.value : [];
+      usageTrendError.value = dailyResult.status === "rejected" || seriesResult.status === "rejected";
     } catch {
       if (requestId !== dailyStatsRequestId) return;
       dailyStats.value = [];
       providerSummary.value = [];
+      usageTimeSeries.value = [];
+      usageTrendError.value = true;
     } finally {
       if (requestId === dailyStatsRequestId) {
         loadingDaily.value = false;
@@ -906,6 +929,9 @@ async function loadDailyStats() {
 }
 
 function scheduleDailyStatsLoad() {
+  // Invalidate the old range immediately, including during the debounce wait.
+  dailyStatsRequestId += 1;
+  loadingDaily.value = true;
   if (dailyStatsDebounceTimer) {
     clearTimeout(dailyStatsDebounceTimer);
   }
@@ -915,7 +941,14 @@ function scheduleDailyStatsLoad() {
   }, 120);
 }
 
-watch(dailyTimeRange, scheduleDailyStatsLoad, { deep: true });
+watch([
+  () => dailyTimeRange.value.preset,
+  () => dailyTimeRange.value.start_date,
+  () => dailyTimeRange.value.end_date,
+  () => dailyTimeRange.value.granularity ?? "day",
+  () => dailyTimeRange.value.timezone,
+  () => dailyTimeRange.value.tz_offset_minutes,
+], scheduleDailyStatsLoad);
 
 function formatDate(dateString: string): string {
   const date = parseDateLike(dateString);

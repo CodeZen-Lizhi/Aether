@@ -721,6 +721,18 @@ export interface AdminApiKeysResponse {
   skip: number
 }
 
+export interface UsageTimeSeriesPoint {
+  // Backend bucket labels already represent the requested local time.
+  date: string
+  total_requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_cost: number
+  avg_response_time_ms?: number
+}
+
 export interface LeaderboardItem {
   rank: number
   id: string
@@ -1590,12 +1602,12 @@ export const adminApi = {
       provider_name?: string
     },
     options?: AdminAnalyticsRequestOptions
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<UsageTimeSeriesPoint[]> {
     const cacheKey = buildCacheKey('admin:stats:time-series', params)
     return cachedRequest(
       cacheKey,
       async () => {
-        const response = await apiClient.get<Array<Record<string, unknown>>>('/api/admin/stats/time-series', { params })
+        const response = await apiClient.get<UsageTimeSeriesPoint[]>('/api/admin/stats/time-series', { params })
         return response.data
       },
       options?.skipCache ? 0 : 20 * 1000
