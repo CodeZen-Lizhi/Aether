@@ -5,20 +5,6 @@
       class="responsive-list"
     >
       <template #actions>
-        <!-- 搜索框 -->
-        <div class="relative">
-          <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground z-10 pointer-events-none" />
-          <Input
-            v-model="searchQuery"
-            type="text"
-            placeholder="搜索..."
-            class="h-8 w-28 sm:w-40 pl-8 pr-2 text-xs"
-          />
-        </div>
-
-        <!-- 分隔线 -->
-        <div class="hidden sm:block h-4 w-px bg-border" />
-
         <!-- 状态筛选 -->
         <div class="responsive-list-mobile">
           <Select
@@ -485,16 +471,6 @@
         </div>
       </div>
 
-      <template #pagination>
-        <Pagination
-          v-if="!loading && apiKeys.length > 0"
-          :current="currentPage"
-          :total="total"
-          :page-size="limit"
-          :show-page-size-selector="false"
-          @update:current="handlePageChange"
-        />
-      </template>
     </TableCard>
 
     <!-- 创建/编辑独立Key对话框 -->
@@ -585,7 +561,6 @@ import {
   SortableTableHead,
   TableFilterMenu,
   TableCell,
-  Pagination,
   RefreshButton,
   Select,
   SelectTrigger,
@@ -602,8 +577,7 @@ import {
   Power,
   Copy,
   CheckCircle,
-  SquarePen,
-  Search
+  SquarePen
 } from 'lucide-vue-next'
 
 import { StandaloneKeyFormDialog, type StandaloneKeyFormData } from '@/features/api-keys'
@@ -617,9 +591,6 @@ const { copyToClipboard } = useClipboard()
 
 const apiKeys = ref<AdminApiKey[]>([])
 const loading = ref(false)
-const total = ref(0)
-const currentPage = ref(1)
-const limit = ref(100)
 const showNewKeyDialog = ref(false)
 const newKeyValue = ref('')
 const keyInput = ref<HTMLInputElement>()
@@ -632,7 +603,6 @@ const keyFormDialogRef = ref<InstanceType<typeof StandaloneKeyFormDialog>>()
 const EXPIRY_SOON_DAYS = 7
 
 // 筛选相关
-const searchQuery = ref('')
 const filterStatus = ref<'all' | 'active' | 'inactive'>('all')
 const filterBalance = ref<'all' | 'limited' | 'unlimited'>('all')
 
@@ -649,16 +619,13 @@ const balanceFilters = [
 ]
 
 const hasActiveFilters = computed(() => {
-  return searchQuery.value !== '' || filterStatus.value !== 'all' || filterBalance.value !== 'all'
+  return filterStatus.value !== 'all' || filterBalance.value !== 'all'
 })
 
 function clearFilters() {
-  searchQuery.value = ''
   filterStatus.value = 'all'
   filterBalance.value = 'all'
 }
-
-const skip = computed(() => (currentPage.value - 1) * limit.value)
 
 const activeKeyCount = computed(() => apiKeys.value.filter(key => key.is_active).length)
 const _inactiveKeyCount = computed(() => Math.max(0, apiKeys.value.length - activeKeyCount.value))
@@ -669,15 +636,6 @@ const _expiringSoonCount = computed(() => apiKeys.value.filter(key => isExpiring
 // 筛选后的 API Keys
 const filteredApiKeys = computed(() => {
   let result = apiKeys.value
-
-  // 搜索筛选（支持空格分隔的多关键词 AND 搜索）
-  if (searchQuery.value) {
-    const keywords = searchQuery.value.toLowerCase().split(/\s+/).filter(k => k.length > 0)
-    result = result.filter(key => {
-      const searchableText = `${key.name || ''} ${key.key_display || ''} ${key.username || ''} ${key.user_email || ''}`.toLowerCase()
-      return keywords.every(keyword => searchableText.includes(keyword))
-    })
-  }
 
   // 状态筛选
   if (filterStatus.value === 'active') {
@@ -705,8 +663,7 @@ async function refreshApiKeys() {
   loading.value = true
   try {
     const response = await adminApi.getAllApiKeys({
-      skip: skip.value,
-      limit: limit.value
+      limit: 500
     })
     const standaloneKeys = response.api_keys.filter((key) => key.is_standalone === true)
     if (standaloneKeys.length !== response.api_keys.length) {
@@ -716,18 +673,12 @@ async function refreshApiKeys() {
       })
     }
     apiKeys.value = standaloneKeys
-    total.value = response.total
   } catch (err: unknown) {
     log.error('加载独立Keys失败:', err)
     error(parseApiError(err, '加载独立 Keys 失败'))
   } finally {
     loading.value = false
   }
-}
-
-function handlePageChange(page: number) {
-  currentPage.value = page
-  refreshApiKeys()
 }
 
 async function toggleApiKey(apiKey: AdminApiKey) {
@@ -755,7 +706,6 @@ async function deleteApiKey(apiKey: AdminApiKey) {
   try {
     const response = await adminApi.deleteApiKey(apiKey.id)
     apiKeys.value = apiKeys.value.filter(k => k.id !== apiKey.id)
-    total.value = total.value - 1
     success(response.message)
   } catch (err: unknown) {
     log.error('删除密钥失败:', err)
