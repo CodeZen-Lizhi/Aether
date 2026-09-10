@@ -1174,3 +1174,37 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 42: 移除月度健康卡片并更新安装包
+<!-- trellis-session: v=2 fp=017976657d716ac5 -->
+
+**Date**: 2026-09-10
+**Task**: 移除月度健康卡片并更新安装包
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+按用户追加要求删除本月系统健康整块及专用页面状态，同步两分支并重新打包，保留此前的历史模型与供应商统计修复。
+
+### Main Changes
+
+- 今日统计下方直接展示统计周期和图表，移除月度平均响应、错误率、转移次数和本月费用。
+- 最新安装包：Downloads/Aether_0.1.0_aarch64_20260910_47c0e72b6.dmg；SHA256 4b2f2863160dac41192766663274be01dc9002f769a199bb134f7f976f27f4ca。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `47c0e72b6` | 移除仪表盘本月系统健康卡片 |
+| `9469c5c2a` | 移除仪表盘本月系统健康卡片 |
+
+### Testing
+
+- [OK] 前端类型检查、Dashboard ESLint、现有 4 项 Dashboard 测试和 diff 检查通过。
+- [OK] 隔离浏览器核验 840、1024、1280、1920 px 宽度，月度区域已移除，无横向溢出，真实模型与供应商图表及总量正常。
+- [OK] 重新构建 DMG，验证 117 个文件、签名、架构和复制后 SHA256；包内网关与之前通过生命周期测试的二进制完全相同。
+
+### Status
+
+[OK] **Completed**
