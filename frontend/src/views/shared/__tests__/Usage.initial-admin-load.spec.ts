@@ -8,17 +8,18 @@ const source = readFileSync(
 )
 
 describe('admin usage initial loading', () => {
-  it('starts the user filter request before analytics completes', () => {
+  it('initializes the user filter before records and analytics load', () => {
     const mountedBlock = source
       .split('onMounted(async () => {')[1]
       ?.split('// 处理时间范围变化')[0]
 
     expect(mountedBlock).toBeTruthy()
-    expect(mountedBlock).toContain('const adminUsersPromise = loadAdminUsers()')
-    expect(mountedBlock).toContain('Promise.all([heatmapPromise, adminUsersPromise])')
-    expect(mountedBlock?.indexOf('const adminUsersPromise = loadAdminUsers()'))
+    expect(mountedBlock).toContain('loadAdminUsers()')
+    expect(mountedBlock?.indexOf('loadAdminUsers()'))
       .toBeLessThan(mountedBlock?.indexOf('await loadRecords(') ?? -1)
-    expect(mountedBlock).not.toContain('await loadAdminUsers()')
+    expect(mountedBlock?.indexOf('loadAdminUsers()'))
+      .toBeLessThan(mountedBlock?.indexOf('void refreshAdminAnalytics(') ?? -1)
+    expect(mountedBlock).not.toContain('loadHeatmapData()')
   })
 
   it('uses authoritative active snapshots for errors and final-provider facts', () => {

@@ -119,6 +119,7 @@ describe('i18n infrastructure', () => {
     expect(translateLegacyText('git clone https://github.com/fawney19/Aether.git', 'en-US')).toBe('git clone https://github.com/fawney19/Aether.git')
     expect(translateLegacyText('已保存 1 个客户端模型，2 个客户端模型的更改仍待保存。', 'en-US')).toBe('1 client models saved; 2 client models still have pending changes.')
     expect(translateLegacyText('2 个客户端模型的更改保存失败，仍待保存。', 'en-US')).toBe('Changes for 2 client models failed to save and remain pending.')
+    expect(translateLegacyText('拖动 OpenAI 调整优先级', 'en-US')).toBe('Drag OpenAI to change priority')
   })
 
   it('translates dashboard scopes and dynamic request and token summaries', () => {

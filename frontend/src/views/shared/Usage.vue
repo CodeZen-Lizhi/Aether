@@ -26,16 +26,6 @@
       v-if="statsExpanded"
       class="space-y-4"
     >
-      <!-- 活跃度热图 -->
-      <div class="grid grid-cols-1 gap-4">
-        <ActivityHeatmapCard
-          :data="activityHeatmapData"
-          title="总体活跃天数"
-          :is-loading="isLoadingHeatmap"
-          :has-error="heatmapError"
-        />
-      </div>
-
       <!-- 分析统计 -->
       <!-- 模型、提供商和 API 格式统计按可用宽度排列 -->
       <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,26rem),1fr))] gap-4">
@@ -115,7 +105,6 @@ import {
   UsageProviderTable,
   UsageApiFormatTable,
   UsageRecordsTable,
-  ActivityHeatmapCard,
   RequestDetailDrawer
 } from '@/features/usage/components'
 import {
@@ -137,7 +126,6 @@ import {
 import type { DateRangeParams, FilterStatusValue, RequestStatus, UsageRecord } from '@/features/usage/types'
 import type { UserOption } from '@/features/usage/components/UsageRecordsTable.vue'
 import { log } from '@/utils/logger'
-import type { ActivityHeatmap } from '@/types/activity'
 import { useToast } from '@/composables/useToast'
 
 const { warning } = useToast()
@@ -184,28 +172,10 @@ const {
   loadRecords
 } = useUsageData()
 
-// 热力图状态
-const activityHeatmapData = ref<ActivityHeatmap | null>(null)
-const isLoadingHeatmap = ref(false)
-const heatmapError = ref(false)
 const ADMIN_ANALYTICS_REFRESH_INTERVAL = 60000
 let adminAnalyticsRefreshInFlight: Promise<void> | null = null
 let lastAdminAnalyticsRefreshAt = 0
 let adminAnalyticsRefreshGeneration = 0
-
-// 加载热力图数据
-async function loadHeatmapData() {
-  isLoadingHeatmap.value = true
-  heatmapError.value = false
-  try {
-    activityHeatmapData.value = await usageApi.getActivityHeatmap()
-  } catch (error) {
-    log.error('加载热力图数据失败:', error)
-    heatmapError.value = true
-  } finally {
-    isLoadingHeatmap.value = false
-  }
-}
 
 function loadAdminUsers() {
   // 单用户模式：筛选器只包含当前管理员。
@@ -724,21 +694,14 @@ const selectedRequestSummary = computed(() => (
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
 
-  // 优先启动热力图加载，避免被统计聚合链路阻塞。
-  const heatmapPromise = loadHeatmapData().catch(err => {
-    log.error('加载热力图数据失败:', err)
-  })
-  const adminUsersPromise = loadAdminUsers()
+  loadAdminUsers()
 
   await loadRecords(
     { page: currentPage.value, pageSize: pageSize.value },
     getCurrentFilters(),
     timeRange.value
   )
-  void (async () => {
-    await refreshAdminAnalytics({ force: true, preserveOnFailure: false })
-    await Promise.all([heatmapPromise, adminUsersPromise])
-  })()
+  void refreshAdminAnalytics({ force: true, preserveOnFailure: false })
 
   if (globalAutoRefresh.value && isPageVisible.value) {
     startActiveDiscovery()

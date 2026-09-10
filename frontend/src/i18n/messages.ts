@@ -2135,7 +2135,6 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '用户对比趋势': 'User comparison trend',
   '收起用量分析': 'Collapse usage analysis',
   '展开用量分析': 'Expand usage analysis',
-  '总体活跃天数': 'Overall active days',
   '我的活跃天数': 'My active days',
   '请求间隔时间线': 'Request interval timeline',
   '我的请求间隔': 'My request interval',
@@ -2627,6 +2626,7 @@ const legacyPhraseEnglishMessages: Array<[string, string]> = [
 ]
 
 const legacyDynamicPatterns: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+  [/^拖动 (.+) 调整优先级$/u, match => `Drag ${match[1]} to change priority`],
   [/^输入 (.+) \/ 输出 (.+) · 写缓存 (.+) \/ 读缓存 (.+)$/u, match => `Input ${match[1]} / Output ${match[2]} · Cache creation ${match[3]} / Cache read ${match[4]}`],
   [/^成功率 ([\d.]+%)$/u, match => `Success rate ${match[1]}`],
   [/^管理员:\s*(.+)$/, (match) => `Admin: ${match[1]}`],

@@ -104,16 +104,15 @@
 
             <ul
               v-else
+              ref="providerListElement"
               class="mt-3 space-y-2"
             >
               <li
                 v-for="(provider, index) in orderedProviders"
                 :key="provider.id"
+                :data-provider-id="provider.id"
                 class="rounded-lg border border-border bg-background"
-                draggable="true"
-                @dragstart="onDragStart($event, index)"
-                @dragover.prevent
-                @drop="onDrop($event, index)"
+                :class="draggedProviderId === provider.id ? 'border-primary/60 bg-primary/5 shadow-sm' : ''"
               >
                 <div class="flex items-center gap-2 px-3 py-2.5">
                   <span
@@ -121,7 +120,23 @@
                   >
                     {{ index + 1 }}
                   </span>
-                  <GripVertical class="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" />
+                  <button
+                    type="button"
+                    class="flex h-7 w-7 shrink-0 touch-none select-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    :class="draggedProviderId === provider.id ? 'cursor-grabbing text-primary' : 'cursor-grab'"
+                    :aria-label="`拖动 ${provider.name} 调整优先级`"
+                    :title="`拖动 ${provider.name} 调整优先级`"
+                    @pointerdown="onPointerDragStart($event, provider.id)"
+                    @pointermove="onPointerDragMove"
+                    @pointerup="onPointerDragEnd"
+                    @pointercancel="onPointerDragEnd"
+                    @lostpointercapture="onPointerDragEnd"
+                  >
+                    <GripVertical
+                      aria-hidden="true"
+                      class="h-4 w-4 pointer-events-none"
+                    />
+                  </button>
                   <div class="flex min-w-0 flex-1 items-center gap-2 text-left">
                     <span class="truncate text-sm font-medium">{{ provider.name }}</span>
                     <Badge
@@ -221,6 +236,7 @@ const loadError = ref<string | null>(null)
 const mode = ref<SchedulingStrategyMode>('cache_affinity')
 const providers = ref<AdminProviderListItem[]>([])
 const orderedProviderIds = ref<string[]>([])
+const providerListElement = ref<HTMLElement | null>(null)
 const systemDefaultGroup = ref<RoutingGroupRecord | null>(null)
 const savedSnapshot = ref<string | null>(null)
 
@@ -261,23 +277,45 @@ function moveProvider(index: number, direction: -1 | 1) {
   orderedProviderIds.value = next
 }
 
-let dragFromIndexValue: number | null = null
-function onDragStart(event: DragEvent, index: number) {
-  dragFromIndexValue = index
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-  }
+const draggedProviderId = ref<string | null>(null)
+
+function onPointerDragStart(event: PointerEvent, providerId: string) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  draggedProviderId.value = providerId
+
+  const handle = event.currentTarget as HTMLElement
+  handle.setPointerCapture?.(event.pointerId)
 }
 
-function onDrop(event: DragEvent, targetIndex: number) {
+function onPointerDragMove(event: PointerEvent) {
+  const providerId = draggedProviderId.value
+  if (!providerId) return
   event.preventDefault()
-  const fromIndex = dragFromIndexValue
-  dragFromIndexValue = null
-  if (fromIndex === null || fromIndex === targetIndex) return
+
+  const target = document.elementFromPoint(event.clientX, event.clientY)
+    ?.closest<HTMLElement>('[data-provider-id]')
+  if (!target || !providerListElement.value?.contains(target)) return
+  const targetProviderId = target?.dataset.providerId
+  if (!targetProviderId || targetProviderId === providerId) return
+
+  const fromIndex = orderedProviderIds.value.indexOf(providerId)
+  const targetIndex = orderedProviderIds.value.indexOf(targetProviderId)
+  if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return
+
   const next = [...orderedProviderIds.value]
   const [moved] = next.splice(fromIndex, 1)
   next.splice(targetIndex, 0, moved)
   orderedProviderIds.value = next
+}
+
+function onPointerDragEnd(event: PointerEvent) {
+  draggedProviderId.value = null
+
+  const handle = event.currentTarget as HTMLElement
+  if (handle.hasPointerCapture?.(event.pointerId)) {
+    handle.releasePointerCapture(event.pointerId)
+  }
 }
 
 async function loadStrategy() {
