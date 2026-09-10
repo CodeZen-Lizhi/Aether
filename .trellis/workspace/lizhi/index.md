@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 42
+- **Total Sessions**: 43
 - **Last Active**: 2026-09-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1210 | Active |
+| `journal-1.md` | ~1248 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 43 | 2026-09-10 | 重整仪表盘并交付新安装包 | `0d9964f74`, `5c76535dc`, `b3f1ecfb3`, `c8f28cb04` | `codex/tauri-macos` |
 | 42 | 2026-09-10 | 移除月度健康卡片并更新安装包 | `47c0e72b6`, `9469c5c2a` | `codex/tauri-macos` |
 | 41 | 2026-09-10 | 修复历史模型与供应商统计并交付安装包 | `e868096ba8446242893007ae4f67fe52bc1933d0`, `5490761aca9f6f1f53178674a4c23d3712baf1fd` | `codex/tauri-macos` |
 | 40 | 2026-09-10 | 窗口自适应与安装包交付 | `0793abfd3`, `9b1501081`, `a83d4a233` | `codex/tauri-macos` |

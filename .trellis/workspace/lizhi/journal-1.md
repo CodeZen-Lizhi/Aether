@@ -1208,3 +1208,41 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 43: 重整仪表盘并交付新安装包
+<!-- trellis-session: v=2 fp=3ceb9864374ba865 -->
+
+**Date**: 2026-09-10
+**Task**: 重整仪表盘并交付新安装包
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+仪表盘改为全部累计、今日概览、小时使用趋势及模型与提供商排行；加入今日平均响应并完成两分支同步与新安装包交付。
+
+### Main Changes
+
+- 复用现有接口显示全部历史累计 Token、请求、费用与实际结算，今日响应固定统计今天并以秒显示。
+- 默认小时缓存面积趋势、独立失败重试、周期排行与完整列表展开；修复舍入缺口、小额排序、业务名称翻译和排行配色。
+- 新包：Downloads/Aether_0.1.0_aarch64_20260910_b3f1ecfb3.dmg；SHA256 517e6268c641f32b893cf46735300ff8f8ff4a33a96f9799f06c9a90cf8ac1f9。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0d9964f74` | 仪表盘增加使用趋势图 |
+| `5c76535dc` | 仪表盘增加使用趋势图 |
+| `b3f1ecfb3` | 重整仪表盘指标与布局 |
+| `c8f28cb04` | 重整仪表盘指标与布局 |
+
+### Testing
+
+- [OK] 36 项定向前端回归、类型检查、变更文件 lint 与 diff 检查通过。
+- [OK] 隔离 SQLite 验证 39 请求、15.69 亿累计 Token、168 美元；今日成功与失败合计平均响应 16.64s。
+- [OK] 中英文、明暗主题及 840/1024/1280/1920 px 展开明细无横向溢出；最终重新打开没有控制台错误。
+- [OK] 包内资源、117 个 DMG 文件、签名、架构和复制后校验值通过；网关二进制未变，复用已有生命周期证据。
+
+### Status
+
+[OK] **Completed**
