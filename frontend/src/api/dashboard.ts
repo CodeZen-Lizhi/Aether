@@ -29,7 +29,7 @@ export interface ProviderStatus {
 
 // 系统健康指标（管理员专用）
 export interface SystemHealth {
-  avg_response_time: number
+  avg_response_time: number // seconds, for the requested statistics period
   error_rate: number
   error_requests: number
   fallback_count: number
@@ -403,6 +403,14 @@ export interface DailyStatsResponse {
   }
 }
 
+export interface DashboardLifetimeStats {
+  requests: number
+  tokens: number
+  cost: number
+  actualCost: number
+  firstActiveDate: string | null
+}
+
 export interface TimeRangeParams {
   start_date?: string
   end_date?: string
@@ -413,6 +421,44 @@ export interface TimeRangeParams {
 }
 
 export const dashboardApi = {
+  // Daily totals include retained history and raw records without double-counting.
+  async getLifetimeStats(
+    timezoneParams: Pick<TimeRangeParams, 'timezone' | 'tz_offset_minutes'> = {}
+  ): Promise<DashboardLifetimeStats> {
+    const tzOffset = timezoneParams.tz_offset_minutes ?? -new Date().getTimezoneOffset()
+    const params = {
+      start_date: '1970-01-01',
+      end_date: new Date(Date.now() + tzOffset * 60_000).toISOString().slice(0, 10),
+      timezone: timezoneParams.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      tz_offset_minutes: tzOffset,
+    }
+    return cachedRequest(
+      buildCacheKey('dashboard:lifetime-stats', params),
+      async () => {
+        const { data } = await apiClient.get<DailyStatsResponse>('/api/dashboard/daily-stats', { params })
+        const total: DashboardLifetimeStats = {
+          requests: 0, tokens: 0, cost: 0, actualCost: 0, firstActiveDate: null,
+        }
+        for (const day of data.daily_stats) {
+          if ([day.requests, day.tokens, day.cost, day.actual_cost].some(value => !Number.isFinite(value) || value < 0)) {
+            throw new Error('Invalid dashboard lifetime statistics')
+          }
+          total.requests += day.requests
+          total.tokens += day.tokens
+          total.cost += day.cost
+          total.actualCost += day.actual_cost
+          if ((day.requests > 0 || day.tokens > 0 || day.cost > 0)
+            && (!total.firstActiveDate || day.date < total.firstActiveDate)) {
+            total.firstActiveDate = day.date
+          }
+        }
+        // Cache the compact summary, not decades of empty daily rows.
+        return total
+      },
+      60 * 1000
+    )
+  },
+
   // 获取仪表盘统计数据
   async getStats(params?: TimeRangeParams): Promise<DashboardStatsResponse> {
     const cacheKey = buildCacheKey('dashboard:stats', params as Record<string, unknown> | undefined)

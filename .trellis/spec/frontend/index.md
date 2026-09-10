@@ -49,15 +49,29 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
+## Convention: 仪表盘布局与统计范围
+
+**Layout**: `Dashboard.vue` 只编排加载和范围状态。`DashboardOverview.vue` 展示全部历史累计与五张今日卡片；`DashboardUsageTrend.vue` 承载周期筛选及主要图表；`DashboardUsageBreakdown.vue` 展示模型和提供商排行。不要恢复平台拆分、请求日志、重复成本图和默认展开的每日大表。保持项目 Card、颜色变量、字体与图标，今日卡片常见桌面宽度五列、窄窗口换行且填满行。
+
+**Theme colors**: 当前 Tailwind 颜色配置直接引用完整 `var(--primary)` / `var(--muted)` 色值；不要用 `bg-primary/65` 之类 opacity 后缀，它在真实浏览器里没有有效背景。纯色用 `bg-primary`，条形透明度单独用 `opacity-*`；混色沿用项目的 `color-mix(...)`。用 computed style 和截图确认明暗主题，不只检查类名。
+
+**Lifetime**: `dashboardApi.getLifetimeStats({ timezone, tz_offset_minutes })` 从现有 `/api/dashboard/daily-stats` 读取 `1970-01-01` 至当地今天，累加每日 `requests`、`tokens`、`cost`、`actual_cost`，以首个非零日期作为起始日。每日总量已包含保留的历史缺失部分，不能再次相加 `unattributed_*`。拒绝非法或负数的部分结果；失败独立重试，不能显示假零值。只缓存压缩后的累计对象 60 秒，缓存键包含本地结束日期和时区。接口会返回空日，不能把几十年的行常驻前端缓存。
+
+**Sources**: `/api/admin/usage/stats` 默认窗口和原始 usage 范围不是全部历史；`/api/dashboard/stats` 的 `tokens.month` 在 SQLite 有聚合行时不能保证包含未聚合原始记录。累计应沿用 daily-stats 已修复的保留总量与原始记录去重。今日、累计与筛选周期互相独立，切换趋势不重新解释顶部指标。
+
+**Rankings**: 使用同接口的 `model_summary` / `provider_summary` 周期汇总，不能再次累加每日已舍入的费用，否则小额请求的排行可能错误。默认按 Token 降序，可切费用 / 请求；各组默认显示前五项，分别展开全部。真实名称用跳过 legacy i18n 的 `samp` 文本保留原文与完整长度，费用 / 请求缺失单独标注，不能创造名为 `aggregate` 的业务分组。优先使用服务端 `unattributed_requests` / `unattributed_cost`，不能把舍入后的总额和分项相减冒充历史缺失。费用占比使用本组周期总额加保留缺口，Token / 请求占比仍使用包含历史的每日总量。
+
 ## Convention: 仪表盘使用趋势的数据口径
 
 **What**: `DashboardUsageTrend.vue` 使用现有 `/api/admin/stats/time-series` 的费用、输入、输出、缓存创建与缓存命中数据；`usageTrend.ts` 结合 `/api/dashboard/daily-stats` 的历史总量。仅改前端时不能假设时间序列接口包含已清理的请求明细。
 
 **History**: 按天、ISO 周、月对齐每日总量，以保留的每日费用汇总为准。总量请求数大于原始时间序列请求数时，Token 曲线使用 `null`，不能填 0 或连接缺口；小时视图不能把历史每日费用分摊到小时。原始输入 Token 在部分上游格式中已包含缓存，沿用原接口口径，并在明细中说明各项不能直接相加。
 
-**Time and interaction**: 时间序列的小时标签虽然携带 `+00:00`，实际已转换为请求时区；展示直接使用标签的本地日期和时分，不能再次转时区。统计周期切换立即使旧请求失效，两个现有接口并行加载且失败不连带清空其他成功数据。`TimeRangePicker` 需显式传入 `:show-granularity="true"` 才显示小时 / 天 / 周 / 月控件。
+**Time and interaction**: 默认今天、按小时。时间序列的小时标签虽然携带 `+00:00`，实际已转换为请求时区；展示直接使用标签的本地日期和时分，不能再次转时区。统计周期切换立即使旧请求失效，两个现有接口并行加载且失败不连带清空其他成功数据。`TimeRangePicker` 需显式传入 `:show-granularity="true"` 才显示小时 / 天 / 周 / 月控件。
 
-**Chart**: 费用虚线使用独立美元轴，四种 Token 使用另一坐标轴。HTML 图例提供键盘按钮与 `aria-pressed`，明细通过折叠表格 / 窄屏卡片展示。复用 `LineChart`，面积填充需注册 Chart.js `Filler`；禁止为此额外引入图表库。
+**Today response**: 顶部 `/api/dashboard/stats` 固定传 `preset=today` 和本地时区偏移，从 `system_health.avg_response_time` 读取已按请求样本计算的平均秒数。四张服务端卡片后追加“今日平均响应”，统一显示两位小数和 `s`；不读取下方趋势范围的平均值，也不按模型平均再平均。今日没有请求显示 `--`，缺失或非法数值显示无响应数据。加载失败与空数据要区分，骨架 / 空态也保持五张卡片。不要恢复月度系统健康区。
+
+**Chart**: 费用虚线使用独立美元轴，四种 Token 使用另一坐标轴，仅缓存命中填充面积。HTML 图例提供键盘按钮与 `aria-pressed`，明细通过折叠表格 / 窄屏卡片展示。复用 `LineChart`，面积填充需注册 Chart.js `Filler`；禁止为此额外引入图表库。
 
 **Verification**: `usageTrend.spec.ts` 覆盖历史缺失、跨年 ISO 周 / 月、小时日期与总量；Dashboard 测试覆盖图例、失败重试和旧范围响应失效。浏览器检查明暗主题、中英文、小时范围，以及展开明细后的四种窗口尺寸。
 

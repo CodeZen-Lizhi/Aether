@@ -1,8 +1,8 @@
 {
   "id": "dashboard-usage-trend",
   "name": "dashboard-usage-trend",
-  "title": "仪表盘增加使用趋势图",
-  "description": "只使用现有接口，在仪表盘增加费用、缓存创建、缓存命中、输入和输出趋势图，支持统计周期和响应式布局，缺失历史明细不伪装为零。",
+  "title": "仪表盘重整与使用趋势",
+  "description": "复用现有接口重整仪表盘：全部历史累计 Token、今日五项含平均响应、默认小时缓存趋势、模型和提供商排行；保持历史总量、范围独立、错误重试和无横向滚动，同步两分支并制作 macOS 安装包。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,

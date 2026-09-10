@@ -120,4 +120,14 @@ describe('i18n infrastructure', () => {
     expect(translateLegacyText('已保存 1 个客户端模型，2 个客户端模型的更改仍待保存。', 'en-US')).toBe('1 client models saved; 2 client models still have pending changes.')
     expect(translateLegacyText('2 个客户端模型的更改保存失败，仍待保存。', 'en-US')).toBe('Changes for 2 client models failed to save and remain pending.')
   })
+
+  it('translates dashboard scopes and dynamic request and token summaries', () => {
+    expect(translateLegacyText('累计 Token', 'en-US')).toBe('Lifetime tokens')
+    expect(translateLegacyText('今日平均响应', 'en-US')).toBe('Average response today')
+    expect(translateLegacyText('重试累计统计', 'en-US')).toBe('Retry lifetime statistics')
+    expect(translateLegacyText('按所选统计周期汇总', 'en-US')).toBe('Totals for the selected period')
+    expect(translateLegacyText('成功率 83.3%', 'en-US')).toBe('Success rate 83.3%')
+    expect(translateLegacyText('输入 1.2M / 输出 30.0K · 写缓存 0 / 读缓存 5.0M', 'en-US'))
+      .toBe('Input 1.2M / Output 30.0K · Cache creation 0 / Cache read 5.0M')
+  })
 })

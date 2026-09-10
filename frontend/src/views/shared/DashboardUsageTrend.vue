@@ -4,14 +4,19 @@
     aria-labelledby="usage-trend-title"
     :aria-busy="loading"
   >
-    <div class="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <h3
-        id="usage-trend-title"
-        class="text-sm font-semibold text-foreground"
-      >
-        使用趋势
-      </h3>
-      <span class="text-xs tabular-nums text-muted-foreground">{{ rangeLabel }}</span>
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2
+          id="usage-trend-title"
+          class="text-sm font-semibold text-foreground"
+        >
+          使用趋势
+        </h2>
+        <p class="mt-1 text-xs tabular-nums text-muted-foreground">
+          {{ rangeLabel }}
+        </p>
+      </div>
+      <slot name="controls" />
     </div>
 
     <div class="relative h-64 min-w-0 w-full sm:h-72 xl:h-80">
@@ -238,7 +243,7 @@ const chartData = computed<ChartData<'line'>>(() => ({
     pointRadius: trend.value.points.length === 1 ? 4 : 0,
     pointHoverRadius: 4,
     pointHitRadius: 12,
-    fill: metric.key !== 'cost',
+    fill: metric.key === 'cacheRead',
     cubicInterpolationMode: 'monotone',
     spanGaps: false,
     hidden: hiddenMetrics.value.has(metric.key),
