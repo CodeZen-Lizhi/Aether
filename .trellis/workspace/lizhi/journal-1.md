@@ -1278,3 +1278,36 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 45: 修复启动页闪现并交付 0.1.2
+<!-- trellis-session: v=2 fp=f3cbb65612b15549 -->
+
+**Date**: 2026-09-10
+**Task**: 修复启动页闪现并交付 0.1.2
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+修正设置窗口默认显示和初始化激活回退，正常启动直接进入仪表盘；交付经过原生验证的 0.1.2 安装包。
+
+### Main Changes
+
+- 设置窗口初始隐藏且不聚焦；初始化期间记录仪表盘打开意图，原子交接早期激活与后台启动。
+- 退出中抑制迟到的设置窗口回退；仅提交并 push 当前分支，不同步 SLIM。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9c3e53cee` | 启动时直接打开仪表盘 |
+
+### Testing
+
+- [OK] 最终 Rust 21 passed / 2 ignored，本包 fmt、差异检查与独立审查通过。
+- [OK] 实际 release app 在临时数据中验证前台启动/早期激活、后台启动/重开、端口冲突失败恢复，三项均通过；临时进程、数据和钥匙串已清理。
+- [OK] 0.1.2 包内版本、117 个文件、签名和 DMG/下载副本校验通过。
+
+### Status
+
+[OK] **Completed**

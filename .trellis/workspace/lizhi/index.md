@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 44
+- **Total Sessions**: 45
 - **Last Active**: 2026-09-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1280 | Active |
+| `journal-1.md` | ~1313 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 45 | 2026-09-10 | 修复启动页闪现并交付 0.1.2 | `9c3e53cee` | `codex/tauri-macos` |
 | 44 | 2026-09-10 | 自动递增桌面版本并交付 0.1.1 | `3bcb54b59` | `codex/tauri-macos` |
 | 43 | 2026-09-10 | 重整仪表盘并交付新安装包 | `0d9964f74`, `5c76535dc`, `b3f1ecfb3`, `c8f28cb04` | `codex/tauri-macos` |
 | 42 | 2026-09-10 | 移除月度健康卡片并更新安装包 | `47c0e72b6`, `9469c5c2a` | `codex/tauri-macos` |
