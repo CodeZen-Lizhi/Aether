@@ -1,6 +1,7 @@
 <template>
   <AppShell
     :show-notice="showAuthError"
+    :desktop-mode="desktopMode"
     :main-class="mainClasses"
     :sidebar-class="sidebarClasses"
     :content-class="contentClasses"
@@ -179,7 +180,10 @@
 
     <template #header>
       <!-- Mobile Header -->
-      <header class="lg:hidden fixed top-0 left-0 right-0 z-50 border-b border-[var(--shell-border)] bg-[var(--shell-glass)] backdrop-blur-xl transition-all">
+      <header
+        class="fixed top-0 left-0 right-0 z-50 border-b border-[var(--shell-border)] bg-[var(--shell-glass)] backdrop-blur-xl transition-all"
+        :class="desktopMode ? 'md:hidden' : 'lg:hidden'"
+      >
         <div class="mx-auto max-w-7xl px-6 py-4">
           <div class="flex items-center justify-between">
             <RouterLink
@@ -323,7 +327,10 @@
       </header>
 
       <!-- Desktop Page Header -->
-      <header class="hidden lg:flex h-16 px-8 items-center justify-between shrink-0 border-b border-[#0f172a]/5 dark:border-white/5 sticky top-0 z-40 backdrop-blur-md bg-[#ffffff]/90 dark:bg-[#0b1220]/90">
+      <header
+        class="hidden h-16 px-8 items-center justify-between shrink-0 border-b border-[#0f172a]/5 dark:border-white/5 sticky top-0 z-40 backdrop-blur-md bg-[#ffffff]/90 dark:bg-[#0b1220]/90"
+        :class="desktopMode ? 'md:flex' : 'lg:flex'"
+      >
         <div class="flex flex-col gap-0.5">
           <div class="flex items-center gap-2 text-sm text-muted-foreground">
             <template
@@ -484,8 +491,9 @@ const breadcrumbs = computed(() => buildBreadcrumbs({
 
 // Styling Classes (Editorial)
 const sidebarClasses = computed(() => {
-    const widthClass = sidebarCollapsed.value ? 'w-16' : 'w-[260px]'
-    return `${widthClass} flex-col hidden lg:flex border-r border-[#0f172a]/5 dark:border-white/5 bg-[#ffffff] dark:bg-[#0b1220] h-screen sticky top-0 transition-[width] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none`
+    const widthClass = sidebarCollapsed.value ? 'w-16' : 'w-[224px]'
+    const breakpointClass = desktopMode ? 'md:flex' : 'lg:flex'
+    return `${widthClass} flex-col hidden ${breakpointClass} border-r border-[#0f172a]/5 dark:border-white/5 bg-[#ffffff] dark:bg-[#0b1220] h-screen sticky top-0 transition-[width] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none`
 })
 
 const contentClasses = computed(() => {
@@ -495,7 +503,7 @@ const contentClasses = computed(() => {
 const mainClasses = computed(() => {
     // 移动端需要 pt-24 来避开固定头部（约69px）+ 额外间距
     // 桌面端内容在 sticky header 下方，但需要一些内边距让内容不紧贴
-    return `pt-24 lg:pt-6`
+    return `pt-24 ${desktopMode ? 'md:pt-6' : 'lg:pt-6'}`
 })
 
 </script>

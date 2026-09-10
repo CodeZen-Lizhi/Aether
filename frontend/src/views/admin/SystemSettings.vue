@@ -144,7 +144,10 @@
       </div>
 
       <!-- 右侧悬浮目录 -->
-      <nav class="hidden lg:block w-44 shrink-0">
+      <nav
+        class="hidden w-44 shrink-0"
+        :class="desktopMode ? 'xl:block' : 'lg:block'"
+      >
         <div class="sticky top-1/2 -translate-y-1/2">
           <div class="relative">
             <!-- 竖线：通过绝对定位，以圆点中心为基准 -->

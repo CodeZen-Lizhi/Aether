@@ -216,10 +216,27 @@ describe('desktop preferences and account controls', () => {
     expect(root.querySelector('[title="退出登录"]')).toBeNull()
   })
 
+  it('keeps the native minimum-width window on the left sidebar layout', async () => {
+    const root = await mountComponent(MainLayout, true)
+    const sidebar = root.querySelector<HTMLElement>('.app-shell__sidebar')!
+    const mobileHeader = root.querySelector<HTMLButtonElement>('button[aria-label="打开导航菜单"]')!.closest('header')!
+    const desktopHeader = Array.from(root.querySelectorAll('header')).find(header => header.classList.contains('hidden'))!
+    const main = root.querySelector<HTMLElement>('.app-shell__main')!
+
+    expect(root.querySelector('.app-shell')?.getAttribute('data-desktop-mode')).toBe('true')
+    expect(sidebar.classList).toContain('md:flex')
+    expect(sidebar.classList).not.toContain('lg:flex')
+    expect(mobileHeader.classList).toContain('md:hidden')
+    expect(desktopHeader.classList).toContain('md:flex')
+    expect(main.classList).toContain('md:pt-6')
+  })
+
   it('retains Web account identity and logout controls', async () => {
     const root = await mountComponent(MainLayout, false)
     expect(root.textContent).toContain(localUser.username)
     expect(root.querySelector('[title="退出登录"]')).not.toBeNull()
     expect(root.querySelector('a[aria-label="个人设置"]')).not.toBeNull()
+    expect(root.querySelector('.app-shell__sidebar')?.classList).toContain('lg:flex')
+    expect(root.querySelector('.app-shell__sidebar')?.classList).not.toContain('md:flex')
   })
 })

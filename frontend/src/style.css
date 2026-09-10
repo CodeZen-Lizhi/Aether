@@ -1012,7 +1012,13 @@ body[theme-mode='dark'] .literary-annotation {
     display: none;
   }
 
-  @container list (min-width: 56rem) {
+  /*
+   * Desktop windows keep a 224px sidebar. At the default 1200px native
+   * window this leaves roughly 900px for the content column, so regular
+   * lists need to switch to their table layout before the old 56rem cutoff.
+   * The 52rem threshold still keeps the 840px minimum window compact.
+   */
+  @container list (min-width: 52rem) {
     .responsive-list .table-card-actions {
       width: auto;
     }
@@ -1055,6 +1061,24 @@ body[theme-mode='dark'] .literary-annotation {
 
     .responsive-list .responsive-list-desktop {
       display: flex;
+    }
+  }
+
+  .app-shell[data-desktop-mode='true'] .app-shell__main {
+    padding: clamp(0.875rem, 1.5vw, 1.5rem);
+  }
+
+  @media (max-width: 1100px) {
+    .app-shell[data-desktop-mode='true'] .app-shell__main {
+      padding: 1rem;
+    }
+
+    .app-shell[data-desktop-mode='true'] .sidebar-nav__link {
+      padding-block: 0.5rem;
+    }
+
+    .app-shell[data-desktop-mode='true'] .sidebar-nav > div {
+      margin-bottom: 0.75rem;
     }
   }
 

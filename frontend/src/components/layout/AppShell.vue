@@ -1,6 +1,7 @@
 <template>
   <div
     class="app-shell"
+    :data-desktop-mode="desktopMode ? 'true' : 'false'"
     :class="{ 'pt-24': showNotice }"
   >
     <div
@@ -42,17 +43,20 @@ import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   showNotice?: boolean
+  desktopMode?: boolean
   contentClass?: string
   mainClass?: string
   sidebarClass?: string
 }>(), {
   showNotice: false,
+  desktopMode: false,
   contentClass: '',
   mainClass: '',
   sidebarClass: '',
 })
 
 const showNotice = computed(() => props.showNotice)
+const desktopMode = computed(() => props.desktopMode)
 
 // contentClass and mainClass are now just the props, base classes are in template
 const contentClass = computed(() => props.contentClass)

@@ -12,7 +12,7 @@
 
 **What**: 管理页、表格、抽屉和弹窗不得依赖横向滚动。`style.css` 全局隐藏滚动条并取消 gutter 占位，保留纵向原生滚动。不能用 `overflow-x: hidden` 裁掉字段来通过验收。`AppShell` 负责页面间距；`PageContainer` 默认不重复加 padding。
 
-**Lists**: 公共 `Table` 使用 `table-fixed`、`w-full` 和 `overflow-wrap:anywhere`，外层不创建横向滚动容器。复杂列表在外层设置 `responsive-list`，内部用 `responsive-list-table` / `responsive-list-cards`、`responsive-list-desktop` / `responsive-list-mobile` 切换。容器达到 56rem 才显示表格；`responsive-list--wide` 将门槛提高到 80rem。以内容容器宽度判断，不能只根据 viewport 断点忽略侧边栏。CSS 选择器必须能覆盖 Tailwind 的 `grid` / `inline-flex` 显示类。
+**Lists**: 公共 `Table` 使用 `table-fixed`、`w-full` 和 `overflow-wrap:anywhere`，外层不创建横向滚动容器。复杂列表在外层设置 `responsive-list`，内部用 `responsive-list-table` / `responsive-list-cards`、`responsive-list-desktop` / `responsive-list-mobile` 切换。普通容器达到 52rem 才显示表格；`responsive-list--wide` 将门槛提高到 80rem。以内容容器宽度判断，不能只根据 viewport 断点忽略侧边栏。CSS 选择器必须能覆盖 Tailwind 的 `grid` / `inline-flex` 显示类。
 
 **Usage records**: 列宽由可见列权重归一化到 100%，按实际 DOM 列顺序输出 colgroup；th / td 不再独立分配百分比。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
 
