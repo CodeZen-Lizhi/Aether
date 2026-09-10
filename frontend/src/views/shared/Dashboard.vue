@@ -132,114 +132,6 @@
             </Card>
           </template>
         </div>
-
-        <!-- 系统健康摘要 -->
-        <div
-          v-if="systemHealth"
-          class="mt-6"
-        >
-          <div class="mb-3 flex items-center justify-between">
-            <h3 class="text-sm font-medium text-foreground">
-              本月系统健康
-            </h3>
-            <Badge
-              variant="outline"
-              class="uppercase tracking-[0.3em] text-[10px]"
-            >
-              Monthly
-            </Badge>
-          </div>
-          <div class="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
-            <Card class="relative p-3 sm:p-4 border-book-cloth/30">
-              <Clock
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  平均响应
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-foreground"
-                >
-                  {{ systemHealth.avg_response_time }}s
-                </p>
-              </div>
-            </Card>
-            <Card class="relative p-3 sm:p-4 border-kraft/30">
-              <AlertTriangle
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  错误率
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold"
-                  :class="
-                    systemHealth.error_rate > 5
-                      ? 'text-destructive'
-                      : 'text-foreground'
-                  "
-                >
-                  {{ systemHealth.error_rate }}%
-                </p>
-              </div>
-            </Card>
-            <Card class="relative p-3 sm:p-4 border-book-cloth/25">
-              <Shuffle
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  转移次数
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-foreground"
-                >
-                  {{ systemHealth.fallback_count }}
-                </p>
-              </div>
-            </Card>
-            <Card
-              v-if="costStats"
-              class="relative p-3 sm:p-4 border-manilla/40"
-            >
-              <DollarSign
-                class="absolute top-3 right-3 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground"
-              />
-              <div class="pr-6">
-                <p
-                  class="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground"
-                >
-                  本月费用
-                </p>
-                <p
-                  class="mt-1.5 sm:mt-2 text-lg sm:text-xl font-semibold text-primary"
-                >
-                  {{ formatCurrency(costStats.total_cost) }}
-                </p>
-                <p
-                  class="mt-0.5 text-[10px] sm:text-xs text-muted-foreground tabular-nums"
-                >
-                  {{ formatCurrency(costStats.total_actual_cost) }}
-                </p>
-                <Badge
-                  v-if="costStats.cost_savings > 0"
-                  variant="success"
-                  class="mt-1 text-[9px] sm:text-[10px]"
-                >
-                  节省 {{ formatCurrency(costStats.cost_savings) }}
-                </Badge>
-              </div>
-            </Card>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -591,12 +483,9 @@ import {
   Key,
   Hash,
   Zap,
-  AlertTriangle,
-  Clock,
   Database,
-  Shuffle,
 } from "lucide-vue-next";
-import { formatTokens, formatCurrency } from "@/utils/format";
+import { formatTokens } from "@/utils/format";
 import { parseDateLike } from "@/utils/date";
 import type {
   ChartData,
@@ -663,20 +552,6 @@ const todayStats = ref<{
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
 }>({ requests: 0, tokens: 0, cost: 0 });
-
-const systemHealth = ref<{
-  avg_response_time: number;
-  error_rate: number;
-  error_requests: number;
-  fallback_count: number;
-  total_requests: number;
-} | null>(null);
-
-const costStats = ref<{
-  total_cost: number;
-  total_actual_cost: number;
-  cost_savings: number;
-} | null>(null);
 
 const dailyStats = ref<DailyStat[]>([]);
 const providerSummary = ref<ProviderSummary[]>([]);
@@ -989,8 +864,6 @@ async function loadDashboardData() {
       isCost: stat.name === "今日费用",
     }));
     if (statsData.today) todayStats.value = statsData.today;
-    if (statsData.system_health) systemHealth.value = statsData.system_health;
-    if (statsData.cost_stats) costStats.value = statsData.cost_stats;
   } finally {
     loading.value = false;
   }
