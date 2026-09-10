@@ -45,6 +45,7 @@ Desktop session opt-in: `--desktop-mode`, with `AETHER_DESKTOP_SESSION_SECRET` s
 - Only window `main` at the bundled launcher URL can call desktop commands. Every custom command checks both label and URL in `commands::authorize`; capabilities alone do not establish this boundary. Dashboard labels are `dashboard-<uuid>` and receive no remote IPC permission.
 - The dashboard and its API requests use `http://127.0.0.1:<port>/`. Preserve Bearer access tokens, HttpOnly refresh cookies, and `X-Client-Device-Id`. `POST /api/auth/refresh` has no request body, including no `{}`.
 - Create the dashboard window at `/admin/dashboard`. Desktop initialization and session recovery must not show the Web login page, including after token/Cookie expiry. The Web home guard keeps its original behavior when no native desktop session function exists.
+- The settings window starts hidden and unfocused for both fresh and configured profiles. Foreground launch starts the gateway in the background and opens the dashboard when ready; background autostart leaves windows hidden. While initial startup is pending, Dock/menu/secondary-instance activation only records the request to open the dashboard. Hand off this intent atomically when startup completes, without holding the intent lock across gateway or native UI operations. Settings remain available through explicit menu actions and failure recovery.
 - The host passes `--app-host 127.0.0.1 --listener-shards 1 --shutdown-timeout-seconds 20 --exit-on-stdin-close --desktop-mode`. It clears the inherited environment, allowlists system/proxy/certificate variables, and supplies production, SQLite, memory runtime, absolute static/log paths, local Cookie/CORS settings, and Keychain secrets. No user-supplied administrator password is required.
 - A fresh profile starts and initializes automatically. The gateway maintains an internal data identity; reuse the sole active local administrator in existing desktop data without changing its ID or password hash. Reject ambiguous/multiple or disabled identities in non-empty user storage; do not select an arbitrary account or elevate its role.
 - Each managed child gets a fresh high-entropy session capability. Keep it in process memory; never place it in settings, URLs, browser storage, or logs. Only the dashboard main frame at the exact gateway origin receives a closure-backed `window.__AETHER_DESKTOP__.authenticate(deviceId)`. Use Tauri 2.11.5 `initialization_script` plus explicit frame/origin guards; capture fetch before page scripts, fix the destination, use same-origin mode/credentials, reject redirects, and bound the request timeout. No Keychain signing/encryption key enters the page.
@@ -67,6 +68,9 @@ Desktop session opt-in: `--desktop-mode`, with `AETHER_DESKTOP_SESSION_SECRET` s
 
 | Condition | Required behavior |
 | --- | --- |
+| Foreground launch, fresh or configured profile | Prepare the gateway with settings hidden; the first normal visible page is the dashboard |
+| Background autostart | Keep windows hidden unless explicitly activated; report failures through the existing settings recovery |
+| Activation during initial startup | Defer until ready without falling back to settings or losing the request |
 | Fresh desktop profile | Start and initialize automatically; do not show account/password forms |
 | Port outside 1024–65535 or already occupied | Report error; leave the occupying service untouched |
 | Port change while child exists | Require stopping the child first |
@@ -88,7 +92,7 @@ Desktop session opt-in: `--desktop-mode`, with `AETHER_DESKTOP_SESSION_SECRET` s
 
 ## 6. Tests Required
 
-- Unit: IPC payload decoding and UI state/error recovery; port boundaries; private settings and upgrade snapshot; invalid/missing key representation; bounded/redacted logs; safe navigation/download names; simultaneous lock acquisition; session origin/frame/redirect restrictions and secret rotation.
+- Unit: IPC payload decoding and UI state/error recovery; initial foreground/background visibility intent and activation/completion races; port boundaries; private settings and upgrade snapshot; invalid/missing key representation; bounded/redacted logs; safe navigation/download names; simultaneous lock acquisition; session origin/frame/redirect restrictions and secret rotation.
 - Gateway: default CLI compatibility, IPv4/IPv6 binding, startup cancellation, signal/EOF shutdown, active HTTP/SSE and upgraded WebSocket drain, stalled HTTP/1 and HTTP/2 timeout, and terminal handoff/queue persistence.
 - Integration: `scripts/qa_lifecycle.py <gateway> <web>` creates disposable SQLite and loopback upstream, checks authentication refresh/export/import/JSON/SSE/usage, and verifies EOF, SIGTERM, parent death, and socket release. Test the **bundled release** binaries/resources once; debug results alone do not validate packaging.
 - Native: use the actual `.app` outside the checkout for automatic first-run, existing-profile migration, WKWebView pages/session recovery, close/hide, menu restart/quit, autostart, file dialogs/downloads, clipboard, external browser, and real Keychain persistence/failure. Ordinary browser tests do not cover these behaviors. Record blocked native checks explicitly.

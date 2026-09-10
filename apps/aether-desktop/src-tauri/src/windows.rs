@@ -38,7 +38,50 @@ struct DashboardWindow {
     label: String,
 }
 
+struct StartupState {
+    // Some records whether startup should open the dashboard; None means the
+    // initial start has finished and later activation can open it immediately.
+    pending_dashboard: Mutex<Option<bool>>,
+}
+
+impl StartupState {
+    fn new(open_dashboard: bool) -> Self {
+        Self {
+            pending_dashboard: Mutex::new(Some(open_dashboard)),
+        }
+    }
+
+    fn defer_activation(&self) -> bool {
+        let mut pending = self
+            .pending_dashboard
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(open_dashboard) = pending.as_mut() {
+            *open_dashboard = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn complete(&self) -> bool {
+        self.pending_dashboard
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+            .unwrap_or(false)
+    }
+}
+
 pub fn show_launcher(app: &AppHandle) -> Result<(), String> {
+    // Startup or activation can finish after Quit was requested. A late error
+    // must not bring the settings window back while the gateway is stopping.
+    if app
+        .try_state::<Arc<Gateway>>()
+        .is_some_and(|gateway| gateway.quitting.load(Ordering::Acquire))
+    {
+        return Ok(());
+    }
     let window = app
         .get_webview_window("main")
         .ok_or("启动窗口不可用，请重新打开应用")?;
@@ -72,6 +115,12 @@ pub fn close_dashboard(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn open_dashboard(app: &AppHandle) -> Result<(), String> {
+    // A Dock/menu activation can arrive before the startup worker acquires the
+    // gateway lifecycle lock. Remember it instead of showing settings because
+    // the gateway is still in Setup/Stopped. Do not hold this lock across UI work.
+    if app.state::<StartupState>().defer_activation() {
+        return Ok(());
+    }
     let gateway = app.try_state::<Arc<Gateway>>().ok_or("客户端仍在初始化")?;
     gateway.with_dashboard(|connection| {
         let state = app.state::<DashboardState>();
@@ -282,6 +331,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_opener::init())
         .manage(ExitState::default())
         .manage(DashboardState::default())
+        .manage(StartupState::new(!background))
         .invoke_handler(tauri::generate_handler![
             commands::desktop_status,
             commands::desktop_start,
@@ -297,13 +347,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .setup(move |app| {
             let gateway = Gateway::new(paths(app.handle(), data.clone())?);
-            let configured = gateway.status(false)?.configured;
             app.manage(gateway.clone());
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("desktop.html".into()))
                 .title("Aether · 客户端设置")
                 .inner_size(960.0, 760.0)
                 .min_inner_size(740.0, 580.0)
-                .visible(!background || !configured)
+                .visible(false)
+                .focused(false)
                 .on_navigation(navigation::is_launcher_url)
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .build()?;
@@ -313,17 +363,24 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             app.manage(instance);
             watch_gateway(app.handle().clone(), gateway.clone());
             let handle = app.handle().clone();
-            tauri::async_runtime::spawn_blocking(move || match gateway.start() {
-                Ok(()) if !background => {
-                    if let Err(error) = open_dashboard(&handle) {
+            tauri::async_runtime::spawn_blocking(move || {
+                let result = gateway.start();
+                let open_requested = handle.state::<StartupState>().complete();
+                if gateway.quitting.load(Ordering::Acquire) {
+                    return;
+                }
+                match result {
+                    Ok(()) if open_requested => {
+                        if let Err(error) = open_dashboard(&handle) {
+                            gateway.record_error(error);
+                            let _ = show_launcher(&handle);
+                        }
+                    }
+                    Ok(()) => (),
+                    Err(error) => {
                         gateway.record_error(error);
                         let _ = show_launcher(&handle);
                     }
-                }
-                Ok(()) => (),
-                Err(error) => {
-                    gateway.record_error(error);
-                    let _ = show_launcher(&handle);
                 }
             });
             Ok(())
@@ -351,4 +408,56 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         _ => (),
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StartupState;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    #[test]
+    fn foreground_start_opens_dashboard_when_ready() {
+        let startup = StartupState::new(true);
+        assert!(startup.complete());
+        assert!(!startup.complete());
+        assert!(!startup.defer_activation());
+    }
+
+    #[test]
+    fn background_start_stays_hidden_without_user_activation() {
+        let startup = StartupState::new(false);
+        assert!(!startup.complete());
+        assert!(!startup.defer_activation());
+    }
+
+    #[test]
+    fn activation_during_startup_waits_for_dashboard_instead_of_showing_settings() {
+        for foreground in [false, true] {
+            let startup = StartupState::new(foreground);
+            assert!(startup.defer_activation());
+            assert!(startup.defer_activation());
+            assert!(startup.complete());
+            assert!(!startup.defer_activation());
+        }
+    }
+
+    #[test]
+    fn activation_racing_startup_completion_is_never_lost() {
+        for _ in 0..64 {
+            let startup = Arc::new(StartupState::new(false));
+            let barrier = Arc::new(Barrier::new(2));
+            let worker_startup = startup.clone();
+            let worker_barrier = barrier.clone();
+            let activation = thread::spawn(move || {
+                worker_barrier.wait();
+                worker_startup.defer_activation()
+            });
+            barrier.wait();
+            let open_on_completion = startup.complete();
+            let deferred = activation.join().unwrap();
+            // Either startup receives the request or activation opens directly.
+            assert_eq!(open_on_completion, deferred);
+        }
+    }
 }

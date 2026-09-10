@@ -1,0 +1,2 @@
+{"file":".trellis/spec/aether-desktop/backend/desktop-contract.md","reason":"原生窗口、网关生命周期、单实例和版本发布约定"}
+{"file":".trellis/tasks/09-10-desktop-direct-dashboard/design.md","reason":"正常启动直接打开仪表盘的修改边界与并发约束"}

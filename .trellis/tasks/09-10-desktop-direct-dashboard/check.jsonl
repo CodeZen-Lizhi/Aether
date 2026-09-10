@@ -1,0 +1,2 @@
+{"file":".trellis/spec/aether-desktop/backend/desktop-contract.md","reason":"审查启动可见性、会话/权限和失败恢复未回归"}
+{"file":".trellis/tasks/09-10-desktop-direct-dashboard/design.md","reason":"核验前台/后台启动与重复激活的交接"}
