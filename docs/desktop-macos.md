@@ -59,12 +59,18 @@ npm --prefix apps/aether-desktop run dev
 npm --prefix apps/aether-desktop run build
 ```
 
+每次 `build` 会自动分配下一个数字版本，例如 `0.1.1 → 0.1.2`；末段到 `99` 后进位为 `0.2.0`。应用内版本、升级前备份标记与安装包文件名保持一致。`dev` 和单独 `prepare:desktop` 不递增版本。
+
+分配的版本写入 npm、Tauri、Cargo 及锁文件，开发完成后将这些版本修改一起提交。构建失败也不会复用已分配的版本。构建过程不会自动执行 Git 提交或 push；按当前约定仅交付到 `codex/tauri-macos`，不自动同步 `slim-personal`。
+
 默认产物：
 
 ```text
 target/release/bundle/macos/Aether.app
-target/release/bundle/dmg/Aether_0.1.0_aarch64.dmg
+target/release/bundle/dmg/Aether_<版本号>_aarch64.dmg
 ```
+
+同一工作区一次只运行一个桌面打包任务。构建锁位于 `target/.aether-desktop-build.lock`，正常完成或构建报错后自动释放；进程被强制杀死时，可先读取锁目录内的 `pid`，确认该构建进程已经退出后删除残留锁。
 
 指定 Intel 目标（需对应 Rust target 和可用的原生交叉编译环境）：
 

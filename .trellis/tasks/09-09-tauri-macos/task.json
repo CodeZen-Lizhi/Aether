@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-09-09 用户确认打开即用，移除创建账号和登录页面；保留后台自动本机会话、代理 API Key 和 Web/Docker 登录兼容。独立分支 codex/tauri-macos；不提交、不推送。",
+  "notes": "2026-09-09 用户确认打开即用，移除创建账号和登录页面；保留后台自动本机会话、代理 API Key 和 Web/Docker 登录兼容。独立分支 codex/tauri-macos。 2026-09-10 最新要求：开发完成后提交并 push 当前 codex/tauri-macos，不再同步 slim-personal；每次打包自动递增版本。",
   "meta": {}
 }

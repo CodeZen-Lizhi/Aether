@@ -40,8 +40,8 @@ Desktop session opt-in: `--desktop-mode`, with `AETHER_DESKTOP_SESSION_SECRET` s
 
 ## 3. Contracts
 
-- Keep shared gateway and management features aligned with `slim-personal`. Sync its complete shared-feature commits while preserving desktop-specific work; model mapping and JSON backup must reuse the same business implementation in both variants.
-- Limit desktop divergence to the host, native session and UI entry points, lifecycle, and packaging adapters. A general business fix discovered during desktop work must also be carried into `slim-personal`; verify shared-feature regressions together with desktop session recovery after synchronization.
+- As of the user's 2026-09-10 instruction, commit and push new work only to the current `codex/tauri-macos` branch. Do not automatically sync `slim-personal`, and do not undo already-synchronized commits. A future cross-branch sync requires a new explicit request.
+- Reuse shared gateway and management implementations for model mapping, backup and other business features. Keep desktop-specific behavior in the host, native session/UI entry points, lifecycle and packaging adapters; verify affected shared behavior together with desktop integration without inferring cross-branch publication.
 - Only window `main` at the bundled launcher URL can call desktop commands. Every custom command checks both label and URL in `commands::authorize`; capabilities alone do not establish this boundary. Dashboard labels are `dashboard-<uuid>` and receive no remote IPC permission.
 - The dashboard and its API requests use `http://127.0.0.1:<port>/`. Preserve Bearer access tokens, HttpOnly refresh cookies, and `X-Client-Device-Id`. `POST /api/auth/refresh` has no request body, including no `{}`.
 - Create the dashboard window at `/admin/dashboard`. Desktop initialization and session recovery must not show the Web login page, including after token/Cookie expiry. The Web home guard keeps its original behavior when no native desktop session function exists.
@@ -60,6 +60,8 @@ Desktop session opt-in: `--desktop-mode`, with `AETHER_DESKTOP_SESSION_SECRET` s
 - Track real TCP/HTTP-upgrade lifetimes. Register `UsageRuntime::track_persistence_handoff()` **before** spawning a detached terminal producer, and retain its guard through persistence handoff. An empty queue alone does not prove that usage has drained.
 - Packaged builds use only sibling `Contents/MacOS/aether-gateway` and `Contents/Resources/web`. Workspace fallbacks are for unbundled debug execution only. macOS 14 is required for per-data-directory WKWebView persistent storage. External HTTP(S) navigation opens the system browser; downloads accept only the gateway origin or its blob URLs and use a safe unique filename in Downloads.
 - Keep `Cargo.lock` and desktop npm lockfile. Build-time macro stripping defaults to `CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=none` for the macOS 27 loader; release application optimization/stripping remains enabled. Linux workspace checks exclude `aether-desktop`; validate the native crate on macOS.
+- Every `desktop.mjs build` allocates the next numeric version before compiling, synchronizing npm manifest/root lock entry, Tauri config, desktop Cargo package and its root lock entry. Increment the last component, carrying at 99; `dev` and standalone `prepare` do not allocate versions. Failed builds retain their allocated version. Never rename a DMG without changing the app/runtime version.
+- Validate all five version files before writes and hold the workspace build lock through resource preparation and packaging. Release the lock on ordinary success/failure; never remove another active build's lock. Apply generated Tauri version/CFBundleVersion overrides after caller signing overrides. Build scripts do not perform Git operations; a release runner may allocate and commit the version under the same lock before invoking the shared prepare/Tauri stages.
 
 ## 4. Validation & Error Matrix
 
