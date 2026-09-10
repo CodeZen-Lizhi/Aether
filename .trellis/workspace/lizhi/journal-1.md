@@ -1311,3 +1311,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 46: 整合桌面设置与网关控制
+<!-- trellis-session: v=2 fp=ed4123b3ed251ce5 -->
+
+**Date**: 2026-09-10
+**Task**: 整合桌面设置与网关控制
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+移除独立客户端设置入口，将桌面配置并入系统设置；在管理后台顶栏加入网关状态及启停重启控制，并补充 IPC 权限边界、自动重启端口流程、测试和文档。前端构建、类型检查、Lint、65 项桌面测试及 21 项 Rust 测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fee8e7675` | 整合桌面设置与网关控制 |
+
+### Status
+
+[OK] **Completed**
