@@ -1,5 +1,5 @@
 <template>
-  <div class="w-full h-full">
+  <div class="w-full h-full min-w-0">
     <canvas ref="chartRef" />
   </div>
 </template>
@@ -16,6 +16,7 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler,
   type ChartData,
   type ChartOptions
 } from 'chart.js'
@@ -34,7 +35,8 @@ ChartJS.register(
   LineController,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 )
 
 interface Props {

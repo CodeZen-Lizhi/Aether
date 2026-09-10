@@ -47,6 +47,20 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
+## Convention: 仪表盘使用趋势的数据口径
+
+**What**: `DashboardUsageTrend.vue` 使用现有 `/api/admin/stats/time-series` 的费用、输入、输出、缓存创建与缓存命中数据；`usageTrend.ts` 结合 `/api/dashboard/daily-stats` 的历史总量。仅改前端时不能假设时间序列接口包含已清理的请求明细。
+
+**History**: 按天、ISO 周、月对齐每日总量，以保留的每日费用汇总为准。总量请求数大于原始时间序列请求数时，Token 曲线使用 `null`，不能填 0 或连接缺口；小时视图不能把历史每日费用分摊到小时。原始输入 Token 在部分上游格式中已包含缓存，沿用原接口口径，并在明细中说明各项不能直接相加。
+
+**Time and interaction**: 时间序列的小时标签虽然携带 `+00:00`，实际已转换为请求时区；展示直接使用标签的本地日期和时分，不能再次转时区。统计周期切换立即使旧请求失效，两个现有接口并行加载且失败不连带清空其他成功数据。`TimeRangePicker` 需显式传入 `:show-granularity="true"` 才显示小时 / 天 / 周 / 月控件。
+
+**Chart**: 费用虚线使用独立美元轴，四种 Token 使用另一坐标轴。HTML 图例提供键盘按钮与 `aria-pressed`，明细通过折叠表格 / 窄屏卡片展示。复用 `LineChart`，面积填充需注册 Chart.js `Filler`；禁止为此额外引入图表库。
+
+**Verification**: `usageTrend.spec.ts` 覆盖历史缺失、跨年 ISO 周 / 月、小时日期与总量；Dashboard 测试覆盖图例、失败重试和旧范围响应失效。浏览器检查明暗主题、中英文、小时范围，以及展开明细后的四种窗口尺寸。
+
+---
+
 ## Convention: 设置卡片（CardSection）保存模式
 
 **What**: 系统设置各分区统一使用 `@/components/layout` 的 `CardSection`：头部 `#actions` 放保存按钮，`:disabled="loading || !hasChanges"`，内容区表单向父级 emit `update:*`，保存由父级统一处理（见 `views/admin/SystemSettings.vue`）。

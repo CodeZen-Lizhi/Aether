@@ -1,16 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import type { UsageTimeSeriesPoint } from '@/api/admin'
+import type { DailyStatsResponse } from '@/api/dashboard'
 
 import Dashboard from '../Dashboard.vue'
 
 const dashboardApiMocks = vi.hoisted(() => ({
   getStats: vi.fn(),
   getDailyStats: vi.fn(),
+  getTimeSeries: vi.fn(),
 }))
 
 vi.mock('@/api/dashboard', () => ({
   dashboardApi: dashboardApiMocks,
 }))
+
+vi.mock('@/api/admin', () => ({
+  adminApi: dashboardApiMocks,
+}))
+
+vi.mock('@/components/charts/LineChart.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return { default: defineComponent({
+    name: 'LineChartStub', props: { data: { type: Object, required: true } },
+    setup: props => () => h('div', { 'data-chart': 'line', 'data-chart-data': JSON.stringify(props.data) }),
+  }) }
+})
 
 vi.mock('@/api/announcements', () => ({
   announcementApi: {
@@ -40,8 +55,12 @@ vi.mock('@/components/common', async () => {
   return {
     TimeRangePicker: defineComponent({
       name: 'TimeRangePickerStub',
-      setup() {
-        return () => h('div')
+      emits: ['update:modelValue'],
+      setup(_, { emit }) {
+        return () => h('button', {
+          'data-change-range': '',
+          onClick: () => emit('update:modelValue', { preset: 'today', granularity: 'hour', tz_offset_minutes: 480 }),
+        })
       },
     }),
   }
@@ -115,9 +134,36 @@ async function settle() {
   }
 }
 
+function trendSeries(date = '2026-09-09', input = 100): UsageTimeSeriesPoint[] {
+  return [{
+    date, total_requests: 1, input_tokens: input, output_tokens: 20,
+    cache_creation_tokens: 30, cache_read_tokens: 400, total_cost: 0.5,
+  }]
+}
+
+function trendDays(date = '2026-09-09'): DailyStatsResponse {
+  return {
+    daily_stats: [{
+      date, requests: 1, tokens: 550, cost: 0.5, actual_cost: 0.2,
+      avg_response_time: 0, unique_models: 1,
+      model_breakdown: [{ model: 'trend-model', requests: 1, tokens: 550, cost: 0.5 }],
+    }],
+    model_summary: [],
+    period: { start_date: date, end_date: date, days: 1 },
+  }
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => { throw new Error('Promise not initialized') }
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   dashboardApiMocks.getStats.mockReset()
   dashboardApiMocks.getDailyStats.mockReset()
+  dashboardApiMocks.getTimeSeries.mockReset()
+  dashboardApiMocks.getTimeSeries.mockResolvedValue([])
   dashboardApiMocks.getDailyStats.mockResolvedValue({
     daily_stats: [],
     model_summary: [],
@@ -134,6 +180,76 @@ afterEach(() => {
 })
 
 describe('Dashboard refresh controls', () => {
+  it('shows five trend metrics with separate axes and keyboard-accessible legend toggles', async () => {
+    dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
+    dashboardApiMocks.getDailyStats.mockResolvedValue(trendDays())
+    dashboardApiMocks.getTimeSeries.mockResolvedValue(trendSeries())
+    const root = mountDashboard()
+    await settle()
+    const readChart = () => JSON.parse(root.querySelector('[data-chart="line"]')?.getAttribute('data-chart-data') ?? '{}')
+    expect(readChart().datasets.map((dataset: { label: string }) => dataset.label)).toEqual([
+      '费用', '缓存创建', '缓存命中', '输入 Token', '输出 Token',
+    ])
+    expect(readChart().datasets[0]).toMatchObject({ yAxisID: 'cost', data: [0.5] })
+    expect(readChart().datasets[2]).toMatchObject({ yAxisID: 'tokens', data: [400], spanGaps: false })
+    const toggle = [...root.querySelectorAll('button')].find(button => button.textContent?.trim() === '缓存命中')
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true')
+    toggle?.click()
+    await settle()
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false')
+    expect(readChart().datasets[2].hidden).toBe(true)
+    expect(dashboardApiMocks.getTimeSeries).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps other dashboard data when the trend request fails and allows retry', async () => {
+    dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
+    dashboardApiMocks.getDailyStats.mockResolvedValue(trendDays())
+    dashboardApiMocks.getTimeSeries.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(trendSeries())
+    const root = mountDashboard()
+    await settle()
+    expect(root.textContent).toContain('使用趋势加载失败，请重试。')
+    const bar = JSON.parse(root.querySelector('[data-chart="bar"]')?.getAttribute('data-chart-data') ?? '{}')
+    expect(bar.datasets[0]).toMatchObject({ label: 'trend-model', data: [0.5] })
+    const retry = [...root.querySelectorAll('button')].find(button => button.textContent?.trim() === '重试')
+    retry?.click()
+    await settle()
+    expect(root.textContent).not.toContain('使用趋势加载失败，请重试。')
+    expect(root.querySelector('[data-chart="line"]')).not.toBeNull()
+    expect(dashboardApiMocks.getTimeSeries).toHaveBeenCalledTimes(2)
+  })
+
+  it('discards an older range while a newer hourly range is loading', async () => {
+    vi.useFakeTimers()
+    const oldDays = deferred<DailyStatsResponse>()
+    const oldSeries = deferred<UsageTimeSeriesPoint[]>()
+    const newDays = deferred<DailyStatsResponse>()
+    const newSeries = deferred<UsageTimeSeriesPoint[]>()
+    dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
+    dashboardApiMocks.getDailyStats.mockReturnValueOnce(oldDays.promise).mockReturnValueOnce(newDays.promise)
+    dashboardApiMocks.getTimeSeries.mockReturnValueOnce(oldSeries.promise).mockReturnValueOnce(newSeries.promise)
+    try {
+      const root = mountDashboard()
+      await settle()
+      root.querySelector<HTMLButtonElement>('[data-change-range]')?.click()
+      await settle()
+      await vi.advanceTimersByTimeAsync(130)
+      oldDays.resolve(trendDays())
+      oldSeries.resolve(trendSeries())
+      await settle()
+      expect(root.querySelector('[data-chart="line"]')).toBeNull()
+      expect(root.textContent).not.toContain('2026/09/09')
+      expect(dashboardApiMocks.getTimeSeries).toHaveBeenLastCalledWith({ preset: 'today', granularity: 'hour', tz_offset_minutes: 480 })
+      newDays.resolve(trendDays('2026-09-10'))
+      newSeries.resolve(trendSeries('2026-09-10T00:00:00+00:00', 700))
+      await settle()
+      const chart = JSON.parse(root.querySelector('[data-chart="line"]')?.getAttribute('data-chart-data') ?? '{}')
+      expect(chart.labels).toEqual(['00:00'])
+      expect(chart.datasets[3].data).toEqual([700])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps real model names and marks missing historical costs separately', async () => {
     dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
     dashboardApiMocks.getDailyStats.mockResolvedValue({
