@@ -2,8 +2,9 @@
   <TooltipProvider :delay-duration="150">
     <nav
       class="sidebar-nav w-full"
-      :class="collapsed ? 'px-2' : 'px-3'"
+      :class="collapsed ? 'px-2' : compact ? 'px-2 min-[1101px]:px-3' : 'px-3'"
       :data-collapsed="collapsed"
+      :data-compact="compact"
     >
       <div
         v-for="(group, index) in items"
@@ -17,8 +18,11 @@
         <!-- Section Header -->
         <div
           v-if="group.title && !collapsed"
-          class="flex items-center gap-2 px-2.5 pb-1"
-          :class="index > 0 ? 'pt-1' : ''"
+          class="flex items-center gap-2 pb-1"
+          :class="[
+            index > 0 ? 'pt-1' : '',
+            compact ? 'px-1 min-[1101px]:px-2.5' : 'px-2.5'
+          ]"
         >
           <span class="text-[10px] font-medium text-muted-foreground/50 font-mono tabular-nums">{{ String(index + 1).padStart(2, '0') }}</span>
           <span class="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-[0.1em]">{{ group.title }}</span>
@@ -41,7 +45,9 @@
                   :class="[
                     collapsed
                       ? 'h-9 justify-center px-0 transition-colors duration-150'
-                      : 'justify-between px-2.5 py-2 transition-all duration-200',
+                      : compact
+                        ? 'justify-between px-1.5 py-2 min-[1101px]:px-2.5 transition-all duration-200'
+                        : 'justify-between px-2.5 py-2 transition-all duration-200',
                     isItemActive(item.href)
                       ? 'bg-primary/10 text-primary font-medium'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -53,7 +59,10 @@
                   @focus="prefetchNow(item.href)"
                   @click="handleNavigate(item.href)"
                 >
-                  <div class="flex min-w-0 items-center gap-2.5">
+                  <div
+                    class="flex min-w-0 items-center"
+                    :class="compact && !collapsed ? 'gap-2 min-[1101px]:gap-2.5' : 'gap-2.5'"
+                  >
                     <component
                       :is="item.icon"
                       class="h-4 w-4 shrink-0 transition-colors duration-200"
@@ -111,6 +120,7 @@ const props = defineProps<{
   activePath?: string
   isActive?: (href: string) => boolean
   collapsed?: boolean
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{

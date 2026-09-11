@@ -28,7 +28,11 @@
         <!-- HEADER (Brand) -->
         <div
           class="group/sidebar-brand relative flex shrink-0 items-center transition-[height,padding] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-          :class="sidebarCollapsed ? 'h-16 px-4' : 'h-20 px-6'"
+          :class="sidebarCollapsed
+            ? 'h-16 px-4'
+            : desktopMode
+              ? 'h-20 px-3 min-[1101px]:px-6'
+              : 'h-20 px-6'"
         >
           <Transition
             name="sidebar-mode"
@@ -110,6 +114,7 @@
                 :items="navigation"
                 :is-active="isNavActive"
                 :collapsed="sidebarCollapsed"
+                :compact="desktopMode"
                 @prefetch="prefetchNavigationItem"
               />
             </div>
@@ -494,7 +499,11 @@ const breadcrumbs = computed(() => buildBreadcrumbs({
 
 // Styling Classes (Editorial)
 const sidebarClasses = computed(() => {
-    const widthClass = sidebarCollapsed.value ? 'w-16' : 'w-[224px]'
+    const widthClass = sidebarCollapsed.value
+      ? 'w-16'
+      : desktopMode
+        ? 'w-[184px] min-[1101px]:w-[224px]'
+        : 'w-[224px]'
     const breakpointClass = desktopMode ? 'md:flex' : 'lg:flex'
     return `${widthClass} flex-col hidden ${breakpointClass} border-r border-[#0f172a]/5 dark:border-white/5 bg-[#ffffff] dark:bg-[#0b1220] h-screen sticky top-0 transition-[width] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none`
 })
