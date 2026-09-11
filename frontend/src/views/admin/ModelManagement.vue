@@ -14,36 +14,25 @@
 
             <!-- 右侧：操作区 -->
             <div class="flex flex-wrap items-center gap-2">
-              <!-- 搜索框 -->
-              <div class="relative">
-                <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70 z-10 pointer-events-none" />
-                <Input
-                  id="model-search"
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="搜索模型名称..."
-                  class="w-32 sm:w-44 pl-8 pr-3 h-8 text-sm bg-muted/30 border-border/50 focus:border-primary/50 transition-colors"
-                />
-              </div>
-
               <!-- 操作按钮 -->
               <ExternalModelsAccessControl />
               <Button
-                size="sm"
-                class="h-8"
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
                 :disabled="priceSyncButtonDisabled"
                 :title="priceSyncButtonTitle"
+                :aria-label="priceSyncButtonLabel"
                 @click="handleSyncPricesClick"
               >
                 <Loader2
                   v-if="batchAction === 'sync-prices' || batchOnlineLoading"
-                  class="w-3.5 h-3.5 mr-1 animate-spin"
+                  class="w-3.5 h-3.5 animate-spin"
                 />
                 <RefreshCw
                   v-else
-                  class="w-3.5 h-3.5 mr-1"
+                  class="w-3.5 h-3.5"
                 />
-                {{ priceSyncButtonLabel }}
               </Button>
               <Button
                 variant="ghost"
@@ -141,7 +130,7 @@
             </TableRow>
             <template v-else>
               <TableRow
-                v-for="model in paginatedGlobalModels"
+                v-for="model in filteredGlobalModels"
                 :key="model.id"
                 class="cursor-pointer hover:bg-muted/50 group"
                 @mousedown="handleMouseDown"
@@ -272,11 +261,11 @@
 
         <!-- 移动端卡片列表 -->
         <div
-          v-if="!loading && paginatedGlobalModels.length > 0"
+          v-if="!loading && filteredGlobalModels.length > 0"
           class="responsive-list-cards divide-y divide-border/40"
         >
           <div
-            v-for="model in paginatedGlobalModels"
+            v-for="model in filteredGlobalModels"
             :key="model.id"
             class="p-4 space-y-3 hover:bg-muted/50 cursor-pointer transition-colors"
             @click="selectModel(model)"
@@ -357,17 +346,6 @@
             </div>
           </div>
         </div>
-
-        <!-- 分页 -->
-        <Pagination
-          v-if="!loading && totalGlobalModels > 0"
-          :current="catalogCurrentPage"
-          :total="totalGlobalModels"
-          :page-size="catalogPageSize"
-          cache-key="model-management-page-size"
-          @update:current="catalogCurrentPage = $event"
-          @update:page-size="catalogPageSize = $event"
-        />
       </Card>
     </div>
 
@@ -574,7 +552,6 @@ import {
   Badge,
   Checkbox,
   Dialog,
-  Pagination,
   RefreshButton,
 } from '@/components/ui'
 import {
@@ -628,7 +605,6 @@ const { getSource: getModelsDevPricingSource, setSource: setModelsDevPricingSour
 // 状态
 const loading = ref(false)
 const detailTab = ref('basic')
-const searchQuery = ref('')
 const selectedModel = ref<GlobalModelResponse | null>(null)
 const modelDetailDrawerRef = ref<InstanceType<typeof ModelDetailDrawer> | null>(null)
 const createModelDialogOpen = ref(false)
@@ -636,7 +612,6 @@ const editingModel = ref<GlobalModelResponse | null>(null)
 
 // 数据
 const globalModels = ref<GlobalModelResponse[]>([])
-const totalGlobalModels = ref(0)
 const batchOnlineModels = ref<ModelsDevModelItem[]>([])
 const batchOnlineLoading = ref(false)
 const batchOnlineLoaded = ref(false)
@@ -645,10 +620,6 @@ let modelSelectionRequestId = 0
 let modelProvidersRequestId = 0
 let providerOptionsRequest: Promise<void> | null = null
 const GLOBAL_MODELS_LIST_CACHE_TTL_MS = 10 * 1000
-
-// 模型目录分页
-const catalogCurrentPage = ref(1)
-const catalogPageSize = ref(20)
 
 // 选中模型的详细数据
 const selectedModelProviders = ref<ModelProviderDisplay[]>([])
@@ -956,44 +927,35 @@ const filteredGlobalModels = computed(() => {
   return result
 })
 
-// 模型目录分页计算
-const paginatedGlobalModels = computed(() => filteredGlobalModels.value)
-
-watch(searchQuery, () => {
-  catalogCurrentPage.value = 1
-})
-
-watch(catalogPageSize, () => {
-  catalogCurrentPage.value = 1
-})
-
-const globalModelsQueryParams = computed(() => ({
-  skip: Math.max(0, (catalogCurrentPage.value - 1) * catalogPageSize.value),
-  limit: catalogPageSize.value,
-  search: searchQuery.value.trim() || undefined,
-}))
-
-let modelSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
-
 async function loadGlobalModels(options: { cacheTtlMs?: number } = {}) {
   const requestId = ++globalModelsRequestId
   loading.value = true
   try {
-    const response = await listGlobalModels(globalModelsQueryParams.value, {
-      cacheTtlMs: options.cacheTtlMs ?? 0,
-    })
-    if (requestId !== globalModelsRequestId) return
+    const pageSize = 1000
+    const models: GlobalModelResponse[] = []
+    let skip = 0
+    let total: number | null = null
 
-    const pageModels = response.models || []
-    const total = typeof response.total === 'number' ? response.total : pageModels.length
-    const totalPages = Math.max(1, Math.ceil(total / Math.max(catalogPageSize.value, 1)))
-    if (total > 0 && catalogCurrentPage.value > totalPages) {
-      catalogCurrentPage.value = totalPages
-      return
+    while (true) {
+      const response = await listGlobalModels({ skip, limit: pageSize }, {
+        cacheTtlMs: options.cacheTtlMs ?? 0,
+      })
+      if (requestId !== globalModelsRequestId) return
+
+      const pageModels = response.models || []
+      models.push(...pageModels)
+      if (total === null && typeof response.total === 'number') {
+        total = response.total
+      }
+      if (pageModels.length < pageSize || (total !== null && models.length >= total)) {
+        break
+      }
+      skip += pageModels.length
     }
 
-    globalModels.value = pageModels
-    totalGlobalModels.value = total
+    if (requestId !== globalModelsRequestId) return
+
+    globalModels.value = models
   } catch (err: unknown) {
     if (requestId !== globalModelsRequestId) return
     log.error('加载模型失败:', err)
@@ -1200,15 +1162,15 @@ async function handleSyncPricesClick() {
   await confirmBatchSyncPrices()
 }
 
-// 列表批量操作 - 选择（全选范围为当前筛选/搜索结果）
+// 列表批量操作 - 选择（全选范围为当前筛选结果）
 const isAllModelsSelected = computed(() => {
-  if (paginatedGlobalModels.value.length === 0) return false
-  return paginatedGlobalModels.value.every(m => selectedModelIds.value.has(m.id))
+  if (filteredGlobalModels.value.length === 0) return false
+  return filteredGlobalModels.value.every(m => selectedModelIds.value.has(m.id))
 })
 
 const isModelsIndeterminate = computed(() =>
   !isAllModelsSelected.value
-  && paginatedGlobalModels.value.some(m => selectedModelIds.value.has(m.id))
+  && filteredGlobalModels.value.some(m => selectedModelIds.value.has(m.id))
 )
 
 function toggleModelSelection(modelId: string) {
@@ -1221,7 +1183,7 @@ function toggleModelSelection(modelId: string) {
 }
 
 function toggleSelectAllModels() {
-  const allIds = paginatedGlobalModels.value.map(m => m.id)
+  const allIds = filteredGlobalModels.value.map(m => m.id)
   if (isAllModelsSelected.value) {
     for (const id of allIds) {
       selectedModelIds.value.delete(id)
@@ -1524,22 +1486,9 @@ async function refreshData() {
   await loadGlobalModels()
 }
 
-watch(globalModelsQueryParams, (newParams, oldParams) => {
-  if (modelSearchDebounceTimer) clearTimeout(modelSearchDebounceTimer)
-  const isSearchOnly = newParams.search !== oldParams?.search
-    && newParams.skip === oldParams?.skip
-    && newParams.limit === oldParams?.limit
-  if (isSearchOnly) {
-    modelSearchDebounceTimer = setTimeout(() => {
-      void loadGlobalModels({ cacheTtlMs: GLOBAL_MODELS_LIST_CACHE_TTL_MS })
-    }, 300)
-  } else {
-    void loadGlobalModels({ cacheTtlMs: GLOBAL_MODELS_LIST_CACHE_TTL_MS })
-  }
-}, { immediate: true })
+void loadGlobalModels({ cacheTtlMs: GLOBAL_MODELS_LIST_CACHE_TTL_MS })
 
 onBeforeUnmount(() => {
-  if (modelSearchDebounceTimer) clearTimeout(modelSearchDebounceTimer)
   globalModelsRequestId += 1
   modelSelectionRequestId += 1
   modelProvidersRequestId += 1

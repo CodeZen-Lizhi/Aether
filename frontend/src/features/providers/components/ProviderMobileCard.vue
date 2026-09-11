@@ -120,19 +120,25 @@
 
     <!-- 第二行：计费类型 + 余额/配额 + 资源统计 -->
     <div class="flex flex-wrap items-center gap-3 text-xs">
+      <ProviderBalanceCell
+        :provider="provider"
+        :is-balance-loading="props.isBalanceLoading"
+        :get-provider-balance="props.getProviderBalance"
+        :get-provider-balance-breakdown="props.getProviderBalanceBreakdown"
+        :get-provider-balance-error="props.getProviderBalanceError"
+        :get-provider-checkin="props.getProviderCheckin"
+        :get-provider-balance-extra="props.getProviderBalanceExtra"
+        :format-balance-display="props.formatBalanceDisplay"
+        :format-reset-countdown="props.formatResetCountdown"
+        :get-quota-used-color-class="props.getQuotaUsedColorClass"
+        class="min-w-0 max-w-full"
+      />
       <Badge
         variant="outline"
         class="text-xs font-normal border-border/50"
       >
         {{ formatBillingType(provider.billing_type || 'pay_as_you_go') }}
       </Badge>
-      <!-- 本地配额 -->
-      <span
-        v-if="provider.billing_type === 'monthly_quota'"
-        class="text-muted-foreground"
-      >
-        {{ legacyT('配额') }} ${{ (provider.monthly_used_usd ?? 0).toFixed(2) }}/${{ (provider.monthly_quota_usd ?? 0).toFixed(2) }}
-      </span>
       <span class="text-muted-foreground">
         {{ legacyT('端点') }} {{ provider.active_endpoints }}/{{ provider.total_endpoints }}
       </span>
@@ -195,12 +201,23 @@ import Button from '@/components/ui/button.vue'
 import Badge from '@/components/ui/badge.vue'
 import { type ProviderWithEndpointsSummary, formatApiFormatShort } from '@/api/endpoints'
 import { formatBillingType } from '@/utils/format'
+import ProviderBalanceCell from './ProviderBalanceCell.vue'
+import type { BalanceExtraItem } from '@/features/providers/auth-templates'
 import { sortEndpoints, isEndpointAvailable, getEndpointDotColor, getEndpointTooltip } from '@/features/providers/composables/useEndpointStatus'
 import { useI18n } from '@/i18n'
 
 const props = defineProps<{
   provider: ProviderWithEndpointsSummary
   editingDescriptionId: string | null
+  isBalanceLoading: (providerId: string) => boolean
+  getProviderBalance: (providerId: string) => { available: number | null; currency: string } | null
+  getProviderBalanceBreakdown: (providerId: string) => { balance: number; points: number; currency: string } | null
+  getProviderBalanceError: (providerId: string) => { status: string; message: string } | null
+  getProviderCheckin: (providerId: string) => { success: boolean | null; message: string } | null
+  getProviderBalanceExtra: (providerId: string, architectureId?: string) => BalanceExtraItem[]
+  formatBalanceDisplay: (balance: { available: number | null; currency: string } | null) => string
+  formatResetCountdown: (resetsAt: number) => string
+  getQuotaUsedColorClass: (provider: ProviderWithEndpointsSummary) => string
 }>()
 
 const emit = defineEmits<{
