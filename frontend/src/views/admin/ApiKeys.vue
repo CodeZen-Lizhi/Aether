@@ -5,49 +5,6 @@
       class="responsive-list"
     >
       <template #actions>
-        <!-- 状态筛选 -->
-        <div class="responsive-list-mobile">
-          <Select
-            v-model="filterStatus"
-          >
-            <SelectTrigger class="w-20 sm:w-28 h-8 text-xs border-border/60">
-              <SelectValue placeholder="全部状态" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem
-                v-for="status in statusFilters"
-                :key="status.value"
-                :value="status.value"
-              >
-                {{ status.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <!-- 余额类型筛选 -->
-        <div class="responsive-list-mobile">
-          <Select
-            v-model="filterBalance"
-          >
-            <SelectTrigger class="w-20 sm:w-28 h-8 text-xs border-border/60">
-              <SelectValue placeholder="全部类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem
-                v-for="balance in balanceFilters"
-                :key="balance.value"
-                :value="balance.value"
-              >
-                {{ balance.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <!-- 分隔线 -->
-        <div class="hidden sm:block h-4 w-px bg-border" />
-
         <!-- 创建独立 Key 按钮 -->
         <Button
           variant="ghost"
@@ -81,23 +38,9 @@
                 <TableHead class="w-[22%] h-12 font-semibold">
                   密钥信息
                 </TableHead>
-                <SortableTableHead
-                  class="w-[190px] h-12 font-semibold"
-                  column-key="balance"
-                  :sortable="false"
-                  :filter-active="filterBalance !== 'all'"
-                  filter-title="筛选余额类型"
-                  filter-content-class="w-40 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"
-                >
+                <TableHead class="w-[190px] h-12 font-semibold">
                   统计/限制
-                  <template #filter="{ close }">
-                    <TableFilterMenu
-                      v-model="filterBalance"
-                      :options="balanceFilters"
-                      @select="close"
-                    />
-                  </template>
-                </SortableTableHead>
+                </TableHead>
                 <TableHead class="w-[16%] h-12 font-semibold">
                   创建时间
                 </TableHead>
@@ -107,49 +50,31 @@
                 <TableHead class="w-[16%] h-12 font-semibold">
                   最近使用
                 </TableHead>
-                <SortableTableHead
-                  class="w-[10%] h-12 font-semibold"
-                  column-key="status"
-                  :sortable="false"
-                  :filter-active="filterStatus !== 'all'"
-                  filter-title="筛选状态"
-                  filter-content-class="w-40 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"
-                >
+                <TableHead class="w-[10%] h-12 font-semibold">
                   状态
-                  <template #filter="{ close }">
-                    <TableFilterMenu
-                      v-model="filterStatus"
-                      :options="statusFilters"
-                      @select="close"
-                    />
-                  </template>
-                </SortableTableHead>
+                </TableHead>
                 <TableHead class="w-[14%] h-12 font-semibold text-center">
                   操作
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-if="filteredApiKeys.length === 0">
+              <TableRow v-if="apiKeys.length === 0">
                 <TableCell
                   colspan="7"
                   class="h-64 text-center"
                 >
                   <EmptyState
-                    :type="hasActiveFilters ? 'filter' : 'empty'"
-                    :icon="hasActiveFilters ? undefined : Key"
-                    :title="hasActiveFilters ? '未找到匹配的 Key' : '暂无独立余额 Key'"
-                    :description="hasActiveFilters ? '尝试调整筛选条件' : '点击右上角按钮创建独立余额 Key'"
-                    :action-text="hasActiveFilters ? '清除筛选' : undefined"
-                    action-variant="outline"
-                    action-size="sm"
+                    type="empty"
+                    :icon="Key"
+                    title="暂无独立余额 Key"
+                    description="点击右上角按钮创建独立余额 Key"
                     size="sm"
-                    @action="clearFilters"
                   />
                 </TableCell>
               </TableRow>
               <TableRow
-                v-for="apiKey in filteredApiKeys"
+                v-for="apiKey in apiKeys"
                 :key="apiKey.id"
                 class="border-b border-border/40 hover:bg-muted/30 transition-colors"
               >
@@ -305,17 +230,13 @@
 
         <div class="responsive-list-mobile">
           <EmptyState
-            v-if="filteredApiKeys.length === 0"
+            v-if="apiKeys.length === 0"
             class="px-4 py-12"
-            :type="hasActiveFilters ? 'filter' : 'empty'"
-            :icon="hasActiveFilters ? undefined : Key"
-            :title="hasActiveFilters ? '未找到匹配的 Key' : '暂无独立余额 Key'"
-            :description="hasActiveFilters ? '尝试调整筛选条件' : '点击右上角按钮创建独立余额 Key'"
-            :action-text="hasActiveFilters ? '清除筛选' : undefined"
-            action-variant="outline"
-            action-size="sm"
+            type="empty"
+            :icon="Key"
+            title="暂无独立余额 Key"
+            description="点击右上角按钮创建独立余额 Key"
             size="sm"
-            @action="clearFilters"
           />
 
           <div
@@ -323,7 +244,7 @@
             class="divide-y divide-border/50"
           >
             <article
-              v-for="apiKey in filteredApiKeys"
+              v-for="apiKey in apiKeys"
               :key="apiKey.id"
               class="p-4 sm:p-5"
             >
@@ -553,7 +474,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useClipboard } from '@/composables/useClipboard'
@@ -571,15 +492,8 @@ import {
   TableBody,
   TableRow,
   TableHead,
-  SortableTableHead,
-  TableFilterMenu,
   TableCell,
   RefreshButton,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
   Label
 } from '@/components/ui'
 
@@ -612,61 +526,6 @@ const keyInput = ref<HTMLInputElement>()
 const showKeyFormDialog = ref(false)
 const editingKeyData = ref<StandaloneKeyFormData | null>(null)
 const keyFormDialogRef = ref<InstanceType<typeof StandaloneKeyFormDialog>>()
-
-const EXPIRY_SOON_DAYS = 7
-
-// 筛选相关
-const filterStatus = ref<'all' | 'active' | 'inactive'>('all')
-const filterBalance = ref<'all' | 'limited' | 'unlimited'>('all')
-
-const statusFilters = [
-  { value: 'all' as const, label: '全部状态' },
-  { value: 'active' as const, label: '活跃' },
-  { value: 'inactive' as const, label: '禁用' }
-]
-
-const balanceFilters = [
-  { value: 'all' as const, label: '全部类型' },
-  { value: 'limited' as const, label: '限额' },
-  { value: 'unlimited' as const, label: '无限' }
-]
-
-const hasActiveFilters = computed(() => {
-  return filterStatus.value !== 'all' || filterBalance.value !== 'all'
-})
-
-function clearFilters() {
-  filterStatus.value = 'all'
-  filterBalance.value = 'all'
-}
-
-const activeKeyCount = computed(() => apiKeys.value.filter(key => key.is_active).length)
-const _inactiveKeyCount = computed(() => Math.max(0, apiKeys.value.length - activeKeyCount.value))
-const limitedKeyCount = computed(() => apiKeys.value.filter(isBalanceLimited).length)
-const _unlimitedKeyCount = computed(() => Math.max(0, apiKeys.value.length - limitedKeyCount.value))
-const _expiringSoonCount = computed(() => apiKeys.value.filter(key => isExpiringSoon(key)).length)
-
-// 筛选后的 API Keys
-const filteredApiKeys = computed(() => {
-  let result = apiKeys.value
-
-  // 状态筛选
-  if (filterStatus.value === 'active') {
-    result = result.filter(key => key.is_active)
-  } else if (filterStatus.value === 'inactive') {
-    result = result.filter(key => !key.is_active)
-  }
-
-  // 余额类型筛选
-  if (filterBalance.value === 'limited') {
-    result = result.filter(isBalanceLimited)
-  } else if (filterBalance.value === 'unlimited') {
-    result = result.filter(key => !isBalanceLimited(key))
-  }
-
-  return result
-})
-
 
 onMounted(async () => {
   await refreshApiKeys()
@@ -836,21 +695,6 @@ async function copyKeyPrefix(apiKey: AdminApiKey) {
 function closeNewKeyDialog() {
   showNewKeyDialog.value = false
   newKeyValue.value = ''
-}
-
-function isBalanceLimited(apiKey: AdminApiKey): boolean {
-  return !isApiKeyUnlimited(apiKey)
-}
-
-function isExpiringSoon(apiKey: AdminApiKey): boolean {
-  if (!apiKey.expires_at) {
-    return false
-  }
-
-  const expiresAt = new Date(apiKey.expires_at).getTime()
-  const now = Date.now()
-  const diffDays = (expiresAt - now) / (1000 * 60 * 60 * 24)
-  return diffDays > 0 && diffDays <= EXPIRY_SOON_DAYS
 }
 
 function formatDate(dateString: string): string {
