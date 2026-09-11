@@ -1,0 +1,28 @@
+{
+  "id": "desktop-settings-polish",
+  "name": "desktop-settings-polish",
+  "title": "完善桌面端设置交互",
+  "description": "修复设置折叠、版本信息、代理测试与弹窗尺寸问题",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "lizhi",
+  "assignee": "lizhi",
+  "createdAt": "2026-09-11",
+  "completedAt": "2026-09-12",
+  "branch": "codex/tauri-macos",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-11-desktop-application-collapse"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/index.md","reason":"验证共享 Dialog 尺寸、纵向滚动、i18n 文案和设置卡片一致性。"}
+{"file":".trellis/spec/aether-desktop/backend/desktop-contract.md","reason":"验证桌面状态 IPC、版本回退和原生权限边界未被扩大。"}
