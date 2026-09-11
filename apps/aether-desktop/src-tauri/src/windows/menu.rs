@@ -90,9 +90,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             let result = match id.as_str() {
                 "dashboard" => super::open_dashboard(&app),
                 "start" => gateway.start().and_then(|_| super::open_dashboard(&app)),
-                "stop" => gateway
-                    .stop_with(|| super::close_dashboard(&app))
-                    .and_then(|_| super::show_launcher(&app)),
+                "stop" => gateway.stop_with(|| super::close_dashboard(&app)),
                 "restart" => gateway
                     .restart_with(|| super::close_dashboard(&app))
                     .and_then(|_| super::open_dashboard(&app)),

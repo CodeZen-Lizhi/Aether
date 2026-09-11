@@ -148,14 +148,14 @@ describe('gateway lifecycle and preferences', () => {
     expect(button(root, '启动网关').disabled).toBe(false)
   })
 
-  it('offers retry and diagnostics for a failed gateway instead of hiding the native error', async () => {
+  it('keeps failed gateway recovery controls out of the standalone launcher', async () => {
     nativeInvoke.mockResolvedValue(status({ phase: 'failed', error: '网关进程意外退出。' }))
     const root = await mountApp()
     expect(root.textContent).toContain('网关进程意外退出。')
     expect(root.textContent).toContain('恢复网关')
     expect(root.textContent).not.toContain('登录 Mac 时自动启动')
     expect(root.querySelector('#gateway-port')).not.toBeNull()
-    expect(root.querySelector<HTMLDetailsElement>('details')?.open).toBe(true)
+    expect(root.querySelector('details')).toBeNull()
     expect(button(root, '启动网关').disabled).toBe(false)
     expect(Array.from(root.querySelectorAll('button')).find(element => element.textContent?.trim() === '打开管理界面')).toBeUndefined()
   })
@@ -238,10 +238,6 @@ describe('status synchronization and bridge failures', () => {
     expect(root.textContent).toContain('Your gateway is running')
     expect(root.textContent).toContain('Open dashboard')
     expect(root.textContent).not.toContain('Client settings')
-    const diagnostics = root.querySelector<HTMLDetailsElement>('details')!
-    diagnostics.open = true
-    diagnostics.dispatchEvent(new Event('toggle'))
-    await settle()
-    expect(root.querySelector('pre')?.getAttribute('aria-label')).toBe('Recent diagnostic logs')
+    expect(root.querySelector('details')).toBeNull()
   })
 })

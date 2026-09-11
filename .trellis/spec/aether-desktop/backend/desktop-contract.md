@@ -4,7 +4,7 @@
 
 ### 1. Scope / Trigger
 
-Desktop port, autostart, and directory configuration belongs in the existing System Settings page. Gateway start, stop, and restart belongs in the dashboard header status menu. Do not add a “客户端设置” menu item or permanent standalone settings page; bundled `desktop.html` is only for stopped/failed recovery.
+Desktop port, autostart, directory configuration, and diagnostic logs belong in the existing System Settings page. Gateway start, stop, and restart belongs in the dashboard header status menu. Do not add a “客户端设置” menu item or surface the standalone `desktop.html` recovery page; lifecycle failures remain actionable through the dashboard header and menu bar.
 
 ### 2. Signatures
 
@@ -22,7 +22,7 @@ Reuse `desktop_status/start/stop/restart/set_port/set_autostart/open_data_dir/op
 - Other window label -> `此窗口没有桌面管理权限`.
 - Dashboard host, credentials, or port does not match the managed origin -> deny.
 - Running port save -> close old dashboard, stop child, persist, start child, open new dashboard.
-- Persist/start failure after closing the dashboard -> show the bundled recovery view and preserve the actionable error.
+- Persist/start failure after closing the dashboard -> keep the dashboard closed and preserve the actionable error in native logs; never show a standalone recovery page.
 
 ### 5. Good/Base/Bad Cases
 
@@ -124,7 +124,7 @@ Desktop session opt-in: `--desktop-mode`, with `AETHER_DESKTOP_SESSION_SECRET` s
 | Invalid settings file | Keep the failure visible after stop/retry; do not overwrite it with defaults |
 | Existing DB without original Keychain record | Fail before starting; explain recovery using the original key or logical import into a new profile |
 | Foreign window/origin calls IPC | Return the authorization error |
-| Child exits unexpectedly | Mark `failed`, close dashboard, show launcher and logs |
+| Child exits unexpectedly | Mark `failed`, close any stale dashboard, never show a standalone recovery page, and expose the error/logs through the menu and System Settings |
 | Shutdown deadline expires | Record timeout, cancel remaining work within budget; never claim complete drain |
 
 ## 5. Good / Base / Bad Cases

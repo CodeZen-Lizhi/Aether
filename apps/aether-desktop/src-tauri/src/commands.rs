@@ -82,10 +82,7 @@ pub async fn desktop_stop(
     authorize(&window, &app)?;
     let gateway = gateway.inner().clone();
     blocking(move || {
-        gateway.stop_with(|| {
-            windows::close_dashboard(&app)?;
-            windows::show_launcher(&app)
-        })?;
+        gateway.stop_with(|| windows::close_dashboard(&app))?;
         status(&app, &gateway)
     })
     .await

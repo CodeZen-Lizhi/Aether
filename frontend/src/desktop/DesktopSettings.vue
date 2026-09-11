@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { FolderOpen, LoaderCircle, Settings2, Wrench } from 'lucide-vue-next'
+import { ChevronDown, FileText, FolderOpen, LoaderCircle, RotateCw, Settings2, Wrench } from 'lucide-vue-next'
 import Button from '@/components/ui/button.vue'
 import Input from '@/components/ui/input.vue'
 import Switch from '@/components/ui/switch.vue'
+import { useI18n } from '@/i18n'
 import type { DesktopStatus } from './bridge'
 import { validatePort } from './validation'
 
@@ -13,19 +14,25 @@ const props = defineProps<{
   canEditPort: boolean
   savingPort: boolean
   recovery?: boolean
+  logs?: readonly string[]
+  logsLoading?: boolean
+  logsError?: string
 }>()
 const emit = defineEmits<{
   setPort: [port: number]
   setAutostart: [enabled: boolean]
   openDataDir: []
   openLogDir: []
+  refreshLogs: []
 }>()
+const { legacyT } = useI18n()
 
 const port = ref(String(props.status.port))
 const submitted = ref(false)
 const portError = computed(() => submitted.value ? validatePort(port.value) : '')
 const hasChanges = computed(() => port.value !== String(props.status.port))
 const portErrorElement = ref<HTMLElement | null>(null)
+const diagnosticLogs = computed(() => props.logs ?? [])
 
 watch(() => props.status.port, next => {
   port.value = String(next)
@@ -41,6 +48,10 @@ async function savePort() {
     return
   }
   emit('setPort', Number(port.value))
+}
+
+function toggleLogs(event: Event) {
+  if ((event.currentTarget as HTMLElement).hasAttribute('open')) emit('refreshLogs')
 }
 </script>
 
@@ -181,6 +192,72 @@ async function savePort() {
         </Button>
       </div>
     </div>
+
+    <details
+      v-if="!recovery"
+      class="desktop-diagnostics group"
+      @toggle="toggleLogs"
+    >
+      <summary>
+        <FileText
+          class="h-4 w-4 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <span>诊断日志</span>
+        <ChevronDown
+          class="ml-auto h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+      </summary>
+      <div class="desktop-diagnostics-content">
+        <div class="desktop-diagnostics-toolbar">
+          <p>最近 100 行，完整记录可在日志目录查看。</p>
+          <div class="flex shrink-0 gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              :disabled="disabled || !status.log_dir"
+              @click="emit('openLogDir')"
+            >
+              打开日志目录
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              class="gap-2"
+              :disabled="logsLoading"
+              @click="emit('refreshLogs')"
+            >
+              <RotateCw
+                class="h-3.5 w-3.5"
+                :class="{ 'desktop-spin': logsLoading }"
+                aria-hidden="true"
+              />
+              {{ logsLoading ? '读取中…' : '刷新日志' }}
+            </Button>
+          </div>
+        </div>
+        <p
+          v-if="logsError"
+          class="desktop-field-error"
+          role="alert"
+        >
+          {{ logsError }}
+        </p>
+        <pre
+          v-if="diagnosticLogs.length"
+          class="desktop-log-output"
+          tabindex="0"
+          :aria-label="legacyT('最近的诊断日志')"
+        >{{ diagnosticLogs.join('\n') }}</pre>
+        <p
+          v-else-if="!logsError"
+          class="desktop-log-empty"
+        >
+          {{ logsLoading ? '正在读取日志…' : '暂无诊断日志。' }}
+        </p>
+      </div>
+    </details>
   </section>
 </template>
 
@@ -207,6 +284,14 @@ async function savePort() {
 .desktop-directory-label { font-size: 12px; color: var(--muted-foreground); }
 .desktop-directory code { display: block; overflow-wrap: anywhere; font-size: 12px; user-select: text; }
 .desktop-field-error { color: var(--destructive); }
+.desktop-diagnostics { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; }
+.desktop-diagnostics > summary { display: flex; cursor: pointer; align-items: center; gap: 10px; list-style: none; font-size: 13px; font-weight: 500; }
+.desktop-diagnostics > summary::-webkit-details-marker { display: none; }
+.desktop-diagnostics-content { margin-top: 12px; }
+.desktop-diagnostics-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.desktop-diagnostics-toolbar p { min-width: 0; font-size: 12px; color: var(--muted-foreground); }
+.desktop-log-output { max-height: 280px; overflow: auto; margin-top: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--muted); padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; }
+.desktop-log-empty { margin-top: 12px; font-size: 12px; color: var(--muted-foreground); }
 
 @media (max-width: 640px) {
   .desktop-settings { padding: 20px; }

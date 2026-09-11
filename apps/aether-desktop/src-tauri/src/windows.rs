@@ -74,18 +74,10 @@ impl StartupState {
 }
 
 pub fn show_launcher(app: &AppHandle) -> Result<(), String> {
-    // Startup or activation can finish after Quit was requested. A late error
-    // must not bring the settings window back while the gateway is stopping.
-    if app
-        .try_state::<Arc<Gateway>>()
-        .is_some_and(|gateway| gateway.quitting.load(Ordering::Acquire))
-    {
-        return Ok(());
-    }
-    let window = app
-        .get_webview_window("main")
-        .ok_or("启动窗口不可用，请重新打开应用")?;
-    show(&window)
+    // The standalone recovery page was removed. Keep this compatibility hook
+    // for older error paths, but never surface the hidden launcher window.
+    let _ = app;
+    Ok(())
 }
 
 fn show(window: &WebviewWindow) -> Result<(), String> {
@@ -289,10 +281,7 @@ fn watch_gateway(app: AppHandle, gateway: Arc<Gateway>) {
                         )));
                     }
                     if status.phase == Phase::Failed {
-                        let _ = gateway.with_failure(|| {
-                            close_dashboard(&app)?;
-                            show_launcher(&app)
-                        });
+                        let _ = gateway.with_failure(|| close_dashboard(&app));
                     }
                     previous = status.phase;
                 }

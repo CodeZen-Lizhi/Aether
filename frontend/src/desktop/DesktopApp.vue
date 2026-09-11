@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Activity, ArrowUpRight, Check, ChevronDown, CircleAlert, Copy, FileText, LoaderCircle, LogOut, Play, RotateCw, Square } from 'lucide-vue-next'
+import { Activity, ArrowUpRight, Check, CircleAlert, Copy, LoaderCircle, LogOut, Play, RotateCw, Square } from 'lucide-vue-next'
 import Button from '@/components/ui/button.vue'
 import LanguageSwitcher from '@/components/common/LanguageSwitcher.vue'
 import ThemeModeButton from '@/components/common/ThemeModeButton.vue'
 import { useClipboard } from '@/composables/useClipboard'
-import { useI18n } from '@/i18n'
 import DesktopSettings from './DesktopSettings.vue'
 import { useDesktopGateway } from './useDesktopGateway'
 import type { GatewayPhase } from './bridge'
 
 const gateway = useDesktopGateway()
-const { status, phase, loading, pendingAction, connectionError, errors, busy, available, canStart, canStop, logs, logsLoading, logsError } = gateway
+const { status, phase, loading, pendingAction, connectionError, errors, busy, available, canStart, canStop } = gateway
 const { copyToClipboard } = useClipboard()
-const { legacyT } = useI18n()
 const copied = ref(false)
 const copyFailed = ref(false)
 const copyBusy = ref(false)
@@ -75,9 +73,6 @@ async function copyAddress() {
   copyBusy.value = false
 }
 
-function toggleLogs(event: Event) {
-  if ((event.currentTarget as HTMLElement).hasAttribute('open')) void gateway.refreshLogs()
-}
 </script>
 
 <template>
@@ -275,73 +270,6 @@ function toggleLogs(event: Event) {
         :saving-port="pendingAction === 'port'"
         @set-port="gateway.setPort"
       />
-
-      <details
-        v-if="status"
-        class="desktop-panel desktop-diagnostics group"
-        :open="phase === 'failed'"
-        @toggle="toggleLogs"
-      >
-        <summary>
-          <FileText
-            class="h-4 w-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <span>诊断日志</span>
-          <ChevronDown
-            class="ml-auto h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180"
-            aria-hidden="true"
-          />
-        </summary>
-        <div class="desktop-diagnostics-content">
-          <div class="desktop-diagnostics-toolbar">
-            <p>最近 100 行，完整记录可在日志目录查看。</p>
-            <div class="flex shrink-0 gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                :disabled="busy || !status.log_dir"
-                @click="gateway.openLogDir"
-              >
-                打开日志目录
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                class="gap-2"
-                :disabled="logsLoading"
-                @click="gateway.refreshLogs"
-              >
-                <RotateCw
-                  class="h-3.5 w-3.5"
-                  :class="{ 'desktop-spin': logsLoading }"
-                  aria-hidden="true"
-                />
-                {{ logsLoading ? '读取中…' : '刷新日志' }}
-              </Button>
-            </div>
-          </div>
-          <p
-            v-if="logsError"
-            class="desktop-field-error"
-            role="alert"
-          >
-            {{ logsError }}
-          </p>
-          <pre
-            v-if="logs.length"
-            class="desktop-log-output"
-            tabindex="0"
-            :aria-label="legacyT('最近的诊断日志')"
-          >{{ logs.join('\n') }}</pre>
-          <p
-            v-else-if="!logsError"
-            class="desktop-log-empty"
-          >
-            {{ logsLoading ? '正在读取日志…' : '暂无诊断日志。' }}
-          </p>
-        </div>
-      </details>
     </main>
 
     <footer class="desktop-footer">

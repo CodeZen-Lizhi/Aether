@@ -70,4 +70,18 @@ describe('desktop settings section', () => {
     await nextTick()
     expect(onSetAutostart).toHaveBeenCalledWith(true)
   })
+
+  it('keeps diagnostics in system settings and refreshes them on demand', async () => {
+    const onRefreshLogs = vi.fn()
+    const { root } = mountSettings({
+      logs: ['[desktop] gateway ready'],
+      onRefreshLogs,
+    })
+    const diagnostics = root.querySelector<HTMLDetailsElement>('details')!
+    expect(diagnostics).not.toBeNull()
+    expect(root.textContent).toContain('[desktop] gateway ready')
+    diagnostics.open = true
+    diagnostics.dispatchEvent(new Event('toggle'))
+    expect(onRefreshLogs).toHaveBeenCalledOnce()
+  })
 })
