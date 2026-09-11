@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import type { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createI18n, setI18nLocale } from '@/i18n'
+import { createI18n } from '@/i18n'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useDarkMode } from '@/composables/useDarkMode'
@@ -60,10 +60,6 @@ function preferenceSaves() {
   return requests.filter(request => request.url === '/api/users/me/preferences' && request.method === 'put')
 }
 
-function saveButton(root: HTMLElement) {
-  return root.querySelector<HTMLButtonElement>('#section-preferences button')!
-}
-
 beforeEach(() => {
   useDarkMode().setThemeMode('light')
   cache.clear()
@@ -93,85 +89,12 @@ afterEach(() => {
 })
 
 describe('desktop preferences and account controls', () => {
-  it('merges one set of preferences into system settings and saves only after confirmation', async () => {
+  it('removes the desktop preferences section without loading personal preferences', async () => {
     const root = await mountComponent(SystemSettings, true)
-    await vi.waitFor(() => expect(root.querySelector('#timezone')).not.toBeNull())
-    expect(root.querySelector('#section-preferences')?.textContent).toContain('偏好设置')
-    expect(root.querySelector('nav')?.textContent).toContain('偏好设置')
-    expect(root.textContent).not.toMatch(/账号设置|用户名|密码|登录设备|退出其他设备/)
-    for (const id of ['theme', 'language', 'timezone']) expect(root.querySelectorAll(`#${id}`)).toHaveLength(1)
-    for (const id of ['section-site-info', 'section-data-mgmt', 'section-proxy', 'section-basic', 'section-request-log', 'section-cleanup', 'section-sysinfo']) {
-      expect(root.querySelector(`#${id}`)).not.toBeNull()
-    }
-    expect(requests.filter(request => request.url?.startsWith('/api/users/')).map(request => request.url)).toEqual(['/api/users/me/preferences'])
-    expect(saveButton(root).disabled).toBe(true)
-    await editTimezone(root, 'UTC')
-    expect(preferenceSaves()).toHaveLength(0)
-    expect(saveButton(root).disabled).toBe(false)
-    saveButton(root).click()
-    await vi.waitFor(() => expect(saveButton(root).disabled).toBe(true))
-    expect(preferenceSaves()).toEqual([{ url: '/api/users/me/preferences', method: 'put', data: {
-      theme: 'light', language: 'zh-CN', timezone: 'UTC',
-    } }])
-  })
-
-  it('retains edited preferences after a failed save and allows retry', async () => {
-    let failNextSave = true
-    respondToPreferences = async config => {
-      if (config.method === 'put' && failNextSave) {
-        failNextSave = false
-        return apiResponse(config, { detail: 'Save failed' }, 400)
-      }
-      return apiResponse(config, { theme: 'light', language: 'zh-CN', timezone: 'Asia/Shanghai' })
-    }
-    const root = await mountComponent(SystemSettings, true)
-    const timezone = await editTimezone(root, 'UTC')
-    saveButton(root).click()
-    await vi.waitFor(() => {
-      expect(preferenceSaves()).toHaveLength(1)
-      expect(saveButton(root).disabled).toBe(false)
-    })
-    expect(timezone.value).toBe('UTC')
-    saveButton(root).click()
-    await vi.waitFor(() => {
-      expect(preferenceSaves()).toHaveLength(2)
-      expect(saveButton(root).disabled).toBe(true)
-    })
-    expect(preferenceSaves()[1].data).toEqual({ theme: 'light', language: 'zh-CN', timezone: 'UTC' })
-  })
-
-  it('offers a retry when loading preferences fails instead of saving default values', async () => {
-    let failNextLoad = true
-    respondToPreferences = async config => {
-      if (failNextLoad) {
-        failNextLoad = false
-        return apiResponse(config, { detail: 'Load failed' }, 503)
-      }
-      return apiResponse(config, { theme: 'light', language: 'zh-CN', timezone: 'UTC' })
-    }
-    const root = await mountComponent(SystemSettings, true)
-    expect(root.querySelector('#section-preferences [role="alert"]')?.textContent).toContain('加载偏好设置失败')
+    expect(root.querySelector('#section-preferences')).toBeNull()
+    expect(root.querySelector('nav')?.textContent).not.toContain('偏好设置')
     expect(root.querySelector('#timezone')).toBeNull()
-    expect(saveButton(root).disabled).toBe(true)
-    const retry = Array.from(root.querySelectorAll<HTMLButtonElement>('#section-preferences button')).find(button => button.textContent?.trim() === '重试')!
-    retry.click()
-    await vi.waitFor(() => expect(root.querySelector<HTMLInputElement>('#timezone')?.value).toBe('UTC'))
-    expect(preferenceSaves()).toHaveLength(0)
-    expect(saveButton(root).disabled).toBe(true)
-  })
-
-  it('keeps untouched theme and language fields in sync with header shortcuts', async () => {
-    const root = await mountComponent(SystemSettings, true)
-    useDarkMode().setThemeMode('dark')
-    setI18nLocale('en-US')
-    await settle()
-    expect(root.querySelector('#theme')?.textContent).toContain('Dark')
-    expect(root.querySelector('#language')?.textContent).toContain('English')
-    expect(saveButton(root).disabled).toBe(true)
-    await editTimezone(root, 'UTC')
-    saveButton(root).click()
-    await vi.waitFor(() => expect(preferenceSaves()).toHaveLength(1))
-    expect(preferenceSaves()[0].data).toEqual({ theme: 'dark', language: 'en', timezone: 'UTC' })
+    expect(requests.some(request => request.url?.startsWith('/api/users/'))).toBe(false)
   })
 
   it('retains Web account settings and immediate preference saving', async () => {

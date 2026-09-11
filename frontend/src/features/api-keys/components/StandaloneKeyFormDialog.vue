@@ -1,7 +1,7 @@
 <template>
   <Dialog
     :model-value="isOpen"
-    size="2xl"
+    size="xl"
     @update:model-value="handleDialogUpdate"
   >
     <template #header>

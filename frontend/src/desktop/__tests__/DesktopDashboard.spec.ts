@@ -103,9 +103,9 @@ afterEach(() => {
 })
 
 describe('native dashboard entry and navigation', () => {
-  it('redirects desktop personal-settings links to the merged preferences section', async () => {
+  it('redirects desktop personal-settings links to system settings', async () => {
     const { root, router } = await mountDashboard('/admin/settings?source=shortcut')
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/admin/system?source=shortcut#section-preferences'))
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/admin/system?source=shortcut'))
     await nextTick()
     expect(root.querySelector('[data-page="settings"]')).not.toBeNull()
     expect(settingsMounted).toHaveBeenCalledTimes(1)

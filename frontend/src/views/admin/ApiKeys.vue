@@ -2,7 +2,7 @@
   <div class="space-y-6 pb-8">
     <TableCard
       title="独立余额 API Keys"
-      class="responsive-list"
+      class="responsive-list api-keys-table-card"
     >
       <template #actions>
         <!-- 创建独立 Key 按钮 -->
@@ -820,6 +820,18 @@ async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
 </script>
 
 <style scoped>
+/* Keep the title and toolbar on one line in the desktop-sized card view. */
+@container list (min-width: 32rem) {
+  .api-keys-table-card :deep(.table-card-header) {
+    flex-wrap: nowrap;
+  }
+
+  .api-keys-table-card :deep(.table-card-actions) {
+    width: auto;
+    flex-shrink: 0;
+  }
+}
+
 /* Keep the card layout readable while reducing vertical chrome in the narrow
  * desktop content column. The named responsive-list container switches to the
  * table layout at 52rem, so this rule only affects the card view. */

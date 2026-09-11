@@ -21,7 +21,7 @@ router.beforeEach(async (to, from, next) => {
     try {
       if (!await authStore.connectDesktop()) return next(false)
       if (to.path === '/admin/settings') {
-        return next({ path: '/admin/system', query: to.query, hash: '#section-preferences', replace: true })
+        return next({ path: '/admin/system', query: to.query, replace: true })
       }
       if (to.path === '/' || to.path === '/admin') return next('/admin/dashboard')
       return next()
