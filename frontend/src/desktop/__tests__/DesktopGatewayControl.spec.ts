@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 import DesktopGatewayControl from '../DesktopGatewayControl.vue'
 
@@ -42,6 +42,15 @@ vi.mock('../useDesktopGateway', async () => {
 
 const mounted: Array<{ app: App; root: HTMLElement }> = []
 
+beforeEach(() => {
+  gatewayState.phase!.value = 'running'
+  gatewayState.status!.value = { gateway_url: 'http://127.0.0.1:8084', pid: 42 }
+  gatewayState.loading!.value = false
+  gatewayState.pendingAction!.value = null
+  gatewayState.connectionError!.value = ''
+  gatewayState.errors!.value = []
+})
+
 afterEach(() => {
   for (const { app, root } of mounted.splice(0)) {
     app.unmount()
@@ -62,6 +71,8 @@ describe('desktop gateway header control', () => {
     const trigger = root.querySelector<HTMLButtonElement>('button')!
     expect(trigger.textContent).toContain('网关')
     expect(trigger.textContent).toContain('运行中')
+    expect(trigger.dataset.gatewayState).toBe('running')
+    expect(trigger.classList).toContain('text-emerald-700')
     trigger.click()
     await nextTick()
     await Promise.resolve()
@@ -85,6 +96,8 @@ describe('desktop gateway header control', () => {
 
     const trigger = root.querySelector<HTMLButtonElement>('button')!
     expect(trigger.disabled).toBe(false)
+    expect(trigger.dataset.gatewayState).toBe('progress')
+    expect(trigger.classList).toContain('text-sky-700')
     trigger.click()
     await nextTick()
     await Promise.resolve()
@@ -110,6 +123,8 @@ describe('desktop gateway header control', () => {
 
     const trigger = root.querySelector<HTMLButtonElement>('button')!
     expect(trigger.textContent).toContain('连接失败')
+    expect(trigger.dataset.gatewayState).toBe('failed')
+    expect(trigger.classList).toContain('text-destructive')
     expect(trigger.querySelector('.animate-spin')).toBeNull()
     trigger.click()
     await nextTick()
@@ -143,5 +158,21 @@ describe('desktop gateway header control', () => {
     expect(stop.getAttribute('data-disabled')).toBeNull()
     stop.dispatchEvent(new Event('click', { bubbles: true }))
     expect(actions.stop).toHaveBeenCalledOnce()
+  })
+
+  it('uses a neutral square state for a stopped gateway', () => {
+    gatewayState.phase!.value = 'stopped'
+    gatewayState.status!.value = { gateway_url: 'http://127.0.0.1:8084', pid: null }
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(DesktopGatewayControl)
+    app.mount(root)
+    mounted.push({ app, root })
+
+    const trigger = root.querySelector<HTMLButtonElement>('button')!
+    expect(trigger.textContent).toContain('已停止')
+    expect(trigger.dataset.gatewayState).toBe('stopped')
+    expect(trigger.classList).toContain('text-muted-foreground')
   })
 })

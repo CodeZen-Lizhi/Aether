@@ -18,11 +18,19 @@ const label = computed(() => {
   if (connectionError.value) return '连接失败'
   return loading.value ? '正在连接' : '状态不可用'
 })
-const tone = computed(() => phase.value === 'running' ? 'text-emerald-600 dark:text-emerald-400'
-  : phase.value === 'failed' || connectionError.value ? 'text-destructive'
-    : loading.value || phase.value === 'starting' || phase.value === 'stopping' ? 'text-primary'
-      : 'text-muted-foreground')
 const actionPending = computed(() => !!pendingAction.value)
+const visualState = computed(() => {
+  if (phase.value === 'failed' || connectionError.value) return 'failed'
+  if (actionPending.value || loading.value || phase.value === 'starting' || phase.value === 'stopping') return 'progress'
+  if (phase.value === 'running') return 'running'
+  return 'stopped'
+})
+const stateClasses = computed(() => ({
+  running: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  progress: 'border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+  stopped: 'border-border/80 bg-muted/70 text-muted-foreground',
+  failed: 'border-destructive/40 bg-destructive/10 text-destructive',
+}[visualState.value]))
 const showRecoveryActions = computed(() => !status.value || phase.value === 'starting' || phase.value === 'stopping')
 const showRestart = computed(() => showRecoveryActions.value || phase.value === 'running' || phase.value === 'failed')
 const showStop = computed(() => showRecoveryActions.value || canStop.value || status.value?.pid != null)
@@ -40,36 +48,42 @@ function restart() { void gateway.restart() }
     <DropdownMenuTrigger as-child>
       <button
         type="button"
-        class="group flex min-h-9 items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-2.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        :class="tone"
+        class="group flex min-h-9 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium shadow-sm transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:brightness-110"
+        :class="stateClasses"
+        :data-gateway-state="visualState"
         :aria-busy="loading || actionPending"
         aria-label="网关状态与操作"
         title="网关状态与操作"
       >
-        <LoaderCircle
-          v-if="actionPending"
-          class="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+        <span
+          class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/5 dark:bg-white/10"
           aria-hidden="true"
-        />
-        <AlertCircle
-          v-else-if="phase === 'failed' || connectionError"
-          class="h-3.5 w-3.5"
-          aria-hidden="true"
-        />
-        <CheckCircle2
-          v-else-if="phase === 'running'"
-          class="h-3.5 w-3.5"
-          aria-hidden="true"
-        />
-        <CircleDashed
-          v-else
-          class="h-3.5 w-3.5"
-          aria-hidden="true"
-        />
+        >
+          <LoaderCircle
+            v-if="actionPending"
+            class="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+          />
+          <AlertCircle
+            v-else-if="visualState === 'failed'"
+            class="h-3.5 w-3.5"
+          />
+          <CheckCircle2
+            v-else-if="visualState === 'running'"
+            class="h-3.5 w-3.5"
+          />
+          <CircleDashed
+            v-else-if="visualState === 'progress'"
+            class="h-3.5 w-3.5"
+          />
+          <Square
+            v-else
+            class="h-3 w-3"
+          />
+        </span>
         <span class="hidden sm:inline">网关</span>
-        <span>{{ label }}</span>
+        <span class="whitespace-nowrap">{{ label }}</span>
         <ChevronDown
-          class="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
+          class="h-3.5 w-3.5 opacity-70 transition-transform group-data-[state=open]:rotate-180"
           aria-hidden="true"
         />
       </button>
