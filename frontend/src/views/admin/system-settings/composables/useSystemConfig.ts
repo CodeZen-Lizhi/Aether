@@ -3,6 +3,8 @@ import { useToast } from '@/composables/useToast'
 import { adminApi } from '@/api/admin'
 import { log } from '@/utils/logger'
 import { useSiteInfo } from '@/composables/useSiteInfo'
+import { desktopApi } from '@/desktop/bridge'
+import { hasDesktopSession } from '@/desktop/session'
 
 export interface SystemConfig {
   // 站点信息
@@ -240,6 +242,16 @@ export function useSystemConfig() {
 
   async function loadSystemVersion() {
     try {
+      if (hasDesktopSession()) {
+        try {
+          const status = await desktopApi.status()
+          systemVersion.value = status.version
+          return
+        } catch (err) {
+          log.error('加载桌面应用版本失败，回退到网关版本:', err)
+        }
+      }
+
       const data = await adminApi.getSystemVersion()
       systemVersion.value = data.version
     } catch (err) {

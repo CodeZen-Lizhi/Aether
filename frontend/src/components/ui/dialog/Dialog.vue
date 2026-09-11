@@ -22,7 +22,7 @@
         />
       </Transition>
 
-      <div class="relative flex h-full items-end justify-center overflow-hidden text-center sm:items-center sm:p-0 pointer-events-none">
+      <div class="relative flex h-full items-end justify-center overflow-y-auto text-center sm:items-center sm:p-4 pointer-events-none">
         <!-- 对话框内容 -->
         <Transition
           enter-active-class="duration-300 ease-out"
@@ -34,43 +34,45 @@
         >
           <div
             v-if="isOpen"
-            class="relative flex max-h-[100dvh] w-full transform flex-col overflow-hidden rounded-t-xl border border-x-0 border-b-0 border-border bg-background text-left shadow-2xl transition-all pointer-events-auto sm:my-8 sm:w-full sm:max-h-[calc(100dvh-4rem)] sm:rounded-lg sm:border"
+            class="relative flex max-h-[100dvh] w-full transform flex-col overflow-y-hidden rounded-t-xl border border-x-0 border-b-0 border-border bg-background text-left shadow-2xl transition-all pointer-events-auto sm:my-0 sm:w-full sm:max-h-[calc(100dvh-2rem)] sm:rounded-lg sm:border"
             :style="{ zIndex: contentZIndex }"
             :class="maxWidthClass"
             @click.stop
           >
             <!-- Header 区域：优先使用 slot，否则使用 title prop -->
-            <slot name="header">
-              <div
-                v-if="title"
-                class="shrink-0 border-b border-border px-4 pb-3 pt-4 sm:px-6 sm:py-4"
-              >
-                <div class="flex items-center gap-3">
-                  <div
-                    v-if="icon"
-                    class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 flex-shrink-0"
-                    :class="iconClass"
-                  >
-                    <component
-                      :is="icon"
-                      class="h-5 w-5 text-primary"
-                    />
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <h3 class="text-balance text-base font-semibold leading-tight text-foreground sm:text-lg">
-                      {{ title }}
-                    </h3>
-                    <p
-                      v-if="description"
-                      class="mt-0.5 text-pretty text-xs leading-4 text-muted-foreground"
+            <div class="shrink-0">
+              <slot name="header">
+                <div
+                  v-if="title"
+                  class="shrink-0 border-b border-border px-4 pb-3 pt-4 sm:px-6 sm:py-4"
+                >
+                  <div class="flex items-center gap-3">
+                    <div
+                      v-if="icon"
+                      class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 flex-shrink-0"
+                      :class="iconClass"
                     >
-                      {{ description }}
-                    </p>
+                      <component
+                        :is="icon"
+                        class="h-5 w-5 text-primary"
+                      />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <h3 class="text-balance text-base font-semibold leading-tight text-foreground sm:text-lg">
+                        {{ title }}
+                      </h3>
+                      <p
+                        v-if="description"
+                        class="mt-0.5 text-pretty text-xs leading-4 text-muted-foreground"
+                      >
+                        {{ description }}
+                      </p>
+                    </div>
+                    <slot name="header-actions" />
                   </div>
-                  <slot name="header-actions" />
                 </div>
-              </div>
-            </slot>
+              </slot>
+            </div>
 
             <!-- 内容区域：可选添加 padding -->
             <div :class="contentBodyClass">
@@ -169,7 +171,7 @@ const maxWidthClass = computed(() => {
 })
 
 const contentBodyClass = computed(() => [
-  'min-h-0 min-w-0 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]',
+  'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]',
   props.noPadding ? '' : 'px-4 py-3 sm:px-6',
 ].filter(Boolean).join(' '))
 

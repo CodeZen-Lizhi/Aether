@@ -124,14 +124,23 @@
                 {{ nodeAddress(node) }}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              class="shrink-0"
-              @click="openEditDialog(node)"
-            >
-              编辑
-            </Button>
+            <div class="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="isNodeTesting(node.id)"
+                @click="handleTestNode(node.id)"
+              >
+                {{ isNodeTesting(node.id) ? '测试中...' : '测试' }}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                @click="openEditDialog(node)"
+              >
+                编辑
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -175,8 +184,11 @@ import SelectItem from '@/components/ui/select-item.vue'
 import { CardSection } from '@/components/layout'
 import { useProxyNodesStore } from '@/stores/proxy-nodes'
 import { clearModelsDevCache } from '@/api/models-dev'
+import { useToast } from '@/composables/useToast'
+import { parseApiError } from '@/utils/errorParser'
 import ProxyNodeEditDialog, { type ProxyNodeDeletedPayload } from './ProxyNodeEditDialog.vue'
-import type { ProxyNode } from '@/api/proxy-nodes'
+import { proxyNodesApi, type ProxyNode } from '@/api/proxy-nodes'
+import { formatProxyTestSuccessText } from './proxyTest'
 
 const props = defineProps<{
   proxyNodeId: string | null
@@ -192,11 +204,13 @@ const emit = defineEmits<{
 }>()
 
 const store = useProxyNodesStore()
+const { success, error: toastError } = useToast()
 
 const nodes = computed(() => store.nodes)
 
 const dialogOpen = ref(false)
 const editingNode = ref<ProxyNode | null>(null)
+const testingNodeIds = ref(new Set<string>())
 
 const selectableNodes = computed(() => {
   if (!props.proxyNodeId) {
@@ -234,6 +248,27 @@ function openAddDialog() {
 function openEditDialog(node: ProxyNode) {
   editingNode.value = node
   dialogOpen.value = true
+}
+
+function isNodeTesting(nodeId: string) {
+  return testingNodeIds.value.has(nodeId)
+}
+
+async function handleTestNode(nodeId: string) {
+  if (isNodeTesting(nodeId)) return
+  testingNodeIds.value.add(nodeId)
+  try {
+    const result = await proxyNodesApi.testProxyNode(nodeId)
+    if (result.success) {
+      success(formatProxyTestSuccessText(result))
+    } else {
+      toastError(`测试失败: ${result.error || '未知错误'}`)
+    }
+  } catch (err: unknown) {
+    toastError(parseApiError(err, '测试请求失败'))
+  } finally {
+    testingNodeIds.value.delete(nodeId)
+  }
 }
 
 // 删除节点的副作用留在父级处理，弹窗只上报结果

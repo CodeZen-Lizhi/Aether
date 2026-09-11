@@ -7,10 +7,13 @@ import type { ProxyNode } from '@/api/proxy-nodes'
 
 const apiMocks = vi.hoisted(() => ({
   listProxyNodes: vi.fn(),
+  testProxyNode: vi.fn(),
 }))
 
-const { clearModelsDevCacheMock, dialogStubState } = vi.hoisted(() => ({
+const { clearModelsDevCacheMock, successMock, errorMock, dialogStubState } = vi.hoisted(() => ({
   clearModelsDevCacheMock: vi.fn(),
+  successMock: vi.fn(),
+  errorMock: vi.fn(),
   dialogStubState: {
     deletedPayload: null as Record<string, unknown> | null,
   },
@@ -23,9 +26,19 @@ vi.mock('@/api/proxy-nodes', async () => {
     proxyNodesApi: {
       ...actual.proxyNodesApi,
       listProxyNodes: apiMocks.listProxyNodes,
+      testProxyNode: apiMocks.testProxyNode,
     },
   }
 })
+
+vi.mock('@/composables/useToast', () => ({
+  useToast: () => ({
+    success: successMock,
+    error: errorMock,
+    warning: vi.fn(),
+    info: vi.fn(),
+  }),
+}))
 
 vi.mock('@/api/models-dev', () => ({
   clearModelsDevCache: clearModelsDevCacheMock,
@@ -151,7 +164,14 @@ function findEditButton(root: HTMLElement, nodeName: string): HTMLButtonElement 
   return Array.from(root.querySelectorAll('button')).find(
     btn =>
       btn.textContent?.trim() === '编辑'
-      && btn.parentElement?.textContent?.includes(nodeName)
+      && btn.parentElement?.parentElement?.textContent?.includes(nodeName)
+  )
+}
+
+function findNodeActionButton(root: HTMLElement, nodeName: string, text: string): HTMLButtonElement | undefined {
+  return Array.from(root.querySelectorAll('button')).find(
+    btn => btn.textContent?.trim() === text
+      && btn.parentElement?.parentElement?.textContent?.includes(nodeName)
   )
 }
 
@@ -160,8 +180,12 @@ function findDialogStub(root: HTMLElement): HTMLElement | undefined {
 }
 
 beforeEach(() => {
-  apiMocks.listProxyNodes.mockReset()
+  for (const mock of Object.values(apiMocks)) {
+    mock.mockReset()
+  }
   clearModelsDevCacheMock.mockReset()
+  successMock.mockReset()
+  errorMock.mockReset()
   dialogStubState.deletedPayload = null
   apiMocks.listProxyNodes.mockResolvedValue({ items: [], total: 0, skip: 0, limit: 1000 })
 })
@@ -225,7 +249,7 @@ describe('ProxyConfigSection', () => {
     expect(handlers.onSave).toHaveBeenCalledTimes(1)
   })
 
-  it('renders node rows with name, region, status badge, address, and an edit entry', async () => {
+  it('renders node rows with name, region, status badge, address, and test/edit entries', async () => {
     apiMocks.listProxyNodes.mockResolvedValue({
       items: [
         makeNode(),
@@ -255,8 +279,139 @@ describe('ProxyConfigSection', () => {
     expect(root.textContent).toContain('东京隧道节点')
     expect(root.textContent).toContain('离线')
     expect(root.textContent).toContain('5.6.7.8')
+    expect(findNodeActionButton(root, '美西节点', '测试')).toBeTruthy()
+    expect(findNodeActionButton(root, '东京隧道节点', '测试')).toBeTruthy()
     expect(findEditButton(root, '美西节点')).toBeTruthy()
     expect(findEditButton(root, '东京隧道节点')).toBeTruthy()
+  })
+
+  it('tests a saved node and reports successful probe details through the toast', async () => {
+    apiMocks.listProxyNodes.mockResolvedValue({
+      items: [makeNode()],
+      total: 1,
+      skip: 0,
+      limit: 1000,
+    })
+    apiMocks.testProxyNode.mockResolvedValue({
+      success: true,
+      latency_ms: 120,
+      exit_ip: '1.2.3.4',
+      error: null,
+      probe_url: 'https://example.com',
+      timeout_secs: 10,
+    })
+    const { root } = mountSection()
+    await flushAsync()
+
+    findNodeActionButton(root, '美西节点', '测试')?.click()
+    await flushAsync()
+
+    expect(apiMocks.testProxyNode).toHaveBeenCalledWith('node-1')
+    expect(successMock).toHaveBeenCalledWith('测试通过：延迟 120ms · 出口 IP 1.2.3.4')
+  })
+
+  it('keeps a successful test clear when the probe omits latency and exit IP', async () => {
+    apiMocks.listProxyNodes.mockResolvedValue({
+      items: [makeNode()],
+      total: 1,
+      skip: 0,
+      limit: 1000,
+    })
+    apiMocks.testProxyNode.mockResolvedValue({
+      success: true,
+      latency_ms: null,
+      exit_ip: null,
+      error: null,
+      probe_url: 'https://example.com',
+      timeout_secs: 10,
+    })
+    const { root } = mountSection()
+    await flushAsync()
+
+    findNodeActionButton(root, '美西节点', '测试')?.click()
+    await flushAsync()
+
+    expect(successMock).toHaveBeenCalledWith('测试通过')
+  })
+
+  it('reports a failed saved-node test through the error toast', async () => {
+    apiMocks.listProxyNodes.mockResolvedValue({
+      items: [makeNode()],
+      total: 1,
+      skip: 0,
+      limit: 1000,
+    })
+    apiMocks.testProxyNode.mockResolvedValue({
+      success: false,
+      latency_ms: null,
+      exit_ip: null,
+      error: 'connection refused',
+      probe_url: 'https://example.com',
+      timeout_secs: 10,
+    })
+    const { root } = mountSection()
+    await flushAsync()
+
+    findNodeActionButton(root, '美西节点', '测试')?.click()
+    await flushAsync()
+
+    expect(errorMock).toHaveBeenCalledWith('测试失败: connection refused')
+  })
+
+  it('reports a rejected saved-node test through the error toast', async () => {
+    apiMocks.listProxyNodes.mockResolvedValue({
+      items: [makeNode()],
+      total: 1,
+      skip: 0,
+      limit: 1000,
+    })
+    apiMocks.testProxyNode.mockRejectedValue(new Error('network unavailable'))
+    const { root } = mountSection()
+    await flushAsync()
+
+    findNodeActionButton(root, '美西节点', '测试')?.click()
+    await flushAsync()
+
+    expect(errorMock).toHaveBeenCalledWith('network unavailable')
+  })
+
+  it('isolates testing state by node and prevents duplicate tests for the same node', async () => {
+    let resolveFirst!: (value: unknown) => void
+    let resolveSecond!: (value: unknown) => void
+    apiMocks.listProxyNodes.mockResolvedValue({
+      items: [makeNode(), makeNode({ id: 'node-2', name: '东京节点' })],
+      total: 2,
+      skip: 0,
+      limit: 1000,
+    })
+    apiMocks.testProxyNode
+      .mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise(resolve => { resolveSecond = resolve }))
+    const { root } = mountSection()
+    await flushAsync()
+
+    const firstTestButton = findNodeActionButton(root, '美西节点', '测试')
+    const secondTestButton = findNodeActionButton(root, '东京节点', '测试')
+    const secondEditButton = findEditButton(root, '东京节点')
+    firstTestButton?.click()
+    firstTestButton?.click()
+    secondTestButton?.click()
+    await nextTick()
+
+    expect(apiMocks.testProxyNode).toHaveBeenCalledTimes(2)
+    expect(apiMocks.testProxyNode).toHaveBeenNthCalledWith(1, 'node-1')
+    expect(apiMocks.testProxyNode).toHaveBeenNthCalledWith(2, 'node-2')
+    expect(firstTestButton?.disabled).toBe(true)
+    expect(firstTestButton?.textContent?.trim()).toBe('测试中...')
+    expect(secondTestButton?.disabled).toBe(true)
+    expect(secondEditButton?.disabled).toBe(false)
+
+    resolveFirst({ success: true, latency_ms: 10, exit_ip: null, error: null, probe_url: '', timeout_secs: 10 })
+    resolveSecond({ success: true, latency_ms: null, exit_ip: '5.6.7.8', error: null, probe_url: '', timeout_secs: 10 })
+    await flushAsync()
+
+    expect(firstTestButton?.disabled).toBe(false)
+    expect(secondTestButton?.disabled).toBe(false)
   })
 
   it('shows the empty state with an add entry when there are no nodes', async () => {

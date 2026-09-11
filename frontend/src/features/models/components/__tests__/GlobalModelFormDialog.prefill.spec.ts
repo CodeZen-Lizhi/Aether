@@ -254,6 +254,21 @@ afterEach(() => {
 })
 
 describe('GlobalModelFormDialog preset replacement', () => {
+  it('uses the compact shared dialog size in create and edit modes', async () => {
+    const { editingModel } = mountDialog()
+    await settle()
+
+    expect(document.body.querySelector('[class~="sm:max-w-3xl"]')).not.toBeNull()
+    expect(document.body.querySelector('[class~="sm:max-w-4xl"]')).toBeNull()
+
+    const existingModel = buildExistingStaleModel()
+    editingModel.value = existingModel
+    await settle()
+
+    expect(document.body.querySelector('[class~="sm:max-w-3xl"]')).not.toBeNull()
+    expect(document.body.querySelector('[class~="sm:max-w-4xl"]')).toBeNull()
+  })
+
   it('shows cached presets with a visible stale notice when the online catalog fails', async () => {
     modelsDevMocks.getModelsDevListWithStatus.mockResolvedValue({
       models: [stalePreset],

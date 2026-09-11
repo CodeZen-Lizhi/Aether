@@ -122,6 +122,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useProxyNodesStore } from '@/stores/proxy-nodes'
 import { proxyNodesApi, type ProxyNode } from '@/api/proxy-nodes'
 import { parseApiError } from '@/utils/errorParser'
+import { formatProxyTestSuccessText } from './proxyTest'
 
 const props = defineProps<{
   open: boolean
@@ -261,13 +262,6 @@ async function handleDeleteNode() {
   }
 }
 
-function formatTestSuccessText(result: { latency_ms: number | null; exit_ip: string | null }): string {
-  const parts: string[] = []
-  if (result.latency_ms != null) parts.push(`延迟 ${result.latency_ms}ms`)
-  if (result.exit_ip) parts.push(`出口 IP ${result.exit_ip}`)
-  return parts.length ? `测试通过：${parts.join(' · ')}` : '测试通过'
-}
-
 async function handleTestUrl() {
   if (testingUrl.value || !proxyUrlValid.value) return
   testingUrl.value = true
@@ -278,7 +272,7 @@ async function handleTestUrl() {
       password: form.value.password || undefined,
     })
     testResult.value = result.success
-      ? { kind: 'success', text: formatTestSuccessText(result) }
+      ? { kind: 'success', text: formatProxyTestSuccessText(result) }
       : { kind: 'error', text: `测试失败: ${result.error || '未知错误'}` }
   } catch (err: unknown) {
     testResult.value = { kind: 'error', text: parseApiError(err, '测试请求失败') }

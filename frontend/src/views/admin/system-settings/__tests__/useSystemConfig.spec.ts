@@ -1,16 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getAllSystemConfigsMock, updateSystemConfigMock } = vi.hoisted(() => ({
+const {
+  getAllSystemConfigsMock,
+  updateSystemConfigMock,
+  getSystemVersionMock,
+  desktopStatusMock,
+  hasDesktopSessionMock,
+} = vi.hoisted(() => ({
   getAllSystemConfigsMock: vi.fn(),
   updateSystemConfigMock: vi.fn(),
+  getSystemVersionMock: vi.fn(),
+  desktopStatusMock: vi.fn(),
+  hasDesktopSessionMock: vi.fn(),
 }))
 
 vi.mock('@/api/admin', () => ({
   adminApi: {
     getAllSystemConfigs: getAllSystemConfigsMock,
     updateSystemConfig: updateSystemConfigMock,
-    getSystemVersion: vi.fn(),
+    getSystemVersion: getSystemVersionMock,
   },
+}))
+
+vi.mock('@/desktop/bridge', () => ({
+  desktopApi: {
+    status: desktopStatusMock,
+  },
+}))
+
+vi.mock('@/desktop/session', () => ({
+  hasDesktopSession: hasDesktopSessionMock,
 }))
 
 vi.mock('@/composables/useToast', () => ({
@@ -38,6 +57,10 @@ describe('useSystemConfig', () => {
   beforeEach(() => {
     getAllSystemConfigsMock.mockReset()
     updateSystemConfigMock.mockReset()
+    getSystemVersionMock.mockReset()
+    desktopStatusMock.mockReset()
+    hasDesktopSessionMock.mockReset()
+    hasDesktopSessionMock.mockReturnValue(false)
   })
 
   it('loads config keys in one request and keeps change detection disabled until the baseline is ready', async () => {
@@ -124,5 +147,42 @@ describe('useSystemConfig', () => {
     expect(state.systemConfig.value.request_record_level).toBe('full')
     expect(state.systemConfig.value).not.toHaveProperty('max_request_body_size')
     expect(state.systemConfig.value).not.toHaveProperty('max_response_body_size')
+  })
+
+  it('uses the desktop release version when a desktop session is available', async () => {
+    hasDesktopSessionMock.mockReturnValue(true)
+    desktopStatusMock.mockResolvedValue({ version: '0.1.7' })
+
+    const state = useSystemConfig()
+    await state.loadSystemVersion()
+
+    expect(desktopStatusMock).toHaveBeenCalledOnce()
+    expect(getSystemVersionMock).not.toHaveBeenCalled()
+    expect(state.systemVersion.value).toBe('0.1.7')
+  })
+
+  it('falls back to the gateway version when desktop status IPC fails', async () => {
+    hasDesktopSessionMock.mockReturnValue(true)
+    desktopStatusMock.mockRejectedValue(new Error('native status unavailable'))
+    getSystemVersionMock.mockResolvedValue({ version: 'gateway-version' })
+
+    const state = useSystemConfig()
+    await state.loadSystemVersion()
+
+    expect(desktopStatusMock).toHaveBeenCalledOnce()
+    expect(getSystemVersionMock).toHaveBeenCalledOnce()
+    expect(state.systemVersion.value).toBe('gateway-version')
+  })
+
+  it('uses the gateway version without probing desktop IPC outside a desktop session', async () => {
+    getSystemVersionMock.mockResolvedValue({ version: 'gateway-version' })
+
+    const state = useSystemConfig()
+    await state.loadSystemVersion()
+
+    expect(hasDesktopSessionMock).toHaveBeenCalledOnce()
+    expect(desktopStatusMock).not.toHaveBeenCalled()
+    expect(getSystemVersionMock).toHaveBeenCalledOnce()
+    expect(state.systemVersion.value).toBe('gateway-version')
   })
 })

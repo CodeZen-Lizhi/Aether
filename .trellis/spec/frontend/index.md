@@ -140,3 +140,15 @@ const leftPriority = providerPriorities[a.id] ?? UNCONFIGURED_PROVIDER_PRIORITY
 **What**: 前端对 `proxy_url` 的前缀校验为 `/^(https?|socks5h?):\/\//i`；后端权威校验在 `apps/aether-gateway/src/state/proxy.rs`（`url::Url::parse` + scheme 以 `socks` 开头放行）。前端只做前缀级提示性校验，完整解析以后端为准。
 
 **Why**: 避免前端实现完整 URL 语法校验后与后端口径漂移，产生「前端放过、后端拒绝」或反向的体验裂缝。
+
+## Convention: 代理节点连通性测试
+
+**What**: 代理节点列表的快捷测试调用已保存节点测试接口，编辑弹窗的“测试连接”调用未保存表单测试接口；两者共享成功结果格式化逻辑。
+
+**Contract**: 列表测试使用 `proxyNodesApi.testProxyNode(nodeId)`，请求 `POST /api/admin/proxy-nodes/:id/test`，不在前端读取或重新发送已保存密码。编辑测试使用 `proxyNodesApi.testProxyUrl({ proxy_url, username?, password? })`，仅发送当前表单值。
+
+**UI state**: 列表测试状态按节点 ID 隔离；同一节点测试中禁止重复请求，其他节点仍可测试。成功提示按 `latency_ms`、`exit_ip` 的缺省组合生成，失败和请求异常通过现有 toast/表单错误入口反馈。
+
+**Reuse**: 成功文案统一使用 `views/admin/system-settings/proxyTest.ts` 的 `formatProxyTestSuccessText`，避免列表与编辑弹窗在字段缺省时产生不同结果。
+
+**Verification**: 测试列表成功、字段缺省、服务端失败、请求拒绝、同节点去重和跨节点并发；编辑弹窗继续验证保存前测试与字段变更后的结果清理。

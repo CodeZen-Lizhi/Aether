@@ -4,12 +4,12 @@
     :title="isEditMode ? '编辑模型' : '创建统一模型'"
     :description="isEditMode ? '修改模型配置和价格信息' : ''"
     :icon="isEditMode ? SquarePen : Layers"
-    :size="isEditMode ? '4xl' : '3xl'"
+    size="3xl"
     @update:model-value="handleDialogUpdate"
   >
     <div
-      class="flex gap-4"
-      :class="isEditMode ? '' : 'h-[600px] flex-col'"
+      class="flex min-h-0 min-w-0 gap-4"
+      :class="isEditMode ? '' : 'h-[min(600px,calc(100dvh-8rem))] flex-col'"
     >
       <!-- 上方：搜索和加载预设（仅创建模式） -->
       <section
@@ -308,7 +308,7 @@
             <h4 class="font-medium text-sm">
               基本信息
             </h4>
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div class="space-y-1.5">
                 <Label
                   for="model-display-name"
@@ -347,7 +347,7 @@
                 @update:model-value="(v) => setConfigField('description', v || undefined)"
               />
             </div>
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div class="space-y-1.5">
                 <Label
                   for="model-output-limit"
@@ -682,7 +682,7 @@
                     v-if="videoResolutionPrices.length > 0"
                     class="rounded-lg border border-border overflow-hidden"
                   >
-                    <div class="grid grid-cols-[1fr_1fr_32px] gap-0 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 border-b border-border">
+                    <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] gap-0 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 border-b border-border">
                       <span>分辨率</span>
                       <span>单价（$/秒）</span>
                       <span />
@@ -691,7 +691,7 @@
                       <div
                         v-for="(row, idx) in videoResolutionPrices"
                         :key="idx"
-                        class="grid grid-cols-[1fr_1fr_32px] gap-2 items-center px-3 py-1.5"
+                        class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 items-center px-3 py-1.5"
                       >
                         <Input
                           v-model="row.resolution"

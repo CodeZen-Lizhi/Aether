@@ -118,4 +118,9 @@ export const proxyNodesApi = {
     const response = await apiClient.post<ProxyNodeTestResult>('/api/admin/proxy-nodes/test-url', data)
     return response.data
   },
+
+  async testProxyNode(nodeId: string): Promise<ProxyNodeTestResult> {
+    const response = await apiClient.post<ProxyNodeTestResult>(`/api/admin/proxy-nodes/${nodeId}/test`)
+    return response.data
+  },
 }
