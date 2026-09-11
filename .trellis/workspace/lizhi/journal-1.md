@@ -1333,3 +1333,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 47: 窄窗口桌面侧栏与 macOS 安装包
+<!-- trellis-session: v=2 fp=a32e27d480f7ad51 -->
+
+**Date**: 2026-09-11
+**Task**: 窄窗口桌面侧栏与 macOS 安装包
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+拉取远端最新代码，优化原生桌面窄窗口侧栏：展开宽度在 1100px 以下由 224px 缩至 184px，并收紧品牌区、导航内边距和图标间距；补充布局回归断言。完成前端与桌面测试、类型检查和构建，生成并校验 Aether_0.1.4_aarch64.dmg；提交 e58569c63 已 push 到 codex/tauri-macos。归档已完成的外部模型目录加载任务，保留其他未提交改动。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e58569c63` | 优化窄窗口桌面侧栏布局 |
+
+### Status
+
+[OK] **Completed**

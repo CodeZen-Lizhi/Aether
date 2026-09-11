@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 46
-- **Last Active**: 2026-09-10
+- **Total Sessions**: 47
+- **Last Active**: 2026-09-11
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1335 | Active |
+| `journal-1.md` | ~1357 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 47 | 2026-09-11 | 窄窗口桌面侧栏与 macOS 安装包 | `e58569c63` | `codex/tauri-macos` |
 | 46 | 2026-09-10 | 整合桌面设置与网关控制 | `fee8e7675` | `codex/tauri-macos` |
 | 45 | 2026-09-10 | 修复启动页闪现并交付 0.1.2 | `9c3e53cee` | `codex/tauri-macos` |
 | 44 | 2026-09-10 | 自动递增桌面版本并交付 0.1.1 | `3bcb54b59` | `codex/tauri-macos` |
