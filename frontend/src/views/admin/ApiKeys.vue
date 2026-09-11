@@ -303,9 +303,10 @@
           </Table>
         </div>
 
-        <div class="responsive-list-mobile bg-muted/[0.14] p-3 sm:p-4">
+        <div class="responsive-list-mobile">
           <EmptyState
             v-if="filteredApiKeys.length === 0"
+            class="px-4 py-12"
             :type="hasActiveFilters ? 'filter' : 'empty'"
             :icon="hasActiveFilters ? undefined : Key"
             :title="hasActiveFilters ? '未找到匹配的 Key' : '暂无独立余额 Key'"
@@ -319,158 +320,170 @@
 
           <div
             v-else
-            class="space-y-3.5"
+            class="divide-y divide-border/50"
           >
-            <div
+            <article
               v-for="apiKey in filteredApiKeys"
               :key="apiKey.id"
-              class="rounded-lg border border-border/60 bg-card p-3"
+              class="p-4 sm:p-5"
             >
-              <div class="space-y-3">
-                <div class="flex items-start gap-3">
-                  <div class="min-w-0 flex-1 space-y-2">
-                    <div class="flex items-center gap-2">
-                      <code class="inline-flex max-w-[190px] sm:max-w-[240px] truncate rounded-lg bg-muted px-3 py-1.5 text-[11px] font-mono font-semibold text-foreground/90">
-                        {{ apiKey.key_display || '****' }}
-                      </code>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        class="h-7 w-7 flex-shrink-0 hover:bg-muted"
-                        title="复制完整密钥"
-                        @click="copyKeyPrefix(apiKey)"
-                      >
-                        <Copy class="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    <div
-                      class="truncate text-sm font-medium text-foreground"
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <h4
+                      class="min-w-0 break-words text-sm font-semibold text-foreground"
                       :class="{ 'text-muted-foreground': !apiKey.name }"
-                      :title="apiKey.name || '未命名 Key'"
                     >
                       {{ apiKey.name || '未命名 Key' }}
-                    </div>
-                  </div>
-                </div>
-
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <Badge
-                    :variant="apiKey.is_active ? 'success' : 'destructive'"
-                    class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                  >
-                    {{ apiKey.is_active ? '活跃' : '禁用' }}
-                  </Badge>
-                  <Badge
-                    variant="secondary"
-                    class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                  >
-                    {{ formatRateLimitInheritable(apiKey.rate_limit) }}
-                  </Badge>
-                  <Badge
-                    variant="secondary"
-                    class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                  >
-                    {{ formatConcurrentLimitInheritable(apiKey.concurrent_limit) }}
-                  </Badge>
-                  <Badge
-                    v-if="apiKey.auto_delete_on_expiry"
-                    variant="secondary"
-                    class="h-5 px-1.5 py-0 text-[10px] font-medium"
-                  >
-                    过期自动删除
-                  </Badge>
-                </div>
-
-                <div class="grid grid-cols-2 gap-2.5 text-xs">
-                  <div class="rounded-lg border border-border/50 bg-background/70 p-2.5">
-                    <div class="mb-1 text-muted-foreground">
-                      请求次数
-                    </div>
-                    <div class="font-medium text-foreground">
-                      {{ (apiKey.total_requests || 0).toLocaleString() }}
-                    </div>
-                  </div>
-                  <div class="rounded-lg border border-border/50 bg-background/70 p-2.5">
-                    <div class="mb-1 text-muted-foreground">
-                      Tokens
-                    </div>
-                    <div class="font-medium text-foreground">
-                      {{ formatApiKeyTotalTokens(apiKey) }}
-                    </div>
-                  </div>
-                  <div class="col-span-2 rounded-lg border border-border/50 bg-background/70 p-2.5">
-                    <div class="mb-1 text-muted-foreground">
-                      有效期
-                    </div>
-                    <div class="font-medium text-foreground">
-                      {{ apiKey.expires_at ? formatDate(apiKey.expires_at) : '永不过期' }}
-                    </div>
-                    <div
-                      v-if="apiKey.expires_at"
-                      class="text-[11px] text-muted-foreground"
+                    </h4>
+                    <Badge
+                      :variant="apiKey.is_active ? 'success' : 'destructive'"
+                      class="h-5 shrink-0 px-1.5 py-0 text-[10px] font-medium"
                     >
-                      {{ getRelativeTime(apiKey.expires_at) }}
-                    </div>
+                      {{ apiKey.is_active ? '活跃' : '禁用' }}
+                    </Badge>
+                    <Badge
+                      v-if="apiKey.auto_delete_on_expiry"
+                      variant="secondary"
+                      class="hidden h-5 shrink-0 px-1.5 py-0 text-[10px] font-medium sm:inline-flex"
+                    >
+                      过期自动删除
+                    </Badge>
                   </div>
-                </div>
 
-                <div class="rounded-lg bg-muted/35 p-2.5 text-[11px] text-muted-foreground">
-                  <div class="flex items-center justify-between gap-2">
-                    <span>创建</span>
-                    <span class="font-medium text-foreground">{{ formatDate(apiKey.created_at) }}</span>
+                  <div class="mt-1.5 flex min-w-0 items-center gap-1.5">
+                    <code class="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                      {{ apiKey.key_display || '****' }}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="h-7 w-7 shrink-0 rounded-md"
+                      title="复制完整密钥"
+                      aria-label="复制完整密钥"
+                      @click="copyKeyPrefix(apiKey)"
+                    >
+                      <Copy
+                        aria-hidden="true"
+                        class="h-3.5 w-3.5"
+                      />
+                    </Button>
                   </div>
-                  <div class="mt-1 flex items-center justify-between gap-2">
-                    <span>最近使用</span>
-                    <span
-                      v-if="apiKey.last_used_at"
-                      class="font-medium text-foreground"
-                    >{{ formatDate(apiKey.last_used_at) }}</span>
-                    <span v-else>暂无记录</span>
-                  </div>
-                  <div
-                    v-if="apiKey.expires_at"
-                    class="mt-1 flex items-center justify-between gap-2"
-                  >
-                    <span>过期后</span>
-                    <span>{{ apiKey.auto_delete_on_expiry ? '自动删除' : '仅禁用' }}</span>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-2 pt-0.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="h-8 text-xs"
-                    @click="editApiKey(apiKey)"
-                  >
-                    <SquarePen class="mr-1.5 h-3.5 w-3.5" />
-                    编辑
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="h-8 text-xs"
-                    @click="toggleApiKey(apiKey)"
-                  >
-                    <Power class="mr-1.5 h-3.5 w-3.5" />
-                    {{ apiKey.is_active ? '禁用' : '启用' }}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="col-span-2 h-8 border-rose-200 text-xs text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:hover:bg-rose-950/40"
-                    @click="deleteApiKey(apiKey)"
-                  >
-                    <Trash2 class="mr-1.5 h-3.5 w-3.5" />
-                    删除
-                  </Button>
                 </div>
               </div>
-            </div>
+
+              <dl class="mt-4 grid grid-cols-2 border-y border-border/50 text-xs">
+                <div class="py-3 pr-3">
+                  <dt class="text-muted-foreground">
+                    请求次数
+                  </dt>
+                  <dd class="mt-1 text-sm font-semibold tabular-nums text-foreground">
+                    {{ (apiKey.total_requests || 0).toLocaleString() }}
+                  </dd>
+                </div>
+                <div class="border-l border-border/50 py-3 pl-3">
+                  <dt class="text-muted-foreground">
+                    Tokens
+                  </dt>
+                  <dd class="mt-1 text-sm font-semibold tabular-nums text-foreground">
+                    {{ formatApiKeyTotalTokens(apiKey) }}
+                  </dd>
+                </div>
+                <div class="border-t border-border/50 py-3 pr-3">
+                  <dt class="text-muted-foreground">
+                    有效期
+                  </dt>
+                  <dd class="mt-1 font-medium text-foreground">
+                    {{ apiKey.expires_at ? formatDate(apiKey.expires_at) : '永不过期' }}
+                  </dd>
+                  <dd
+                    v-if="apiKey.expires_at"
+                    class="mt-0.5 text-[11px] text-muted-foreground"
+                  >
+                    {{ getRelativeTime(apiKey.expires_at) }}
+                  </dd>
+                </div>
+                <div class="border-l border-t border-border/50 py-3 pl-3">
+                  <dt class="text-muted-foreground">
+                    限制
+                  </dt>
+                  <dd class="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 font-medium text-foreground">
+                    <span>{{ formatRateLimitInheritable(apiKey.rate_limit) }}</span>
+                    <span>{{ formatConcurrentLimitInheritable(apiKey.concurrent_limit) }}</span>
+                  </dd>
+                </div>
+              </dl>
+
+              <dl class="grid gap-2 py-3 text-xs sm:grid-cols-2 sm:gap-x-6">
+                <div class="flex min-w-0 items-baseline justify-between gap-3">
+                  <dt class="shrink-0 text-muted-foreground">
+                    创建
+                  </dt>
+                  <dd class="min-w-0 text-right font-medium tabular-nums text-foreground">
+                    {{ formatDate(apiKey.created_at) }}
+                  </dd>
+                </div>
+                <div class="flex min-w-0 items-baseline justify-between gap-3">
+                  <dt class="shrink-0 text-muted-foreground">
+                    最近使用
+                  </dt>
+                  <dd
+                    v-if="apiKey.last_used_at"
+                    class="min-w-0 text-right font-medium tabular-nums text-foreground"
+                  >
+                    {{ formatDate(apiKey.last_used_at) }}
+                  </dd>
+                  <dd
+                    v-else
+                    class="text-muted-foreground"
+                  >
+                    暂无记录
+                  </dd>
+                </div>
+              </dl>
+
+              <div class="grid grid-cols-3 gap-1 border-t border-border/50 pt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-9 text-xs"
+                  @click="editApiKey(apiKey)"
+                >
+                  <SquarePen
+                    aria-hidden="true"
+                    class="mr-1.5 h-3.5 w-3.5"
+                  />
+                  编辑
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-9 text-xs"
+                  @click="toggleApiKey(apiKey)"
+                >
+                  <Power
+                    aria-hidden="true"
+                    class="mr-1.5 h-3.5 w-3.5"
+                  />
+                  {{ apiKey.is_active ? '禁用' : '启用' }}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-9 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  @click="deleteApiKey(apiKey)"
+                >
+                  <Trash2
+                    aria-hidden="true"
+                    class="mr-1.5 h-3.5 w-3.5"
+                  />
+                  删除
+                </Button>
+              </div>
+            </article>
           </div>
         </div>
       </div>
-
     </TableCard>
 
     <!-- 创建/编辑独立Key对话框 -->
