@@ -1355,3 +1355,37 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 48: 优化调度策略拖拽反馈
+<!-- trellis-session: v=2 fp=4fbeb473c542ea83 -->
+
+**Date**: 2026-09-11
+**Task**: 优化调度策略拖拽反馈
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+将调度策略供应商排序升级为独立浮层拖拽：增加 3D 抬升、占位框、列表让位动画与中线换位判断，并完成单测、类型检查、生产构建和真实浏览器核验。
+
+### Main Changes
+
+- 新增跟随指针的 3D 拖拽预览和原位虚线占位反馈
+- 使用 TransitionGroup 为非拖动卡片提供平滑让位动画
+- 保留上下移动按钮并支持 reduced-motion 降级
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `87208e158` | feat: 优化调度策略拖拽反馈 |
+
+### Testing
+
+- [OK] 前端全量测试通过：116 个测试文件、803 个测试
+- [OK] vue-tsc 类型检查、Vite 生产构建和 ESLint 检查通过
+- [OK] Playwright 验证暗色主题、拖拽落位及 840px 窄窗口无横向溢出
+
+### Status
+
+[OK] **Completed**
