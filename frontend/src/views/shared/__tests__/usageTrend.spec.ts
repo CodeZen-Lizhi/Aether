@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { UsageTimeSeriesPoint } from '@/api/admin'
 import type { DailyStat } from '@/api/dashboard'
-import { buildUsageTrend } from '../usageTrend'
+import { buildUsageTrend, calculateCacheHitRate } from '../usageTrend'
 
 function series(date: string, overrides: Partial<UsageTimeSeriesPoint> = {}): UsageTimeSeriesPoint {
   return {
@@ -20,6 +20,15 @@ function daily(date: string, overrides: Partial<DailyStat> = {}): DailyStat {
 }
 
 describe('usage trend data', () => {
+  it('calculates cache hit rate from the total input context', () => {
+    expect(calculateCacheHitRate({ input: 455_320, cacheCreation: 0, cacheRead: 337_920 }))
+      .toBeCloseTo(42.6, 1)
+    expect(calculateCacheHitRate({ input: 100, cacheCreation: 20, cacheRead: 300 }))
+      .toBeCloseTo(71.43, 2)
+    expect(calculateCacheHitRate({ input: null, cacheCreation: 0, cacheRead: 10 })).toBeNull()
+    expect(calculateCacheHitRate({ input: 0, cacheCreation: 0, cacheRead: 0 })).toBeNull()
+  })
+
   it('keeps all four token categories separate and uses retained daily costs', () => {
     const trend = buildUsageTrend([series('2026-09-09')], [daily('2026-09-09', { cost: 0.5 })])
     expect(trend.points).toEqual([{

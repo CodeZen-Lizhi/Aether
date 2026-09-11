@@ -326,6 +326,7 @@ describe('Dashboard overview and trends', () => {
     expect(readChart().datasets[0]).toMatchObject({ yAxisID: 'cost', data: [0.5] })
     expect(readChart().datasets[2]).toMatchObject({ yAxisID: 'tokens', data: [400], spanGaps: false, fill: true })
     expect(readChart().datasets.filter((dataset: { fill: boolean }) => dataset.fill)).toHaveLength(1)
+    expect(root.textContent).not.toContain('查看趋势数据')
     const toggle = [...root.querySelectorAll('button')].find(button => button.textContent?.trim() === '缓存命中')
     expect(toggle?.getAttribute('aria-pressed')).toBe('true')
     toggle?.click()

@@ -13,6 +13,21 @@ export interface UsageTrendPoint {
   output: number | null
 }
 
+export function calculateCacheHitRate(
+  point: Pick<UsageTrendPoint, 'input' | 'cacheCreation' | 'cacheRead'>,
+): number | null {
+  if (point.input === null || point.cacheCreation === null || point.cacheRead === null) {
+    return null
+  }
+
+  const totalInputContext = point.input
+    + (point.cacheCreation > 0 ? point.cacheCreation : 0)
+    + point.cacheRead
+  if (totalInputContext <= 0) return null
+
+  return point.cacheRead / totalInputContext * 100
+}
+
 interface DailyTotal {
   date: string
   requests: number

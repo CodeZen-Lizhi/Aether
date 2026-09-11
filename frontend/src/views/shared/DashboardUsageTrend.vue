@@ -43,7 +43,7 @@
         :data="chartData"
         :options="chartOptions"
         role="img"
-        :aria-label="legacyT('使用趋势：费用、缓存创建、缓存命中、输入和输出。完整数值可在下方查看趋势数据。')"
+        :aria-label="legacyT('使用趋势：费用、缓存创建、缓存命中、输入和输出。悬停可查看缓存命中率。')"
       />
       <div
         v-else
@@ -99,71 +99,6 @@
           ? '部分历史记录未保留请求明细，无法还原小时趋势；切换为按天可查看保留的费用。'
           : '部分历史记录未保留 Token 明细，对应曲线留空，已保留的费用仍完整展示。' }}
       </p>
-
-      <details class="mt-3 text-xs">
-        <summary class="w-fit cursor-pointer rounded py-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          查看趋势数据
-        </summary>
-        <p class="mt-2 leading-relaxed text-muted-foreground">
-          输入 Token 沿用上游口径，部分格式包含缓存，各项不直接相加。
-        </p>
-        <div class="responsive-list mt-3">
-          <Table class="responsive-list-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>时段</TableHead>
-                <TableHead
-                  v-for="metric in metrics"
-                  :key="metric.key"
-                  class="text-right"
-                >
-                  {{ metric.label }}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow
-                v-for="point in trend.points"
-                :key="point.date"
-              >
-                <TableCell>{{ displayDate(point.date) }}</TableCell>
-                <TableCell
-                  v-for="metric in metrics"
-                  :key="metric.key"
-                  class="text-right tabular-nums"
-                >
-                  {{ displayValue(point[metric.key], metric.key) }}
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-          <div class="responsive-list-cards space-y-2">
-            <div
-              v-for="point in trend.points"
-              :key="point.date"
-              class="rounded-lg border border-border/60 p-3"
-            >
-              <p class="mb-2 font-medium">
-                {{ displayDate(point.date) }}
-              </p>
-              <dl class="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-                <div
-                  v-for="metric in metrics"
-                  :key="metric.key"
-                  class="min-w-0"
-                >
-                  <dt class="text-muted-foreground">
-                    {{ metric.label }}
-                  </dt>
-                  <dd class="mt-0.5 tabular-nums [overflow-wrap:anywhere]">
-                    {{ displayValue(point[metric.key], metric.key) }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-        </div>
-      </details>
     </template>
   </Card>
 </template>
@@ -173,11 +108,11 @@ import { computed, ref } from 'vue'
 import type { ChartData, ChartOptions } from 'chart.js'
 import type { UsageTimeSeriesPoint } from '@/api/admin'
 import type { DailyStat } from '@/api/dashboard'
-import { Button, Card, Skeleton, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui'
+import { Button, Card, Skeleton } from '@/components/ui'
 import LineChart from '@/components/charts/LineChart.vue'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useI18n } from '@/i18n'
-import { buildUsageTrend, type TrendGranularity, type TrendMetric } from './usageTrend'
+import { buildUsageTrend, calculateCacheHitRate, type TrendGranularity, type TrendMetric } from './usageTrend'
 
 const props = withDefaults(defineProps<{
   series: UsageTimeSeriesPoint[]
@@ -295,6 +230,16 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
           label: item => {
             const metric = metrics.value[item.datasetIndex]
             return metric ? `${item.dataset.label}: ${displayValue(typeof item.raw === 'number' ? item.raw : null, metric.key)}` : ''
+          },
+          afterBody: items => {
+            const point = trend.value.points[items[0]?.dataIndex ?? -1]
+            const rate = point ? calculateCacheHitRate(point) : null
+            return rate === null
+              ? []
+              : `${legacyT('缓存命中率')}: ${rate.toLocaleString(locale.value, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              })}%`
           },
         },
       },
