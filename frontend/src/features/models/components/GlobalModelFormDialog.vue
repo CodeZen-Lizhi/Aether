@@ -27,6 +27,23 @@
           />
         </div>
 
+        <div
+          v-if="catalogLoadStatus === 'stale'"
+          class="flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+        >
+          <span>在线目录暂时无法更新，当前展示上次成功加载的缓存。</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            class="h-7 shrink-0 px-2"
+            @click="loadModels"
+          >
+            <RefreshCw class="mr-1 h-3.5 w-3.5" />
+            重试
+          </Button>
+        </div>
+
         <!-- 提供商 Logo 与模型列表 -->
         <div class="flex-1 min-h-0 overflow-hidden border rounded-lg flex flex-col">
           <div
@@ -34,6 +51,28 @@
             class="flex items-center justify-center flex-1"
           >
             <Loader2 class="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+          <div
+            v-else-if="catalogLoadStatus === 'error'"
+            class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
+          >
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                在线模型目录加载失败
+              </p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                请检查外部模型目录代理，或稍后重试。
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              @click="loadModels"
+            >
+              <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
+              重试
+            </Button>
           </div>
           <template v-else>
             <!-- 提供商 Logo 选择 -->
@@ -753,7 +792,7 @@ import { log } from '@/utils/logger'
 import { parseApiError } from '@/utils/errorParser'
 import TieredPricingEditor from './TieredPricingEditor.vue'
 import {
-  getModelsDevList,
+  getModelsDevListWithStatus,
   getProviderLogoUrl,
   refreshModelsDevList,
   type ModelsDevModelItem,
@@ -797,6 +836,7 @@ const basicInfoSection = ref<HTMLElement | null>(null)
 
 // 模型列表相关
 const loading = ref(false)
+const catalogLoadStatus = ref<'idle' | 'loading' | 'ready' | 'stale' | 'error'>('idle')
 const searchQuery = ref('')
 const allModelsCache = ref<ModelsDevModelItem[]>([]) // 全部模型（缓存）
 const existingModelsCache = ref<GlobalModelResponse[]>([])
@@ -1254,12 +1294,17 @@ async function loadExistingModels() {
 // 加载在线目录和已有模型列表
 async function loadModels() {
   loading.value = true
+  catalogLoadStatus.value = 'loading'
   await Promise.all([
-    allModelsCache.value.length > 0
-      ? Promise.resolve()
-      : getModelsDevList(false)
-          .then(models => { allModelsCache.value = models })
-          .catch(err => log.error('Failed to load online models:', err)),
+    getModelsDevListWithStatus(false)
+      .then(({ models, stale }) => {
+        allModelsCache.value = models
+        catalogLoadStatus.value = stale ? 'stale' : 'ready'
+      })
+      .catch(err => {
+        catalogLoadStatus.value = 'error'
+        log.error('Failed to load online models:', err)
+      }),
     loadExistingModels()
       .catch(err => log.error('Failed to load existing models:', err)),
   ])
@@ -1599,6 +1644,7 @@ function resetForm() {
   expandedProvider.value = null
   presetPanelCollapsed.value = false
   billingMode.value = 'token'
+  catalogLoadStatus.value = 'idle'
 }
 
 function populateFormFromGlobalModel(model: GlobalModelResponse) {

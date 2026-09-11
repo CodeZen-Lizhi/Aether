@@ -14,6 +14,7 @@ import GlobalModelFormDialog from '../GlobalModelFormDialog.vue'
 
 const modelsDevMocks = vi.hoisted(() => ({
   getModelsDevList: vi.fn(),
+  getModelsDevListWithStatus: vi.fn(),
   refreshModelsDevList: vi.fn(),
 }))
 
@@ -25,6 +26,7 @@ const globalModelMocks = vi.hoisted(() => ({
 
 vi.mock('@/api/models-dev', () => ({
   getModelsDevList: modelsDevMocks.getModelsDevList,
+  getModelsDevListWithStatus: modelsDevMocks.getModelsDevListWithStatus,
   refreshModelsDevList: modelsDevMocks.refreshModelsDevList,
   getProviderLogoUrl: (providerId: string) => `/logos/${providerId}.svg`,
 }))
@@ -224,6 +226,11 @@ beforeEach(() => {
   localStorage.clear()
   modelsDevMocks.getModelsDevList.mockReset()
   modelsDevMocks.getModelsDevList.mockResolvedValue([stalePreset, freshPreset, unsupportedPreset])
+  modelsDevMocks.getModelsDevListWithStatus.mockReset()
+  modelsDevMocks.getModelsDevListWithStatus.mockResolvedValue({
+    models: [stalePreset, freshPreset, unsupportedPreset],
+    stale: false,
+  })
   modelsDevMocks.refreshModelsDevList.mockReset()
   modelsDevMocks.refreshModelsDevList.mockResolvedValue([stalePreset, freshPreset, unsupportedPreset])
   globalModelMocks.createGlobalModel.mockReset()
@@ -247,6 +254,40 @@ afterEach(() => {
 })
 
 describe('GlobalModelFormDialog preset replacement', () => {
+  it('shows cached presets with a visible stale notice when the online catalog fails', async () => {
+    modelsDevMocks.getModelsDevListWithStatus.mockResolvedValue({
+      models: [stalePreset],
+      stale: true,
+    })
+
+    mountDialog()
+    await settle()
+
+    expect(document.body.textContent).toContain('在线目录暂时无法更新')
+    expect(document.body.textContent).toContain('Stale Model')
+    expect(document.body.textContent).not.toContain('暂无可用模型')
+  })
+
+  it('shows an inline retry state instead of an empty catalog after loading fails', async () => {
+    modelsDevMocks.getModelsDevListWithStatus
+      .mockRejectedValueOnce(new Error('catalog offline'))
+      .mockResolvedValueOnce({ models: [freshPreset], stale: false })
+
+    mountDialog()
+    await settle()
+
+    expect(document.body.textContent).toContain('在线模型目录加载失败')
+    expect(document.body.textContent).not.toContain('暂无可用模型')
+    expect(findExactButton('手动填写')).toBeTruthy()
+
+    findExactButton('重试').click()
+    await settle()
+
+    expect(modelsDevMocks.getModelsDevListWithStatus).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).toContain('Fresh Model')
+    expect(document.body.textContent).not.toContain('在线模型目录加载失败')
+  })
+
   it('drops the previous draft and submits only the newly selected model preset', async () => {
     mountDialog()
     await settle()
@@ -522,6 +563,31 @@ describe('GlobalModelFormDialog preset replacement', () => {
         },
       },
     })
+  })
+
+  it('keeps the configured price when the strict online refresh fails', async () => {
+    const existingStaleModel = buildExistingStaleModel()
+    modelsDevMocks.refreshModelsDevList.mockRejectedValue(new Error('catalog offline'))
+    globalModelMocks.listGlobalModels.mockResolvedValue({
+      models: [existingStaleModel],
+      total: 1,
+    })
+    mountDialog()
+    await settle()
+
+    findExistingEditButton(stalePreset.modelId).click()
+    await settle()
+    const syncButton = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="sync-online-pricing"]',
+    )
+    if (!syncButton) throw new Error('Missing online pricing sync button')
+    syncButton.click()
+    await settle()
+
+    expect(modelsDevMocks.refreshModelsDevList).toHaveBeenCalledOnce()
+    expect(globalModelMocks.updateGlobalModel).not.toHaveBeenCalled()
+    expect(document.body.querySelector<HTMLInputElement>('[data-testid="tier-input-price"]')?.value)
+      .toBe('9')
   })
 
   it('offers a provider choice when the remembered source is unavailable', async () => {

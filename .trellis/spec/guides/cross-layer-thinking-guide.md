@@ -120,6 +120,14 @@ After implementation:
       casting payload fields locally
 - [ ] Checked that derived state points back to the source event identifier
       (`seq`, `id`, `version`) instead of inventing a second cursor
+- [ ] If one external read serves both browsing and mutation, defined freshness
+      separately for each consumer: a visible stale fallback may be valid for
+      browsing, while a mutation labeled as a sync must require fresh data
+- [ ] Kept transport failure, successful empty data, and stale fallback as
+      distinct states through API adapters and UI rendering
+
+For the project-specific external model catalog implementation, read
+[`external-model-catalog.md`](../aether-gateway/backend/external-model-catalog.md).
 
 ---
 

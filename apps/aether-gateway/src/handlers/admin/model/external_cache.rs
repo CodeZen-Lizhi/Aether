@@ -23,6 +23,8 @@ pub(in crate::handlers::admin) const ADMIN_EXTERNAL_MODELS_PROXY_NODE_CONFIG_KEY
     "external_models_proxy_node_id";
 const ADMIN_EXTERNAL_MODELS_CONNECT_TIMEOUT_MS: u64 = 10_000;
 const ADMIN_EXTERNAL_MODELS_TOTAL_TIMEOUT_MS: u64 = 300_000;
+const ADMIN_EXTERNAL_MODELS_MAX_ATTEMPTS: u8 = 3;
+const ADMIN_EXTERNAL_MODELS_RETRY_DELAY_MS: u64 = 50;
 pub(crate) const ADMIN_EXTERNAL_MODELS_CONFIG_MUTATION_LOCK_KEY: &str =
     "admin:external_models_proxy_node_config:mutation";
 const ADMIN_EXTERNAL_MODELS_CONFIG_MUTATION_LOCK_TTL: Duration = Duration::from_secs(10 * 60);
@@ -96,12 +98,47 @@ fn classify_admin_external_models_transport_error(message: &str) -> &'static str
         "response_decode"
     } else if message.contains("connect") || message.contains("dns") || message.contains("tcp") {
         "connect"
+    } else if message.contains("[kind=request")
+        || message.contains("failed to execute upstream request")
+    {
+        "request"
     } else if message.contains("header") || message.contains("method") || message.contains("build")
     {
         "request_build"
     } else {
         "unknown_transport"
     }
+}
+
+fn is_retryable_admin_external_models_transport_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "timeout" | "relay" | "connect" | "request" | "response_decode"
+    )
+}
+
+async fn wait_before_admin_external_models_retry(
+    request_id: &str,
+    attempt: u8,
+    failure_kind: &str,
+    status_code: Option<u16>,
+) -> bool {
+    if attempt >= ADMIN_EXTERNAL_MODELS_MAX_ATTEMPTS {
+        return false;
+    }
+    warn!(
+        request_id = %request_id,
+        attempt,
+        max_attempts = ADMIN_EXTERNAL_MODELS_MAX_ATTEMPTS,
+        failure_kind,
+        status_code = ?status_code,
+        "retrying external models catalog request"
+    );
+    tokio::time::sleep(Duration::from_millis(
+        ADMIN_EXTERNAL_MODELS_RETRY_DELAY_MS * u64::from(attempt),
+    ))
+    .await;
+    true
 }
 
 async fn store_admin_external_models_cache(
@@ -409,55 +446,128 @@ async fn fetch_admin_external_models_from_source(
                 ..ExecutionTimeouts::default()
             }),
         };
-        let result = match state
-            .execute_execution_runtime_sync_plan(Some(request_id), &plan)
-            .await
-        {
-            Ok(result) => result,
+        for attempt in 1..=ADMIN_EXTERNAL_MODELS_MAX_ATTEMPTS {
+            let result = match state
+                .execute_execution_runtime_sync_plan(Some(request_id), &plan)
+                .await
+            {
+                Ok(result) => result,
+                Err(err) => {
+                    let error_message = err.clone().into_message();
+                    let transport_error_kind =
+                        classify_admin_external_models_transport_error(&error_message);
+                    if is_retryable_admin_external_models_transport_kind(transport_error_kind)
+                        && wait_before_admin_external_models_retry(
+                            request_id,
+                            attempt,
+                            transport_error_kind,
+                            None,
+                        )
+                        .await
+                    {
+                        continue;
+                    }
+                    warn!(
+                        request_id = %request_id,
+                        proxy_node_id = %node_id,
+                        proxy_mode,
+                        transport_error_kind,
+                        attempts = attempt,
+                        "external models proxy execution failed"
+                    );
+                    return Err(GatewayError::Internal(
+                        "external models proxy request failed".to_string(),
+                    ));
+                }
+            };
+            if !(200..300).contains(&result.status_code) {
+                let status_code = result.status_code;
+                if status_code >= 500
+                    && wait_before_admin_external_models_retry(
+                        request_id,
+                        attempt,
+                        "upstream_server_error",
+                        Some(status_code),
+                    )
+                    .await
+                {
+                    continue;
+                }
+                return Err(GatewayError::Internal(format!(
+                    "external models source returned HTTP {status_code}"
+                )));
+            }
+            let payload = result.body.and_then(|body| body.json_body).ok_or_else(|| {
+                GatewayError::Internal(
+                    "external models source returned a non-JSON response".to_string(),
+                )
+            })?;
+            return Ok(normalize_admin_external_models_payload(payload));
+        }
+        unreachable!("retry loop either returns a result or its final failure");
+    }
+
+    for attempt in 1..=ADMIN_EXTERNAL_MODELS_MAX_ATTEMPTS {
+        let response = match state.http_client().get(&url).send().await {
+            Ok(response) => response,
             Err(err) => {
-                let error_message = err.clone().into_message();
-                let transport_error_kind =
-                    classify_admin_external_models_transport_error(&error_message);
+                let retryable =
+                    !err.is_builder() && (err.is_timeout() || err.is_connect() || err.is_request());
+                let failure_kind = classify_admin_external_models_transport_error(&err.to_string());
+                if retryable
+                    && wait_before_admin_external_models_retry(
+                        request_id,
+                        attempt,
+                        failure_kind,
+                        None,
+                    )
+                    .await
+                {
+                    continue;
+                }
                 warn!(
                     request_id = %request_id,
-                    proxy_node_id = %node_id,
-                    proxy_mode,
-                    transport_error_kind,
-                    "external models proxy execution failed"
+                    attempts = attempt,
+                    transport_error_kind = failure_kind,
+                    "external models source request failed"
                 );
                 return Err(GatewayError::Internal(
-                    "external models proxy request failed".to_string(),
+                    "external models source request failed".to_string(),
                 ));
             }
         };
-        if !(200..300).contains(&result.status_code) {
+        let status_code = response.status();
+        if status_code.is_server_error()
+            && wait_before_admin_external_models_retry(
+                request_id,
+                attempt,
+                "upstream_server_error",
+                Some(status_code.as_u16()),
+            )
+            .await
+        {
+            continue;
+        }
+        if !status_code.is_success() {
             return Err(GatewayError::Internal(format!(
                 "external models source returned HTTP {}",
-                result.status_code
+                status_code.as_u16()
             )));
         }
-        let payload = result.body.and_then(|body| body.json_body).ok_or_else(|| {
+        let payload = response.json::<serde_json::Value>().await.map_err(|_| {
+            warn!(
+                request_id = %request_id,
+                attempts = attempt,
+                transport_error_kind = "invalid_json",
+                "external models source request failed"
+            );
             GatewayError::Internal(
                 "external models source returned a non-JSON response".to_string(),
             )
         })?;
         return Ok(normalize_admin_external_models_payload(payload));
     }
-
-    let response = state
-        .http_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| GatewayError::Internal(err.to_string()))?;
-    let response = response
-        .error_for_status()
-        .map_err(|err| GatewayError::Internal(err.to_string()))?;
-    let payload = response
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|err| GatewayError::Internal(err.to_string()))?;
-    Ok(normalize_admin_external_models_payload(payload))
+    unreachable!("retry loop either returns a result or its final failure");
 }
 
 pub(crate) async fn read_admin_external_models_cache(
@@ -522,9 +632,12 @@ mod tests {
     };
     use crate::handlers::admin::request::AdminAppState;
     use crate::tests::{start_server, AppState};
+    use axum::response::IntoResponse;
     use axum::routing::get;
-    use axum::{Json, Router};
+    use axum::{http::StatusCode, Json, Router};
     use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn normalizes_external_models_payload_with_official_flags() {
@@ -570,6 +683,10 @@ mod tests {
             ("upstream response is not valid JSON", "invalid_json"),
             ("failed to decode content-encoding gzip", "response_decode"),
             ("tcp connect error", "connect"),
+            (
+                "failed to execute upstream request [kind=request]",
+                "request",
+            ),
             ("invalid upstream header value", "request_build"),
             ("opaque execution failure", "unknown_transport"),
         ] {
@@ -620,6 +737,112 @@ mod tests {
 
         assert_eq!(payload["openai"]["official"], json!(true));
         assert_eq!(payload["openai"]["models"]["gpt-5"]["name"], json!("GPT-5"));
+
+        upstream_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn read_external_models_retries_a_transient_server_error_before_caching_success() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let upstream_calls = Arc::clone(&calls);
+        let upstream = Router::new().route(
+            "/api.json",
+            get(move || {
+                let upstream_calls = Arc::clone(&upstream_calls);
+                async move {
+                    if upstream_calls.fetch_add(1, Ordering::AcqRel) == 0 {
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "temporary upstream failure",
+                        )
+                            .into_response();
+                    }
+                    Json(json!({
+                        "openai": {
+                            "name": "OpenAI",
+                            "models": { "gpt-5": { "name": "GPT-5" } }
+                        }
+                    }))
+                    .into_response()
+                }
+            }),
+        );
+        let (upstream_url, upstream_handle) = start_server(upstream).await;
+        let _guard =
+            set_admin_external_models_source_url_for_tests(&format!("{upstream_url}/api.json"));
+
+        let state = AppState::new().expect("gateway should build");
+        let payload =
+            read_admin_external_models_cache(&AdminAppState::new(&state), "external-models-test")
+                .await
+                .expect("external models read should succeed")
+                .expect("retry should fetch payload");
+
+        assert_eq!(calls.load(Ordering::Acquire), 2);
+        assert_eq!(payload["openai"]["models"]["gpt-5"]["name"], json!("GPT-5"));
+
+        upstream_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn read_external_models_stops_after_bounded_server_error_retries() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let upstream_calls = Arc::clone(&calls);
+        let upstream = Router::new().route(
+            "/api.json",
+            get(move || {
+                let upstream_calls = Arc::clone(&upstream_calls);
+                async move {
+                    upstream_calls.fetch_add(1, Ordering::AcqRel);
+                    (StatusCode::BAD_GATEWAY, "upstream failure")
+                }
+            }),
+        );
+        let (upstream_url, upstream_handle) = start_server(upstream).await;
+        let _guard =
+            set_admin_external_models_source_url_for_tests(&format!("{upstream_url}/api.json"));
+
+        let state = AppState::new().expect("gateway should build");
+        let payload =
+            read_admin_external_models_cache(&AdminAppState::new(&state), "external-models-test")
+                .await
+                .expect("external models read should preserve the unavailable contract");
+
+        assert_eq!(payload, None);
+        assert_eq!(
+            calls.load(Ordering::Acquire),
+            usize::from(super::ADMIN_EXTERNAL_MODELS_MAX_ATTEMPTS)
+        );
+
+        upstream_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn read_external_models_does_not_retry_non_retryable_client_errors() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let upstream_calls = Arc::clone(&calls);
+        let upstream = Router::new().route(
+            "/api.json",
+            get(move || {
+                let upstream_calls = Arc::clone(&upstream_calls);
+                async move {
+                    upstream_calls.fetch_add(1, Ordering::AcqRel);
+                    (StatusCode::BAD_REQUEST, "invalid request")
+                }
+            }),
+        );
+        let (upstream_url, upstream_handle) = start_server(upstream).await;
+        let _guard =
+            set_admin_external_models_source_url_for_tests(&format!("{upstream_url}/api.json"));
+
+        let state = AppState::new().expect("gateway should build");
+        let payload =
+            read_admin_external_models_cache(&AdminAppState::new(&state), "external-models-test")
+                .await
+                .expect("external models read should preserve the unavailable contract");
+
+        assert_eq!(payload, None);
+        assert_eq!(calls.load(Ordering::Acquire), 1);
 
         upstream_handle.abort();
     }

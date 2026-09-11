@@ -14,6 +14,7 @@ import {
   clearModelsDevCache,
   getExternalModelsAccessConfig,
   getModelsDevList,
+  getModelsDevListWithStatus,
   refreshModelsDevList,
   updateExternalModelsAccessConfig,
 } from '@/api/models-dev'
@@ -59,6 +60,95 @@ describe('external models access config', () => {
 })
 
 describe('getModelsDevList', () => {
+  it('falls back to an expired compatible cache and reports that it is stale', async () => {
+    localStorage.setItem('models_dev_cache', JSON.stringify({
+      timestamp: Date.now() - 16 * 60 * 1000,
+      data: {
+        openai: {
+          id: 'openai',
+          name: 'OpenAI',
+          official: true,
+          models: {
+            cached: { id: 'cached', name: 'Cached Model' },
+          },
+        },
+      },
+    }))
+    apiMocks.get.mockRejectedValue(new Error('temporary network failure'))
+
+    await expect(getModelsDevListWithStatus(false)).resolves.toMatchObject({
+      stale: true,
+      models: [{ modelId: 'cached', modelName: 'Cached Model' }],
+    })
+  })
+
+  it('rejects when an expired browser cache has an incompatible catalog shape', async () => {
+    localStorage.setItem('models_dev_cache', JSON.stringify({
+      timestamp: Date.now() - 16 * 60 * 1000,
+      data: {
+        openai: {
+          name: 'OpenAI',
+          official: true,
+          models: null,
+        },
+      },
+    }))
+    apiMocks.get.mockRejectedValue(new Error('temporary network failure'))
+
+    await expect(getModelsDevListWithStatus(false)).rejects.toThrow('temporary network failure')
+  })
+
+  it('keeps the last successful browser cache but rejects a failed strict refresh', async () => {
+    const cached = JSON.stringify({
+      timestamp: Date.now() - 16 * 60 * 1000,
+      data: {
+        openai: {
+          id: 'openai',
+          name: 'OpenAI',
+          official: true,
+          models: {},
+        },
+      },
+    })
+    localStorage.setItem('models_dev_cache', cached)
+    apiMocks.get.mockRejectedValue(new Error('temporary network failure'))
+
+    await expect(refreshModelsDevList(false)).rejects.toThrow('temporary network failure')
+    expect(localStorage.getItem('models_dev_cache')).toBe(cached)
+  })
+
+  it('replaces the browser cache after a successful strict refresh', async () => {
+    localStorage.setItem('models_dev_cache', JSON.stringify({
+      timestamp: Date.now() - 16 * 60 * 1000,
+      data: {
+        openai: {
+          id: 'openai',
+          name: 'OpenAI',
+          official: true,
+          models: { cached: { id: 'cached', name: 'Cached Model' } },
+        },
+      },
+    }))
+    apiMocks.get.mockResolvedValue({
+      data: {
+        openai: {
+          id: 'openai',
+          name: 'OpenAI',
+          official: true,
+          models: { fresh: { id: 'fresh', name: 'Fresh Model' } },
+        },
+      },
+    })
+
+    await expect(refreshModelsDevList(false)).resolves.toMatchObject([
+      { modelId: 'fresh', modelName: 'Fresh Model' },
+    ])
+    const stored = JSON.parse(localStorage.getItem('models_dev_cache') || 'null')
+    expect(stored.data.openai.models).toEqual({
+      fresh: { id: 'fresh', name: 'Fresh Model' },
+    })
+  })
+
   it('uses current modalities and experimental mode pricing while keeping legacy fallbacks', async () => {
     apiMocks.get.mockResolvedValue({
       data: {

@@ -111,6 +111,11 @@ export interface ModelsDevModelItem {
   outputModalities?: string[]
 }
 
+export interface ModelsDevListResult {
+  models: ModelsDevModelItem[]
+  stale: boolean
+}
+
 interface CacheData {
   timestamp: number
   data: ModelsDevData
@@ -119,6 +124,45 @@ interface CacheData {
 // 内存缓存
 let memoryCache: CacheData | null = null
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isCompatibleModelsDevData(value: unknown): value is ModelsDevData {
+  if (!isRecord(value)) return false
+  const providers = Object.values(value)
+  return providers.length > 0 && providers.every(provider => (
+    isRecord(provider)
+    && typeof provider.name === 'string'
+    && typeof provider.official === 'boolean'
+    && isRecord(provider.models)
+    && Object.values(provider.models).every(model => (
+      isRecord(model)
+      && typeof model.id === 'string'
+      && typeof model.name === 'string'
+    ))
+  ))
+}
+
+function parseCacheData(raw: string | null): CacheData | null {
+  if (!raw) return null
+  try {
+    const cacheData: unknown = JSON.parse(raw)
+    if (
+      !isRecord(cacheData)
+      || typeof cacheData.timestamp !== 'number'
+      || !Number.isFinite(cacheData.timestamp)
+      || !isCompatibleModelsDevData(cacheData.data)
+    ) return null
+    return {
+      timestamp: cacheData.timestamp,
+      data: cacheData.data,
+    }
+  } catch {
+    return null
+  }
+}
+
 function hasOfficialFlag(data: ModelsDevData): boolean {
   return Object.values(data).some(provider => typeof provider?.official === 'boolean')
 }
@@ -126,51 +170,75 @@ function hasOfficialFlag(data: ModelsDevData): boolean {
 /**
  * 获取 models.dev 数据（带缓存）
  */
-export async function getModelsDevData(): Promise<ModelsDevData> {
-  // 1. 检查内存缓存
-  if (memoryCache && Date.now() - memoryCache.timestamp < CACHE_DURATION) {
-    // 兼容旧缓存：没有 official 字段时丢弃，强制刷新一次
-    if (hasOfficialFlag(memoryCache.data)) {
-      return memoryCache.data
+interface ModelsDevDataResult {
+  data: ModelsDevData
+  timestamp: number
+  stale: boolean
+}
+
+interface LoadModelsDevDataOptions {
+  allowStaleFallback: boolean
+  forceRefresh?: boolean
+}
+
+async function loadModelsDevData({
+  allowStaleFallback,
+  forceRefresh = false,
+}: LoadModelsDevDataOptions): Promise<ModelsDevDataResult> {
+  const now = Date.now()
+  let staleCandidate = memoryCache && hasOfficialFlag(memoryCache.data)
+    ? memoryCache
+    : null
+
+  if (!forceRefresh && memoryCache && hasOfficialFlag(memoryCache.data)) {
+    if (now - memoryCache.timestamp < CACHE_DURATION) {
+      return { data: memoryCache.data, timestamp: memoryCache.timestamp, stale: false }
     }
+  } else if (memoryCache && !hasOfficialFlag(memoryCache.data)) {
     memoryCache = null
   }
 
-  // 2. 检查 localStorage 缓存
+  let localCache: CacheData | null = null
   try {
-    const cached = localStorage.getItem(CACHE_KEY)
-    if (cached) {
-      const cacheData: CacheData = JSON.parse(cached)
-      if (Date.now() - cacheData.timestamp < CACHE_DURATION) {
-        // 兼容旧缓存：没有 official 字段时丢弃，强制刷新一次
-        if (hasOfficialFlag(cacheData.data)) {
-          memoryCache = cacheData
-          return cacheData.data
-        }
-        localStorage.removeItem(CACHE_KEY)
-      }
+    localCache = parseCacheData(localStorage.getItem(CACHE_KEY))
+    if (localCache && (!staleCandidate || localCache.timestamp > staleCandidate.timestamp)) {
+      staleCandidate = localCache
+    }
+    if (!forceRefresh && localCache && now - localCache.timestamp < CACHE_DURATION) {
+      memoryCache = localCache
+      return { data: localCache.data, timestamp: localCache.timestamp, stale: false }
     }
   } catch {
-    // 缓存解析失败，忽略
+    // localStorage access can fail in restricted browser contexts.
   }
 
-  // 3. 从后端代理获取新数据
-  const response = await api.get<ModelsDevData>('/api/admin/models/external')
-  const data = response.data
-
-  // 4. 更新缓存
-  const cacheData: CacheData = {
-    timestamp: Date.now(),
-    data,
-  }
-  memoryCache = cacheData
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData))
-  } catch {
-    // localStorage 写入失败，忽略
+    const response = await api.get<ModelsDevData>('/api/admin/models/external')
+    const data = response.data
+    const cacheData: CacheData = { timestamp: Date.now(), data }
+    memoryCache = cacheData
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData))
+    } catch {
+      // localStorage write failure does not invalidate a successful response.
+    }
+    return { data, timestamp: cacheData.timestamp, stale: false }
+  } catch (error: unknown) {
+    if (allowStaleFallback && staleCandidate) {
+      memoryCache = staleCandidate
+      return {
+        data: staleCandidate.data,
+        timestamp: staleCandidate.timestamp,
+        stale: true,
+      }
+    }
+    throw error
   }
+}
 
-  return data
+export async function getModelsDevData(): Promise<ModelsDevData> {
+  const result = await loadModelsDevData({ allowStaleFallback: false })
+  return result.data
 }
 
 /**
@@ -204,9 +272,11 @@ let modelsListCacheTimestamp: number | null = null
  * 获取扁平化的模型列表
  * 数据只加载一次，通过参数过滤官方/全部
  */
-export async function getModelsDevList(officialOnly: boolean = true): Promise<ModelsDevModelItem[]> {
-  const data = await getModelsDevData()
-  const currentTimestamp = memoryCache?.timestamp ?? 0
+async function buildModelsDevList(
+  officialOnly: boolean,
+  options: LoadModelsDevDataOptions,
+): Promise<ModelsDevListResult> {
+  const { data, timestamp: currentTimestamp, stale } = await loadModelsDevData(options)
 
   // 如果缓存为空或数据已刷新，构建一次
   if (!modelsListCache || modelsListCacheTimestamp !== currentTimestamp) {
@@ -285,21 +355,35 @@ export async function getModelsDevList(officialOnly: boolean = true): Promise<Mo
 
   // 根据参数过滤
   if (officialOnly) {
-    return modelsListCache.filter(m => m.official)
+    return { models: modelsListCache.filter(m => m.official), stale }
   }
-  return modelsListCache
+  return { models: modelsListCache, stale }
+}
+
+export async function getModelsDevListWithStatus(
+  officialOnly: boolean = true,
+): Promise<ModelsDevListResult> {
+  return buildModelsDevList(officialOnly, { allowStaleFallback: true })
+}
+
+export async function getModelsDevList(officialOnly: boolean = true): Promise<ModelsDevModelItem[]> {
+  const result = await buildModelsDevList(officialOnly, { allowStaleFallback: false })
+  return result.models
 }
 
 /**
- * 清理前后端 models.dev 缓存后重新获取模型目录。
- * 编辑模型的价格同步使用此入口，避免只命中浏览器或网关的旧缓存。
+ * 清理网关缓存并绕过浏览器缓存，强制重新获取模型目录。
+ * 保留浏览器中的最后成功结果仅供创建预设兜底，不用于本次价格同步。
  */
 export async function refreshModelsDevList(
   officialOnly: boolean = true,
 ): Promise<ModelsDevModelItem[]> {
   await api.delete('/api/admin/models/external/cache')
-  clearModelsDevCache()
-  return getModelsDevList(officialOnly)
+  const result = await buildModelsDevList(officialOnly, {
+    allowStaleFallback: false,
+    forceRefresh: true,
+  })
+  return result.models
 }
 
 /**
