@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, type App } from 'vue'
 import UsageRecordsTable from '../UsageRecordsTable.vue'
 import type { UsageRecord } from '../../types'
 
@@ -22,18 +22,6 @@ vi.mock('@/components/ui', async () => {
     TableCard: passthrough('TableCardStub', 'section'),
     Badge: passthrough('BadgeStub', 'span'),
     Button: passthrough('ButtonStub', 'button'),
-    Input: defineComponent({
-      name: 'InputStub',
-      props: { modelValue: String },
-      emits: ['update:modelValue'],
-      setup(props, { attrs, emit }) {
-        return () => h('input', {
-          ...attrs,
-          value: props.modelValue ?? '',
-          onInput: (event: Event) => emit('update:modelValue', (event.target as HTMLInputElement).value),
-        })
-      },
-    }),
     Select: passthrough('SelectStub'),
     SelectTrigger: passthrough('SelectTriggerStub'),
     SelectValue: passthrough('SelectValueStub', 'span'),
@@ -90,7 +78,6 @@ vi.mock('lucide-vue-next', async () => {
   return {
     RefreshCcw: Icon,
     EyeOff: Icon,
-    Search: Icon,
     Shuffle: Icon,
     ChevronDown: Icon,
     Check: Icon,
@@ -144,7 +131,6 @@ function mountUsageRecordsTable(records: UsageRecord[], overrides: Record<string
     showActualCost: false,
     loading: false,
     timeRange: { preset: 'today', tz_offset_minutes: 0 },
-    filterSearch: '',
     filterUser: '__all__',
     filterModel: '__all__',
     filterProvider: '__all__',
@@ -686,29 +672,16 @@ describe('UsageRecordsTable', () => {
     expect(onUpdateHideUnknownRecords).toHaveBeenCalledWith(true)
   })
 
-  it('debounces usage search updates', async () => {
-    vi.useFakeTimers()
-    const onUpdateFilterSearch = vi.fn()
+  it('removes the user/key search box and keeps the user column filter', () => {
     const root = mountUsageRecordsTable([buildRecord()], {
-      'onUpdate:filterSearch': onUpdateFilterSearch,
+      availableUsers: [{ id: 'user-1', username: 'aether-local', email: '' }],
     })
-    const input = root.querySelector<HTMLInputElement>('#usage-records-search')
-    expect(input).not.toBeNull()
 
-    input!.value = 'a'
-    input!.dispatchEvent(new Event('input'))
-    input!.value = 'ab'
-    input!.dispatchEvent(new Event('input'))
-    input!.value = 'abc'
-    input!.dispatchEvent(new Event('input'))
-    await nextTick()
-
-    await vi.advanceTimersByTimeAsync(299)
-    expect(onUpdateFilterSearch).not.toHaveBeenCalled()
-
-    await vi.advanceTimersByTimeAsync(1)
-    expect(onUpdateFilterSearch).toHaveBeenCalledTimes(1)
-    expect(onUpdateFilterSearch).toHaveBeenCalledWith('abc')
+    expect(root.querySelector('#usage-records-search')).toBeNull()
+    const userHeading = [...root.querySelectorAll('thead th')]
+      .find(heading => heading.textContent?.includes('用户'))
+    expect(userHeading).not.toBeUndefined()
+    expect(userHeading?.textContent).toContain('user selector')
   })
 
   it('shows retry and fallback markers together when both flags are set', () => {

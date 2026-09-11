@@ -47,7 +47,6 @@
       :show-actual-cost="authStore.canAccessAdmin"
       :loading="isLoadingRecords"
       :time-range="timeRange"
-      :filter-search="filterSearch"
       :filter-user="filterUser"
       :filter-model="filterModel"
       :filter-provider="filterProvider"
@@ -65,7 +64,6 @@
       :auto-refresh="globalAutoRefresh"
       :hide-unknown-records="hideUnknownRecords"
       @update:time-range="handleTimeRangeChange"
-      @update:filter-search="handleFilterSearchChange"
       @update:filter-user="handleFilterUserChange"
       @update:filter-model="handleFilterModelChange"
       @update:filter-provider="handleFilterProviderChange"
@@ -147,7 +145,6 @@ const pageSize = ref(20)
 const pageSizeOptions = [10, 20, 50, 100]
 
 // 筛选状态
-const filterSearch = ref('')
 const filterUser = ref('__all__')
 const filterModel = ref('__all__')
 const filterProvider = ref('__all__')
@@ -736,7 +733,6 @@ async function handlePageSizeChange(size: number) {
 // 获取当前筛选参数
 function getCurrentFilters() {
   return {
-    search: filterSearch.value.trim() || undefined,
     user_id: filterUser.value !== '__all__' ? filterUser.value : undefined,
     model: filterModel.value !== '__all__' ? filterModel.value : undefined,
     provider: filterProvider.value !== '__all__' ? filterProvider.value : undefined,
@@ -748,12 +744,6 @@ function getCurrentFilters() {
 }
 
 // 处理筛选变化
-async function handleFilterSearchChange(value: string) {
-  filterSearch.value = value
-  currentPage.value = 1
-  await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
-}
-
 async function handleFilterUserChange(value: string) {
   filterUser.value = value
   currentPage.value = 1  // 重置到第一页

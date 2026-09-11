@@ -186,6 +186,7 @@ onBeforeUnmount(() => {
           type="button"
           :class="filterButtonClass"
           :title="filterTitle"
+          :aria-label="filterTitle"
           :aria-pressed="filterActive"
           @click.stop="toggleFilter"
         >

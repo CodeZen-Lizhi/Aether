@@ -15,19 +15,6 @@
       <!-- 分隔线 -->
       <div class="hidden sm:block h-4 w-px bg-border" />
 
-      <!-- 通用搜索 -->
-      <div class="order-1 flex w-full items-center gap-2 md:order-none md:w-auto">
-        <div class="relative min-w-0 flex-1 md:w-48 md:flex-none">
-          <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground z-10 pointer-events-none" />
-          <Input
-            id="usage-records-search"
-            v-model="localSearch"
-            :placeholder="isAdmin ? '搜索用户/密钥' : '搜索密钥/模型'"
-            class="h-8 w-full text-xs border-border/60 pl-8"
-          />
-        </div>
-      </div>
-
       <Button
         variant="ghost"
         size="icon"
@@ -1020,13 +1007,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, watch } from 'vue'
+import { computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import {
   TableCard,
   Badge,
   Button,
-  Input,
   Select,
   SelectTrigger,
   SelectValue,
@@ -1042,7 +1028,7 @@ import {
   SortableTableHead,
   TableFilterMenu,
 } from '@/components/ui'
-import { EyeOff, RefreshCcw, Search, Shuffle } from 'lucide-vue-next'
+import { EyeOff, RefreshCcw, Shuffle } from 'lucide-vue-next'
 import { formatTokens } from '@/utils/format'
 import { getCacheCreationTokens, getCacheReadTokens, getEffectiveInputTokens } from '../token-normalization'
 import {
@@ -1115,7 +1101,6 @@ const props = defineProps<{
   // 时间范围
   timeRange: DateRangeParams
   // 筛选
-  filterSearch: string
   filterUser: string
   filterModel: string
   filterProvider: string
@@ -1138,7 +1123,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:timeRange': [value: DateRangeParams]
-  'update:filterSearch': [value: string]
   'update:filterUser': [value: string]
   'update:filterModel': [value: string]
   'update:filterProvider': [value: string]
@@ -1297,28 +1281,6 @@ const timeRangeModel = computed({
   set: (value: DateRangeParams) => emit('update:timeRange', value)
 })
 
-// 通用搜索（输入防抖）
-const SEARCH_EMIT_DEBOUNCE_MS = 300
-const localSearch = ref(props.filterSearch)
-let searchEmitTimer: ReturnType<typeof setTimeout> | null = null
-
-function cancelPendingSearchEmit() {
-  if (searchEmitTimer !== null) {
-    clearTimeout(searchEmitTimer)
-    searchEmitTimer = null
-  }
-}
-
-function scheduleSearchEmit(value: string) {
-  cancelPendingSearchEmit()
-  searchEmitTimer = setTimeout(() => {
-    searchEmitTimer = null
-    if (value !== props.filterSearch) {
-      emit('update:filterSearch', value)
-    }
-  }, SEARCH_EMIT_DEBOUNCE_MS)
-}
-
 function getDisplayStatus(record: UsageRecord) {
   return resolveDisplayRequestStatus(record)
 }
@@ -1378,22 +1340,6 @@ function formatRecordUserSegment(record: UsageRecord): string {
 function formatRecordProviderSegment(record: UsageRecord): string {
   return `${record.provider || '-'} / ${record.provider_key_name || '-'}`
 }
-
-watch(() => props.filterSearch, (value) => {
-  if (value !== localSearch.value) {
-    cancelPendingSearchEmit()
-    localSearch.value = value
-  }
-})
-
-watch(localSearch, (value) => {
-  if (value === props.filterSearch) return
-  scheduleSearchEmit(value)
-})
-
-onBeforeUnmount(() => {
-  cancelPendingSearchEmit()
-})
 
 // 使用复用的行点击逻辑
 const { handleMouseDown, shouldTriggerRowClick } = useRowClick()
