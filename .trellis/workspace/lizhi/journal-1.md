@@ -1411,3 +1411,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 50: 完善使用记录筛选
+<!-- trellis-session: v=2 fp=0c78c2c5453a0c0d -->
+
+**Date**: 2026-09-12
+**Task**: 完善使用记录筛选
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+移除使用记录中的用户/密钥通用搜索框，保留用户列筛选下拉与用户列显示选项；补充筛选按钮无障碍标签。已通过前端测试、类型检查、ESLint、生产构建，并提交 d8047434a。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d8047434a` | fix: simplify usage record filters |
+
+### Status
+
+[OK] **Completed**

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 49
-- **Last Active**: 2026-09-11
+- **Total Sessions**: 50
+- **Last Active**: 2026-09-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1413 | Active |
+| `journal-1.md` | ~1435 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 50 | 2026-09-12 | 完善使用记录筛选 | `d8047434a` | `codex/tauri-macos` |
 | 49 | 2026-09-11 | 优化网关状态视觉反馈 | `5e1a8305e` | `codex/tauri-macos` |
 | 48 | 2026-09-11 | 优化调度策略拖拽反馈 | `87208e158` | `codex/tauri-macos` |
 | 47 | 2026-09-11 | 窄窗口桌面侧栏与 macOS 安装包 | `e58569c63` | `codex/tauri-macos` |
