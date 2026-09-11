@@ -1389,3 +1389,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 49: 优化网关状态视觉反馈
+<!-- trellis-session: v=2 fp=23f72545fa81b499 -->
+
+**Date**: 2026-09-11
+**Task**: 优化网关状态视觉反馈
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+为桌面网关控件增加运行中、进行中、停止和异常的颜色与图标语义，保留文字状态和可操作恢复入口；补充状态视觉回归测试，完成前端全量测试、类型检查、lint、生产构建和浏览器核验，并已推送到 codex/tauri-macos。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5e1a8305e` | 优化网关状态视觉反馈 |
+
+### Status
+
+[OK] **Completed**
