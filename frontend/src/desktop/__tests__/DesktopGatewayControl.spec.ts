@@ -32,7 +32,7 @@ vi.mock('../useDesktopGateway', async () => {
       pendingAction,
       connectionError,
       busy: ref(false),
-      canStart: computed(() => phase.value === 'stopped'),
+      canStart: computed(() => phase.value === 'stopped' || (!status.value && !!connectionError.value)),
       canStop: computed(() => phase.value === 'running'),
       errors,
       ...actions,
@@ -132,6 +132,11 @@ describe('desktop gateway header control', () => {
 
     const retry = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
       .find(item => item.textContent?.trim() === '重新读取状态')!
+    const start = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find(item => item.textContent?.trim() === '启动网关')!
+    expect(start).toBeDefined()
+    start.dispatchEvent(new Event('click', { bubbles: true }))
+    expect(actions.start).toHaveBeenCalledOnce()
     retry.dispatchEvent(new Event('click', { bubbles: true }))
     expect(actions.refreshStatus).toHaveBeenCalledOnce()
   })

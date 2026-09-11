@@ -25,8 +25,15 @@ export function useDesktopGateway() {
   const transitioning = computed(() => phase.value === 'starting' || phase.value === 'stopping')
   const busy = computed(() => !!pendingAction.value || transitioning.value)
   const available = computed(() => !!status.value && !connectionError.value && !busy.value)
-  const canStart = computed(() => available.value
-    && (phase.value === 'setup' || phase.value === 'stopped' || phase.value === 'failed') && status.value?.pid === null)
+  const canStart = computed(() => {
+    if (busy.value || (!status.value && loading.value) || status.value?.pid != null) return false
+    // A failed status read must not make the recovery action disappear. The
+    // native start command is idempotent when the child is already running
+    // and returns a fresh status on success, so it is safe to retry here.
+    if (!status.value) return !!connectionError.value
+    if (connectionError.value) return false
+    return phase.value === 'setup' || phase.value === 'stopped' || phase.value === 'failed'
+  })
   const canStop = computed(() => available.value && (phase.value === 'running' || status.value?.pid != null))
   const canEditPort = computed(() => available.value && !transitioning.value)
   const errors = computed(() => [...new Set([

@@ -120,6 +120,7 @@ Desktop session opt-in: `--desktop-mode`, with `AETHER_DESKTOP_SESSION_SECRET` s
 | Multiple or disabled/ambiguous identities in non-empty user storage | Report an explicit startup error; never change permissions or guess an account |
 | Desktop session request without capability or with foreign Host/Origin | Reject without creating a session |
 | Browser Cookie/token expired or revoked | Re-establish through the native session function; show retry on failure |
+| Desktop status IPC failure with no previously decoded status | Keep the dashboard header's “启动网关” recovery action available; only gate it on an in-flight request or a known managed PID |
 | Invalid settings file | Keep the failure visible after stop/retry; do not overwrite it with defaults |
 | Existing DB without original Keychain record | Fail before starting; explain recovery using the original key or logical import into a new profile |
 | Foreign window/origin calls IPC | Return the authorization error |
