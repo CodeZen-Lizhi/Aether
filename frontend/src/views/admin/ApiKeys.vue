@@ -246,9 +246,9 @@
             <article
               v-for="apiKey in apiKeys"
               :key="apiKey.id"
-              class="p-4 sm:p-5"
+              class="api-key-card p-4 sm:p-5"
             >
-              <div class="flex items-start justify-between gap-3">
+              <div class="api-key-card__header flex items-start justify-between gap-3">
                 <div class="min-w-0 flex-1">
                   <div class="flex min-w-0 items-center gap-2">
                     <h4
@@ -272,7 +272,7 @@
                     </Badge>
                   </div>
 
-                  <div class="mt-1.5 flex min-w-0 items-center gap-1.5">
+                  <div class="api-key-card__key-row mt-1.5 flex min-w-0 items-center gap-1.5">
                     <code class="min-w-0 truncate font-mono text-xs text-muted-foreground">
                       {{ apiKey.key_display || '****' }}
                     </code>
@@ -293,8 +293,8 @@
                 </div>
               </div>
 
-              <dl class="mt-4 grid grid-cols-2 border-y border-border/50 text-xs">
-                <div class="py-3 pr-3">
+              <dl class="api-key-card__stats mt-4 grid grid-cols-2 border-y border-border/50 text-xs">
+                <div class="api-key-card__stat py-3 pr-3">
                   <dt class="text-muted-foreground">
                     请求次数
                   </dt>
@@ -302,7 +302,7 @@
                     {{ (apiKey.total_requests || 0).toLocaleString() }}
                   </dd>
                 </div>
-                <div class="border-l border-border/50 py-3 pl-3">
+                <div class="api-key-card__stat border-l border-border/50 py-3 pl-3">
                   <dt class="text-muted-foreground">
                     Tokens
                   </dt>
@@ -310,7 +310,7 @@
                     {{ formatApiKeyTotalTokens(apiKey) }}
                   </dd>
                 </div>
-                <div class="border-t border-border/50 py-3 pr-3">
+                <div class="api-key-card__stat border-t border-border/50 py-3 pr-3">
                   <dt class="text-muted-foreground">
                     有效期
                   </dt>
@@ -324,7 +324,7 @@
                     {{ getRelativeTime(apiKey.expires_at) }}
                   </dd>
                 </div>
-                <div class="border-l border-t border-border/50 py-3 pl-3">
+                <div class="api-key-card__stat border-l border-t border-border/50 py-3 pl-3">
                   <dt class="text-muted-foreground">
                     限制
                   </dt>
@@ -335,7 +335,7 @@
                 </div>
               </dl>
 
-              <dl class="grid gap-2 py-3 text-xs sm:grid-cols-2 sm:gap-x-6">
+              <dl class="api-key-card__dates grid gap-2 py-3 text-xs sm:grid-cols-2 sm:gap-x-6">
                 <div class="flex min-w-0 items-baseline justify-between gap-3">
                   <dt class="shrink-0 text-muted-foreground">
                     创建
@@ -363,11 +363,11 @@
                 </div>
               </dl>
 
-              <div class="grid grid-cols-3 gap-1 border-t border-border/50 pt-2">
+              <div class="api-key-card__actions grid grid-cols-3 gap-1 border-t border-border/50 pt-2">
                 <Button
                   variant="ghost"
                   size="sm"
-                  class="h-9 text-xs"
+                  class="api-key-card__action-button h-9 text-xs"
                   @click="editApiKey(apiKey)"
                 >
                   <SquarePen
@@ -379,7 +379,7 @@
                 <Button
                   variant="ghost"
                   size="sm"
-                  class="h-9 text-xs"
+                  class="api-key-card__action-button h-9 text-xs"
                   @click="toggleApiKey(apiKey)"
                 >
                   <Power
@@ -391,7 +391,7 @@
                 <Button
                   variant="ghost"
                   size="sm"
-                  class="h-9 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  class="api-key-card__action-button h-9 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                   @click="deleteApiKey(apiKey)"
                 >
                   <Trash2
@@ -818,3 +818,46 @@ async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
   }
 }
 </script>
+
+<style scoped>
+/* Keep the card layout readable while reducing vertical chrome in the narrow
+ * desktop content column. The named responsive-list container switches to the
+ * table layout at 52rem, so this rule only affects the card view. */
+@container list (max-width: 51.99rem) {
+  .api-key-card {
+    padding-block: 0.75rem;
+  }
+
+  .api-key-card__header {
+    gap: 0.5rem;
+  }
+
+  .api-key-card__key-row {
+    margin-top: 0.25rem;
+    gap: 0.5rem;
+  }
+
+  .api-key-card__stats {
+    margin-top: 0.75rem;
+  }
+
+  .api-key-card__stat {
+    padding-block: 0.5rem;
+  }
+
+  .api-key-card__dates {
+    gap: 0.25rem;
+    padding-block: 0.5rem;
+  }
+
+  .api-key-card__actions {
+    gap: 0.25rem;
+    padding-top: 0.5rem;
+  }
+
+  .api-key-card__action-button {
+    height: 2rem;
+    min-height: 2rem;
+  }
+}
+</style>
