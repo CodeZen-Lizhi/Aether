@@ -77,6 +77,15 @@ function dispatchPointer(target: Element, type: string, clientY: number) {
   target.dispatchEvent(event)
 }
 
+function setRowRect(row: HTMLElement, top: number) {
+  vi.spyOn(row, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({
+    x: 10,
+    y: top,
+    width: 300,
+    height: 48,
+  }))
+}
+
 function providerNames(root: HTMLElement): string[] {
   return Array.from(root.querySelectorAll('ul > li')).map(row => (
     row.querySelector<HTMLElement>('.font-medium')?.textContent?.trim() ?? ''
@@ -114,6 +123,7 @@ describe('RoutingProfiles provider reorder', () => {
 
     const rows = Array.from(root.querySelectorAll<HTMLElement>('ul > li'))
     const handle = rows[0]?.querySelector<HTMLElement>('.cursor-grab')
+    rows.forEach((row, index) => setRowRect(row, index * 56))
     expect(providerNames(root)).toEqual(['A', 'B', 'C'])
     expect(handle).toBeTruthy()
     expect(handle?.getAttribute('aria-label')).toBe('拖动 A 调整优先级')
@@ -122,18 +132,25 @@ describe('RoutingProfiles provider reorder', () => {
       configurable: true,
       value: vi.fn(() => rows[1]),
     })
-    dispatchPointer(handle!, 'pointerdown', 10)
-    dispatchPointer(handle!, 'pointermove', 50)
-    dispatchPointer(handle!, 'pointerup', 50)
+    dispatchPointer(handle!, 'pointerdown', 24)
+    await nextTick()
+
+    expect(rows[0]?.classList.contains('provider-row--placeholder')).toBe(true)
+    expect(document.body.querySelector('.provider-drag-preview')?.textContent).toContain('A')
+
+    dispatchPointer(handle!, 'pointermove', 90)
+    dispatchPointer(handle!, 'pointerup', 90)
     await nextTick()
 
     expect(providerNames(root)).toEqual(['B', 'A', 'C'])
+    expect(document.body.querySelector('.provider-drag-preview')).toBeNull()
+    expect(root.querySelector('.provider-row--placeholder')).toBeNull()
 
     const reorderedRows = Array.from(root.querySelectorAll<HTMLElement>('ul > li'))
     const upwardHandle = reorderedRows[2]?.querySelector<HTMLElement>('.cursor-grab')
     expect(upwardHandle?.getAttribute('aria-label')).toBe('拖动 C 调整优先级')
     vi.mocked(document.elementFromPoint).mockReturnValue(reorderedRows[0])
-    dispatchPointer(upwardHandle!, 'pointerdown', 90)
+    dispatchPointer(upwardHandle!, 'pointerdown', 136)
     dispatchPointer(upwardHandle!, 'pointermove', 10)
     dispatchPointer(upwardHandle!, 'pointerup', 10)
     await nextTick()

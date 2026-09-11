@@ -102,17 +102,19 @@
               还没有供应商——先到「供应商管理」添加供应商和 Key
             </p>
 
-            <ul
+            <TransitionGroup
               v-else
-              ref="providerListElement"
-              class="mt-3 space-y-2"
+              tag="ul"
+              name="provider-row"
+              move-class="provider-row-move"
+              class="provider-priority-list mt-3 space-y-2"
             >
               <li
                 v-for="(provider, index) in orderedProviders"
                 :key="provider.id"
                 :data-provider-id="provider.id"
-                class="rounded-lg border border-border bg-background"
-                :class="draggedProviderId === provider.id ? 'border-primary/60 bg-primary/5 shadow-sm' : ''"
+                class="provider-row rounded-lg border border-border bg-background"
+                :class="draggedProviderId === provider.id ? 'provider-row--placeholder' : ''"
               >
                 <div class="flex items-center gap-2 px-3 py-2.5">
                   <span
@@ -171,7 +173,34 @@
                   </div>
                 </div>
               </li>
-            </ul>
+            </TransitionGroup>
+
+            <Teleport to="body">
+              <div
+                v-if="draggedProvider && dragPreview"
+                class="provider-drag-preview"
+                :style="dragPreviewStyle"
+                aria-hidden="true"
+              >
+                <span class="provider-drag-preview__rank flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-primary">
+                  {{ dragPreview.index + 1 }}
+                </span>
+                <GripVertical
+                  class="h-4 w-4 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                <span class="min-w-0 flex-1 truncate text-sm font-semibold">
+                  {{ dragPreview.provider.name }}
+                </span>
+                <Badge
+                  v-if="!dragPreview.provider.is_active"
+                  variant="secondary"
+                  class="shrink-0"
+                >
+                  已停用
+                </Badge>
+              </div>
+            </Teleport>
           </div>
         </template>
       </TableCard>
@@ -236,9 +265,10 @@ const loadError = ref<string | null>(null)
 const mode = ref<SchedulingStrategyMode>('cache_affinity')
 const providers = ref<AdminProviderListItem[]>([])
 const orderedProviderIds = ref<string[]>([])
-const providerListElement = ref<HTMLElement | null>(null)
 const systemDefaultGroup = ref<RoutingGroupRecord | null>(null)
 const savedSnapshot = ref<string | null>(null)
+const dragOrigin = ref<{ left: number, top: number, width: number, startX: number, startY: number } | null>(null)
+const dragPointer = ref({ x: 0, y: 0 })
 
 const orderedProviders = computed(() => {
   const byId = new Map(providers.value.map(provider => [provider.id, provider]))
@@ -279,10 +309,58 @@ function moveProvider(index: number, direction: -1 | 1) {
 
 const draggedProviderId = ref<string | null>(null)
 
+const draggedProvider = computed(() => (
+  draggedProviderId.value
+    ? providers.value.find(provider => provider.id === draggedProviderId.value) ?? null
+    : null
+))
+
+const dragPreview = computed(() => {
+  const provider = draggedProvider.value
+  if (!provider) return null
+  return {
+    provider,
+    index: orderedProviders.value.findIndex(item => item.id === provider.id),
+  }
+})
+
+const dragPreviewStyle = computed(() => {
+  const origin = dragOrigin.value
+  if (!origin) return undefined
+  const dx = dragPointer.value.x - origin.startX
+  const dy = dragPointer.value.y - origin.startY
+  const reduceMotion = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const tiltY = Math.max(-3, Math.min(3, dx * 0.02))
+  const tiltZ = Math.max(-1.8, Math.min(1.8, dx * 0.012))
+  return {
+    left: `${origin.left}px`,
+    top: `${origin.top}px`,
+    width: `${origin.width}px`,
+    transform: reduceMotion
+      ? `translate3d(${dx}px, ${dy}px, 0)`
+      : `perspective(900px) translate3d(${dx}px, ${dy}px, 0) rotateX(1.5deg) rotateY(${tiltY}deg) rotateZ(${tiltZ}deg) scale(1.025)`,
+  }
+})
+
 function onPointerDragStart(event: PointerEvent, providerId: string) {
   if (event.button !== 0) return
   event.preventDefault()
   draggedProviderId.value = providerId
+  dragPointer.value = { x: event.clientX, y: event.clientY }
+
+  const row = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-provider-id]')
+  const rect = row?.getBoundingClientRect()
+  if (rect) {
+    dragOrigin.value = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      startX: event.clientX,
+      startY: event.clientY,
+    }
+  }
 
   const handle = event.currentTarget as HTMLElement
   handle.setPointerCapture?.(event.pointerId)
@@ -292,16 +370,22 @@ function onPointerDragMove(event: PointerEvent) {
   const providerId = draggedProviderId.value
   if (!providerId) return
   event.preventDefault()
+  dragPointer.value = { x: event.clientX, y: event.clientY }
 
   const target = document.elementFromPoint(event.clientX, event.clientY)
     ?.closest<HTMLElement>('[data-provider-id]')
-  if (!target || !providerListElement.value?.contains(target)) return
+  if (!target?.parentElement?.classList.contains('provider-priority-list')) return
   const targetProviderId = target?.dataset.providerId
   if (!targetProviderId || targetProviderId === providerId) return
 
   const fromIndex = orderedProviderIds.value.indexOf(providerId)
   const targetIndex = orderedProviderIds.value.indexOf(targetProviderId)
   if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return
+
+  const targetRect = target.getBoundingClientRect()
+  const movingDown = fromIndex < targetIndex
+  const targetMidpoint = targetRect.top + targetRect.height / 2
+  if ((movingDown && event.clientY < targetMidpoint) || (!movingDown && event.clientY > targetMidpoint)) return
 
   const next = [...orderedProviderIds.value]
   const [moved] = next.splice(fromIndex, 1)
@@ -311,6 +395,7 @@ function onPointerDragMove(event: PointerEvent) {
 
 function onPointerDragEnd(event: PointerEvent) {
   draggedProviderId.value = null
+  dragOrigin.value = null
 
   const handle = event.currentTarget as HTMLElement
   if (handle.hasPointerCapture?.(event.pointerId)) {
@@ -388,3 +473,61 @@ onMounted(() => {
   void loadStrategy()
 })
 </script>
+
+<style scoped>
+.provider-row {
+  transform-origin: center;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.provider-row-move {
+  transition: transform 190ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.provider-row--placeholder {
+  border-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--primary) 8%, var(--background));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.provider-row--placeholder > div {
+  opacity: 0;
+}
+
+.provider-drag-preview {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0.625rem 0.75rem;
+  pointer-events: none;
+  color: var(--foreground);
+  border: 1px solid color-mix(in srgb, var(--primary) 72%, white 10%);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--background) 88%, var(--primary) 12%);
+  box-shadow:
+    0 22px 42px -18px color-mix(in srgb, var(--primary) 55%, black),
+    0 12px 20px -14px rgb(0 0 0 / 55%),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.provider-drag-preview__rank {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .provider-row,
+  .provider-row-move {
+    transition: none;
+  }
+}
+</style>
