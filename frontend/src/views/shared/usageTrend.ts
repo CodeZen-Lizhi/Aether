@@ -10,22 +10,20 @@ export interface UsageTrendPoint {
   cacheCreation: number | null
   cacheRead: number | null
   input: number | null
+  totalInputContext: number | null
   output: number | null
 }
 
 export function calculateCacheHitRate(
-  point: Pick<UsageTrendPoint, 'input' | 'cacheCreation' | 'cacheRead'>,
+  point: Pick<UsageTrendPoint, 'totalInputContext' | 'cacheRead'>,
 ): number | null {
-  if (point.input === null || point.cacheCreation === null || point.cacheRead === null) {
+  if (point.totalInputContext === null || point.cacheRead === null) {
     return null
   }
 
-  const totalInputContext = point.input
-    + (point.cacheCreation > 0 ? point.cacheCreation : 0)
-    + point.cacheRead
-  if (totalInputContext <= 0) return null
+  if (point.totalInputContext <= 0) return null
 
-  return point.cacheRead / totalInputContext * 100
+  return point.cacheRead / point.totalInputContext * 100
 }
 
 interface DailyTotal {
@@ -86,6 +84,7 @@ export function buildUsageTrend(
       cacheCreation: incomplete ? null : tokenValue(point.cache_creation_tokens),
       cacheRead: incomplete ? null : tokenValue(point.cache_read_tokens),
       input: incomplete ? null : tokenValue(point.input_tokens),
+      totalInputContext: incomplete ? null : tokenValue(point.total_input_context),
       output: incomplete ? null : tokenValue(point.output_tokens),
     }
   })
@@ -100,6 +99,7 @@ export function buildUsageTrend(
         cacheCreation: tokens,
         cacheRead: tokens,
         input: tokens,
+        totalInputContext: tokens,
         output: tokens,
       })
     }
@@ -112,7 +112,8 @@ export function buildUsageTrend(
       || series.some(point => point.total_requests > 0 || point.total_cost > 0),
     hasMissingDetails: incompleteGroups.size > 0 || points.some(point =>
       point.input === null || point.output === null
-      || point.cacheCreation === null || point.cacheRead === null,
+      || point.cacheCreation === null || point.cacheRead === null
+      || point.totalInputContext === null,
     ),
   }
 }

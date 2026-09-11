@@ -116,6 +116,7 @@ async function settle() {
 function trendSeries(date = '2026-09-09T12:00:00+00:00', input = 100): UsageTimeSeriesPoint[] {
   return [{
     date, total_requests: 1, input_tokens: input, output_tokens: 20,
+    total_input_context: input + 430,
     cache_creation_tokens: 30, cache_read_tokens: 400, total_cost: 0.5,
   }]
 }

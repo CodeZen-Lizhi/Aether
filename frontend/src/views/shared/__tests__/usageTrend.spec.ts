@@ -6,7 +6,7 @@ import { buildUsageTrend, calculateCacheHitRate } from '../usageTrend'
 function series(date: string, overrides: Partial<UsageTimeSeriesPoint> = {}): UsageTimeSeriesPoint {
   return {
     date, total_requests: 2, input_tokens: 100, output_tokens: 40,
-    cache_creation_tokens: 20, cache_read_tokens: 300, total_cost: 0.4,
+    total_input_context: 420, cache_creation_tokens: 20, cache_read_tokens: 300, total_cost: 0.4,
     ...overrides,
   }
 }
@@ -20,19 +20,20 @@ function daily(date: string, overrides: Partial<DailyStat> = {}): DailyStat {
 }
 
 describe('usage trend data', () => {
-  it('calculates cache hit rate from the total input context', () => {
-    expect(calculateCacheHitRate({ input: 455_320, cacheCreation: 0, cacheRead: 337_920 }))
-      .toBeCloseTo(42.6, 1)
-    expect(calculateCacheHitRate({ input: 100, cacheCreation: 20, cacheRead: 300 }))
+  it('does not double-count OpenAI cached tokens in the cache hit rate denominator', () => {
+    expect(calculateCacheHitRate({ totalInputContext: 26_569_775, cacheRead: 25_197_056 }))
+      .toBeCloseTo(94.83, 2)
+    expect(calculateCacheHitRate({ totalInputContext: 420, cacheRead: 300 }))
       .toBeCloseTo(71.43, 2)
-    expect(calculateCacheHitRate({ input: null, cacheCreation: 0, cacheRead: 10 })).toBeNull()
-    expect(calculateCacheHitRate({ input: 0, cacheCreation: 0, cacheRead: 0 })).toBeNull()
+    expect(calculateCacheHitRate({ totalInputContext: null, cacheRead: 10 })).toBeNull()
+    expect(calculateCacheHitRate({ totalInputContext: 0, cacheRead: 0 })).toBeNull()
   })
 
   it('keeps all four token categories separate and uses retained daily costs', () => {
     const trend = buildUsageTrend([series('2026-09-09')], [daily('2026-09-09', { cost: 0.5 })])
     expect(trend.points).toEqual([{
-      date: '2026-09-09', cost: 0.5, input: 100, output: 40, cacheCreation: 20, cacheRead: 300,
+      date: '2026-09-09', cost: 0.5, input: 100, totalInputContext: 420,
+      output: 40, cacheCreation: 20, cacheRead: 300,
     }])
     expect(trend.hasMissingDetails).toBe(false)
   })
@@ -40,7 +41,8 @@ describe('usage trend data', () => {
   it('leaves partial historical token details blank instead of plotting zero or incomplete totals', () => {
     const trend = buildUsageTrend([series('2026-09-09')], [daily('2026-09-09', { requests: 5, cost: 1.25 })])
     expect(trend.points[0]).toEqual({
-      date: '2026-09-09', cost: 1.25, input: null, output: null, cacheCreation: null, cacheRead: null,
+      date: '2026-09-09', cost: 1.25, input: null, totalInputContext: null,
+      output: null, cacheCreation: null, cacheRead: null,
     })
     expect(trend.hasMissingDetails).toBe(true)
   })

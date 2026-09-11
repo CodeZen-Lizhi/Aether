@@ -726,6 +726,7 @@ export interface UsageTimeSeriesPoint {
   date: string
   total_requests: number
   input_tokens: number
+  total_input_context: number
   output_tokens: number
   cache_creation_tokens: number
   cache_read_tokens: number

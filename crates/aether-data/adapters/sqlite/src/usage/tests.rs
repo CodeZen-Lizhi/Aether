@@ -7,7 +7,7 @@ use aether_data_contracts::repository::usage::{
     UsageBreakdownSummaryQuery, UsageCleanupExecutionMode, UsageCleanupTargets, UsageCleanupWindow,
     UsageDailyHeatmapQuery, UsageDashboardDailyBreakdownQuery, UsageDashboardDailyRowKind,
     UsageDashboardSummaryQuery, UsageProviderPerformanceQuery, UsageReadRepository,
-    UsageTimeSeriesGranularity, UsageWriteRepository,
+    UsageTimeSeriesGranularity, UsageTimeSeriesQuery, UsageWriteRepository,
 };
 use chrono::{DateTime, Utc};
 
@@ -108,6 +108,46 @@ async fn sqlite_provider_performance_can_skip_timeline() {
     assert_eq!(without_timeline.summary, with_timeline.summary);
     assert_eq!(without_timeline.providers, with_timeline.providers);
     assert!(without_timeline.timeline.is_empty());
+}
+
+#[tokio::test]
+async fn sqlite_usage_time_series_preserves_normalized_total_input_context() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("sqlite pool should connect");
+    run_migrations(&pool)
+        .await
+        .expect("sqlite migrations should run");
+    seed_stats_targets(&pool).await;
+
+    let mut usage = sample_usage("time-series-openai", "completed", "settled", 1_000);
+    usage.input_tokens = Some(26_569_775);
+    usage.cache_creation_input_tokens = Some(0);
+    usage.cache_read_input_tokens = Some(25_197_056);
+    SqliteUsageWriteRepository::new(pool.clone())
+        .upsert(usage)
+        .await
+        .expect("usage should upsert");
+
+    let buckets = SqliteUsageReadRepository::new(pool)
+        .summarize_usage_time_series(&UsageTimeSeriesQuery {
+            created_from_unix_secs: 0,
+            created_until_unix_secs: 2_000,
+            granularity: UsageTimeSeriesGranularity::Hour,
+            tz_offset_minutes: 0,
+            user_id: None,
+            provider_name: None,
+            model: None,
+        })
+        .await
+        .expect("time series should load");
+
+    assert_eq!(buckets.len(), 1);
+    assert_eq!(buckets[0].input_tokens, 26_569_775);
+    assert_eq!(buckets[0].total_input_context, 26_569_775);
+    assert_eq!(buckets[0].cache_read_tokens, 25_197_056);
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-use crate::observability::usage::admin_usage_total_tokens;
+use crate::observability::usage::{admin_usage_total_input_context, admin_usage_total_tokens};
 use aether_data::repository::auth::StoredAuthApiKeySnapshot;
 use aether_data_contracts::repository::{
     provider_catalog::StoredProviderCatalogProvider,
@@ -104,6 +104,7 @@ pub struct AdminStatsUserMetadata {
 pub struct AdminStatsTimeSeriesBucket {
     pub total_requests: u64,
     pub input_tokens: u64,
+    pub total_input_context: u64,
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
@@ -360,6 +361,9 @@ impl AdminStatsTimeSeriesBucket {
     pub fn add_usage(&mut self, item: &StoredRequestUsageAudit) {
         self.total_requests = self.total_requests.saturating_add(1);
         self.input_tokens = self.input_tokens.saturating_add(item.input_tokens);
+        self.total_input_context = self
+            .total_input_context
+            .saturating_add(admin_usage_total_input_context(item));
         self.output_tokens = self.output_tokens.saturating_add(item.output_tokens);
         self.cache_creation_tokens = self
             .cache_creation_tokens
@@ -374,6 +378,9 @@ impl AdminStatsTimeSeriesBucket {
     pub fn merge(&mut self, other: &Self) {
         self.total_requests = self.total_requests.saturating_add(other.total_requests);
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.total_input_context = self
+            .total_input_context
+            .saturating_add(other.total_input_context);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
         self.cache_creation_tokens = self
             .cache_creation_tokens
@@ -398,6 +405,7 @@ impl AdminStatsTimeSeriesBucket {
             "date": date,
             "total_requests": self.total_requests,
             "input_tokens": self.input_tokens,
+            "total_input_context": self.total_input_context,
             "output_tokens": self.output_tokens,
             "cache_creation_tokens": self.cache_creation_tokens,
             "cache_read_tokens": self.cache_read_tokens,
@@ -411,6 +419,7 @@ impl AdminStatsTimeSeriesBucket {
             "date": date,
             "total_requests": self.total_requests,
             "input_tokens": self.input_tokens,
+            "total_input_context": self.total_input_context,
             "output_tokens": self.output_tokens,
             "cache_creation_tokens": self.cache_creation_tokens,
             "cache_read_tokens": self.cache_read_tokens,
@@ -1186,6 +1195,7 @@ fn admin_stats_time_series_bucket_from_summary(
     AdminStatsTimeSeriesBucket {
         total_requests: bucket.total_requests,
         input_tokens: bucket.input_tokens,
+        total_input_context: bucket.total_input_context,
         output_tokens: bucket.output_tokens,
         cache_creation_tokens: bucket.cache_creation_tokens,
         cache_read_tokens: bucket.cache_read_tokens,
@@ -2053,13 +2063,30 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        build_api_key_leaderboard_items, build_api_key_leaderboard_items_from_summaries,
-        build_user_leaderboard_items, AdminStatsUserMetadata,
+        admin_stats_time_series_bucket_from_summary, build_api_key_leaderboard_items,
+        build_api_key_leaderboard_items_from_summaries, build_user_leaderboard_items,
+        AdminStatsUserMetadata,
     };
     use aether_data::repository::auth::StoredAuthApiKeySnapshot;
     use aether_data_contracts::repository::usage::{
-        StoredRequestUsageAudit, StoredUsageLeaderboardSummary,
+        StoredRequestUsageAudit, StoredUsageLeaderboardSummary, StoredUsageTimeSeriesBucket,
     };
+
+    #[test]
+    fn time_series_json_preserves_normalized_total_input_context() {
+        let bucket = admin_stats_time_series_bucket_from_summary(&StoredUsageTimeSeriesBucket {
+            bucket_key: "2026-09-11T11:00:00+00:00".to_string(),
+            input_tokens: 26_569_775,
+            total_input_context: 26_569_775,
+            cache_read_tokens: 25_197_056,
+            ..Default::default()
+        });
+
+        let payload = bucket.to_json_with_avg("2026-09-11T11:00:00+00:00".to_string());
+        assert_eq!(payload["input_tokens"], 26_569_775);
+        assert_eq!(payload["total_input_context"], 26_569_775);
+        assert_eq!(payload["cache_read_tokens"], 25_197_056);
+    }
 
     fn sample_usage(api_key_name: Option<&str>) -> StoredRequestUsageAudit {
         StoredRequestUsageAudit::new(

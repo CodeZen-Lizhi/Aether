@@ -3816,6 +3816,7 @@ SELECT
   {bucket_expr} AS bucket_key,
   COUNT(*) AS total_requests,
   COALESCE(SUM(MAX(COALESCE(input_tokens, 0), 0)), 0) AS input_tokens,
+  COALESCE(SUM({total_input_context_expr}), 0) AS total_input_context,
   COALESCE(SUM(MAX(COALESCE(output_tokens, 0), 0)), 0) AS output_tokens,
   COALESCE(SUM(MAX(COALESCE(cache_creation_input_tokens, 0), 0)), 0)
     AS cache_creation_tokens,
@@ -3823,7 +3824,10 @@ SELECT
   COALESCE(SUM(COALESCE(CAST(total_cost_usd AS REAL), 0)), 0) AS total_cost_usd,
   COALESCE(SUM(MAX(COALESCE(response_time_ms, 0), 0)), 0) AS total_response_time_ms
 FROM "usage"
-"#
+LEFT JOIN usage_settlement_snapshots AS settlement
+  ON settlement.request_id = "usage".request_id
+"#,
+            total_input_context_expr = SQLITE_USAGE_TOTAL_INPUT_CONTEXT_EXPR,
         ));
         let mut has_where = false;
         push_sqlite_usage_range(
@@ -3859,6 +3863,7 @@ FROM "usage"
                     bucket_key: row.try_get("bucket_key").map_sql_err()?,
                     total_requests: sqlite_aggregate_u64(row, "total_requests")?,
                     input_tokens: sqlite_aggregate_u64(row, "input_tokens")?,
+                    total_input_context: sqlite_aggregate_u64(row, "total_input_context")?,
                     output_tokens: sqlite_aggregate_u64(row, "output_tokens")?,
                     cache_creation_tokens: sqlite_aggregate_u64(row, "cache_creation_tokens")?,
                     cache_read_tokens: sqlite_aggregate_u64(row, "cache_read_tokens")?,

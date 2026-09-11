@@ -2309,6 +2309,9 @@ impl UsageReadRepository for InMemoryUsageReadRepository {
                     });
             bucket.total_requests = bucket.total_requests.saturating_add(1);
             bucket.input_tokens = bucket.input_tokens.saturating_add(item.input_tokens);
+            bucket.total_input_context = bucket
+                .total_input_context
+                .saturating_add(usage_total_input_context(item));
             bucket.output_tokens = bucket.output_tokens.saturating_add(item.output_tokens);
             bucket.cache_creation_tokens = bucket
                 .cache_creation_tokens

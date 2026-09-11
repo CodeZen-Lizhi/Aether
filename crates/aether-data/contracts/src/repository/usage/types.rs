@@ -1477,6 +1477,7 @@ pub struct StoredUsageTimeSeriesBucket {
     pub bucket_key: String,
     pub total_requests: u64,
     pub input_tokens: u64,
+    pub total_input_context: u64,
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
