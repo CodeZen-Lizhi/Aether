@@ -1,51 +1,38 @@
 <template>
   <PageContainer>
     <div class="system-settings">
-      <PageHeader title="系统设置" />
-      <div class="settings-layout">
-        <nav
-          class="settings-nav"
-          aria-label="设置分类"
-        >
+      <PageHeader
+        :title="pageTitle"
+        class="settings-page-header"
+      >
+        <template #icon>
           <RouterLink
-            v-for="item in tabs"
-            :key="item.id"
-            :to="{ query: { ...route.query, tab: item.id }, hash: '' }"
-            :aria-current="activeTab === item.id ? 'page' : undefined"
+            v-if="activeTab !== 'general'"
+            :to="{ query: { ...route.query, tab: 'general' }, hash: '' }"
+            class="settings-back settings-icon-button"
+            aria-label="返回系统设置"
+            title="返回系统设置"
           >
-            <component
-              :is="item.icon"
-              class="h-4 w-4 shrink-0"
+            <ArrowLeft
+              class="h-4 w-4"
               aria-hidden="true"
             />
-            {{ item.label }}
           </RouterLink>
-          <p
-            v-if="systemVersion"
-            class="settings-nav-version"
+        </template>
+        <template #actions>
+          <RouterLink
+            v-if="activeTab === 'general'"
+            :to="{ query: { ...route.query, tab: 'advanced' }, hash: '' }"
+            class="settings-page-link"
           >
-            Aether <samp>{{ systemVersion }}</samp>
-          </p>
-        </nav>
-        <div class="settings-mobile-nav">
-          <Select
-            :model-value="activeTab"
-            @update:model-value="selectTab"
-          >
-            <SelectTrigger aria-label="设置分类">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem
-                v-for="item in tabs"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            高级设置 <ChevronRight
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
+          </RouterLink>
+        </template>
+      </PageHeader>
+      <div class="settings-layout">
         <div class="settings-content">
           <div
             v-if="systemConfigLoading"
@@ -75,19 +62,20 @@
             :aria-busy="systemConfigLoading"
           >
             <section
-              v-if="visited.has('connection')"
-              v-show="activeTab === 'connection'"
-              class="settings-panel"
+              v-if="visited.has('general')"
+              v-show="activeTab === 'general'"
+              class="settings-panel settings-gateway"
               aria-labelledby="connection-title"
             >
               <h2
                 id="connection-title"
-                class="settings-panel-title"
+                class="settings-heading"
               >
-                {{ desktopMode ? '连接与启动' : '网络连接' }}
+                网关
               </h2>
               <ProxyConfigSection
                 id="section-proxy"
+                view="selector"
                 :proxy-node-id="systemConfig.system_proxy_node_id"
                 :loading="proxyConfigLoading"
                 :has-changes="hasProxyConfigChanges"
@@ -96,83 +84,98 @@
                 @cancel="cancelChanges('proxy')"
                 @proxy-cleared="confirmProxyCleared"
                 @update:proxy-node-id="systemConfig.system_proxy_node_id = $event"
+                @manage="selectTab('proxies')"
               />
               <DesktopGatewaySection
                 v-if="desktopGateway"
                 id="section-desktop-gateway"
                 :gateway="desktopGateway"
                 view="connection"
-                :port-expanded="route.hash === '#section-desktop-gateway'"
               />
             </section>
 
             <section
-              v-if="visited.has('records')"
-              v-show="activeTab === 'records'"
+              v-if="visited.has('proxies')"
+              v-show="activeTab === 'proxies'"
               class="settings-panel"
-              aria-labelledby="records-title"
             >
-              <h2
-                id="records-title"
-                class="settings-panel-title"
-              >
-                记录与存储
-              </h2>
-              <RequestLogSection
-                id="section-request-log"
-                :request-record-level="systemConfig.request_record_level"
-                :sensitive-headers-str="sensitiveHeadersStr"
-                :loading="logConfigLoading"
-                :has-changes="hasLogConfigChanges"
-                :error="saveErrors.log"
-                @save="saveLogConfig"
-                @cancel="cancelChanges('log')"
-                @update:request-record-level="systemConfig.request_record_level = $event"
-                @update:sensitive-headers-str="sensitiveHeadersStr = $event"
-              />
-              <CleanupPolicySection
-                id="section-cleanup"
-                :enable-auto-cleanup="systemConfig.enable_auto_cleanup"
-                :auto-cleanup-loading="autoCleanupLoading"
-                :detail-log-retention-days="systemConfig.detail_log_retention_days"
-                :compressed-log-retention-days="systemConfig.compressed_log_retention_days"
-                :header-retention-days="systemConfig.header_retention_days"
-                :log-retention-days="systemConfig.log_retention_days"
-                :audit-log-retention-days="systemConfig.audit_log_retention_days"
-                :request-candidates-retention-days="systemConfig.request_candidates_retention_days"
-                :proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days"
-                :proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days"
-                :loading="cleanupConfigLoading"
-                :has-changes="hasCleanupConfigChanges"
-                :error="saveErrors.cleanup"
-                @save="saveCleanupConfig"
-                @cancel="cancelChanges('cleanup')"
-                @toggle-auto-cleanup="handleAutoCleanupToggle"
-                @update:detail-log-retention-days="systemConfig.detail_log_retention_days = $event"
-                @update:compressed-log-retention-days="systemConfig.compressed_log_retention_days = $event"
-                @update:header-retention-days="systemConfig.header_retention_days = $event"
-                @update:log-retention-days="systemConfig.log_retention_days = $event"
-                @update:audit-log-retention-days="systemConfig.audit_log_retention_days = $event"
-                @update:request-candidates-retention-days="systemConfig.request_candidates_retention_days = $event"
-                @update:proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days = $event"
-                @update:proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days = $event"
+              <ProxyConfigSection
+                view="management"
+                :proxy-node-id="systemConfig.system_proxy_node_id"
+                :loading="proxyConfigLoading"
+                :has-changes="hasProxyConfigChanges"
+                @proxy-cleared="confirmProxyCleared"
+                @update:proxy-node-id="systemConfig.system_proxy_node_id = $event"
               />
             </section>
 
             <section
-              v-if="visited.has('backup')"
-              v-show="activeTab === 'backup'"
+              v-if="visited.has('advanced')"
+              v-show="activeTab === 'advanced'"
               class="settings-panel"
-              aria-labelledby="backup-title"
             >
-              <h2
-                id="backup-title"
-                class="settings-panel-title"
+              <details
+                id="section-records"
+                class="settings-disclosure settings-advanced-group"
               >
-                备份与恢复
-              </h2>
+                <summary>
+                  记录与清理<ChevronDown
+                    class="settings-chevron"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <div class="settings-disclosure-content">
+                  <RequestLogSection
+                    id="section-request-log"
+                    :request-record-level="systemConfig.request_record_level"
+                    :sensitive-headers-str="sensitiveHeadersStr"
+                    :loading="logConfigLoading"
+                    :has-changes="hasLogConfigChanges"
+                    :error="saveErrors.log"
+                    @save="saveLogConfig"
+                    @cancel="cancelChanges('log')"
+                    @update:request-record-level="systemConfig.request_record_level = $event"
+                    @update:sensitive-headers-str="sensitiveHeadersStr = $event"
+                  />
+                  <CleanupPolicySection
+                    id="section-cleanup"
+                    :enable-auto-cleanup="systemConfig.enable_auto_cleanup"
+                    :auto-cleanup-loading="autoCleanupLoading"
+                    :detail-log-retention-days="systemConfig.detail_log_retention_days"
+                    :compressed-log-retention-days="systemConfig.compressed_log_retention_days"
+                    :header-retention-days="systemConfig.header_retention_days"
+                    :log-retention-days="systemConfig.log_retention_days"
+                    :audit-log-retention-days="systemConfig.audit_log_retention_days"
+                    :request-candidates-retention-days="systemConfig.request_candidates_retention_days"
+                    :proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days"
+                    :proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days"
+                    :loading="cleanupConfigLoading"
+                    :has-changes="hasCleanupConfigChanges"
+                    :error="saveErrors.cleanup"
+                    @save="saveCleanupConfig"
+                    @cancel="cancelChanges('cleanup')"
+                    @toggle-auto-cleanup="handleAutoCleanupToggle"
+                    @update:detail-log-retention-days="systemConfig.detail_log_retention_days = $event"
+                    @update:compressed-log-retention-days="systemConfig.compressed_log_retention_days = $event"
+                    @update:header-retention-days="systemConfig.header_retention_days = $event"
+                    @update:log-retention-days="systemConfig.log_retention_days = $event"
+                    @update:audit-log-retention-days="systemConfig.audit_log_retention_days = $event"
+                    @update:request-candidates-retention-days="systemConfig.request_candidates_retention_days = $event"
+                    @update:proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days = $event"
+                    @update:proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days = $event"
+                  />
+                </div>
+              </details>
+            </section>
+
+            <section
+              v-if="visited.has('general')"
+              v-show="activeTab === 'general'"
+              class="settings-panel settings-backup"
+            >
               <DataManagementSection
                 id="section-data-mgmt"
+                view="backup"
                 :config-export-loading="exportLoading"
                 :config-import-loading="importLoading"
                 :aggregate-export-loading="exportAggregateLoading"
@@ -186,14 +189,7 @@
               v-if="visited.has('advanced')"
               v-show="activeTab === 'advanced'"
               class="settings-panel"
-              aria-labelledby="advanced-title"
             >
-              <h2
-                id="advanced-title"
-                class="settings-panel-title"
-              >
-                高级与诊断
-              </h2>
               <BasicConfigSection
                 id="section-basic"
                 :rate-limit-per-minute="systemConfig.rate_limit_per_minute"
@@ -214,20 +210,61 @@
                 @update:enable-standard-text-sync-heartbeat="systemConfig.enable_standard_text_sync_heartbeat = $event"
                 @update:cyber-continue-failover="systemConfig.cyber_continue_failover = $event"
               />
-              <SystemInfoSection
-                id="section-sysinfo"
-                :system-version="systemVersion"
+              <details class="settings-disclosure settings-advanced-group">
+                <summary>
+                  配置迁移<ChevronDown
+                    class="settings-chevron"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <div class="settings-disclosure-content">
+                  <DataManagementSection
+                    view="migration"
+                    :config-export-loading="exportLoading"
+                    :config-import-loading="importLoading"
+                    :aggregate-export-loading="exportAggregateLoading"
+                    :aggregate-import-loading="importAggregateLoading"
+                    @export="handleDataExport"
+                    @file-select="handleDataFileSelect"
+                  />
+                </div>
+              </details>
+              <details
+                id="section-diagnostics"
+                class="settings-disclosure settings-advanced-group"
+              >
+                <summary>
+                  诊断<ChevronDown
+                    class="settings-chevron"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <div class="settings-disclosure-content">
+                  <SystemInfoSection
+                    id="section-sysinfo"
+                    :system-version="displayVersion"
+                  />
+                  <DesktopGatewaySection
+                    v-if="desktopGateway"
+                    :gateway="desktopGateway"
+                    view="diagnostics"
+                  />
+                </div>
+              </details>
+              <DataMaintenanceSection
+                class="settings-advanced-group"
+                :active="activeTab === 'advanced'"
               />
-              <DesktopGatewaySection
-                v-if="desktopGateway"
-                :gateway="desktopGateway"
-                view="diagnostics"
-              />
-              <DataMaintenanceSection :active="activeTab === 'advanced'" />
             </section>
           </div>
         </div>
       </div>
+      <footer
+        v-if="displayVersion"
+        class="settings-version"
+      >
+        Aether <samp>{{ displayVersion }}</samp>
+      </footer>
     </div>
 
     <!-- 导入配置对话框 -->
@@ -269,9 +306,8 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { Archive, Cable, FileClock, SlidersHorizontal } from 'lucide-vue-next'
+import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { PageHeader, PageContainer } from '@/components/layout'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui'
 import Button from '@/components/ui/button.vue'
 import { hasDesktopSession } from '@/desktop/session'
 import { useDesktopGateway } from '@/desktop/useDesktopGateway'
@@ -293,19 +329,20 @@ const desktopMode = hasDesktopSession()
 const desktopGateway = desktopMode ? useDesktopGateway() : null
 const route = useRoute()
 const router = useRouter()
-const tabs = [
-  { id: 'connection', label: desktopMode ? '连接与启动' : '网络连接', icon: Cable },
-  { id: 'records', label: '记录与存储', icon: FileClock },
-  { id: 'backup', label: '备份与恢复', icon: Archive },
-  { id: 'advanced', label: '高级与诊断', icon: SlidersHorizontal },
-]
+const tabs = ['general', 'proxies', 'advanced']
 const legacyTabs: Record<string, string> = {
-  '#section-desktop-gateway': 'connection', '#section-proxy': 'connection',
-  '#section-request-log': 'records', '#section-cleanup': 'records',
-  '#section-data-mgmt': 'backup', '#section-basic': 'advanced', '#section-sysinfo': 'advanced',
+  '#section-desktop-gateway': 'general', '#section-proxy': 'general',
+  '#section-request-log': 'advanced', '#section-cleanup': 'advanced',
+  '#section-data-mgmt': 'general', '#section-basic': 'advanced', '#section-sysinfo': 'advanced',
 }
+const legacyQueries = new Map([
+  ['connection', 'general'], ['records', 'advanced'], ['backup', 'general'],
+])
 const activeTab = computed(() => legacyTabs[route.hash]
-  || (tabs.some(tab => tab.id === route.query.tab) ? String(route.query.tab) : 'connection'))
+  || legacyQueries.get(String(route.query.tab))
+  || (tabs.includes(String(route.query.tab)) ? String(route.query.tab) : 'general'))
+const pageTitle = computed(() => activeTab.value === 'proxies' ? '代理管理'
+  : activeTab.value === 'advanced' ? '高级设置' : '系统设置')
 const visited = ref(new Set<string>())
 watch(activeTab, tab => visited.value.add(tab), { immediate: true })
 
@@ -340,6 +377,7 @@ const {
   saveCleanupConfig,
   handleAutoCleanupToggle,
 } = useSystemConfig()
+const displayVersion = computed(() => desktopGateway?.status.value?.version || systemVersion.value)
 
 // 数据导出/导入 composable
 const {
@@ -396,11 +434,19 @@ watch(() => route.fullPath, async () => {
 })
 
 function scrollToLegacySection() {
-  if (!legacyTabs[route.hash]) return
-  const section = document.getElementById(route.hash.slice(1))
-  if (route.hash === '#section-cleanup') {
-    const details = section?.querySelector('details')
-    if (details) details.open = true
+  const sectionId = legacyTabs[route.hash] ? route.hash.slice(1)
+    : route.query.tab === 'records' ? 'section-records'
+      : route.query.tab === 'backup' ? 'section-data-mgmt' : ''
+  if (!sectionId) return
+  const section = document.getElementById(sectionId)
+  if (section instanceof window.HTMLDetailsElement) section.open = true
+  let parent = section?.parentElement
+  while (parent && !parent.classList.contains('system-settings')) {
+    if (parent instanceof window.HTMLDetailsElement) parent.open = true
+    parent = parent.parentElement
+  }
+  if (sectionId === 'section-cleanup' || sectionId === 'section-basic') {
+    section?.querySelectorAll('details').forEach(details => { details.open = true })
   }
   section?.scrollIntoView?.({ block: 'start' })
 }

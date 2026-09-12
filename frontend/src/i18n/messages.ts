@@ -392,6 +392,23 @@ export const messages = {
 } as const
 
 const legacyExactEnglishMessages: Record<string, string> = {
+  '网关': 'Gateway',
+  '高级设置': 'Advanced settings',
+  '返回系统设置': 'Back to system settings',
+  '代理管理': 'Proxy management',
+  '出站代理': 'Outbound proxy',
+  '管理代理节点': 'Manage proxy nodes',
+  '当前代理信息不可用': 'Current proxy details unavailable',
+  '未单独指定代理的请求使用此设置。': 'Used for requests without a dedicated proxy.',
+  '开机启动': 'Launch at login',
+  '登录 Mac 时启动 Aether 和网关。': 'Start Aether and the gateway when you log in to your Mac.',
+  '保存并重启': 'Save & restart',
+  '数据备份': 'Data backup',
+  '配置、管理员资料、API Keys 与用量统计。': 'Configuration, administrator profiles, API keys and usage statistics.',
+  '记录与清理': 'Records & cleanup',
+  '密钥规则': 'Key rules',
+  '保存兼容与密钥设置': 'Save compatibility & key settings',
+  '导入与导出配置': 'Import & export configuration',
   '设置分类': 'Settings category',
   '连接与启动': 'Connection & startup',
   '网络连接': 'Network connection',

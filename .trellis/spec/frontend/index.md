@@ -100,15 +100,19 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ## Convention: 系统设置分类与分组保存
 
-**What**: `views/admin/SystemSettings.vue` 使用四类 query 导航（`connection`、`records`、`backup`、`advanced`），内容区按设置行和 `settings-group` 编排；分类切换保留已挂载分组的草稿。可编辑配置由 `useSystemConfig` 按 proxy/basic/log/cleanup 四组维护快照，行内保存只提交该组变更字段，`Promise.allSettled` 逐字段更新成功基线，失败字段保留输入供重试。
+**What**: `views/admin/SystemSettings.vue` 使用常用首页 `general` 和两个二级页 `proxies`、`advanced`。首页只有网关与数据备份；代理管理一跳可达，高级页按需展开六组。已访问视图保留挂载和草稿。可编辑配置由 `useSystemConfig` 按 proxy/basic/log/cleanup 四组维护快照，行内保存只提交该组变更字段，`Promise.allSettled` 逐字段更新成功基线，失败字段保留输入供重试。请求兼容与密钥规则视觉分组，但仍共享 basic 保存边界。
 
 **Why**: 设置页需要按任务查找，而保存边界仍必须独立。整组提交或分类卸载会误覆盖其他值、丢失草稿，局部失败也不能显示为全部成功。
 
 **Contract**: 清理批次键 `cleanup_batch_size`、`request_candidates_cleanup_batch_size`、`proxy_node_metrics_cleanup_batch_size` 可以继续从 API 读取，但不属于任何前端编辑组，普通保存不得写回。`compressed_log_retention_days` 是内容删除期限；`detail_log_retention_days` 只表示开始压缩的时间点。
 
-**Navigation**: 旧 `#section-*` hash 映射到所属分类并滚动到具体分组；窄内容区用顶部分类 `Select` 替代侧栏。主题/语言仅由全局顶部快捷切换，个人设置保留账号、密码和会话控制，不再放偏好表单。
+**Navigation**: 旧 query `connection -> general`、`records -> advanced/记录与清理`、`backup -> general/数据备份`；旧 `#section-*` hash 映射到所属视图、打开必要折叠层并滚动。外部 query 使用 `Map` 或自有键校验，`constructor`、`toString`、`__proto__` 等未知值必须回到首页，不能落入空白视图。二级页提供返回入口，不增加页内侧栏或分类下拉框。主题/语言仍由全局顶部快捷切换。
 
-**Verification**: 覆盖四类导航、旧 hash、前进/后退、切换保留草稿、保存后刷新、局部成功和隐藏批次值保持；在 840/1024/1440/390 宽度测量 `scrollWidth <= clientWidth`。
+**Layout**: 原生最小窗口为 900x640。桌面范围始终保持左标签、右控件；正文最大 960px 居中，行使用 `minmax(0, 1fr) minmax(280px, 320px)`，只让留白随内容宽度变化。标题 24px、控件文字 13px，不随视口缩小字体；不得恢复旧 760px 内容断点的结构切换。只有小于 600px 的 Web 视口允许设置行上下排列。Web 不显示桌面端口、自启动和 IPC 操作。
+
+**Ownership**: `ProxyConfigSection` 的 selector/management 视图仅在管理页挂载节点编辑弹窗；`DataManagementSection` 的 backup/migration 视图各自拥有对应 file input，根页共享导入预览和恢复状态。桌面端口直接可编辑，保存并重启沿用原命令与 recovery 路径，自启动沿用即时保存。
+
+**Verification**: 覆盖三种视图、旧 query/hash、未知 query、前进/后退、切换保留草稿、保存后刷新、局部成功和隐藏批次值保持；在 900x640、1024x768、1200x820、1440x900、1920x1080 检查溢出和连续缩放的列关系，另测 390px Web。明暗主题、中英文和长代理名称均应可读。原生最大化及实际 IPC 必须与浏览器/IPC fixture 的证据区分。
 
 ---
 

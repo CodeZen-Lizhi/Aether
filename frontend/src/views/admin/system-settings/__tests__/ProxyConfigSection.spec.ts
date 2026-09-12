@@ -126,17 +126,19 @@ function makeNode(overrides: Partial<ProxyNode> = {}): ProxyNode {
 
 const mountedApps: Array<{ app: App, root: HTMLElement }> = []
 
-function mountSection(initial: { proxyNodeId?: string | null, hasChanges?: boolean } = {}) {
+function mountSection(initial: { proxyNodeId?: string | null, hasChanges?: boolean, view?: 'all' | 'selector' | 'management' } = {}) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const handlers = {
     onSave: vi.fn(),
+    onManage: vi.fn(),
     'onUpdate:proxyNodeId': vi.fn(),
   }
   const propsState = reactive({
     proxyNodeId: initial.proxyNodeId ?? null,
     loading: false,
     hasChanges: initial.hasChanges ?? false,
+    view: initial.view ?? 'all',
     ...handlers,
   })
 
@@ -195,6 +197,37 @@ afterEach(() => {
 })
 
 describe('ProxyConfigSection', () => {
+  it('keeps the selector separate from node management and its edit dialog', async () => {
+    apiMocks.listProxyNodes.mockResolvedValue({ items: [makeNode()], total: 1, skip: 0, limit: 1000 })
+    const { root, handlers } = mountSection({ view: 'selector' })
+    await flushAsync()
+    expect(root.querySelector('#default-proxy')).not.toBeNull()
+    expect(root.querySelector('[data-proxy-node]')).toBeNull()
+    expect(findDialogStub(root)).toBeUndefined()
+    root.querySelector<HTMLButtonElement>('[aria-label="管理代理节点"]')!.click()
+    expect(handlers.onManage).toHaveBeenCalledOnce()
+  })
+
+  it('mounts one management dialog without a duplicate default selector or save action', async () => {
+    apiMocks.listProxyNodes.mockResolvedValue({ items: [makeNode()], total: 1, skip: 0, limit: 1000 })
+    const { root } = mountSection({ view: 'management', hasChanges: true })
+    await flushAsync()
+    expect(root.querySelector('#default-proxy')).toBeNull()
+    expect(root.querySelectorAll('[data-proxy-node]')).toHaveLength(1)
+    expect(root.querySelectorAll('[data-testid="proxy-node-edit-dialog"]')).toHaveLength(1)
+    expect(findButton(root, '保存默认代理')).toBeUndefined()
+  })
+
+  it('keeps an unavailable selected proxy explicit when loading its details fails', async () => {
+    apiMocks.listProxyNodes.mockRejectedValueOnce(new Error('节点列表请求失败'))
+    const { root, handlers } = mountSection({ view: 'selector', proxyNodeId: 'saved-proxy' })
+    await flushAsync()
+    expect(root.querySelector('#default-proxy')?.textContent).toContain('当前代理信息不可用')
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('节点列表请求失败')
+    expect(handlers['onUpdate:proxyNodeId']).not.toHaveBeenCalled()
+    expect(root.querySelector('[aria-label="管理代理节点"]')).not.toBeNull()
+  })
+
   it('does not show an empty list while nodes are still loading', async () => {
     let resolveList!: (value: unknown) => void
     apiMocks.listProxyNodes.mockReturnValueOnce(new Promise(resolve => { resolveList = resolve }))

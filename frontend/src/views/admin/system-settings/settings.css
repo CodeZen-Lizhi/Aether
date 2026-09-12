@@ -1,61 +1,69 @@
-.system-settings { container: system-settings / inline-size; min-width: 0; }
-.system-settings .settings-layout { display: grid; grid-template-columns: 176px minmax(0, 760px); gap: 40px; margin-top: 28px; align-items: start; }
-.system-settings .settings-nav { position: sticky; top: 0; display: grid; gap: 4px; }
-.system-settings .settings-nav a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; border-radius: 6px; color: var(--muted-foreground); font-size: 13px; text-decoration: none; overflow-wrap: anywhere; }
-.system-settings .settings-nav a:hover { background: var(--muted); color: var(--foreground); }
-.system-settings .settings-nav a[aria-current="page"] { background: color-mix(in srgb, var(--primary) 9%, transparent); color: var(--primary); font-weight: 600; }
-.system-settings .settings-nav a:focus-visible,
-.system-settings summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
-.system-settings .settings-nav-version { padding: 16px 12px; margin-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted-foreground); overflow-wrap: anywhere; }
-.system-settings .settings-mobile-nav { display: none; }
+.system-settings { container: system-settings / inline-size; width: 100%; max-width: 960px; min-width: 0; margin-inline: auto; font-family: var(--sans-serif); }
+.system-settings :where(h1, h2, h3, h4, p, label, button, a, span, summary, input, samp) { letter-spacing: 0; }
+.system-settings .settings-page-header { min-height: 36px; flex-wrap: nowrap; }
+.system-settings .settings-page-header h1 { font-size: 24px; line-height: 1.3; }
+.system-settings .settings-page-link,
+.system-settings .settings-back { display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted-foreground); text-decoration: none; }
+.system-settings .settings-page-link { min-height: 36px; font-size: 13px; }
+.system-settings .settings-page-link:hover,
+.system-settings .settings-back:hover { color: var(--primary); }
+.system-settings .settings-back:hover { background: var(--muted); }
+.system-settings a:focus-visible,
+.system-settings summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 6px; }
+.system-settings .settings-layout { margin-top: clamp(20px, 3cqw, 32px); }
 .system-settings .settings-content,
 .system-settings .settings-panel,
 .system-settings .settings-group { min-width: 0; }
-.system-settings .settings-panel-title { margin: 0 0 24px; font-size: 18px; font-weight: 600; }
-.system-settings .settings-group + .settings-group { margin-top: 30px; }
-.system-settings .settings-heading { margin: 0; padding: 0 0 10px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; }
-.system-settings .settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 260px); gap: 12px 28px; align-items: center; padding: 17px 0; }
-.system-settings .settings-row + .settings-row { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.system-settings .settings-group + .settings-group { margin-top: 24px; }
+.system-settings .settings-gateway > .settings-group + .settings-group { margin-top: 0; border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
+.system-settings .settings-backup { margin-top: clamp(24px, 4cqw, 38px); }
+.system-settings .settings-heading { margin: 0; padding: 0 0 10px; border-bottom: 1px solid var(--border); font-family: var(--sans-serif); font-size: 14px; line-height: 20px; font-weight: 600; }
+.system-settings .settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); gap: 10px clamp(16px, 3cqw, 32px); align-items: center; padding: clamp(12px, 1.8cqw, 18px) 0; }
+.system-settings .settings-row + .settings-row { border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
 .system-settings .settings-row > *,
 .system-settings .settings-row-control { min-width: 0; }
 .system-settings .settings-row label,
-.system-settings .settings-label { font-size: 13px; font-weight: 500; }
-.system-settings .settings-description { margin-top: 4px; font-size: 12px; line-height: 1.65; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.system-settings .settings-label { font-family: var(--sans-serif); font-size: 13px; line-height: 20px; font-weight: 500; color: var(--foreground); text-transform: none; letter-spacing: 0; }
+.system-settings .settings-description { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); overflow-wrap: anywhere; }
 .system-settings .settings-row-control > input,
 .system-settings .settings-row-control > [role="combobox"],
-.system-settings .settings-mobile-nav [role="combobox"] { border-radius: 6px; min-height: 38px; height: auto; background: var(--card); box-shadow: none; }
+.system-settings .settings-number > input { border-radius: 6px; min-height: 36px; height: auto; background: var(--card); box-shadow: none; font-size: 13px; }
 .system-settings .settings-row-control > [role="combobox"] > span { white-space: normal; overflow-wrap: anywhere; text-align: left; }
-.system-settings .settings-row--toggle { grid-template-columns: minmax(0, 1fr) auto; }
 .system-settings .settings-row--toggle > button { justify-self: end; }
+.system-settings .settings-proxy-selector { display: flex; align-items: center; gap: 8px; }
+.system-settings .settings-proxy-selector > [role="combobox"] { min-width: 0; flex: 1; }
 .system-settings .settings-number { display: flex; align-items: center; gap: 10px; justify-content: end; color: var(--muted-foreground); font-size: 12px; }
-.system-settings .settings-number > input { width: 112px; border-radius: 6px; background: var(--card); }
+.system-settings .settings-number > input { width: 112px; }
 .system-settings .settings-disclosure { border-top: 1px solid var(--border); }
 .system-settings .settings-disclosure > summary { display: flex; align-items: center; gap: 8px; padding: 16px 0; list-style: none; cursor: pointer; font-size: 13px; font-weight: 500; }
 .system-settings .settings-disclosure > summary::-webkit-details-marker { display: none; }
 .system-settings .settings-disclosure > summary .settings-chevron { margin-left: auto; flex-shrink: 0; width: 16px; height: 16px; color: var(--muted-foreground); }
 .system-settings .settings-disclosure[open] > summary .settings-chevron { transform: rotate(180deg); }
 .system-settings .settings-disclosure-content { padding-bottom: 16px; }
-.system-settings .settings-save { display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: 12px; padding: 12px 0 4px; }
+.system-settings .settings-advanced-group > summary { padding: 20px 0; font-size: 14px; }
+.system-settings .settings-advanced-group.settings-group { margin-top: 0; }
+.system-settings .settings-save { display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: 12px; padding: 8px 0 12px; }
 .system-settings .settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.system-settings .settings-actions > button { gap: 6px; }
-.system-settings .settings-error { flex: 1 1 240px; color: var(--destructive); font-size: 12px; overflow-wrap: anywhere; }
-.system-settings .settings-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
-.system-settings .settings-toolbar h3 { font-size: 14px; font-weight: 600; }
+.system-settings .settings-actions > button,
+.system-settings .settings-toolbar button,
+.system-settings .settings-proxy-row button { min-height: 36px; height: auto; padding-block: 7px; border-radius: 6px; gap: 6px; font-size: 13px; box-shadow: none; }
+.system-settings .settings-actions > button svg { flex-shrink: 0; }
+.system-settings .settings-backup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.system-settings .settings-backup-actions > button { padding-inline: 10px; }
+.system-settings .settings-error { flex: 1 1 240px; color: var(--destructive); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.system-settings .settings-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; }
+.system-settings .settings-toolbar label { font-size: 13px; text-transform: none; letter-spacing: 0; }
+.system-settings .settings-toolbar h3 { font-family: var(--sans-serif); font-size: 14px; font-weight: 600; }
 .system-settings .settings-icon-button { width: 36px; height: 36px; border-radius: 6px; flex-shrink: 0; }
 .system-settings .settings-proxy-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .system-settings .settings-proxy-row .settings-node-name { overflow-wrap: anywhere; }
 .system-settings .settings-proxy-row .settings-node-address { overflow-wrap: anywhere; margin-top: 3px; font-size: 12px; color: var(--muted-foreground); }
 .system-settings .settings-empty { padding: 20px 0; color: var(--muted-foreground); font-size: 13px; }
-.system-settings .settings-backup-actions { margin: 18px 0 26px; }
-@container system-settings (max-width: 760px) {
-  .system-settings .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 22px; margin-top: 20px; }
-  .system-settings .settings-nav { display: none; }
-  .system-settings .settings-mobile-nav { display: block; }
-}
-@container system-settings (max-width: 480px) {
+.system-settings .settings-version { margin-top: clamp(16px, 2.5cqw, 24px); padding-block: 8px; color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
+
+/* Only sub-desktop Web viewports may reflow the settings rows. */
+@media (max-width: 599px) {
   .system-settings .settings-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .system-settings .settings-row--toggle { grid-template-columns: minmax(0, 1fr) auto; }
-  .system-settings .settings-number { justify-content: start; }
-  .system-settings .settings-panel-title { margin-bottom: 20px; }
   .system-settings .settings-proxy-row { align-items: start; }
 }

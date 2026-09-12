@@ -6,7 +6,6 @@ import { useDesktopGateway } from './useDesktopGateway'
 const props = defineProps<{
   gateway?: ReturnType<typeof useDesktopGateway>
   view?: 'connection' | 'diagnostics'
-  portExpanded?: boolean
 }>()
 const gateway = props.gateway ?? useDesktopGateway()
 const { status, available, canEditPort, pendingAction, logs, logsLoading, logsError, errors, loading } = gateway
@@ -18,7 +17,6 @@ const { status, available, canEditPort, pendingAction, logs, logsLoading, logsEr
       v-if="status"
       :status="status"
       :view="view"
-      :port-expanded="portExpanded"
       :disabled="!available"
       :can-edit-port="!!canEditPort"
       :saving-port="pendingAction === 'port'"

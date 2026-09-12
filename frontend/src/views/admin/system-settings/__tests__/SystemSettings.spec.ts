@@ -68,25 +68,54 @@ afterEach(() => {
   }
 })
 
-describe('settings categories', () => {
+describe('settings pages', () => {
+  it.each(['constructor', 'toString', '__proto__'])('falls back to common settings for the unknown query %s', async tab => {
+    const { root } = await mountSettings(`/admin/system?tab=${tab}`)
+    expect(root.querySelector('#default-proxy')).not.toBeNull()
+    expect(root.textContent).toContain('创建备份')
+    expect(root.querySelector('a[href*="tab=advanced"]')).not.toBeNull()
+  })
+
+  it('shows the common Web settings and keeps advanced controls off the homepage', async () => {
+    const { root } = await mountSettings()
+    expect(root.querySelector('h1')?.textContent).toBe('系统设置')
+    expect(root.textContent).toContain('出站代理')
+    expect(root.textContent).toContain('创建备份')
+    expect(root.textContent).toContain('恢复备份')
+    expect(root.querySelector('[aria-label="管理代理节点"]')).not.toBeNull()
+    expect(root.querySelector('a[href*="tab=advanced"]')).not.toBeNull()
+    expect(root.querySelector('#rate-limit')).toBeNull()
+    expect(root.querySelector('#gateway-port')).toBeNull()
+    expect(root.querySelector('[role="switch"]')).toBeNull()
+    expect(root.querySelectorAll('input[type="file"]')).toHaveLength(1)
+    expect(root.querySelector('.settings-version')?.textContent).toContain('test-version')
+    expect(desktopMock).not.toHaveBeenCalled()
+  })
+
   it('preserves drafts across navigation and browser history, keeping unrelated query values', async () => {
     const { root, router } = await mountSettings('/admin/system?filter=retained')
-    expect(root.querySelector('a[aria-current="page"]')?.textContent).toContain('网络连接')
+    expect(root.querySelector('h1')?.textContent).toBe('系统设置')
     expect(desktopMock).not.toHaveBeenCalled()
-    const recordsLink = root.querySelector<HTMLAnchorElement>('a[href*="tab=records"]')!
-    recordsLink.click()
-    await flush()
-    expect(router.currentRoute.value.query.filter).toBe('retained')
-    setInput(root, 'compressed-log-retention-days', '60')
-    await nextTick()
     root.querySelector<HTMLAnchorElement>('a[href*="tab=advanced"]')!.click()
     await flush()
+    expect(router.currentRoute.value.query.filter).toBe('retained')
+    const records = root.querySelector<HTMLDetailsElement>('#section-records')!
+    records.open = true
+    setInput(root, 'compressed-log-retention-days', '60')
     setInput(root, 'rate-limit', '200')
     await nextTick()
+    root.querySelector<HTMLAnchorElement>('a[aria-label="返回系统设置"]')!.click()
+    await flush()
+    root.querySelector<HTMLButtonElement>('[aria-label="管理代理节点"]')!.click()
+    await flush()
+    expect(root.querySelector('h1')?.textContent).toBe('代理管理')
     router.back()
     await flush()
-    expect(root.querySelector('a[aria-current="page"]')?.textContent).toContain('记录与存储')
+    router.back()
+    await flush()
+    expect(root.querySelector('h1')?.textContent).toBe('高级设置')
     expect(root.querySelector<HTMLInputElement>('#compressed-log-retention-days')?.value).toBe('60')
+    expect(records.open).toBe(true)
     router.forward()
     await flush()
     expect(root.querySelector<HTMLInputElement>('#rate-limit')?.value).toBe('200')
@@ -96,17 +125,18 @@ describe('settings categories', () => {
 
   it('opens legacy hash targets and removes the hash on explicit category navigation', async () => {
     const { root, router } = await mountSettings('/admin/system?tab=backup#section-cleanup')
-    expect(root.querySelector('a[aria-current="page"]')?.textContent).toContain('记录与存储')
+    expect(root.querySelector('h1')?.textContent).toBe('高级设置')
+    expect(root.querySelector<HTMLDetailsElement>('#section-records')?.open).toBe(true)
     expect(root.querySelector<HTMLElement>('#section-cleanup details')?.hasAttribute('open')).toBe(true)
     expect(nodesMock).not.toHaveBeenCalled()
-    root.querySelector<HTMLAnchorElement>('a[href*="tab=connection"]')!.click()
+    root.querySelector<HTMLAnchorElement>('a[aria-label="返回系统设置"]')!.click()
     await flush()
     expect(router.currentRoute.value.hash).toBe('')
-    expect(root.querySelector('a[aria-current="page"]')?.textContent).toContain('网络连接')
+    expect(root.querySelector('h1')?.textContent).toBe('系统设置')
     expect(nodesMock).toHaveBeenCalledOnce()
     router.back()
     await flush()
-    expect(root.querySelector('a[aria-current="page"]')?.textContent).toContain('记录与存储')
+    expect(root.querySelector('h1')?.textContent).toBe('高级设置')
   })
 
   it('saves common retention fields without hidden batch controls or advanced drafts', async () => {
@@ -140,18 +170,41 @@ describe('settings categories', () => {
 
   it('supports every former section link and falls back from an unknown category', async () => {
     const { root, router } = await mountSettings('/admin/system?tab=unknown')
-    expect(root.querySelector('a[aria-current="page"]')?.textContent).toContain('网络连接')
+    expect(root.querySelector('h1')?.textContent).toBe('系统设置')
     const links = [
-      ['desktop-gateway', '网络连接'], ['proxy', '网络连接'],
-      ['request-log', '记录与存储'], ['cleanup', '记录与存储'],
-      ['data-mgmt', '备份与恢复'], ['basic', '高级与诊断'], ['sysinfo', '高级与诊断'],
+      ['desktop-gateway', '系统设置'], ['proxy', '系统设置'],
+      ['request-log', '高级设置'], ['cleanup', '高级设置'],
+      ['data-mgmt', '系统设置'], ['basic', '高级设置'], ['sysinfo', '高级设置'],
     ]
     for (const [section, title] of links) {
       await router.push(`/admin/system#section-${section}`)
       await flush()
-      expect(root.querySelector('a[aria-current="page"]')?.textContent).toContain(title)
+      expect(root.querySelector('h1')?.textContent).toBe(title)
     }
     expect(desktopMock).not.toHaveBeenCalled()
     expect(cleanupRunsMock).not.toHaveBeenCalled()
+  })
+
+  it('opens old query destinations and keeps both basic disclosures in one save group', async () => {
+    const { root, router } = await mountSettings('/admin/system?tab=connection')
+    expect(root.querySelector('h1')?.textContent).toBe('系统设置')
+    await router.push('/admin/system?tab=backup')
+    await flush()
+    expect(root.querySelector('h1')?.textContent).toBe('系统设置')
+    await router.push('/admin/system?tab=records')
+    await flush()
+    expect(root.querySelector<HTMLDetailsElement>('#section-records')?.open).toBe(true)
+    expect(root.querySelectorAll('.settings-advanced-group')).toHaveLength(6)
+    expect(root.querySelectorAll('input[type="file"]')).toHaveLength(2)
+    setInput(root, 'rate-limit', '200')
+    root.querySelector<HTMLButtonElement>('#enable-format-conversion')!.click()
+    await nextTick()
+    expect(root.querySelectorAll('#section-basic .settings-save')).toHaveLength(1)
+    const save = Array.from(root.querySelectorAll<HTMLButtonElement>('#section-basic button'))
+      .find(button => button.textContent?.trim() === '保存兼容与密钥设置')!
+    save.click()
+    await flush()
+    expect(updateMock.mock.calls.map(call => call[0]).sort()).toEqual(['enable_format_conversion', 'rate_limit_per_minute'])
+    expect(root.querySelector('#section-basic .settings-save')).toBeNull()
   })
 })

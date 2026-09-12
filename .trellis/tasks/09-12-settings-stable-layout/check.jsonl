@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"检查独立保存、隐藏字段保持、i18n 和无裁切"}
+{"file":".trellis/spec/aether-desktop/backend/desktop-contract.md","reason":"检查原生功能与恢复路径无回归"}
+{"file":".trellis/tasks/09-12-settings-stable-layout/prd.md","reason":"逐项检查桌面布局不变与个人常用项可达验收"}
+{"file":".trellis/tasks/09-12-settings-stable-layout/design.md","reason":"核对尺寸变化只影响留白以及旧链接兼容"}

@@ -1,18 +1,38 @@
 <template>
   <section class="settings-group">
-    <h3 class="settings-heading">
+    <h3
+      v-if="view === 'all'"
+      class="settings-heading"
+    >
       默认出站代理
     </h3>
     <div>
       <!-- 区块一：默认代理 -->
-      <div class="settings-row">
+      <div
+        v-if="view !== 'management'"
+        class="settings-row"
+      >
         <div>
-          <Label for="default-proxy">默认代理</Label>
+          <Label for="default-proxy">出站代理</Label>
           <p class="settings-description">
-            用于未单独配置代理的提供商请求，包括模型调用、余额查询和 OAuth。
+            未单独指定代理的请求使用此设置。
+          </p>
+          <p
+            v-if="store.loading"
+            class="settings-description"
+            role="status"
+          >
+            正在加载代理节点...
+          </p>
+          <p
+            v-else-if="store.error"
+            class="settings-error"
+            role="alert"
+          >
+            {{ store.error }}
           </p>
         </div>
-        <div class="settings-row-control">
+        <div class="settings-row-control settings-proxy-selector">
           <Select
             :model-value="proxyNodeId || '__direct__'"
             @update:model-value="(v: string) => $emit('update:proxyNodeId', v === '__direct__' ? null : v)"
@@ -25,6 +45,13 @@
                 直连（不使用代理）
               </SelectItem>
               <SelectItem
+                v-if="proxyNodeId && !nodes.some(node => node.id === proxyNodeId)"
+                :value="proxyNodeId"
+                disabled
+              >
+                {{ store.loading ? '正在加载代理节点...' : '当前代理信息不可用' }}
+              </SelectItem>
+              <SelectItem
                 v-for="node in selectableNodes"
                 :key="node.id"
                 :value="node.id"
@@ -33,10 +60,25 @@
               </SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            v-if="view === 'selector'"
+            variant="ghost"
+            size="icon"
+            class="settings-icon-button"
+            title="管理代理节点"
+            aria-label="管理代理节点"
+            @click="$emit('manage')"
+          >
+            <SlidersHorizontal
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
+          </Button>
         </div>
       </div>
 
       <SettingsSaveActions
+        v-if="view !== 'management'"
         :loading="loading"
         :has-changes="hasChanges"
         :error="error"
@@ -46,7 +88,10 @@
       />
 
       <!-- 区块二：代理节点管理 -->
-      <div class="settings-group mt-7">
+      <div
+        v-if="view !== 'selector'"
+        class="settings-group"
+      >
         <div class="settings-toolbar">
           <div class="flex items-center gap-2">
             <Label class="text-sm font-medium">代理节点</Label>
@@ -172,6 +217,7 @@
       </div>
 
       <ProxyNodeEditDialog
+        v-if="view !== 'selector'"
         v-model:open="dialogOpen"
         :node="editingNode"
         @deleted="handleNodeDeleted"
@@ -190,7 +236,7 @@ import SelectTrigger from '@/components/ui/select-trigger.vue'
 import SelectValue from '@/components/ui/select-value.vue'
 import SelectContent from '@/components/ui/select-content.vue'
 import SelectItem from '@/components/ui/select-item.vue'
-import { Pencil, Plus, RefreshCw } from 'lucide-vue-next'
+import { Pencil, Plus, RefreshCw, SlidersHorizontal } from 'lucide-vue-next'
 import SettingsSaveActions from './SettingsSaveActions.vue'
 import { useProxyNodesStore } from '@/stores/proxy-nodes'
 import { clearModelsDevCache } from '@/api/models-dev'
@@ -200,16 +246,18 @@ import ProxyNodeEditDialog, { type ProxyNodeDeletedPayload } from './ProxyNodeEd
 import { proxyNodesApi, type ProxyNode } from '@/api/proxy-nodes'
 import { formatProxyTestSuccessText } from './proxyTest'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
+  view?: 'all' | 'selector' | 'management'
   proxyNodeId: string | null
   loading: boolean
   hasChanges: boolean
   error?: string
-}>()
+}>(), { view: 'all', error: '' })
 
 const emit = defineEmits<{
   save: []
   cancel: []
+  manage: []
   proxyCleared: []
   'update:proxyNodeId': [value: string | null]
 }>()

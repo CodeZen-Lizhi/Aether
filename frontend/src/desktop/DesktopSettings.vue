@@ -15,7 +15,6 @@ const props = defineProps<{
   savingPort: boolean
   recovery?: boolean
   view?: 'connection' | 'diagnostics'
-  portExpanded?: boolean
   logs?: readonly string[]
   logsLoading?: boolean
   logsError?: string
@@ -63,14 +62,8 @@ function toggleLogs(event: Event) {
     :class="{ 'desktop-panel': recovery }"
   >
     <template v-if="recovery || view !== 'diagnostics'">
-      <h3
-        v-if="!recovery"
-        class="settings-heading"
-      >
-        启动与端口
-      </h3>
       <h2
-        v-else
+        v-if="recovery"
         class="desktop-section-heading"
       >
         <Wrench
@@ -79,6 +72,77 @@ function toggleLogs(event: Event) {
         />
         恢复网关
       </h2>
+      <form
+        :class="recovery ? 'desktop-field' : 'desktop-port-row settings-row'"
+        novalidate
+        :aria-busy="savingPort"
+        @submit.prevent="savePort"
+      >
+        <div>
+          <label for="gateway-port">网关端口</label>
+          <p
+            id="gateway-port-hint"
+            class="settings-description"
+          >
+            保存后会自动重启网关，仅允许本机访问。
+          </p>
+        </div>
+        <div class="settings-row-control desktop-port-control">
+          <Input
+            id="gateway-port"
+            v-model="port"
+            type="number"
+            inputmode="numeric"
+            min="1024"
+            max="65535"
+            step="1"
+            class="rounded-md"
+            :disabled="disabled || !canEditPort"
+            :aria-invalid="!!portError"
+            aria-describedby="gateway-port-hint gateway-port-error"
+          />
+        </div>
+        <p
+          v-if="portError"
+          id="gateway-port-error"
+          ref="portErrorElement"
+          class="desktop-field-error desktop-port-feedback"
+          tabindex="-1"
+          role="alert"
+        >
+          {{ portError }}
+        </p>
+        <div
+          v-if="hasChanges || savingPort"
+          class="settings-actions desktop-port-actions desktop-port-feedback"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            :disabled="disabled"
+            @click="port = String(status.port); submitted = false"
+          >
+            取消
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            :disabled="disabled || !canEditPort || !hasChanges"
+          >
+            <LoaderCircle
+              v-if="savingPort"
+              class="desktop-spin h-4 w-4"
+              aria-hidden="true"
+            />
+            <Save
+              v-else
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
+            {{ savingPort ? '保存中...' : recovery ? '保存端口' : '保存并重启' }}
+          </Button>
+        </div>
+      </form>
       <div
         v-if="!recovery"
         class="desktop-autostart settings-row settings-row--toggle"
@@ -87,12 +151,12 @@ function toggleLogs(event: Event) {
           <label
             id="autostart-label"
             for="desktop-autostart"
-          >登录 Mac 时自动启动</label>
+          >开机启动</label>
           <p
             id="autostart-hint"
             class="settings-description"
           >
-            启动 Aether 并运行本机网关。
+            登录 Mac 时启动 Aether 和网关。
           </p>
         </div>
         <Switch
@@ -104,84 +168,6 @@ function toggleLogs(event: Event) {
           @update:model-value="emit('setAutostart', $event)"
         />
       </div>
-      <component
-        :is="recovery ? 'div' : 'details'"
-        class="settings-disclosure desktop-port-disclosure"
-        :open="portExpanded"
-      >
-        <summary v-if="!recovery">
-          网关端口
-          <samp class="ml-auto text-muted-foreground">{{ status.port }}</samp>
-          <ChevronDown
-            class="settings-chevron !ml-1"
-            aria-hidden="true"
-          />
-        </summary>
-        <form
-          class="desktop-field"
-          novalidate
-          :aria-busy="savingPort"
-          @submit.prevent="savePort"
-        >
-          <label for="gateway-port">网关端口</label>
-          <Input
-            id="gateway-port"
-            v-model="port"
-            type="number"
-            inputmode="numeric"
-            min="1024"
-            max="65535"
-            step="1"
-            class="max-w-48 rounded-md"
-            :disabled="disabled || !canEditPort"
-            :aria-invalid="!!portError"
-            aria-describedby="gateway-port-hint gateway-port-error"
-          />
-          <p id="gateway-port-hint">
-            保存后会自动重启网关，仅允许本机访问。
-          </p>
-          <p
-            v-if="portError"
-            id="gateway-port-error"
-            ref="portErrorElement"
-            class="desktop-field-error"
-            tabindex="-1"
-            role="alert"
-          >
-            {{ portError }}
-          </p>
-          <div
-            v-if="hasChanges || savingPort"
-            class="settings-actions desktop-port-actions"
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              :disabled="disabled"
-              @click="port = String(status.port); submitted = false"
-            >
-              取消
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              :disabled="disabled || !canEditPort || !hasChanges"
-            >
-              <LoaderCircle
-                v-if="savingPort"
-                class="desktop-spin h-4 w-4"
-                aria-hidden="true"
-              />
-              <Save
-                v-else
-                class="h-4 w-4"
-                aria-hidden="true"
-              />
-              {{ savingPort ? '保存中...' : '保存端口' }}
-            </Button>
-          </div>
-        </form>
-      </component>
     </template>
     <template v-else>
       <div
@@ -308,8 +294,14 @@ function toggleLogs(event: Event) {
 .desktop-field label,
 .desktop-autostart label { font-size: 13px; font-weight: 500; }
 .desktop-field > p { font-size: 12px; color: var(--muted-foreground); }
+.desktop-field .settings-description { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
 .desktop-port-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .desktop-port-actions > button { gap: 8px; }
+.desktop-port-row .desktop-port-feedback { grid-column: 1 / -1; margin: 0; font-size: 12px; }
+.desktop-port-row .desktop-port-actions { justify-content: end; }
+.desktop-port-control { display: flex; justify-content: end; }
+.desktop-port-control > input { width: 128px; }
+.desktop-panel .desktop-port-control { justify-content: start; }
 .desktop-directory { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .desktop-directory > div { min-width: 0; }
 .desktop-directory > button { flex-shrink: 0; border-radius: 6px; }

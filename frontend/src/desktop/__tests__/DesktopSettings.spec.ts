@@ -38,23 +38,25 @@ afterEach(() => {
 })
 
 describe('desktop settings section', () => {
-  it('keeps startup visible and port edits collapsed without losing a draft', async () => {
-    const { root } = mountSettings()
-    const disclosure = root.querySelector<HTMLDetailsElement>('.desktop-port-disclosure')!
-    expect(disclosure.open).toBe(false)
+  it('shows the actual port before startup without a disclosure and supports canceling a draft', async () => {
+    const { root } = mountSettings({ status: { ...status, port: 8188 } })
+    expect(root.querySelector('details')).toBeNull()
     expect(root.querySelector('[role="switch"]')).not.toBeNull()
     expect(root.querySelector('.desktop-directories')).toBeNull()
     expect(root.querySelector('button[type="submit"]')).toBeNull()
 
-    disclosure.open = true
     const input = root.querySelector<HTMLInputElement>('#gateway-port')!
+    expect(input.value).toBe('8188')
+    expect(input.compareDocumentPosition(root.querySelector('[role="switch"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     input.value = '8181'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
-    disclosure.open = false
-    disclosure.open = true
     expect(input.value).toBe('8181')
     expect(root.querySelector('button[type="submit"]')).not.toBeNull()
+    Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === '取消')!.click()
+    await nextTick()
+    expect(input.value).toBe('8188')
+    expect(root.querySelector('button[type="submit"]')).toBeNull()
   })
 
   it('keeps recovery controls directly expanded without a collapse trigger', () => {
@@ -70,7 +72,7 @@ describe('desktop settings section', () => {
 
   it('lives as a desktop app section and restarts after a valid port save', async () => {
     const { root, onSetPort } = mountSettings()
-    expect(root.textContent).toContain('启动与端口')
+    expect(root.textContent).toContain('网关端口')
     expect(root.textContent).not.toContain('客户端设置')
     expect(root.textContent).toContain('保存后会自动重启网关')
 
