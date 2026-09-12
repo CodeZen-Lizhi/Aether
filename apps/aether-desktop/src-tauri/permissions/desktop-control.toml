@@ -1,0 +1,16 @@
+[[permission]]
+identifier = "desktop-control"
+description = "Allows the managed Aether desktop surfaces to invoke desktop lifecycle and settings commands."
+commands.allow = [
+  "desktop_status",
+  "desktop_start",
+  "desktop_stop",
+  "desktop_restart",
+  "desktop_set_port",
+  "desktop_set_autostart",
+  "desktop_open_dashboard",
+  "desktop_open_data_dir",
+  "desktop_open_log_dir",
+  "desktop_logs",
+  "desktop_quit",
+]

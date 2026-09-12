@@ -459,7 +459,8 @@ impl From<&StoredBillingModelContext> for BillingModelPricingSnapshot {
             provider_billing_type: context.provider_billing_type.clone(),
             provider_api_key_id: context.provider_api_key_id.clone(),
             provider_api_key_rate_multipliers: context.provider_api_key_rate_multipliers.clone(),
-            provider_api_key_default_rate_multiplier: context.provider_api_key_default_rate_multiplier,
+            provider_api_key_default_rate_multiplier: context
+                .provider_api_key_default_rate_multiplier,
             provider_api_key_cache_ttl_minutes: context.provider_api_key_cache_ttl_minutes,
             global_model_id: context.global_model_id.clone(),
             global_model_name: context.global_model_name.clone(),
@@ -482,7 +483,8 @@ impl From<StoredBillingModelContext> for BillingModelPricingSnapshot {
             provider_billing_type: context.provider_billing_type,
             provider_api_key_id: context.provider_api_key_id,
             provider_api_key_rate_multipliers: context.provider_api_key_rate_multipliers,
-            provider_api_key_default_rate_multiplier: context.provider_api_key_default_rate_multiplier,
+            provider_api_key_default_rate_multiplier: context
+                .provider_api_key_default_rate_multiplier,
             provider_api_key_cache_ttl_minutes: context.provider_api_key_cache_ttl_minutes,
             global_model_id: context.global_model_id,
             global_model_name: context.global_model_name,
@@ -859,10 +861,7 @@ mod tests {
             1.0
         );
         pricing.provider_api_key_default_rate_multiplier = Some(f64::NAN);
-        assert_eq!(
-            pricing.rate_multiplier_for_api_format(None),
-            1.0
-        );
+        assert_eq!(pricing.rate_multiplier_for_api_format(None), 1.0);
     }
 
     #[test]

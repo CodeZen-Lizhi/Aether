@@ -14,6 +14,7 @@ Reuse `desktop_status/start/stop/restart/set_port/set_autostart/open_data_dir/op
 
 - `desktop-local` matches only the bundled `main` recovery window.
 - `desktop-dashboard` matches `dashboard-*` and remote URLs under `http://127.0.0.1:*/*`.
+- Both capabilities include the app-level `desktop-control` permission; its command allowlist must stay synchronized with every `desktop_*` command registered by the host.
 - Rust `authorize` must also match the dynamic dashboard label, credential-free loopback URL, and the current managed gateway port. A capability is not sufficient runtime authorization.
 - Web/Docker pages and every other localhost page have no desktop command access.
 
@@ -32,7 +33,7 @@ Reuse `desktop_status/start/stop/restart/set_port/set_autostart/open_data_dir/op
 
 ### 6. Tests Required
 
-- Vue: header shows state and running actions; System Settings verifies port, autostart, and invalid-field focus.
+- Vue: header shows state and running actions; System Settings verifies port, autostart, and invalid-field focus. The desktop script tests must compare every registered `desktop_*` command with the shared ACL allowlist and require both managed capabilities to reference it.
 - Rust: `cargo check -p aether-desktop --locked`; native QA covers origin changes, stopped recovery, and IPC denial for an unmanaged page.
 - UI: at 840x620 and normal desktop widths, the header does not overflow and state/focus/danger styling remains legible in both themes.
 

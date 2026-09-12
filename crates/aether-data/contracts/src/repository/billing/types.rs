@@ -76,10 +76,7 @@ impl StoredBillingModelContext {
     }
 
     /// 结算链路注入 Key 级默认倍率（格式级映射未命中时回落）。
-    pub fn with_provider_api_key_default_rate_multiplier(
-        mut self,
-        value: Option<f64>,
-    ) -> Self {
+    pub fn with_provider_api_key_default_rate_multiplier(mut self, value: Option<f64>) -> Self {
         self.provider_api_key_default_rate_multiplier = value;
         self
     }

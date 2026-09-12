@@ -1937,9 +1937,9 @@ fn provider_query_select_test_endpoint<'a>(
                 endpoint.is_active && endpoint.api_format.trim().eq_ignore_ascii_case(api_format)
             })
             .or_else(|| {
-                endpoints.iter().find(|endpoint| {
-                    endpoint.api_format.trim().eq_ignore_ascii_case(api_format)
-                })
+                endpoints
+                    .iter()
+                    .find(|endpoint| endpoint.api_format.trim().eq_ignore_ascii_case(api_format))
             });
         return Ok(endpoint);
     }

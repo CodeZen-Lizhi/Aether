@@ -41,7 +41,6 @@ impl ProviderKeyHealthBucket {
     }
 }
 
-
 pub fn count_recent_active_requests_for_provider(
     recent_candidates: &[StoredRequestCandidate],
     provider_id: &str,
@@ -824,10 +823,10 @@ mod tests {
         count_recent_active_requests_for_provider, count_recent_active_requests_for_provider_key,
         count_recent_rpm_requests_for_provider_key,
         count_recent_rpm_requests_for_provider_key_since, effective_provider_key_health_score,
-        effective_provider_key_rpm_limit,
-        is_provider_key_circuit_open, is_provider_key_circuit_open_at, provider_key_health_bucket,
-        provider_key_health_score, provider_key_rpm_allows_request,
-        provider_key_rpm_allows_request_since, ProviderKeyHealthBucket,
+        effective_provider_key_rpm_limit, is_provider_key_circuit_open,
+        is_provider_key_circuit_open_at, provider_key_health_bucket, provider_key_health_score,
+        provider_key_rpm_allows_request, provider_key_rpm_allows_request_since,
+        ProviderKeyHealthBucket,
     };
 
     fn stored_candidate(

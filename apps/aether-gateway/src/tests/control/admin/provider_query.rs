@@ -2515,7 +2515,12 @@ async fn gateway_handles_test_model_with_inactive_provider_endpoint_and_key_impl
         "https://api.disabled.example/v1",
     );
     endpoint.is_active = false;
-    let mut key = sample_key("key-disabled", "provider-disabled", "openai:chat", "sk-disabled");
+    let mut key = sample_key(
+        "key-disabled",
+        "provider-disabled",
+        "openai:chat",
+        "sk-disabled",
+    );
     key.is_active = false;
     let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
