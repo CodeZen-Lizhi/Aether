@@ -382,7 +382,7 @@ describe('RequestDetailDrawer settlement pricing', () => {
       expect(modelRow?.textContent).toContain('gpt-5')
       expect(modelRow?.textContent).toContain('->')
       expect(modelRow?.textContent).toContain('gpt-5.1')
-      expect(modelRow?.querySelector('[data-usage-model-target]')?.classList.contains('basis-full'))
+      expect(modelRow?.lastElementChild?.hasAttribute('data-usage-model-target'))
         .toBe(true)
       expect(modelRow?.querySelector('[data-request-detail-model-badge="reasoning"]')?.textContent)
         .toContain('xhigh -> max')

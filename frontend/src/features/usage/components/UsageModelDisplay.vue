@@ -8,20 +8,14 @@
       : undefined"
   >
     <div
-      class="flex w-fit min-w-0 max-w-full items-center gap-1"
-      :class="[modelRowClass, actualModel ? 'flex-wrap' : '']"
+      class="w-fit min-w-0 max-w-full [overflow-wrap:anywhere]"
+      :class="modelRowClass"
     >
       <span
         class="min-w-0 max-w-full [overflow-wrap:anywhere]"
         :class="modelClass"
         data-usage-model-source
       >{{ record.model }}</span>
-      <template v-if="actualModel">
-        <span
-          class="order-last basis-full min-w-0 break-all whitespace-normal text-muted-foreground"
-          data-usage-model-target
-        ><span class="mr-1">-&gt;</span>{{ actualModel }}</span>
-      </template>
       <template v-if="!shouldStackBadges">
         <Badge
           v-for="badge in modelBadges"
@@ -29,7 +23,7 @@
           :data-usage-model-badge="badge.key"
           :data-request-detail-model-badge="context === 'detail' ? badge.key : undefined"
           :variant="badge.variant"
-          class="h-4 shrink-0 whitespace-nowrap rounded-full px-1.5 text-[10px] leading-4"
+          class="ml-1 h-4 whitespace-nowrap rounded-full px-1.5 align-baseline text-[10px] leading-4"
           :class="badge.className"
           :title="badge.title"
           :aria-label="badge.ariaLabel"
@@ -37,6 +31,11 @@
           {{ badge.label }}
         </Badge>
       </template>
+      <span
+        v-if="actualModel"
+        class="block min-w-0 break-all whitespace-normal text-muted-foreground"
+        data-usage-model-target
+      ><span class="mr-1">-&gt;</span>{{ actualModel }}</span>
     </div>
 
     <div

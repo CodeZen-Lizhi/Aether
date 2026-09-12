@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Usage model spacing fixture</title></head>
+<body><main id="fixture"></main>
+<script type="module">
+import { createApp, h } from 'vue'
+import UsageModelDisplay from '/src/features/usage/components/UsageModelDisplay.vue'
+import '/src/style.css'
+
+const widths = [94, 104, 116, 128, 160, 240]
+const contexts = [
+  { id: 'table', props: { class: 'text-xs font-medium' } },
+  { id: 'card', props: { modelClass: 'text-[15px] font-semibold leading-5' } },
+  { id: 'detail', props: { context: 'detail', class: 'text-sm font-mono text-muted-foreground', modelRowClass: 'rounded bg-muted px-2 py-0.5' } },
+]
+const samples = [
+  { id: 'high', record: { model: 'gpt-6-astra', reasoning_effort: 'high' } },
+  { id: 'medium', record: { model: 'gpt-6-astra', reasoning_effort: 'medium' } },
+  { id: 'long', record: { model: 'gpt-6-astra-long-model-name-version-2026-09-12', reasoning_effort: 'high' } },
+  { id: 'mapping', record: { model: 'gpt-6-astra', target_model: 'upstream/gpt-6-astra-latest', reasoning_effort: 'high', service_tier: 'priority' } },
+  { id: 'stack', record: { model: 'gpt-6-astra', reasoning_effort: 'high', service_tier: 'priority', request_type: 'compact' } },
+]
+createApp({
+  render: () => h('div', contexts.map(context => h('section', [
+    h('h1', { style: 'font-size:16px;margin:24px' }, context.id),
+    h('div', { style: 'padding:24px;display:flex;flex-wrap:wrap;gap:24px' }, widths.map(width =>
+    h('section', { style: `width:${width}px;flex:none` }, [
+      h('h2', { style: 'font-size:12px;margin-bottom:16px' }, `${width}px`),
+      ...samples.map(sample => h('div', { 'data-spacing-case': `${context.id}-${sample.id}-${width}`, style: 'border-bottom:1px solid #ddd;padding:12px 0' }, [
+        h(UsageModelDisplay, { record: sample.record, ...context.props }),
+      ])),
+    ]))),
+  ])))
+}).mount('#fixture')
+</script>
+</body>
+</html>

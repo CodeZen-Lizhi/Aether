@@ -19,6 +19,8 @@
 
 **Usage records**: 列宽由可见列权重归一化到 100%，按实际 DOM 列顺序输出 colgroup；th / td 不再独立分配百分比。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
 
+**Model badges**: `UsageModelDisplay.vue` 的模型名与行内徽标使用同一文字流，徽标左距 4px；空间不足自然续行。不要恢复「可收缩文本 flex 项 + 不收缩徽标」：`w-fit` 仍会保留换行后未绘制的文本盒空白，使徽标离可见文字过远。映射模型在名称与行内徽标后单独一行；无映射且三个及以上徽标沿用独立徽标行。修改后运行 `scripts/check-usage-model-spacing.cjs` 的真实浏览器检查（fixture：`/scripts/fixtures/usage-model-spacing.html`），用 `Range.getClientRects()` 的末行文字边界断言相邻间距，而非仅测 span 容器或 CSS 类名；同时检查真实表格、卡片与详情的调用方样式。
+
 **Details**: 代码和 JSON 采用 `pre-wrap` / `overflow-wrap:anywhere`，JSON 内容 flex 子项使用 `min-width:0`，视觉缩进最多占内容列 25%。请求头对比的两侧共享同一 grid 行和纵向滚动容器，长短值换行后仍须逐行对齐。链路节点及重试按钮参与流式布局，序号表示换行后的顺序；不得把节点放到横向滚动轨道里。
 
 **Verification**: 在 840×620、1024、1280、1920 px 宽度测量页面及可滚动容器的 `scrollWidth <= clientWidth`；检查所选字段、价格输入、长错误末尾、分页和保存按钮仍可达。使用记录单测验证列宽总和、列顺序和两种布局的完整元数据。真实浏览器核验长短请求头行高、深层 JSON、多个节点及多次重试，不能仅检查 CSS 字符串或把隐藏滚动条当成无溢出证据。
