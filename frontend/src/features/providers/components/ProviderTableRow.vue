@@ -7,7 +7,7 @@
     <TableCell class="py-3.5">
       <div class="space-y-0.5">
         <div class="flex items-center gap-1.5">
-          <span class="text-sm font-medium text-foreground">{{ provider.name }}</span>
+          <span class="min-w-0 text-sm font-medium text-foreground [overflow-wrap:anywhere]">{{ provider.name }}</span>
           <a
             v-if="provider.website"
             :href="provider.website"
@@ -77,24 +77,21 @@
       />
     </TableCell>
     <TableCell class="py-3.5 text-center">
-      <div class="inline-grid grid-cols-[1.75rem_1.75rem_1.75rem] gap-x-0.5 gap-y-0.5 text-xs text-left">
+      <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-1 gap-y-0.5 text-xs text-left">
         <span class="text-muted-foreground/70">{{ legacyT('端点:') }}</span>
-        <span class="font-medium text-foreground/90 tabular-nums text-right">{{ provider.active_endpoints }}</span>
-        <span class="text-muted-foreground/50 tabular-nums">/{{ provider.total_endpoints }}</span>
+        <span class="tabular-nums text-right"><span class="font-medium text-foreground/90">{{ provider.active_endpoints }}</span><span class="text-muted-foreground/50"> /{{ provider.total_endpoints }}</span></span>
 
         <span class="text-muted-foreground/70">{{ `${getCredentialLabel(provider)}:` }}</span>
-        <span class="font-medium text-foreground/90 tabular-nums text-right">{{ provider.active_keys }}</span>
-        <span class="text-muted-foreground/50 tabular-nums">/{{ provider.total_keys }}</span>
+        <span class="tabular-nums text-right"><span class="font-medium text-foreground/90">{{ provider.active_keys }}</span><span class="text-muted-foreground/50"> /{{ provider.total_keys }}</span></span>
 
         <span class="text-muted-foreground/70">{{ legacyT('模型:') }}</span>
-        <span class="font-medium text-foreground/90 tabular-nums text-right">{{ provider.active_models }}</span>
-        <span class="text-muted-foreground/50 tabular-nums">/{{ provider.total_models }}</span>
+        <span class="tabular-nums text-right"><span class="font-medium text-foreground/90">{{ provider.active_models }}</span><span class="text-muted-foreground/50"> /{{ provider.total_models }}</span></span>
       </div>
     </TableCell>
     <TableCell class="py-3.5 align-middle">
       <div
         v-if="provider.endpoint_health_details && provider.endpoint_health_details.length > 0"
-        class="grid grid-cols-3 gap-x-3 gap-y-2 max-w-[240px]"
+        class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,3.75rem),1fr))] gap-x-3 gap-y-2 max-w-[240px]"
       >
         <div
           v-for="endpoint in sortEndpoints(provider.endpoint_health_details)"
@@ -103,7 +100,7 @@
           :title="getEndpointTooltip(endpoint, locale)"
         >
           <!-- 上排：缩写 + 百分比 -->
-          <div class="flex items-center justify-between text-[10px] leading-none">
+          <div class="flex items-center justify-between gap-1 whitespace-nowrap text-[10px] leading-none">
             <span class="font-medium text-muted-foreground/80">
               {{ formatApiFormatShort(endpoint.api_format) }}
             </span>
@@ -130,7 +127,7 @@
     <TableCell class="py-3.5 text-center">
       <Badge
         :variant="provider.is_active ? 'success' : 'secondary'"
-        class="text-xs"
+        class="px-1.5 text-xs"
       >
         {{ legacyT(provider.is_active ? '活跃' : '停用') }}
       </Badge>
@@ -139,7 +136,7 @@
       class="py-3.5"
       @click.stop
     >
-      <div class="flex items-center justify-center gap-0.5">
+      <div class="flex items-center justify-center gap-0.5 [&>button]:shrink-0">
         <Button
           variant="ghost"
           size="icon"

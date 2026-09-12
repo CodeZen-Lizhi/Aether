@@ -13,7 +13,7 @@
     <!-- 提供商表格 -->
     <Card
       variant="default"
-      class="responsive-list"
+      class="responsive-list provider-list"
     >
       <!-- 标题和操作栏 -->
       <ProviderTableHeader
@@ -60,16 +60,24 @@
         class="responsive-list-table"
       >
         <Table>
+          <colgroup>
+            <col>
+            <col class="provider-list__balance-column">
+            <col class="provider-list__resources-column">
+            <col class="provider-list__health-column">
+            <col class="provider-list__status-column">
+            <col class="provider-list__actions-column">
+          </colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead class="w-[18%]">
+              <TableHead>
                 {{ legacyT('提供商信息') }}
               </TableHead>
-              <TableHead class="w-[20%]">
+              <TableHead>
                 {{ legacyT('余额监控') }}
               </TableHead>
               <SortableTableHead
-                class="w-[12%] text-center"
+                class="text-center"
                 column-key="model"
                 :sortable="false"
                 align="center"
@@ -87,7 +95,6 @@
                 </template>
               </SortableTableHead>
               <SortableTableHead
-                class="w-[24%]"
                 column-key="api_format"
                 :sortable="false"
                 :filter-active="filterApiFormat !== 'all'"
@@ -104,7 +111,7 @@
                 </template>
               </SortableTableHead>
               <SortableTableHead
-                class="w-[8%] text-center"
+                class="text-center"
                 column-key="status"
                 :sortable="false"
                 align="center"
@@ -121,7 +128,7 @@
                   />
                 </template>
               </SortableTableHead>
-              <TableHead class="w-[18%] text-center">
+              <TableHead class="text-center">
                 {{ legacyT('操作') }}
               </TableHead>
             </TableRow>
@@ -730,3 +737,39 @@ onUnmounted(() => {
   stopTick()
 })
 </script>
+
+<style scoped>
+.provider-list {
+  container-name: provider-list;
+}
+
+.provider-list__balance-column {
+  width: 15%;
+}
+
+.provider-list__resources-column {
+  width: 6.5rem;
+}
+
+.provider-list__health-column {
+  width: 22%;
+}
+
+.provider-list__status-column {
+  width: 4.5rem;
+}
+
+.provider-list__actions-column {
+  width: 10.5rem;
+}
+
+@container provider-list (min-width: 45rem) {
+  .provider-list > .responsive-list-table {
+    display: block;
+  }
+
+  .provider-list > .responsive-list-cards {
+    display: none;
+  }
+}
+</style>
