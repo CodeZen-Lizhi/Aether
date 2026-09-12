@@ -1433,3 +1433,25 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 51: 优化仪表盘紧凑排版
+<!-- trellis-session: v=2 fp=c7dff6f2dcdbe462 -->
+
+**Date**: 2026-09-12
+**Task**: 优化仪表盘紧凑排版
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+重排仪表盘顶部指标与累计摘要，使用内容容器断点适配侧栏布局；通过 Dashboard 定向测试、类型检查、ESLint、生产构建和多尺寸明暗主题浏览器核验，并推送到 codex/tauri-macos。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `610040773` | fix(frontend): 优化仪表盘紧凑布局 |
+
+### Status
+
+[OK] **Completed**
