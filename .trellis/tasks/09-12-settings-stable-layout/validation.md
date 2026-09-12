@@ -1,6 +1,6 @@
 # 实施与验收记录
 
-日期：2026-09-12。前端实现与独立审查完成，未提交、打包或发布，未替换正在运行的 APP。
+日期：2026-09-12。前端实现与独立审查完成；用户追加授权后已提交并构建 0.1.19 安装包，未公开发布或替换正在运行的 APP。
 
 ## 自动检查
 
@@ -44,3 +44,15 @@
 布局脚本：`output/playwright/settings-stable-layout-check.cjs`。IPC fixture：`output/playwright/settings-stable-desktop.cjs`。独立服务启动器：`output/playwright/settings-stable-server.mjs`，进程与运行目录记录于相邻 `settings-stable-state.json`。
 
 普通浏览器打开预览 URL 是 Web 模式，使用隔离账号 `settings-layout-qa@example.test` / `Settings-Layout-QA-Only-2026!`。Playwright 的 `settings-stable` 浏览器会话带桌面 fixture，可查看完整首页；截图来自该真实前端会话。
+
+## 提交与打包
+
+- 用户追加授权：提交代码、push，然后打包。设置改造提交 `a28a8da98` 已推送到 `origin/codex/tauri-macos`，一并推送该分支之前已提交的 `1917a8ffe` 桌面布局修复；未同步其他分支。
+- 执行 `npm --prefix apps/aether-desktop run build`，脚本自动分配 0.1.19。版本文件提交 `55e7e38ba`，连同本交付记录推送到同一远端分支。
+- 产物：`target/release/bundle/dmg/Aether_0.1.19_aarch64.dmg`，32,138,010 bytes；另有 `target/release/bundle/macos/Aether.app`。
+- DMG SHA256：`fc46733722e09610f2f3290dee8b9702adf1fcc7ca3b8f23253342831c8a6ef7`。
+- 独立包装核验：APP 与 DMG 内 APP 的深度严格签名校验通过；DMG 验证通过；只读挂载确认 APP 与 Applications 链接，挂载已清理；DMG 内 APP 与构建 APP 逐文件一致，随包 Web 与 frontend/dist 一致。
+- APP 短版本与构建版本均为 0.1.19；宿主和网关均为 arm64，最低 macOS 14.0；动态依赖仅系统 Framework 与 /usr/lib，无工作区依赖。签名为本地 ad-hoc，未公证。
+- 使用本次随包 release 网关和 Web 资源执行 `qa_lifecycle.py`，桌面模式和 Web 模式均通过：身份/登录、Cookie 续期、配置导入导出、JSON/SSE 代理、8 个后台路由、用量落库、stdin EOF、SIGTERM 与父进程退出后清理。
+- 隔离测试诊断目录：临时目录中的 `aether-cli-lifecycle-4ul2vc8f`（桌面模式）、`aether-cli-lifecycle-mb7cqzac`（Web 模式）。测试子进程已自动清理，未操作现有网关数据。
+- 原生宿主 UI/真实 IPC 验收限制仍有效，不因打包通过而标为已验证；因此保留任务为 in_progress，不自动归档。
