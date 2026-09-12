@@ -1492,3 +1492,35 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Next Steps
 
 - 独立运行条件具备后补原生最小/最大化与真实 IPC 验收；未安装替换用户 APP。
+
+
+## Session 53: 修复推理标签间距并交付 0.1.20
+<!-- trellis-session: v=2 fp=942978220bebc953 -->
+
+**Date**: 2026-09-12
+**Task**: 修复推理标签间距并交付 0.1.20
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+将模型名与推理标签从独立 flex 项改为同一文字流，同一行保持 4px 间距，窄列自然续行；已提交并打包 0.1.20。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `efc4a1d8f` | fix(usage): 让推理标签紧跟模型名称 |
+| `c0a025b68` | build(desktop): 打包 0.1.20 |
+
+### Testing
+
+- [OK] 真实表格修复前 31.61px 间距；修复后五档尺寸、390px 卡片及90组合几何检查通过，49项相关测试通过。
+- [OK] 独立审查通过；APP/DMG 签名、内容、版本及随包网关桌面生命周期检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户安装 0.1.20 后可在原生 APP 查看效果；本次未安装替换，原生 WebKit 视觉检查仍未覆盖。

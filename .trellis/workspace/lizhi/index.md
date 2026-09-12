@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 52
+- **Total Sessions**: 53
 - **Last Active**: 2026-09-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1494 | Active |
+| `journal-1.md` | ~1526 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 53 | 2026-09-12 | 修复推理标签间距并交付 0.1.20 | `efc4a1d8f`, `c0a025b68` | `codex/tauri-macos` |
 | 52 | 2026-09-12 | 系统设置固定布局与 0.1.19 打包交付 | `a28a8da98`, `55e7e38ba`, `4f74d362f` | `codex/tauri-macos` |
 | 51 | 2026-09-12 | 优化仪表盘紧凑排版 | `610040773` | `codex/tauri-macos` |
 | 50 | 2026-09-12 | 完善使用记录筛选 | `d8047434a` | `codex/tauri-macos` |
