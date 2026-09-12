@@ -1455,3 +1455,40 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Status
 
 [OK] **Completed**
+
+
+## Session 52: 系统设置固定布局与 0.1.19 打包交付
+<!-- trellis-session: v=2 fp=db0b822da8918abc -->
+
+**Date**: 2026-09-12
+**Task**: 系统设置固定布局与 0.1.19 打包交付
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+完成个人常用设置首页与稳定桌面布局；按用户授权提交、推送并打包 0.1.19。原生界面验收尚未覆盖，任务保留进行中。
+
+### Main Changes
+
+- 首页聚焦代理、端口、自启动、备份恢复；高级与代理管理使用二级页。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a28a8da98` | feat(settings): 精简常用设置并保持窗口布局稳定 |
+| `55e7e38ba` | build(desktop): 打包 0.1.19 |
+| `4f74d362f` | docs(settings): 记录 0.1.19 打包验收 |
+
+### Testing
+
+- [OK] 前端定向测试、类型检查、lint 和构建通过；五档浏览器尺寸及连续缩放通过。
+- [OK] 0.1.19 APP/DMG 签名、内容、版本、架构与系统依赖检查通过；随包网关桌面/Web 隔离生命周期检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 独立运行条件具备后补原生最小/最大化与真实 IPC 验收；未安装替换用户 APP。
