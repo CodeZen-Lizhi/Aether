@@ -51,16 +51,6 @@
           preset-trigger-class="!w-full"
         />
 
-        <!-- 用户筛选（仅管理员可见） -->
-        <ServerUserSelector
-          v-if="isAdmin"
-          class="min-w-0"
-          :model-value="filterUser"
-          :initial-users="availableUsers"
-          dropdown
-          @update:model-value="$emit('update:filterUser', $event)"
-        />
-
         <!-- 模型筛选 -->
         <Select
           :model-value="filterModel"
@@ -356,18 +346,11 @@
           </template>
         </div>
 
-        <!-- 第三行：用户 + 提供商 -->
+        <!-- 第三行：提供商 -->
         <div
           v-if="isAdmin"
           class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs leading-5 text-muted-foreground"
         >
-          <span
-            class="min-w-0 [overflow-wrap:anywhere]"
-            :title="formatRecordUserProviderLine(record)"
-          >
-            {{ formatRecordUserSegment(record) }}
-          </span>
-          <span class="shrink-0 text-muted-foreground/40">·</span>
           <span class="min-w-0 [overflow-wrap:anywhere]">{{ formatRecordProviderSegment(record) }}</span>
         </div>
 
@@ -471,25 +454,6 @@
           >
             时间
           </TableHead>
-          <SortableTableHead
-            v-if="isAdmin && isColumnVisible('user')"
-            class="h-12 font-semibold"
-            column-key="user"
-            :sortable="false"
-            :filter-active="filterUser !== '__all__'"
-            filter-title="筛选用户"
-            filter-content-class="w-64 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"
-          >
-            用户
-            <template #filter="{ close }">
-              <ServerUserSelector
-                :model-value="filterUser"
-                :initial-users="availableUsers"
-                @update:model-value="$emit('update:filterUser', $event)"
-                @select="close"
-              />
-            </template>
-          </SortableTableHead>
           <TableHead
             v-if="!isAdmin && isColumnVisible('key')"
             class="h-12 font-semibold"
@@ -655,24 +619,6 @@
               </span>
               <span class="text-[11px] text-muted-foreground tabular-nums whitespace-normal">
                 {{ formatRecordDate(record.created_at) }}
-              </span>
-            </div>
-          </TableCell>
-          <TableCell
-            v-if="isAdmin && isColumnVisible('user')"
-            class="py-4 [overflow-wrap:anywhere]"
-            :title="record.username || record.user_email || (record.user_id ? `User ${record.user_id}` : '已删除用户')"
-          >
-            <div class="flex flex-col text-xs gap-0.5">
-              <span class="[overflow-wrap:anywhere]">
-                {{ record.username || record.user_email || (record.user_id ? `User ${record.user_id}` : '已删除用户') }}
-              </span>
-              <span
-                v-if="record.api_key?.name"
-                class="text-muted-foreground [overflow-wrap:anywhere]"
-                :title="record.api_key.name"
-              >
-                {{ record.api_key.name }}
               </span>
             </div>
           </TableCell>
@@ -1056,7 +1002,6 @@ import type { DateRangeParams, UsageRecord } from '../types'
 import { MultiSelect, TimeRangePicker } from '@/components/common'
 import type { MultiSelectOption } from '@/components/common/MultiSelect.vue'
 import ElapsedTimeText from './ElapsedTimeText.vue'
-import ServerUserSelector from './ServerUserSelector.vue'
 import UsageModelDisplay from './UsageModelDisplay.vue'
 
 export interface UserOption {
@@ -1073,7 +1018,6 @@ interface FilterOption {
 
 type UsageRecordColumnId =
   | 'time'
-  | 'user'
   | 'key'
   | 'model'
   | 'provider'
@@ -1101,13 +1045,11 @@ const props = defineProps<{
   // 时间范围
   timeRange: DateRangeParams
   // 筛选
-  filterUser: string
   filterModel: string
   filterProvider: string
   filterApiFormat: string
   filterStatus: string
   filterClientFamily: string
-  availableUsers: UserOption[]
   availableModels: string[]
   availableProviders: string[]
   availableClientFamilies: string[]
@@ -1123,7 +1065,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:timeRange': [value: DateRangeParams]
-  'update:filterUser': [value: string]
   'update:filterModel': [value: string]
   'update:filterProvider': [value: string]
   'update:filterApiFormat': [value: string]
@@ -1143,7 +1084,6 @@ const isAdmin = true
 
 const USAGE_RECORD_COLUMN_OPTIONS: UsageRecordColumnOption[] = [
   { id: 'time', label: '时间', width: 10 },
-  { id: 'user', label: '用户', width: 12, adminOnly: true },
   { id: 'key', label: '密钥', width: 12, userOnly: true },
   { id: 'model', label: '模型', width: 16 },
   { id: 'provider', label: '提供商', width: 14, adminOnly: true },
@@ -1159,7 +1099,6 @@ const USAGE_RECORD_COLUMN_OPTIONS: UsageRecordColumnOption[] = [
 
 const DEFAULT_ADMIN_COLUMNS: UsageRecordColumnId[] = [
   'time',
-  'user',
   'model',
   'provider',
   'api_format',
@@ -1323,18 +1262,6 @@ function formatRecordTime(dateStr: string): string {
   const minutes = String(date.getMinutes()).padStart(2, '0')
   const seconds = String(date.getSeconds()).padStart(2, '0')
   return `${hours}:${minutes}:${seconds}`
-}
-
-function getRecordUserName(record: UsageRecord): string {
-  return record.username || record.user_email || (record.user_id ? `User ${record.user_id}` : '已删除用户')
-}
-
-function formatRecordUserProviderLine(record: UsageRecord): string {
-  return `${formatRecordUserSegment(record)} · ${formatRecordProviderSegment(record)}`
-}
-
-function formatRecordUserSegment(record: UsageRecord): string {
-  return `${getRecordUserName(record)} / ${record.api_key?.name || '-'}`
 }
 
 function formatRecordProviderSegment(record: UsageRecord): string {

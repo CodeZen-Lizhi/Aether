@@ -8,17 +8,13 @@ const source = readFileSync(
 )
 
 describe('admin usage initial loading', () => {
-  it('initializes the user filter before records and analytics load', () => {
+  it('loads records and analytics without initializing a user filter', () => {
     const mountedBlock = source
       .split('onMounted(async () => {')[1]
       ?.split('// 处理时间范围变化')[0]
 
     expect(mountedBlock).toBeTruthy()
-    expect(mountedBlock).toContain('loadAdminUsers()')
-    expect(mountedBlock?.indexOf('loadAdminUsers()'))
-      .toBeLessThan(mountedBlock?.indexOf('await loadRecords(') ?? -1)
-    expect(mountedBlock?.indexOf('loadAdminUsers()'))
-      .toBeLessThan(mountedBlock?.indexOf('void refreshAdminAnalytics(') ?? -1)
+    expect(mountedBlock).not.toContain('loadAdminUsers()')
     expect(mountedBlock).not.toContain('loadHeatmapData()')
   })
 

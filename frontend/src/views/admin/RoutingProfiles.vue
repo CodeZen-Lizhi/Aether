@@ -9,9 +9,6 @@
               <h2 class="text-sm font-semibold">
                 调度策略
               </h2>
-              <p class="mt-1 text-xs text-muted-foreground">
-                全局唯一一份 —— 排序即调度顺序，也是故障转移顺序
-              </p>
             </div>
             <div class="flex items-center gap-2">
               <span

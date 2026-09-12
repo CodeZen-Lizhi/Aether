@@ -29,7 +29,7 @@
                   v-if="batchAction === 'sync-prices' || batchOnlineLoading"
                   class="w-3.5 h-3.5 animate-spin"
                 />
-                <RefreshCw
+                <CircleDollarSign
                   v-else
                   class="w-3.5 h-3.5"
                 />
@@ -267,82 +267,82 @@
           <div
             v-for="model in filteredGlobalModels"
             :key="model.id"
-            class="p-4 space-y-3 hover:bg-muted/50 cursor-pointer transition-colors"
+            class="flex min-w-0 items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer transition-colors"
             @click="selectModel(model)"
           >
-            <!-- 第一行：复选框 + 名称 + 状态 + 操作 -->
-            <div class="flex items-start justify-between gap-3">
-              <div
-                class="flex items-center pt-0.5 shrink-0"
-                @click.stop
-              >
-                <Checkbox
-                  :checked="selectedModelIds.has(model.id)"
-                  :aria-label="`选择 ${model.display_name}`"
-                  @update:checked="toggleModelSelection(model.id)"
-                />
+            <!-- 单行：复选框 + 名称 + 统计 + 状态 + 操作 -->
+            <div
+              class="flex items-center shrink-0"
+              @click.stop
+            >
+              <Checkbox
+                :checked="selectedModelIds.has(model.id)"
+                :aria-label="`选择 ${model.display_name}`"
+                @update:checked="toggleModelSelection(model.id)"
+              />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="truncate font-medium">{{ model.display_name }}</span>
+                <Badge
+                  :variant="model.is_active ? 'default' : 'secondary'"
+                  class="shrink-0 text-xs"
+                >
+                  {{ model.is_active ? '活跃' : '停用' }}
+                </Badge>
               </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="font-medium truncate">{{ model.display_name }}</span>
-                  <Badge
-                    :variant="model.is_active ? 'default' : 'secondary'"
-                    class="text-xs shrink-0"
-                  >
-                    {{ model.is_active ? '活跃' : '停用' }}
-                  </Badge>
-                </div>
-                <div class="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                  <span class="font-mono truncate">{{ model.name }}</span>
-                  <button
-                    class="p-0.5 rounded hover:bg-muted transition-colors shrink-0"
-                    @click.stop="copyToClipboard(model.name)"
-                  >
-                    <Copy class="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-              <div
-                class="flex items-center gap-0.5 shrink-0"
-                @click.stop
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-7 w-7"
-                  @click="editModel(model)"
+              <div class="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <span class="truncate font-mono">{{ model.name }}</span>
+                <button
+                  class="shrink-0 rounded p-0.5 transition-colors hover:bg-muted"
+                  title="复制模型 ID"
+                  @click.stop="copyToClipboard(model.name)"
                 >
-                  <Edit class="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-7 w-7"
-                  @click="toggleModelStatus(model)"
-                >
-                  <Power class="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-7 w-7"
-                  @click="deleteModel(model)"
-                >
-                  <Trash2 class="w-3.5 h-3.5" />
-                </Button>
+                  <Copy class="h-3 w-3" />
+                </button>
               </div>
             </div>
-
-            <!-- 第二行：统计信息 -->
-            <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <span>提供商 {{ model.active_provider_count || 0 }}/{{ model.provider_count || 0 }}</span>
-              <span>调用 {{ formatUsageCount(model.usage_count || 0) }}</span>
+            <div class="flex min-w-0 flex-1 items-center gap-3 text-xs text-muted-foreground">
+              <span class="truncate whitespace-nowrap">提供商 {{ model.active_provider_count || 0 }}/{{ model.provider_count || 0 }}</span>
+              <span class="truncate whitespace-nowrap">调用 {{ formatUsageCount(model.usage_count || 0) }}</span>
               <span
                 v-if="getFirstTierPrice(model, 'input') || getFirstTierPrice(model, 'output')"
-                class="font-mono"
+                class="truncate whitespace-nowrap font-mono"
               >
                 ${{ getFirstTierPrice(model, 'input')?.toFixed(2) || '-' }}/${{ getFirstTierPrice(model, 'output')?.toFixed(2) || '-' }}
               </span>
+            </div>
+            <div
+              class="flex items-center gap-0.5 shrink-0"
+              @click.stop
+            >
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-7 w-7"
+                title="编辑模型"
+                @click="editModel(model)"
+              >
+                <Edit class="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-7 w-7"
+                :title="model.is_active ? '停用模型' : '启用模型'"
+                @click="toggleModelStatus(model)"
+              >
+                <Power class="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-7 w-7"
+                title="删除模型"
+                @click="deleteModel(model)"
+              >
+                <Trash2 class="w-3.5 h-3.5" />
+              </Button>
             </div>
           </div>
         </div>
@@ -526,7 +526,7 @@ import {
   Copy,
   Server,
   Check,
-  RefreshCw,
+  CircleDollarSign,
 } from 'lucide-vue-next'
 import ModelDetailDrawer from '@/features/models/components/ModelDetailDrawer.vue'
 import GlobalModelFormDialog from '@/features/models/components/GlobalModelFormDialog.vue'

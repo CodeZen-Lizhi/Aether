@@ -93,15 +93,6 @@ vi.mock('../ElapsedTimeText.vue', () => ({
   }),
 }))
 
-vi.mock('../ServerUserSelector.vue', () => ({
-  default: defineComponent({
-    name: 'ServerUserSelectorStub',
-    setup() {
-      return () => h('div', 'user selector')
-    },
-  }),
-}))
-
 const mountedApps: Array<{ app: App, root: HTMLElement }> = []
 
 function buildRecord(overrides: Partial<UsageRecord> = {}): UsageRecord {
@@ -131,13 +122,11 @@ function mountUsageRecordsTable(records: UsageRecord[], overrides: Record<string
     showActualCost: false,
     loading: false,
     timeRange: { preset: 'today', tz_offset_minutes: 0 },
-    filterUser: '__all__',
     filterModel: '__all__',
     filterProvider: '__all__',
     filterApiFormat: '__all__',
     filterStatus: '__all__',
     filterClientFamily: '__all__',
-    availableUsers: [],
     availableModels: [],
     availableProviders: [],
     availableClientFamilies: [],
@@ -672,16 +661,13 @@ describe('UsageRecordsTable', () => {
     expect(onUpdateHideUnknownRecords).toHaveBeenCalledWith(true)
   })
 
-  it('removes the user/key search box and keeps the user column filter', () => {
-    const root = mountUsageRecordsTable([buildRecord()], {
-      availableUsers: [{ id: 'user-1', username: 'aether-local', email: '' }],
-    })
+  it('removes the user column and user filter', () => {
+    const root = mountUsageRecordsTable([buildRecord()])
 
     expect(root.querySelector('#usage-records-search')).toBeNull()
-    const userHeading = [...root.querySelectorAll('thead th')]
-      .find(heading => heading.textContent?.includes('用户'))
-    expect(userHeading).not.toBeUndefined()
-    expect(userHeading?.textContent).toContain('user selector')
+    expect([...root.querySelectorAll('thead th')]
+      .some(heading => heading.textContent?.includes('用户'))).toBe(false)
+    expect(root.textContent).not.toContain('user selector')
   })
 
   it('shows retry and fallback markers together when both flags are set', () => {

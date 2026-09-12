@@ -47,13 +47,11 @@
       :show-actual-cost="authStore.canAccessAdmin"
       :loading="isLoadingRecords"
       :time-range="timeRange"
-      :filter-user="filterUser"
       :filter-model="filterModel"
       :filter-provider="filterProvider"
       :filter-api-format="filterApiFormat"
       :filter-status="filterStatus"
       :filter-client-family="filterClientFamily"
-      :available-users="availableUsers"
       :available-models="availableModels"
       :available-providers="availableProviders"
       :available-client-families="availableClientFamilies"
@@ -64,7 +62,6 @@
       :auto-refresh="globalAutoRefresh"
       :hide-unknown-records="hideUnknownRecords"
       @update:time-range="handleTimeRangeChange"
-      @update:filter-user="handleFilterUserChange"
       @update:filter-model="handleFilterModelChange"
       @update:filter-provider="handleFilterProviderChange"
       @update:filter-api-format="handleFilterApiFormatChange"
@@ -122,7 +119,6 @@ import {
   resolveDisplayRequestStatus,
 } from '@/features/usage/utils/status'
 import type { DateRangeParams, FilterStatusValue, RequestStatus, UsageRecord } from '@/features/usage/types'
-import type { UserOption } from '@/features/usage/components/UsageRecordsTable.vue'
 import { log } from '@/utils/logger'
 import { useToast } from '@/composables/useToast'
 
@@ -145,15 +141,11 @@ const pageSize = ref(20)
 const pageSizeOptions = [10, 20, 50, 100]
 
 // 筛选状态
-const filterUser = ref('__all__')
 const filterModel = ref('__all__')
 const filterProvider = ref('__all__')
 const filterApiFormat = ref('__all__')
 const filterStatus = ref<FilterStatusValue>('__all__')
 const filterClientFamily = ref('__all__')
-
-// 用户列表（仅管理员页面使用）
-const availableUsers = ref<UserOption[]>([])
 
 // 使用 composables
 const {
@@ -173,17 +165,6 @@ const ADMIN_ANALYTICS_REFRESH_INTERVAL = 60000
 let adminAnalyticsRefreshInFlight: Promise<void> | null = null
 let lastAdminAnalyticsRefreshAt = 0
 let adminAnalyticsRefreshGeneration = 0
-
-function loadAdminUsers() {
-  // 单用户模式：筛选器只包含当前管理员。
-  const user = authStore.user
-  if (!user) {
-    return
-  }
-  availableUsers.value = [
-    { id: user.id, username: user.username, email: user.email ?? '' },
-  ]
-}
 
 async function refreshAdminAnalytics(options: { force?: boolean; preserveOnFailure?: boolean } = {}) {
   if (!options.force && !isPageVisible.value) return
@@ -242,7 +223,6 @@ function getCurrentStatsFilters() {
   const filters = getCurrentFilters()
   return {
     ...timeRange.value,
-    user_id: filters.user_id,
     model: filters.model,
     provider: filters.provider,
   }
@@ -691,8 +671,6 @@ const selectedRequestSummary = computed(() => (
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
 
-  loadAdminUsers()
-
   await loadRecords(
     { page: currentPage.value, pageSize: pageSize.value },
     getCurrentFilters(),
@@ -733,7 +711,6 @@ async function handlePageSizeChange(size: number) {
 // 获取当前筛选参数
 function getCurrentFilters() {
   return {
-    user_id: filterUser.value !== '__all__' ? filterUser.value : undefined,
     model: filterModel.value !== '__all__' ? filterModel.value : undefined,
     provider: filterProvider.value !== '__all__' ? filterProvider.value : undefined,
     api_format: filterApiFormat.value !== '__all__' ? filterApiFormat.value : undefined,
@@ -744,13 +721,6 @@ function getCurrentFilters() {
 }
 
 // 处理筛选变化
-async function handleFilterUserChange(value: string) {
-  filterUser.value = value
-  currentPage.value = 1  // 重置到第一页
-  await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
-  await refreshAdminAnalyticsForSelectionChange()
-}
-
 async function handleFilterModelChange(value: string) {
   filterModel.value = value
   currentPage.value = 1  // 重置到第一页
