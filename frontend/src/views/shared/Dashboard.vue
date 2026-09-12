@@ -1,5 +1,5 @@
 <template>
-  <div class="min-w-0 space-y-5">
+  <div class="min-w-0 space-y-4">
     <DashboardOverview
       :today="today"
       :today-loading="loadingToday"

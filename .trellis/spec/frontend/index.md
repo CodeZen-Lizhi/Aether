@@ -54,7 +54,7 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ## Convention: 仪表盘布局与统计范围
 
-**Layout**: `Dashboard.vue` 只编排加载和范围状态。`DashboardOverview.vue` 展示全部历史累计与五张今日卡片；`DashboardUsageTrend.vue` 承载周期筛选及主要图表；`DashboardUsageBreakdown.vue` 展示模型和提供商排行。不要恢复平台拆分、请求日志、重复成本图和默认展开的每日大表。保持项目 Card、颜色变量、字体与图标，今日卡片常见桌面宽度五列、窄窗口换行且填满行。
+**Layout**: `Dashboard.vue` 只编排加载和范围状态。`DashboardOverview.vue` 展示全部历史累计与五张今日卡片；`DashboardUsageTrend.vue` 承载周期筛选及主要图表；`DashboardUsageBreakdown.vue` 展示模型和提供商排行。不要恢复平台拆分、请求日志、重复成本图和默认展开的每日大表。保持项目 Card、颜色变量、字体与图标，今日卡片常见桌面宽度五列、窄窗口换行且填满行；概览卡片断点使用 `.dashboard-overview` 容器查询，以实际内容宽度适配侧栏展开后的主区域，不直接依赖 viewport 断点。
 
 **Theme colors**: 当前 Tailwind 颜色配置直接引用完整 `var(--primary)` / `var(--muted)` 色值；不要用 `bg-primary/65` 之类 opacity 后缀，它在真实浏览器里没有有效背景。纯色用 `bg-primary`，条形透明度单独用 `opacity-*`；混色沿用项目的 `color-mix(...)`。用 computed style 和截图确认明暗主题，不只检查类名。
 

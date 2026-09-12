@@ -215,10 +215,14 @@ describe('Dashboard overview and trends', () => {
       })
       expect(todayResponseCard(root)?.textContent).toContain('16.64s')
       expect(todayResponseCard(root)?.textContent).toContain('今日请求的平均耗时')
+      const todayOverview = root.querySelector('[data-dashboard-section="today"]')
       const lifetime = root.querySelector('[aria-labelledby="lifetime-usage-title"]')
+      expect(todayOverview?.compareDocumentPosition(lifetime!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
       expect(lifetime?.textContent).toContain('1,569,000,000')
+      expect(lifetime?.textContent).toContain('39')
       expect(lifetime?.textContent).toContain('2024/02/10')
       expect(lifetime?.textContent).toContain('$168.00')
+      expect(lifetime?.textContent).toContain('$117.60')
       expect(dashboardApiMocks.getTimeSeries).toHaveBeenCalledWith({
         preset: 'today', granularity: 'hour',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
