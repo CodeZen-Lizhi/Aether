@@ -437,13 +437,14 @@
 
     <!-- 宽屏表格视图 -->
     <Table
-      class="responsive-list-table usage-records-table [&_th]:px-2 [&_td]:px-2"
+      ref="recordsTable"
+      class="responsive-list-table usage-records-table [&_th]:px-1 [&_td]:px-1"
     >
       <colgroup>
         <col
           v-for="column in visibleColumns"
           :key="column.id"
-          :style="{ width: `${column.width / visibleColumnWeight * 100}%` }"
+          :style="{ width: getColumnWidth(column) }"
         >
       </colgroup>
       <TableHeader>
@@ -527,7 +528,7 @@
             filter-title="筛选类型"
             filter-content-class="w-44 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"
           >
-            类型
+            <span class="whitespace-nowrap">类型</span>
             <template #filter="{ close }">
               <TableFilterMenu
                 :model-value="filterStatus"
@@ -722,34 +723,34 @@
           </TableCell>
           <TableCell
             v-if="isColumnVisible('status')"
-            class="text-center py-4"
+            class="usage-record-type text-center py-4 [&>div]:px-1.5"
           >
             <!-- 优先显示请求状态 -->
             <Badge
               v-if="isUsageRecordFailed(record)"
               variant="destructive"
-              class="whitespace-normal"
+              class="whitespace-nowrap"
             >
               失败
             </Badge>
             <Badge
               v-else-if="getDisplayStatus(record) === 'pending'"
               variant="outline"
-              class="whitespace-normal animate-pulse border-muted-foreground/30 text-muted-foreground"
+              class="whitespace-nowrap animate-pulse border-muted-foreground/30 text-muted-foreground"
             >
               等待中
             </Badge>
             <Badge
               v-else-if="getDisplayStatus(record) === 'streaming'"
               variant="outline"
-              class="whitespace-normal animate-pulse border-primary/50 text-primary"
+              class="whitespace-nowrap animate-pulse border-primary/50 text-primary"
             >
               传输中
             </Badge>
             <Badge
               v-else-if="record.status === 'cancelled'"
               variant="outline"
-              class="whitespace-normal border-amber-500/50 text-amber-600 dark:text-amber-400"
+              class="whitespace-nowrap border-amber-500/50 text-amber-600 dark:text-amber-400"
             >
               已取消
             </Badge>
@@ -758,7 +759,7 @@
               variant="outline"
               data-usage-transport="websocket"
               :title="getWebSocketTransportTitle(record)"
-              class="whitespace-normal border-sky-500/50 text-sky-600 dark:text-sky-400"
+              class="whitespace-nowrap border-sky-500/50 text-sky-600 dark:text-sky-400"
             >
               WS
             </Badge>
@@ -766,19 +767,19 @@
               v-else-if="getStreamModeSegments(record).hasConversion"
               :variant="streamBadgeVariant(getStreamModeSegments(record).client === '流式')"
               :class="(streamBadgeVariant(getStreamModeSegments(record).client === '流式') === 'secondary')
-                ? 'whitespace-normal inline-flex items-center gap-1'
-                : 'whitespace-normal border-border/60 text-muted-foreground inline-flex items-center gap-1'"
+                ? 'whitespace-normal inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'
+                : 'whitespace-normal border-border/60 text-muted-foreground inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'"
             >
-              <span>{{ getStreamModeSegments(record).client }}</span>
+              <span class="whitespace-nowrap">{{ getStreamModeSegments(record).client }}</span>
               <span class="opacity-60">→</span>
-              <span>{{ getStreamModeSegments(record).upstream }}</span>
+              <span class="whitespace-nowrap">{{ getStreamModeSegments(record).upstream }}</span>
             </Badge>
             <Badge
               v-else
               :variant="streamBadgeVariant(getUpstreamStream(record))"
               :class="(streamBadgeVariant(getUpstreamStream(record)) === 'secondary')
-                ? 'whitespace-normal'
-                : 'whitespace-normal border-border/60 text-muted-foreground'"
+                ? 'whitespace-nowrap'
+                : 'whitespace-nowrap border-border/60 text-muted-foreground'"
             >
               {{ getStreamModeLabel(record) }}
             </Badge>
@@ -953,8 +954,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
+import { computed, ref } from 'vue'
+import { useElementSize, useLocalStorage } from '@vueuse/core'
 import {
   TableCard,
   Badge,
@@ -1086,8 +1087,8 @@ const USAGE_RECORD_COLUMN_OPTIONS: UsageRecordColumnOption[] = [
   { id: 'time', label: '时间', width: 10 },
   { id: 'key', label: '密钥', width: 12, userOnly: true },
   { id: 'model', label: '模型', width: 16 },
-  { id: 'provider', label: '提供商', width: 14, adminOnly: true },
-  { id: 'api_format', label: 'API格式', width: 14 },
+  { id: 'provider', label: '提供商', width: 12, adminOnly: true },
+  { id: 'api_format', label: 'API格式', width: 12 },
   { id: 'status', label: '类型/状态', width: 6 },
   { id: 'tokens', label: 'Tokens', width: 13 },
   { id: 'cost', label: '费用', width: 13 },
@@ -1154,6 +1155,21 @@ const visibleColumnCount = computed(() => visibleColumnIds.value.length)
 // Keep DOM column order and divide only among selected columns.
 const visibleColumns = computed(() => roleColumnOptions.value.filter(column => isColumnVisible(column.id)))
 const visibleColumnWeight = computed(() => visibleColumns.value.reduce((sum, column) => sum + column.width, 0))
+const recordsTable = ref<InstanceType<typeof Table> | null>(null)
+const { width: tableWidth } = useElementSize(recordsTable)
+const flexibleColumnWeight = computed(() => visibleColumns.value
+  .filter(column => column.id !== 'status')
+  .reduce((sum, column) => sum + column.width, 0))
+
+function getColumnWidth(column: UsageRecordColumnOption): string {
+  if (!isColumnVisible('status') || visibleColumnCount.value === 1 || tableWidth.value === 0) {
+    return `${column.width / visibleColumnWeight.value * 100}%`
+  }
+  // Table columns do not support mixed-unit calc widths, so resolve the reserved space first.
+  const statusWidth = Math.min(88 / tableWidth.value * 100, 100)
+  if (column.id === 'status') return `${statusWidth}%`
+  return `${column.width / flexibleColumnWeight.value * (100 - statusWidth)}%`
+}
 
 const columnSelectOptions = computed<MultiSelectOption[]>(() => roleColumnOptions.value.map(column => ({
   value: column.id,

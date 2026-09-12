@@ -17,7 +17,7 @@
 
 **Lists**: 公共 `Table` 使用 `table-fixed`、`w-full` 和 `overflow-wrap:anywhere`，外层不创建横向滚动容器。复杂列表在外层设置 `responsive-list`，内部用 `responsive-list-table` / `responsive-list-cards`、`responsive-list-desktop` / `responsive-list-mobile` 切换。普通容器达到 52rem 才显示表格；`responsive-list--wide` 将门槛提高到 80rem。以内容容器宽度判断，不能只根据 viewport 断点忽略侧边栏。CSS 选择器必须能覆盖 Tailwind 的 `grid` / `inline-flex` 显示类。
 
-**Usage records**: 列宽由可见列权重归一化到 100%，按实际 DOM 列顺序输出 colgroup；th / td 不再独立分配百分比。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
+**Usage records**: 按实际 DOM 列顺序输出 colgroup；类型列与其他列同时显示时保留 88px，其余可见列按权重分配剩余宽度。通过实际表格宽度换算为纯百分比，避免在 col 上使用浏览器无法正确分配的混合单位 calc；th / td 不再独立分配百分比。类型表头和状态词保持横排，转换标签仅在完整词组之间换行。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
 
 **Model badges**: `UsageModelDisplay.vue` 的模型名与行内徽标使用同一文字流，徽标左距 4px；空间不足自然续行。不要恢复「可收缩文本 flex 项 + 不收缩徽标」：`w-fit` 仍会保留换行后未绘制的文本盒空白，使徽标离可见文字过远。映射模型在名称与行内徽标后单独一行；无映射且三个及以上徽标沿用独立徽标行。修改后运行 `scripts/check-usage-model-spacing.cjs` 的真实浏览器检查（fixture：`/scripts/fixtures/usage-model-spacing.html`），用 `Range.getClientRects()` 的末行文字边界断言相邻间距，而非仅测 span 容器或 CSS 类名；同时检查真实表格、卡片与详情的调用方样式。
 

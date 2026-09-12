@@ -3,6 +3,11 @@ import { createApp, defineComponent, h, type App } from 'vue'
 import UsageRecordsTable from '../UsageRecordsTable.vue'
 import type { UsageRecord } from '../../types'
 
+vi.mock('@vueuse/core', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@vueuse/core')>(),
+  useElementSize: () => ({ width: { value: 740 } }),
+}))
+
 vi.mock('@/components/ui', async () => {
   const { defineComponent, h } = await import('vue')
 
@@ -162,6 +167,31 @@ afterEach(() => {
 })
 
 describe('UsageRecordsTable', () => {
+  it.each([
+    ['time', 'model', 'provider', 'api_format', 'status', 'tokens', 'cost', 'performance'],
+    ['status', 'api_format', 'model', 'user_agent'],
+  ])('reserves status label space while sharing all remaining width: %j', (...ids) => {
+    localStorage.setItem('usage-records-visible-columns-admin', JSON.stringify(ids))
+    const root = mountUsageRecordsTable([buildRecord()])
+    const tableWidth = 740
+    const widths = [...root.querySelectorAll<HTMLTableColElement>('colgroup col')].map(column => {
+      expect(column.style.width.endsWith('%')).toBe(true)
+      return tableWidth * parseFloat(column.style.width) / 100
+    })
+    const statusCell = root.querySelector('.usage-record-type') as HTMLTableCellElement
+    expect(widths[statusCell.cellIndex]).toBeCloseTo(88)
+    expect(widths.every(width => width > 0)).toBe(true)
+    expect(widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(tableWidth)
+  })
+
+  it('lets the status column fill the table when it is the only selected column', () => {
+    localStorage.setItem('usage-records-visible-columns-admin', JSON.stringify(['status']))
+    const root = mountUsageRecordsTable([buildRecord({ status: 'cancelled' })])
+
+    expect(root.querySelector<HTMLTableColElement>('col')?.style.width).toBe('100%')
+    expect(root.querySelector('tbody')?.textContent).toContain('已取消')
+  })
+
   it('keeps all selected client fields in both layouts and shares the available column width', () => {
     localStorage.setItem('usage-records-visible-columns-admin', JSON.stringify([
       'user_agent', 'time', 'model', 'client_family', 'client_ip',
