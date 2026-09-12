@@ -443,7 +443,7 @@ const sidebarClasses = computed(() => {
     const widthClass = sidebarCollapsed.value
       ? 'w-16'
       : desktopMode
-        ? 'w-[184px] min-[1101px]:w-[224px]'
+        ? 'w-[128px] min-[1025px]:w-[144px] min-[1281px]:w-[168px]'
         : 'w-[224px]'
     const breakpointClass = desktopMode ? 'md:flex' : 'lg:flex'
     return `${widthClass} flex-col hidden ${breakpointClass} border-r border-[#0f172a]/5 dark:border-white/5 bg-[#ffffff] dark:bg-[#0b1220] h-screen sticky top-0 transition-[width] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none`

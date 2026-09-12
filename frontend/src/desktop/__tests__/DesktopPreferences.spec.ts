@@ -142,7 +142,7 @@ describe('desktop preferences and account controls', () => {
     expect(root.querySelector('[title="退出登录"]')).toBeNull()
   })
 
-  it('keeps the native minimum-width window on the left sidebar layout', async () => {
+  it('uses the compact sidebar at the native minimum width', async () => {
     const root = await mountComponent(MainLayout, true)
     const sidebar = root.querySelector<HTMLElement>('.app-shell__sidebar')!
     const mobileHeader = root.querySelector<HTMLButtonElement>('button[aria-label="打开导航菜单"]')!.closest('header')!
@@ -152,8 +152,9 @@ describe('desktop preferences and account controls', () => {
     expect(root.querySelector('.app-shell')?.getAttribute('data-desktop-mode')).toBe('true')
     expect(sidebar.classList).toContain('md:flex')
     expect(sidebar.classList).not.toContain('lg:flex')
-    expect(sidebar.classList).toContain('w-[184px]')
-    expect(sidebar.classList).toContain('min-[1101px]:w-[224px]')
+    expect(sidebar.classList).toContain('w-[128px]')
+    expect(sidebar.classList).toContain('min-[1025px]:w-[144px]')
+    expect(sidebar.classList).toContain('min-[1281px]:w-[168px]')
     expect(root.querySelector('.sidebar-nav')?.getAttribute('data-compact')).toBe('true')
     expect(mobileHeader.classList).toContain('md:hidden')
     expect(desktopHeader.classList).toContain('md:flex')

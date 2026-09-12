@@ -151,7 +151,7 @@ pub fn open_dashboard(app: &AppHandle) -> Result<(), String> {
             WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
                 .title("Aether")
                 .inner_size(1200.0, 820.0)
-                .min_inner_size(840.0, 620.0)
+                .min_inner_size(900.0, 640.0)
                 .data_store_identifier(store_id)
                 .initialization_script(connection.initialization_script)
                 .on_navigation(move |url| {

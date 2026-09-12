@@ -1013,10 +1013,11 @@ body[theme-mode='dark'] .literary-annotation {
   }
 
   /*
-   * Desktop windows keep a 224px sidebar. At the default 1200px native
-   * window this leaves roughly 900px for the content column, so regular
-   * lists need to switch to their table layout before the old 56rem cutoff.
-   * The 52rem threshold still keeps the 840px minimum window compact.
+   * Desktop windows use a 128px sidebar at the 900px native minimum, growing
+   * to 144px at 1025px and 168px at 1281px. At the default 1200px window this
+   * leaves roughly 1056px for the content column while keeping the navigation
+   * close to its intrinsic icon-and-label width. The 52rem threshold still
+   * keeps the minimum window compact.
    */
   @container list (min-width: 52rem) {
     .responsive-list .table-card-actions {
