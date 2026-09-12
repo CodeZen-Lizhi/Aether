@@ -26,18 +26,6 @@
             id="section-desktop-gateway"
           />
 
-          <!-- 站点信息 -->
-          <SiteInfoSection
-            id="section-site-info"
-            :site-name="systemConfig.site_name"
-            :site-subtitle="systemConfig.site_subtitle"
-            :loading="systemConfigLoading || siteInfoLoading"
-            :has-changes="hasSiteInfoChanges"
-            @save="saveSiteInfo"
-            @update:site-name="systemConfig.site_name = $event"
-            @update:site-subtitle="systemConfig.site_subtitle = $event"
-          />
-
           <!-- 数据管理 -->
           <DataManagementSection
             id="section-data-mgmt"
@@ -222,10 +210,8 @@ import { hasDesktopSession } from '@/desktop/session'
 // Composables
 import { useSystemConfig } from './system-settings/composables/useSystemConfig'
 import { useConfigExportImport } from './system-settings/composables/useConfigExportImport'
-import { useSiteInfo } from '@/composables/useSiteInfo'
 
 // Section components
-import SiteInfoSection from './system-settings/SiteInfoSection.vue'
 import DataManagementSection from './system-settings/DataManagementSection.vue'
 import ProxyConfigSection from './system-settings/ProxyConfigSection.vue'
 import BasicConfigSection from './system-settings/BasicConfigSection.vue'
@@ -243,7 +229,6 @@ const desktopMode = hasDesktopSession()
 const route = useRoute()
 const tocItems = [
   ...(desktopMode ? [{ id: 'section-desktop-gateway', label: '桌面应用' }] : []),
-  { id: 'section-site-info', label: '站点信息' },
   { id: 'section-data-mgmt', label: '数据管理' },
   { id: 'section-proxy', label: '网络代理' },
   { id: 'section-basic', label: '基础配置' },
@@ -314,12 +299,10 @@ const {
   systemConfig,
   systemVersion,
   systemConfigLoading,
-  siteInfoLoading,
   proxyConfigLoading,
   basicConfigLoading,
   logConfigLoading,
   cleanupConfigLoading,
-  hasSiteInfoChanges,
   hasProxyConfigChanges,
   hasBasicConfigChanges,
   hasLogConfigChanges,
@@ -327,7 +310,6 @@ const {
   sensitiveHeadersStr,
   loadSystemConfig,
   loadSystemVersion,
-  saveSiteInfo,
   saveProxyConfig,
   saveBasicConfig,
   saveLogConfig,
@@ -336,7 +318,6 @@ const {
 } = useSystemConfig()
 
 // 数据导出/导入 composable
-const { refreshSiteInfo } = useSiteInfo()
 const {
   exportLoading,
   importLoading,
@@ -362,8 +343,8 @@ const {
   handleExportAggregate,
   handleAggregateFileSelect,
   confirmImportAggregate,
-} = useConfigExportImport(systemConfig, async () => {
-  await Promise.all([loadSystemConfig(), refreshSiteInfo()])
+} = useConfigExportImport(async () => {
+  await loadSystemConfig()
 })
 
 type DataManagementKind = 'config' | 'aggregate'

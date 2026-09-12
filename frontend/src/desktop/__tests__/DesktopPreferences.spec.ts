@@ -114,7 +114,8 @@ describe('desktop preferences and account controls', () => {
 
   it('keeps Web system settings separate from personal preferences', async () => {
     const root = await mountComponent(SystemSettings, false)
-    expect(root.querySelector('#section-site-info')).not.toBeNull()
+    expect(root.querySelector('#section-site-info')).toBeNull()
+    expect(root.querySelector('nav')?.textContent).not.toContain('站点信息')
     expect(root.querySelector('#section-preferences')).toBeNull()
     expect(root.querySelector('#timezone')).toBeNull()
     expect(root.querySelector('nav')?.textContent).not.toContain('偏好设置')
@@ -124,6 +125,8 @@ describe('desktop preferences and account controls', () => {
   it('removes the desktop identity and personal-settings area from both navigation layouts', async () => {
     const root = await mountComponent(MainLayout, true)
     expect(root.textContent).not.toContain('本机网关')
+    expect(root.textContent).not.toContain('AI Gateway')
+    expect(root.querySelector('a[href="/"]')).toBeNull()
     expect(root.textContent).not.toContain(localUser.username)
     expect(root.querySelector('a[href="/admin/settings"]')).toBeNull()
     expect(root.querySelectorAll('a[href="/admin/system"]')).toHaveLength(1)

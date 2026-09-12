@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import type { AggregateImportResponse, ConfigImportResponse } from '@/api/admin'
 import { useProxyNodesStore } from '@/stores/proxy-nodes'
@@ -56,7 +55,7 @@ function buildFileInputEvent(content: string, size = content.length): Event {
 }
 
 function createState(onConfigImported?: () => Promise<void>) {
-  return useConfigExportImport(ref({ site_name: 'Aether' }), onConfigImported)
+  return useConfigExportImport(onConfigImported)
 }
 
 type ImportState = ReturnType<typeof createState>

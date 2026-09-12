@@ -13,7 +13,7 @@ import { parseApiError } from '@/utils/errorParser'
 import { log } from '@/utils/logger'
 import { clearModelsDevCache } from '@/api/models-dev'
 import { useProxyNodesStore } from '@/stores/proxy-nodes'
-import type { SystemConfig } from './useSystemConfig'
+import { APP_CONFIG } from '@/config/constants'
 
 const BYTES_PER_MB = 1024 * 1024
 
@@ -132,7 +132,6 @@ function downloadJson(data: unknown, filename: string) {
 }
 
 export function useConfigExportImport(
-  systemConfig: { value: Pick<SystemConfig, 'site_name'> },
   onConfigImported?: () => Promise<void>,
 ) {
   const { success, error } = useToast()
@@ -182,7 +181,7 @@ export function useConfigExportImport(
       const data = await adminApi.exportConfig()
       downloadJson(
         data,
-        `${systemConfig.value.site_name.toLowerCase()}-config-${new Date().toISOString().slice(0, 10)}.json`,
+        `${APP_CONFIG.NAME.toLowerCase()}-config-${new Date().toISOString().slice(0, 10)}.json`,
       )
       success('配置已导出')
     } catch (err) {
@@ -288,7 +287,7 @@ export function useConfigExportImport(
       const data = await adminApi.exportAggregateData()
       downloadJson(
         data,
-        `${systemConfig.value.site_name.toLowerCase()}-data-${new Date().toISOString().slice(0, 10)}.json`,
+        `${APP_CONFIG.NAME.toLowerCase()}-data-${new Date().toISOString().slice(0, 10)}.json`,
       )
       success('完整备份已导出')
     } catch (err) {

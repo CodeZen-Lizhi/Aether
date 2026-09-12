@@ -2,14 +2,10 @@ import { ref, computed } from 'vue'
 import { useToast } from '@/composables/useToast'
 import { adminApi } from '@/api/admin'
 import { log } from '@/utils/logger'
-import { useSiteInfo } from '@/composables/useSiteInfo'
 import { desktopApi } from '@/desktop/bridge'
 import { hasDesktopSession } from '@/desktop/session'
 
 export interface SystemConfig {
-  // 站点信息
-  site_name: string
-  site_subtitle: string
   // 网络代理
   system_proxy_node_id: string | null
   // 基础配置
@@ -43,9 +39,6 @@ export interface SystemConfig {
 }
 
 const CONFIG_KEYS = [
-  // 站点信息
-  'site_name',
-  'site_subtitle',
   // 网络代理
   'system_proxy_node_id',
   // 基础配置
@@ -80,9 +73,6 @@ const CONFIG_KEYS = [
 
 function createDefaultConfig(): SystemConfig {
   return {
-    // 站点信息
-    site_name: 'Aether',
-    site_subtitle: 'AI Gateway',
     // 网络代理
     system_proxy_node_id: null,
     // 基础配置
@@ -118,7 +108,6 @@ function createDefaultConfig(): SystemConfig {
 
 export function useSystemConfig() {
   const { success, error } = useToast()
-  const { refreshSiteInfo } = useSiteInfo()
 
   const systemConfig = ref<SystemConfig>(createDefaultConfig())
   const originalConfig = ref<SystemConfig | null>(null)
@@ -126,22 +115,12 @@ export function useSystemConfig() {
   const systemConfigLoading = ref(true)
 
   // 各模块 loading 状态
-  const siteInfoLoading = ref(false)
   const proxyConfigLoading = ref(false)
   const basicConfigLoading = ref(false)
   const logConfigLoading = ref(false)
   const cleanupConfigLoading = ref(false)
 
   // 变动检测
-  const hasSiteInfoChanges = computed(() => {
-    if (systemConfigLoading.value) return false
-    if (!originalConfig.value) return false
-    return (
-      systemConfig.value.site_name !== originalConfig.value.site_name ||
-      systemConfig.value.site_subtitle !== originalConfig.value.site_subtitle
-    )
-  })
-
   const hasProxyConfigChanges = computed(() => {
     if (systemConfigLoading.value) return false
     if (!originalConfig.value) return false
@@ -260,36 +239,6 @@ export function useSystemConfig() {
   }
 
   // 保存函数
-  async function saveSiteInfo() {
-    siteInfoLoading.value = true
-    try {
-      const configItems = [
-        { key: 'site_name', value: systemConfig.value.site_name, description: '站点名称' },
-        {
-          key: 'site_subtitle',
-          value: systemConfig.value.site_subtitle,
-          description: '站点副标题',
-        },
-      ]
-      await Promise.all(
-        configItems.map((item) =>
-          adminApi.updateSystemConfig(item.key, item.value, item.description)
-        )
-      )
-      if (originalConfig.value) {
-        originalConfig.value.site_name = systemConfig.value.site_name
-        originalConfig.value.site_subtitle = systemConfig.value.site_subtitle
-      }
-      await refreshSiteInfo()
-      success('站点信息已保存')
-    } catch (err) {
-      error('保存站点信息失败')
-      log.error('保存站点信息失败:', err)
-    } finally {
-      siteInfoLoading.value = false
-    }
-  }
-
   async function saveProxyConfig() {
     proxyConfigLoading.value = true
     try {
@@ -525,14 +474,10 @@ export function useSystemConfig() {
     originalConfig,
     systemVersion,
     systemConfigLoading,
-    // loading 状态
-    siteInfoLoading,
     proxyConfigLoading,
     basicConfigLoading,
     logConfigLoading,
     cleanupConfigLoading,
-    // 变动检测
-    hasSiteInfoChanges,
     hasProxyConfigChanges,
     hasBasicConfigChanges,
     hasLogConfigChanges,
@@ -543,7 +488,6 @@ export function useSystemConfig() {
     loadSystemConfig,
     loadSystemVersion,
     // 保存函数
-    saveSiteInfo,
     saveProxyConfig,
     saveBasicConfig,
     saveLogConfig,

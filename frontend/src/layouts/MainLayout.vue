@@ -25,54 +25,14 @@
 
     <template #sidebar>
       <div class="flex h-full w-full min-w-0 flex-col overflow-hidden">
-        <!-- HEADER (Brand) -->
+        <!-- HEADER (Sidebar controls) -->
         <div
-          class="group/sidebar-brand relative flex shrink-0 items-center transition-[height,padding] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-          :class="sidebarCollapsed
-            ? 'h-16 px-4'
-            : desktopMode
-              ? 'h-20 px-3 min-[1101px]:px-6'
-              : 'h-20 px-6'"
+          class="relative flex h-12 shrink-0 items-center justify-end px-3 transition-[height,padding] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
         >
-          <Transition
-            name="sidebar-mode"
-            mode="out-in"
-          >
-            <RouterLink
-              v-if="!sidebarCollapsed"
-              key="expanded-brand"
-              to="/"
-              class="group flex w-full min-w-0 items-center gap-3 pr-10 transition-opacity hover:opacity-80"
-            >
-              <HeaderLogo
-                size="h-9 w-9"
-                class-name="shrink-0 text-[#191919] dark:text-white"
-              />
-              <div class="flex min-w-0 flex-col justify-center">
-                <h1 class="truncate text-lg font-bold leading-none text-[#191919] dark:text-white">
-                  {{ siteName }}
-                </h1>
-                <span class="mt-1.5 truncate text-[10px] font-medium leading-none tracking-wide text-[#91918d] dark:text-muted-foreground">{{ siteSubtitle }}</span>
-              </div>
-            </RouterLink>
-
-            <div
-              v-else
-              key="collapsed-brand"
-              aria-hidden="true"
-              class="flex h-8 w-8 transform-gpu items-center justify-center transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform] group-hover/sidebar-brand:scale-90 group-hover/sidebar-brand:opacity-0 motion-reduce:transition-none"
-            >
-              <HeaderLogo
-                size="h-8 w-8"
-                class-name="shrink-0 text-[#191919] dark:text-white"
-              />
-            </div>
-          </Transition>
-
           <button
             type="button"
             class="absolute top-1/2 z-10 flex h-8 w-8 shrink-0 -translate-y-1/2 transform-gpu items-center justify-center rounded-md text-muted-foreground transition-[right,color,background-color,opacity,transform] [transition-duration:240ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none"
-            :class="sidebarCollapsed ? 'right-[15px] scale-90 opacity-0 will-change-[right,opacity,transform] group-hover/sidebar-brand:scale-100 group-hover/sidebar-brand:opacity-100 focus-visible:scale-100 focus-visible:bg-[#ffffff] focus-visible:opacity-100 dark:focus-visible:bg-[#0b1220]' : 'right-3 opacity-100'"
+            :class="sidebarCollapsed ? 'right-[15px] scale-90 opacity-100 hover:scale-100 focus-visible:scale-100 focus-visible:bg-[#ffffff] dark:focus-visible:bg-[#0b1220]' : 'right-3 opacity-100'"
             :aria-label="sidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')"
             :aria-expanded="!sidebarCollapsed"
             :title="sidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')"
@@ -191,23 +151,7 @@
       >
         <div class="mx-auto max-w-7xl px-6 py-4">
           <div class="flex items-center justify-between">
-            <RouterLink
-              to="/"
-              class="flex items-center gap-3 group"
-            >
-              <HeaderLogo
-                size="h-9 w-9"
-                class-name="text-[#191919] dark:text-white"
-              />
-              <div class="flex flex-col justify-center">
-                <h1 class="text-lg font-bold text-[#191919] dark:text-white leading-none">
-                  {{ siteName }}
-                </h1>
-                <span class="text-[10px] text-[#91918d] dark:text-muted-foreground leading-none mt-1.5 font-medium tracking-wide">{{ siteSubtitle }}</span>
-              </div>
-            </RouterLink>
-
-            <div class="flex items-center gap-3">
+            <div class="flex items-center justify-end gap-3 w-full">
               <DesktopGatewayControl v-if="desktopMode" />
               <LanguageSwitcher />
               <ThemeModeButton />
@@ -387,11 +331,9 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { useSiteInfo } from '@/composables/useSiteInfo'
 import Button from '@/components/ui/button.vue'
 import AppShell from '@/components/layout/AppShell.vue'
 import SidebarNav from '@/components/layout/SidebarNav.vue'
-import HeaderLogo from '@/components/HeaderLogo.vue'
 import LanguageSwitcher from '@/components/common/LanguageSwitcher.vue'
 import ThemeModeButton from '@/components/common/ThemeModeButton.vue'
 import {
@@ -414,7 +356,6 @@ import DesktopGatewayControl from '@/desktop/DesktopGatewayControl.vue'
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const { siteName, siteSubtitle } = useSiteInfo()
 const { t, legacyT } = useI18n()
 const desktopMode = hasDesktopSession()
 const profileLabel = computed(() => authStore.user?.username)
