@@ -55,7 +55,7 @@
           v-else
           class="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3"
         >
-          <div class="grid grid-cols-2 gap-3">
+          <div class="dialog-grid-2 gap-3">
             <div class="space-y-1.5">
               <Label
                 for="manual-global-model-name"

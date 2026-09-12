@@ -34,9 +34,9 @@
         >
           <div
             v-if="isOpen"
-            class="relative flex max-h-[100dvh] w-full transform flex-col overflow-y-hidden rounded-t-xl border border-x-0 border-b-0 border-border bg-background text-left shadow-2xl transition-all pointer-events-auto sm:my-0 sm:w-full sm:max-h-[calc(100dvh-2rem)] sm:rounded-lg sm:border"
+            class="app-dialog relative flex transform flex-col overflow-y-hidden rounded-t-xl border border-x-0 border-b-0 border-border bg-background text-left shadow-2xl transition-[opacity,transform] pointer-events-auto sm:my-0 sm:rounded-lg sm:border"
             :style="{ zIndex: contentZIndex }"
-            :class="maxWidthClass"
+            :data-dialog-size="maxWidth || size || 'md'"
             @click.stop
           >
             <!-- Header 区域：优先使用 slot，否则使用 title prop -->
@@ -82,7 +82,7 @@
             <!-- Footer 区域：如果有 footer 插槽，自动添加样式 -->
             <div
               v-if="slots.footer"
-              class="flex shrink-0 flex-col-reverse items-stretch gap-2 border-t border-border bg-background/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm [&>button]:w-full sm:flex-row-reverse sm:items-center sm:gap-3 sm:bg-muted/10 sm:px-6 sm:py-4 sm:[&>button]:w-auto"
+              class="flex shrink-0 flex-col-reverse items-stretch gap-2 border-t border-border bg-background/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm [&>button]:w-full sm:flex-row-reverse sm:flex-wrap sm:items-center sm:gap-3 sm:bg-muted/10 sm:px-6 sm:py-4 sm:[&>button]:w-auto"
             >
               <slot name="footer" />
             </div>
@@ -97,6 +97,7 @@
 import { computed, provide, useSlots, type Component } from 'vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import { DIALOG_CONTEXT_KEY } from './context'
+import './sizing.css'
 
 // Props 定义
 const props = defineProps<{
@@ -153,25 +154,8 @@ function handleBackdropClick() {
   }
 }
 
-const maxWidthClass = computed(() => {
-  const sizeValue = props.maxWidth || props.size || 'md'
-  const sizes = {
-    sm: 'sm:max-w-sm',
-    md: 'sm:max-w-md',
-    lg: 'sm:max-w-lg',
-    xl: 'sm:max-w-xl',
-    '2xl': 'sm:max-w-2xl',
-    '3xl': 'sm:max-w-3xl',
-    '4xl': 'sm:max-w-4xl',
-    '5xl': 'sm:max-w-5xl',
-    '6xl': 'sm:max-w-6xl',
-    '7xl': 'sm:max-w-7xl'
-  }
-  return sizes[sizeValue]
-})
-
 const contentBodyClass = computed(() => [
-  'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]',
+  'dialog-body min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]',
   props.noPadding ? '' : 'px-4 py-3 sm:px-6',
 ].filter(Boolean).join(' '))
 

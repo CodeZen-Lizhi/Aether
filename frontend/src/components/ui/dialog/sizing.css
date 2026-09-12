@@ -1,0 +1,78 @@
+.app-dialog {
+  --dialog-width: 46vw;
+  --dialog-width-limit: 28rem;
+  --dialog-height-limit: 100dvh;
+  container: dialog / inline-size;
+  min-width: 0;
+  width: 100%;
+  max-height: var(--dialog-height-limit);
+}
+
+.app-dialog[data-dialog-size='sm'] { --dialog-width: 40vw; --dialog-width-limit: 24rem; }
+.app-dialog[data-dialog-size='lg'] { --dialog-width: 52vw; --dialog-width-limit: 32rem; }
+.app-dialog[data-dialog-size='xl'] { --dialog-width: 58vw; --dialog-width-limit: 40rem; }
+.app-dialog[data-dialog-size='2xl'] { --dialog-width: 66vw; --dialog-width-limit: 48rem; }
+.app-dialog[data-dialog-size='3xl'] { --dialog-width: 74vw; --dialog-width-limit: 55rem; }
+.app-dialog[data-dialog-size='4xl'] { --dialog-width: 78vw; --dialog-width-limit: 60rem; }
+.app-dialog[data-dialog-size='5xl'] { --dialog-width: 82vw; --dialog-width-limit: 64rem; }
+.app-dialog[data-dialog-size='6xl'],
+.app-dialog[data-dialog-size='7xl'] { --dialog-width: 82vw; --dialog-width-limit: 70rem; }
+
+.dialog-body:has(> .dialog-image-preview) {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-image-preview {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+}
+
+@media (min-width: 640px) {
+  .app-dialog {
+    --dialog-height-limit: min(80dvh, 50rem);
+    width: min(var(--dialog-width), var(--dialog-width-limit), calc(100vw - 2rem));
+  }
+}
+
+@media (min-width: 640px) and (max-width: 839px) {
+  .app-dialog {
+    width: min(max(var(--dialog-width), 22.5rem), var(--dialog-width-limit), 82vw, calc(100vw - 2rem));
+  }
+}
+
+/* Form columns follow the dialog content width, including nested dialogs. */
+.app-dialog .dialog-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.app-dialog .dialog-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.app-dialog .dialog-grid-wide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container dialog (max-width: 48rem) {
+  .app-dialog .dialog-grid-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container dialog (max-width: 40rem) {
+  .app-dialog .dialog-grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container dialog (max-width: 32rem) {
+  .app-dialog .dialog-grid-2,
+  .app-dialog .dialog-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

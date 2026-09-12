@@ -258,15 +258,15 @@ describe('GlobalModelFormDialog preset replacement', () => {
     const { editingModel } = mountDialog()
     await settle()
 
-    expect(document.body.querySelector('[class~="sm:max-w-3xl"]')).not.toBeNull()
-    expect(document.body.querySelector('[class~="sm:max-w-4xl"]')).toBeNull()
+    expect(document.body.querySelector('[data-dialog-size="3xl"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-dialog-size="4xl"]')).toBeNull()
 
     const existingModel = buildExistingStaleModel()
     editingModel.value = existingModel
     await settle()
 
-    expect(document.body.querySelector('[class~="sm:max-w-3xl"]')).not.toBeNull()
-    expect(document.body.querySelector('[class~="sm:max-w-4xl"]')).toBeNull()
+    expect(document.body.querySelector('[data-dialog-size="3xl"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-dialog-size="4xl"]')).toBeNull()
   })
 
   it('shows cached presets with a visible stale notice when the online catalog fails', async () => {

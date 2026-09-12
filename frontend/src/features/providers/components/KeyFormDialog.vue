@@ -13,7 +13,7 @@
       @submit.prevent="handleSave"
     >
       <!-- 基本信息 -->
-      <div class="grid grid-cols-2 gap-3">
+      <div class="dialog-grid-2 gap-3">
         <div>
           <Label :for="keyNameInputId">{{ legacyT('密钥名称 *') }}</Label>
           <Input
@@ -163,7 +163,7 @@
       </div>
 
       <!-- 成本与优先级 -->
-      <div class="grid overflow-hidden rounded-lg border border-border/70 bg-border/70 sm:grid-cols-2 sm:divide-x sm:divide-border/70">
+      <div class="dialog-grid-2 gap-px rounded-lg border border-border/70 bg-border/70">
         <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
           <div class="min-w-0">
             <Label for="default_rate_multiplier">{{ legacyT('成本倍率') }}</Label>
@@ -188,7 +188,7 @@
             />
           </div>
         </div>
-        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 border-t border-border/70 bg-background px-3 py-2.5 sm:border-t-0">
+        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
           <div class="min-w-0">
             <Label for="internal_priority">{{ legacyT('优先级') }}</Label>
             <p
@@ -239,7 +239,7 @@
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div class="grid gap-x-5 gap-y-4 border-t border-border/70 bg-muted/20 px-3 py-3 sm:grid-cols-2">
+          <div class="dialog-grid-2 gap-x-5 gap-y-4 border-t border-border/70 bg-muted/20 px-3 py-3">
             <div>
               <Label for="rpm_limit">{{ legacyT('RPM 限制') }}</Label>
               <div class="mt-1.5 w-full max-w-40">
@@ -344,7 +344,7 @@
           v-if="form.auto_fetch_models"
           class="space-y-2 pt-2 border-t border-border/40"
         >
-          <div class="grid grid-cols-2 gap-3">
+          <div class="dialog-grid-2 gap-3">
             <div>
               <Label class="text-xs">{{ legacyT('包含规则') }}</Label>
               <Input

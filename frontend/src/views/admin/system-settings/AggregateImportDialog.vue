@@ -14,7 +14,7 @@
         <p class="font-medium mb-2">
           完整备份预览
         </p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-muted-foreground">
+        <div class="dialog-grid-2 gap-4 text-muted-foreground">
           <div>
             <p class="font-medium text-foreground mb-1">
               配置数据
@@ -135,7 +135,7 @@
       v-if="aggregateImportResult"
       class="space-y-4"
     >
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+      <div class="dialog-grid-2 gap-4 text-sm">
         <div>
           <p class="font-medium">
             配置数据

@@ -239,7 +239,7 @@
           </span>
         </div>
 
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="dialog-grid-2 gap-4">
           <div class="min-w-0 space-y-1.5">
             <Label class="text-xs">适用端点</Label>
             <MultiSelect

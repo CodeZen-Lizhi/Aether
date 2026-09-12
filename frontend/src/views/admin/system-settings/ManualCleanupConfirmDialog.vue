@@ -12,7 +12,7 @@
         <Label class="block text-sm font-medium">
           清理方式
         </Label>
-        <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div class="dialog-grid-3 mt-2 gap-2">
           <button
             v-for="item in modeOptions"
             :key="item.value"
@@ -54,7 +54,7 @@
         <Label class="block text-sm font-medium">
           清理范围
         </Label>
-        <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div class="dialog-grid-2 mt-2 gap-2">
           <label
             v-for="target in targetOptions"
             :key="target.value"

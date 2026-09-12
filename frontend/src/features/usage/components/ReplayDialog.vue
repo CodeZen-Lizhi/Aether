@@ -10,7 +10,10 @@
           class="absolute inset-0 bg-black/30 backdrop-blur-sm"
           @click="handleClose"
         />
-        <Card class="relative w-full max-w-6xl max-h-[85vh] min-h-[60vh] mx-4 shadow-2xl flex flex-col">
+        <Card
+          class="app-dialog replay-dialog relative mx-4 shadow-2xl flex flex-col [overflow-wrap:anywhere]"
+          data-dialog-size="6xl"
+        >
           <!-- 头部：标题 + 提供商/Key 选择 + 发送 -->
           <div class="px-4 py-2.5 border-b flex items-center gap-3 shrink-0 flex-wrap">
             <h3 class="text-sm font-semibold shrink-0">
@@ -22,11 +25,11 @@
             />
 
             <!-- 提供商选择 -->
-            <div class="flex items-center gap-1.5 min-w-0">
+            <div class="flex flex-1 items-center gap-1.5 min-w-0 basis-48">
               <label class="text-xs text-muted-foreground shrink-0">提供商</label>
               <select
                 v-model="selectedProviderId"
-                class="h-7 rounded-md border border-input bg-background px-2 text-xs min-w-[140px]"
+                class="h-7 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs"
                 :disabled="replaying"
                 @change="onProviderChange"
               >
@@ -44,11 +47,11 @@
             </div>
 
             <!-- Key 选择 -->
-            <div class="flex items-center gap-1.5 min-w-0">
+            <div class="flex flex-1 items-center gap-1.5 min-w-0 basis-48">
               <label class="text-xs text-muted-foreground shrink-0">Key</label>
               <select
                 v-model="selectedKeyId"
-                class="h-7 rounded-md border border-input bg-background px-2 text-xs min-w-[140px]"
+                class="h-7 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs"
                 :disabled="replaying || loadingKeys"
               >
                 <option value="">
@@ -94,9 +97,9 @@
           </div>
 
           <!-- 双栏内容区 -->
-          <div class="flex-1 min-h-0 flex">
+          <div class="replay-panels flex-1 min-h-0 min-w-0 grid overflow-y-auto">
             <!-- ===== 左栏：请求 ===== -->
-            <div class="w-1/2 flex flex-col min-h-0 border-r">
+            <div class="replay-request flex flex-col min-h-0 min-w-0">
               <!-- 左栏头 -->
               <div class="px-4 py-1.5 border-b bg-muted/30 flex items-center justify-between shrink-0">
                 <div class="flex items-center gap-2 min-w-0">
@@ -122,7 +125,7 @@
                 </button>
               </div>
               <!-- 左栏内容 -->
-              <div class="flex-1 overflow-y-auto scrollbar-stable">
+              <div class="replay-panel-body flex-1 min-h-0 min-w-0 overflow-y-auto scrollbar-stable">
                 <!-- 请求头（可折叠） -->
                 <div class="border-b">
                   <button
@@ -140,7 +143,7 @@
                     v-if="showRequestHeaders && hasRequestHeaders"
                     class="px-4 pb-2.5"
                   >
-                    <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px] font-mono">
+                    <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-3 gap-y-0.5 text-[11px] font-mono">
                       <template
                         v-for="(value, key) in displayRequestHeaders"
                         :key="key"
@@ -174,7 +177,7 @@
             </div>
 
             <!-- ===== 右栏：响应 ===== -->
-            <div class="w-1/2 flex flex-col min-h-0">
+            <div class="flex flex-col min-h-0 min-w-0">
               <!-- 右栏头 -->
               <div class="px-4 py-1.5 border-b bg-muted/30 flex items-center justify-between shrink-0">
                 <div class="flex items-center gap-2 min-w-0">
@@ -207,7 +210,7 @@
                 </button>
               </div>
               <!-- 右栏内容 -->
-              <div class="flex-1 overflow-y-auto scrollbar-stable">
+              <div class="replay-panel-body flex-1 min-h-0 min-w-0 overflow-y-auto scrollbar-stable">
                 <!-- 空状态 -->
                 <div
                   v-if="!replayResult && !replayError && !replaying"
@@ -285,7 +288,7 @@
                       v-if="showResponseHeaders"
                       class="px-4 pb-2.5"
                     >
-                      <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px] font-mono">
+                      <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-3 gap-y-0.5 text-[11px] font-mono">
                         <template
                           v-for="(value, key) in replayResult.response_headers"
                           :key="key"
@@ -335,6 +338,7 @@ import Button from '@/components/ui/button.vue'
 import Separator from '@/components/ui/separator.vue'
 import { X, Play, Loader2, ChevronRight, Copy, Check } from 'lucide-vue-next'
 import { log } from '@/utils/logger'
+import '@/components/ui/dialog/sizing.css'
 
 interface ProviderOption {
   id: string
@@ -520,6 +524,38 @@ useEscapeKey(() => {
 </script>
 
 <style scoped>
+.replay-dialog {
+  height: var(--dialog-height-limit);
+  transition-property: opacity, transform;
+}
+
+.replay-panels {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.replay-request {
+  border-right: 1px solid var(--border);
+}
+
+@container dialog (max-width: 48rem) {
+  .replay-panels {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(12rem, 1fr));
+  }
+
+  .replay-request {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 639px) {
+  .replay-dialog {
+    --dialog-height-limit: 85dvh;
+    width: calc(100vw - 2rem);
+  }
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;

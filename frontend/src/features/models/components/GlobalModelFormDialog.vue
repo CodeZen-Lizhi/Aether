@@ -8,13 +8,12 @@
     @update:model-value="handleDialogUpdate"
   >
     <div
-      class="flex min-h-0 min-w-0 gap-4"
-      :class="isEditMode ? '' : 'h-[min(600px,calc(100dvh-8rem))] flex-col'"
+      class="flex min-h-0 min-w-0 flex-col gap-4"
     >
       <!-- 上方：搜索和加载预设（仅创建模式） -->
       <section
         v-if="!isEditMode && !presetPanelCollapsed"
-        class="h-full flex flex-col space-y-3"
+        class="flex min-w-0 flex-col space-y-3"
       >
         <!-- 搜索框 -->
         <div class="relative">
@@ -45,7 +44,7 @@
         </div>
 
         <!-- 提供商 Logo 与模型列表 -->
-        <div class="flex-1 min-h-0 overflow-hidden border rounded-lg flex flex-col">
+        <div class="min-h-48 border rounded-lg flex flex-col">
           <div
             v-if="loading"
             class="flex items-center justify-center flex-1"
@@ -108,9 +107,9 @@
             <!-- 当前提供商模型 -->
             <div
               v-if="expandedProviderGroup"
-              class="flex-1 min-h-0 overflow-y-auto p-2 scrollbar-thin"
+              class="min-w-0 p-2"
             >
-              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div class="dialog-grid-2 gap-3">
                 <div
                   v-for="item in expandedProviderGroup.models"
                   :key="item.modelId"
@@ -246,8 +245,7 @@
       <!-- 第二步：详细信息表单 -->
       <div
         v-if="isEditMode || presetPanelCollapsed"
-        class="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
-        :class="isEditMode ? 'max-h-[70vh]' : ''"
+        class="min-w-0"
       >
         <div
           v-if="!isEditMode"
@@ -308,7 +306,7 @@
             <h4 class="font-medium text-sm">
               基本信息
             </h4>
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="dialog-grid-2 gap-3">
               <div class="space-y-1.5">
                 <Label
                   for="model-display-name"
@@ -347,7 +345,7 @@
                 @update:model-value="(v) => setConfigField('description', v || undefined)"
               />
             </div>
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="dialog-grid-2 gap-3">
               <div class="space-y-1.5">
                 <Label
                   for="model-output-limit"

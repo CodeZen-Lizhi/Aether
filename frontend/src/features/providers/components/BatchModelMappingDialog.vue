@@ -33,9 +33,9 @@
     </template>
 
     <div class="flex min-h-0 flex-col bg-background">
-      <div class="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
+      <div class="dialog-grid-wide gap-4 p-4 sm:p-6">
         <section
-          class="rounded-xl border border-[var(--color-border)] bg-card shadow-sm"
+          class="min-w-0 rounded-xl border border-[var(--color-border)] bg-card shadow-sm"
           aria-labelledby="batch-config-title"
         >
           <div class="border-b border-[var(--color-border)] p-4 sm:p-5">
@@ -167,7 +167,7 @@
         </section>
 
         <section
-          class="flex min-h-72 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-card shadow-sm"
+          class="flex min-h-72 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-card shadow-sm"
           aria-labelledby="batch-mappings-title"
         >
           <div class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-4 sm:p-5">

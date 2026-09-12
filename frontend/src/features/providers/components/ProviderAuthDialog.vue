@@ -26,10 +26,9 @@
         class="space-y-4"
       >
         <!-- 认证模板 + 认证方式（并排） -->
-        <div class="flex gap-3">
+        <div class="dialog-grid-2 gap-3">
           <div
-            class="space-y-2"
-            :style="{ flex: currentAuthTypes.length > 1 ? 1 : 'auto', width: currentAuthTypes.length > 1 ? undefined : '100%' }"
+            class="min-w-0 space-y-2"
           >
             <Label>认证模板</Label>
             <Select
@@ -53,8 +52,7 @@
 
           <div
             v-if="currentAuthTypes.length > 1"
-            class="space-y-2"
-            style="flex: 1"
+            class="min-w-0 space-y-2"
           >
             <Label>认证方式</Label>
             <Select
@@ -263,7 +261,7 @@
 
           <div
             v-if="quotaAlert.enabled"
-            class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3"
+            class="dialog-grid-2 mt-4 gap-3"
           >
             <div class="space-y-2">
               <Label>提醒阈值</Label>

@@ -38,8 +38,8 @@
             <span class="text-sm font-medium">基础设置</span>
           </div>
 
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-2 md:col-span-2">
+          <div class="dialog-grid-2 gap-4">
+            <div class="col-span-full space-y-2">
               <Label
                 for="form-name"
                 class="text-sm font-medium"

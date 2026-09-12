@@ -115,7 +115,7 @@
       v-if="importResult"
       class="space-y-4"
     >
-      <div class="grid grid-cols-2 gap-4 text-sm">
+      <div class="dialog-grid-2 gap-4 text-sm">
         <div>
           <p class="font-medium">
             全局模型

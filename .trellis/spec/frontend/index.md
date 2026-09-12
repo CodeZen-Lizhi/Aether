@@ -23,6 +23,24 @@
 
 **Verification**: 在 840×620、1024、1280、1920 px 宽度测量页面及可滚动容器的 `scrollWidth <= clientWidth`；检查所选字段、价格输入、长错误末尾、分页和保存按钮仍可达。使用记录单测验证列宽总和、列顺序和两种布局的完整元数据。真实浏览器核验长短请求头行高、深层 JSON、多个节点及多次重试，不能仅检查 CSS 字符串或把隐藏滚动条当成无溢出证据。
 
+### Convention: 模态弹窗按 WebView 内容区比例缩放
+
+**What**: 居中模态统一使用 `components/ui/dialog/sizing.css` 的 `.app-dialog[data-dialog-size]`。桌面宽度按内容视口比例计算，并受档位最大宽度限制；高度上限为 `min(80dvh, 50rem)`。`Dialog` 的标题和 footer 固定，正文独立纵向滚动；移动端继续使用底部抽屉。独立模态（如 `ReplayDialog.vue`）必须显式导入该样式并复用 `app-dialog`。
+
+**Why**: 固定 `sm:max-w-*` 与接近完整视口的高度会使 APP 缩小时弹窗几乎铺满窗口；仅在调用方添加固定 `vh` 或 `overflow-x-hidden` 会继续造成字段裁切和重复滚动。
+
+**Example**:
+
+```vue
+<div class="app-dialog" :data-dialog-size="size">
+  <div class="dialog-body">...</div>
+</div>
+```
+
+复杂表单用 `dialog-grid-2` / `dialog-grid-3` / `dialog-grid-wide`，通过容器查询在窄弹窗内重排；不要恢复固定双栏的 `sm:grid-cols-*`，也不要用 `overflow-x-hidden` 隐藏溢出。
+
+**Verification**: 至少在 900×640、1024×768、1440×900、1920×1080 和 390×844 测量 bounding rect、`scrollWidth <= clientWidth`，并动态缩放已打开弹窗，确认输入和 footer 操作保留。
+
 ---
 
 ## Convention: i18n 文案机制（中文源文案 + 映射字典）

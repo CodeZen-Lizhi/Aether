@@ -29,7 +29,7 @@
         v-if="endpoints.length > 0"
         class="space-y-2"
       >
-        <div class="grid min-h-8 w-full items-center gap-2 sm:h-8 sm:grid-cols-2">
+        <div class="dialog-grid-2 min-h-8 w-full items-center gap-2">
           <div class="text-sm font-medium text-foreground">
             选择测试端点
           </div>
@@ -71,7 +71,7 @@
             </Select>
           </div>
         </div>
-        <div class="grid gap-2 md:grid-cols-2">
+        <div class="dialog-grid-2 gap-2">
           <button
             v-for="endpoint in endpoints"
             :key="endpoint.id"
@@ -126,7 +126,7 @@
         />
       </div>
 
-      <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
+      <div class="dialog-grid-wide items-start gap-4">
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-3">
             <div class="text-sm font-medium">
@@ -278,7 +278,7 @@
           </div>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2">
+        <div class="dialog-grid-2 gap-3">
           <div class="rounded-md border border-border/60 bg-background/80 p-3 space-y-1">
             <div class="text-xs text-muted-foreground">
               {{ liveEntityLabel }}
@@ -378,7 +378,7 @@
           </div>
         </div>
 
-        <div class="grid gap-3 lg:grid-cols-3">
+        <div class="dialog-grid-3 gap-3">
           <div class="rounded-md border border-border/60 bg-background/80 p-3 space-y-1">
             <div class="text-xs text-muted-foreground">
               {{ resultEntityLabel }}
@@ -762,12 +762,12 @@
       </div>
     </template>
 
-    <div class="flex max-h-[76vh] items-center justify-center overflow-auto rounded-md bg-muted/20 p-3">
+    <div class="dialog-image-preview rounded-md bg-muted/20 p-3">
       <img
         v-if="activeImagePreview"
         :src="activeImagePreview.src"
         :alt="activeImagePreview.label"
-        class="max-h-[72vh] max-w-full rounded-md object-contain"
+        class="min-h-0 max-h-full max-w-full rounded-md object-contain"
       >
     </div>
 

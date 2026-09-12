@@ -33,7 +33,7 @@ export interface ProxyNodeDeletedPayload {
           {{ proxyUrlError }}
         </p>
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="dialog-grid-2 gap-3">
         <div class="space-y-1.5">
           <Label>用户名</Label>
           <Input

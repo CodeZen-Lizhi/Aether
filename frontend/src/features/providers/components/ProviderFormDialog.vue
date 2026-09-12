@@ -41,7 +41,7 @@
         <h3 class="text-sm font-medium border-b pb-2">
           {{ legacyT('请求配置') }}
         </h3>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="dialog-grid-2 gap-4">
           <div class="space-y-1.5">
             <Label>{{ legacyT('最大重试次数') }}</Label>
             <Input
@@ -56,7 +56,7 @@
         </div>
 
         <!-- 超时配置 -->
-        <div class="grid grid-cols-2 gap-4">
+        <div class="dialog-grid-2 gap-4">
           <div class="space-y-1.5">
             <Label>
               {{ legacyT('流式首字节超时') }}
@@ -90,11 +90,11 @@
         </div>
 
         <!-- 提供商内转移限制 -->
-        <div class="grid grid-cols-2 gap-2 sm:gap-4">
+        <div class="dialog-grid-2 gap-2 sm:gap-4">
           <div class="min-w-0 space-y-1.5">
             <Label
               for="max-transfer-count"
-              class="whitespace-nowrap text-xs sm:text-sm"
+              class="text-xs sm:text-sm"
             >
               {{ legacyT('最大转移次数') }}
             </Label>
@@ -111,7 +111,7 @@
           <div class="min-w-0 space-y-1.5">
             <Label
               for="max-transfer-timeout-seconds"
-              class="whitespace-nowrap text-xs sm:text-sm"
+              class="text-xs sm:text-sm"
             >
               {{ legacyT('最大转移超时') }}
               <span class="text-xs text-muted-foreground">{{ legacyT('(秒)') }}</span>
@@ -136,7 +136,7 @@
         </h3>
 
         <div
-          class="flex items-center justify-between p-3 border rounded-lg bg-muted/50"
+          class="flex items-center justify-between gap-3 p-3 border rounded-lg bg-muted/50"
           data-testid="responses-websocket-setting"
         >
           <div class="space-y-0.5">

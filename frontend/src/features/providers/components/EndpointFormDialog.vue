@@ -11,7 +11,7 @@
       <!-- 已有端点列表（可滚动） -->
       <div
         v-if="localEndpoints.length > 0"
-        class="space-y-3 max-h-[50vh] overflow-y-auto scrollbar-hide"
+        class="min-w-0 space-y-3"
       >
         <Label class="text-muted-foreground">已配置的端点</Label>
 
@@ -155,9 +155,9 @@
             <!-- 卡片内容 -->
             <div class="p-4 space-y-4">
               <!-- URL 配置区 -->
-              <div class="flex items-end gap-3">
-                <div class="flex-1 min-w-0 grid grid-cols-3 gap-3">
-                  <div class="col-span-2 space-y-1.5">
+              <div class="flex flex-wrap items-end gap-3">
+                <div class="dialog-grid-2 flex-1 min-w-0 basis-80 gap-3">
+                  <div class="min-w-0 space-y-1.5">
                     <Label class="text-xs text-muted-foreground">Base URL</Label>
                     <Input
                       :model-value="getEndpointEditState(endpoint.id)?.url ?? endpoint.base_url"

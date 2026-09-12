@@ -7,7 +7,7 @@
     size="lg"
     @update:model-value="handleClose"
   >
-    <div class="space-y-5 max-h-[60vh] overflow-y-auto px-0.5 py-0.5 -mx-0.5">
+    <div class="min-w-0 space-y-5 px-0.5 py-0.5 -mx-0.5">
       <!-- 传输错误规则 -->
       <div class="space-y-3">
         <div>

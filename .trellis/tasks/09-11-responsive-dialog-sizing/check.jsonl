@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/index.md","reason":"核查可观察响应式结果与现有行为契约"}
+{"file":".trellis/tasks/09-11-responsive-dialog-sizing/research/dialog-inventory.md","reason":"复核完整范围，避免漏掉独立及嵌套弹窗"}
