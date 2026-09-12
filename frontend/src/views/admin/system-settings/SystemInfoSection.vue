@@ -1,37 +1,15 @@
 <template>
-  <CardSection
-    title="系统信息"
-    description="当前系统版本和构建信息"
-    :collapsible="collapsible"
-    :default-open="defaultOpen"
-  >
-    <div class="flex items-center gap-4">
-      <div class="flex items-center gap-2">
-        <Label class="text-sm font-medium text-muted-foreground">版本:</Label>
-        <span
-          v-if="systemVersion"
-          class="text-sm font-mono"
-        >
-          {{ systemVersion }}
-        </span>
-        <span
-          v-else
-          class="text-sm text-muted-foreground"
-        >
-          加载中...
-        </span>
-      </div>
+  <section class="settings-group">
+    <h3 class="settings-heading">
+      诊断
+    </h3>
+    <div class="settings-row">
+      <span class="settings-label">当前版本</span>
+      <samp class="text-sm [overflow-wrap:anywhere]">{{ systemVersion || '-' }}</samp>
     </div>
-  </CardSection>
+  </section>
 </template>
 
 <script setup lang="ts">
-import Label from '@/components/ui/label.vue'
-import { CardSection } from '@/components/layout'
-
-defineProps<{
-  systemVersion: string
-  collapsible?: boolean
-  defaultOpen?: boolean
-}>()
+defineProps<{ systemVersion: string }>()
 </script>

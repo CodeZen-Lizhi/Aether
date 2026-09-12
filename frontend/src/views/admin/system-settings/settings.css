@@ -1,0 +1,61 @@
+.system-settings { container: system-settings / inline-size; min-width: 0; }
+.system-settings .settings-layout { display: grid; grid-template-columns: 176px minmax(0, 760px); gap: 40px; margin-top: 28px; align-items: start; }
+.system-settings .settings-nav { position: sticky; top: 0; display: grid; gap: 4px; }
+.system-settings .settings-nav a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; border-radius: 6px; color: var(--muted-foreground); font-size: 13px; text-decoration: none; overflow-wrap: anywhere; }
+.system-settings .settings-nav a:hover { background: var(--muted); color: var(--foreground); }
+.system-settings .settings-nav a[aria-current="page"] { background: color-mix(in srgb, var(--primary) 9%, transparent); color: var(--primary); font-weight: 600; }
+.system-settings .settings-nav a:focus-visible,
+.system-settings summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.system-settings .settings-nav-version { padding: 16px 12px; margin-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.system-settings .settings-mobile-nav { display: none; }
+.system-settings .settings-content,
+.system-settings .settings-panel,
+.system-settings .settings-group { min-width: 0; }
+.system-settings .settings-panel-title { margin: 0 0 24px; font-size: 18px; font-weight: 600; }
+.system-settings .settings-group + .settings-group { margin-top: 30px; }
+.system-settings .settings-heading { margin: 0; padding: 0 0 10px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; }
+.system-settings .settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 260px); gap: 12px 28px; align-items: center; padding: 17px 0; }
+.system-settings .settings-row + .settings-row { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.system-settings .settings-row > *,
+.system-settings .settings-row-control { min-width: 0; }
+.system-settings .settings-row label,
+.system-settings .settings-label { font-size: 13px; font-weight: 500; }
+.system-settings .settings-description { margin-top: 4px; font-size: 12px; line-height: 1.65; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.system-settings .settings-row-control > input,
+.system-settings .settings-row-control > [role="combobox"],
+.system-settings .settings-mobile-nav [role="combobox"] { border-radius: 6px; min-height: 38px; height: auto; background: var(--card); box-shadow: none; }
+.system-settings .settings-row-control > [role="combobox"] > span { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.system-settings .settings-row--toggle { grid-template-columns: minmax(0, 1fr) auto; }
+.system-settings .settings-row--toggle > button { justify-self: end; }
+.system-settings .settings-number { display: flex; align-items: center; gap: 10px; justify-content: end; color: var(--muted-foreground); font-size: 12px; }
+.system-settings .settings-number > input { width: 112px; border-radius: 6px; background: var(--card); }
+.system-settings .settings-disclosure { border-top: 1px solid var(--border); }
+.system-settings .settings-disclosure > summary { display: flex; align-items: center; gap: 8px; padding: 16px 0; list-style: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+.system-settings .settings-disclosure > summary::-webkit-details-marker { display: none; }
+.system-settings .settings-disclosure > summary .settings-chevron { margin-left: auto; flex-shrink: 0; width: 16px; height: 16px; color: var(--muted-foreground); }
+.system-settings .settings-disclosure[open] > summary .settings-chevron { transform: rotate(180deg); }
+.system-settings .settings-disclosure-content { padding-bottom: 16px; }
+.system-settings .settings-save { display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: 12px; padding: 12px 0 4px; }
+.system-settings .settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.system-settings .settings-actions > button { gap: 6px; }
+.system-settings .settings-error { flex: 1 1 240px; color: var(--destructive); font-size: 12px; overflow-wrap: anywhere; }
+.system-settings .settings-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.system-settings .settings-toolbar h3 { font-size: 14px; font-weight: 600; }
+.system-settings .settings-icon-button { width: 36px; height: 36px; border-radius: 6px; flex-shrink: 0; }
+.system-settings .settings-proxy-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.system-settings .settings-proxy-row .settings-node-name { overflow-wrap: anywhere; }
+.system-settings .settings-proxy-row .settings-node-address { overflow-wrap: anywhere; margin-top: 3px; font-size: 12px; color: var(--muted-foreground); }
+.system-settings .settings-empty { padding: 20px 0; color: var(--muted-foreground); font-size: 13px; }
+.system-settings .settings-backup-actions { margin: 18px 0 26px; }
+@container system-settings (max-width: 760px) {
+  .system-settings .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 22px; margin-top: 20px; }
+  .system-settings .settings-nav { display: none; }
+  .system-settings .settings-mobile-nav { display: block; }
+}
+@container system-settings (max-width: 480px) {
+  .system-settings .settings-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .system-settings .settings-row--toggle { grid-template-columns: minmax(0, 1fr) auto; }
+  .system-settings .settings-number { justify-content: start; }
+  .system-settings .settings-panel-title { margin-bottom: 20px; }
+  .system-settings .settings-proxy-row { align-items: start; }
+}

@@ -1,9 +1,9 @@
 import { createApp, h, nextTick, type App, type Component } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import type { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import type { AxiosInstance } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createI18n } from '@/i18n'
+import { createI18n, getI18nLocale } from '@/i18n'
 import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useDarkMode } from '@/composables/useDarkMode'
@@ -17,7 +17,6 @@ let mounted: { app: App; root: HTMLElement; router: Router } | undefined
 const raw = apiClient as unknown as { client: AxiosInstance }
 const previousAdapter = raw.client.defaults.adapter
 let requests: Array<{ url?: string; method?: string; data: unknown }>
-let respondToPreferences: (config: InternalAxiosRequestConfig) => Promise<AxiosResponse>
 
 async function settle() {
   for (let index = 0; index < 15; index += 1) {
@@ -46,28 +45,12 @@ async function mountComponent(component: Component, desktop: boolean, path = '/a
   return root
 }
 
-async function editTimezone(root: HTMLElement, value: string) {
-  const timezone = root.querySelector<HTMLInputElement>('#timezone')!
-  timezone.value = value
-  timezone.dispatchEvent(new Event('input', { bubbles: true }))
-  await nextTick()
-  timezone.dispatchEvent(new Event('change', { bubbles: true }))
-  await settle()
-  return timezone
-}
-
-function preferenceSaves() {
-  return requests.filter(request => request.url === '/api/users/me/preferences' && request.method === 'put')
-}
-
 beforeEach(() => {
   useDarkMode().setThemeMode('light')
   cache.clear()
   requests = []
-  respondToPreferences = async config => apiResponse(config, { theme: 'light', language: 'zh-CN', timezone: 'Asia/Shanghai' })
   raw.client.defaults.adapter = async config => {
     requests.push({ url: config.url, method: config.method, data: config.data ? JSON.parse(config.data) : undefined })
-    if (config.url === '/api/users/me/preferences') return respondToPreferences(config)
     if (config.url === '/api/users/me') return apiResponse(config, { ...localUser, auth_source: 'local', has_password: true })
     if (config.url === '/api/users/me/sessions') return apiResponse(config, [])
     if (config.url === '/api/admin/system/configs') return apiResponse(config, [])
@@ -97,19 +80,54 @@ describe('desktop preferences and account controls', () => {
     expect(requests.some(request => request.url?.startsWith('/api/users/'))).toBe(false)
   })
 
-  it('retains Web account settings and immediate preference saving', async () => {
+  it('retains Web account settings without loading or saving personal preferences', async () => {
     const root = await mountComponent(ProfileSettings, false, '/admin/settings')
     expect(root.textContent).toContain('账号设置')
     expect(root.querySelector('#username')).not.toBeNull()
     expect(root.querySelector('#old-password')).not.toBeNull()
     expect(root.querySelector('#new-password')).not.toBeNull()
     expect(root.textContent).toContain('登录设备')
+    expect(root.textContent).not.toContain('偏好设置')
+    expect(root.querySelector('#theme, #language, #timezone')).toBeNull()
     expect(requests.map(request => request.url).sort()).toEqual([
-      '/api/users/me', '/api/users/me/preferences', '/api/users/me/sessions',
+      '/api/users/me', '/api/users/me/sessions',
     ])
-    await editTimezone(root, 'UTC')
-    await vi.waitFor(() => expect(preferenceSaves()).toHaveLength(1))
-    expect(preferenceSaves()[0].data).toMatchObject({ theme: 'light', language: 'zh-CN', timezone: 'UTC' })
+
+    const username = root.querySelector<HTMLInputElement>('#username')!
+    username.value = 'updated-account'
+    username.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(requests).toContainEqual({
+      url: '/api/users/me', method: 'put', data: { username: 'updated-account' },
+    }))
+    expect(requests.some(request => request.url === '/api/users/me/preferences')).toBe(false)
+  })
+
+  it.each([true, false])('keeps header theme and language shortcuts usable (desktop: %s)', async (desktop) => {
+    const root = await mountComponent(MainLayout, desktop)
+    const themeButton = root.querySelector<HTMLButtonElement>('header button[aria-label="浅色模式"]')!
+    expect(themeButton).not.toBeNull()
+    themeButton.click()
+    await settle()
+    expect(useDarkMode().themeMode.value).toBe('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(localStorage.getItem('theme')).toBe('dark')
+
+    const languageButton = root.querySelector<HTMLButtonElement>('header button[aria-label="语言"]')!
+    expect(languageButton).not.toBeNull()
+    languageButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle()
+    const englishOption = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find(option => option.textContent?.trim() === 'English')!
+    expect(englishOption).toBeDefined()
+    englishOption.click()
+    await settle()
+    expect(getI18nLocale()).toBe('en-US')
+    expect(document.documentElement.lang).toBe('en-US')
+    expect(localStorage.getItem('aether_locale')).toBe('en-US')
+    expect(root.querySelector('header button[aria-label="Language"]')).not.toBeNull()
+    expect(requests.some(request => request.url === '/api/users/me/preferences')).toBe(false)
   })
 
   it('keeps Web system settings separate from personal preferences', async () => {

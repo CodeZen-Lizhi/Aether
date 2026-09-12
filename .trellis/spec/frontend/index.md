@@ -98,15 +98,17 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
-## Convention: 设置卡片（CardSection）保存模式
+## Convention: 系统设置分类与分组保存
 
-**What**: 系统设置各分区统一使用 `@/components/layout` 的 `CardSection`：头部 `#actions` 放保存按钮，`:disabled="loading || !hasChanges"`，内容区表单向父级 emit `update:*`，保存由父级统一处理（见 `views/admin/SystemSettings.vue`）。
+**What**: `views/admin/SystemSettings.vue` 使用四类 query 导航（`connection`、`records`、`backup`、`advanced`），内容区按设置行和 `settings-group` 编排；分类切换保留已挂载分组的草稿。可编辑配置由 `useSystemConfig` 按 proxy/basic/log/cleanup 四组维护快照，行内保存只提交该组变更字段，`Promise.allSettled` 逐字段更新成功基线，失败字段保留输入供重试。
 
-**Why**: 全部设置卡片共享同一 `hasChanges`/loading 契约；改动单一卡片的按钮行为前先确认不影响该全局模式。
+**Why**: 设置页需要按任务查找，而保存边界仍必须独立。整组提交或分类卸载会误覆盖其他值、丢失草稿，局部失败也不能显示为全部成功。
 
-**Example**: `views/admin/system-settings/SiteInfoSection.vue`（最简样例）、`ProxyConfigSection.vue`（含列表 + 弹窗子组件拆分）。
+**Contract**: 清理批次键 `cleanup_batch_size`、`request_candidates_cleanup_batch_size`、`proxy_node_metrics_cleanup_batch_size` 可以继续从 API 读取，但不属于任何前端编辑组，普通保存不得写回。`compressed_log_retention_days` 是内容删除期限；`detail_log_retention_days` 只表示开始压缩的时间点。
 
-**Related**: 卡片内若存在「两种保存目标」（如卡片设置 vs 子资源 CRUD），头部按钮文案需消歧（如「保存默认代理」），子资源操作走独立弹窗组件。
+**Navigation**: 旧 `#section-*` hash 映射到所属分类并滚动到具体分组；窄内容区用顶部分类 `Select` 替代侧栏。主题/语言仅由全局顶部快捷切换，个人设置保留账号、密码和会话控制，不再放偏好表单。
+
+**Verification**: 覆盖四类导航、旧 hash、前进/后退、切换保留草稿、保存后刷新、局部成功和隐藏批次值保持；在 840/1024/1440/390 宽度测量 `scrollWidth <= clientWidth`。
 
 ---
 

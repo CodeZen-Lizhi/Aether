@@ -1,7 +1,7 @@
 <template>
   <div class="container mx-auto px-4 py-8">
     <h2 class="text-2xl font-bold text-foreground mb-6">
-      {{ desktopMode ? '偏好设置' : '账号设置' }}
+      账号设置
     </h2>
 
     <div class="max-w-3xl space-y-6">
@@ -211,21 +211,6 @@
           </div>
         </div>
       </Card>
-
-      <!-- 偏好设置 -->
-      <Card class="p-6">
-        <h3 class="text-lg font-medium text-foreground mb-4">
-          偏好设置
-        </h3>
-        <UserPreferenceFields
-          v-model:timezone="preferencesForm.timezone"
-          :theme="preferencesForm.theme"
-          :language="preferencesForm.language"
-          @update:theme="handleThemeChange"
-          @update:language="handleLanguageChange"
-          @timezone-change="updatePreferences"
-        />
-      </Card>
     </div>
   </div>
 </template>
@@ -236,7 +221,6 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { meApi, type Profile } from '@/api/me'
 import { type UserSession, formatSessionMeta } from '@/types/session'
-import { useDarkMode, type ThemeMode } from '@/composables/useDarkMode'
 import {
   getPasswordPolicyHint,
   getPasswordPolicyPlaceholder,
@@ -244,7 +228,6 @@ import {
   type PasswordPolicyLevel,
 } from '@/utils/passwordPolicy'
 import Card from '@/components/ui/card.vue'
-import UserPreferenceFields from '@/components/common/UserPreferenceFields.vue'
 import Button from '@/components/ui/button.vue'
 import Badge from '@/components/ui/badge.vue'
 import Input from '@/components/ui/input.vue'
@@ -253,13 +236,10 @@ import { useToast } from '@/composables/useToast'
 import { log } from '@/utils/logger'
 import { getErrorMessage } from '@/types/api-error'
 import { hasDesktopSession } from '@/desktop/session'
-import { useI18n } from '@/i18n'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const { success, error: showError } = useToast()
-const { setThemeMode } = useDarkMode()
-const { locale, setLocale } = useI18n()
 const desktopMode = hasDesktopSession()
 
 const profile = ref<Profile | null>(null)
@@ -273,17 +253,6 @@ const passwordForm = ref({
   old_password: '',
   new_password: '',
   confirm_password: ''
-})
-
-const preferencesForm = ref({
-  theme: 'light',
-  language: 'zh-CN',
-  timezone: 'Asia/Shanghai',
-  notifications: {
-    email: true,
-    usage_alerts: true,
-    announcements: true
-  }
 })
 
 const saving = ref(false)
@@ -311,31 +280,12 @@ const passwordError = computed(() =>
 
 const otherSessionCount = computed(() => userSessions.value.filter((session) => !session.is_current).length)
 
-function handleThemeChange(value: string) {
-  preferencesForm.value.theme = value
-  updatePreferences()
-
-  // 使用 useDarkMode 统一切换主题
-  setThemeMode(value as ThemeMode)
-}
-
-function handleLanguageChange(value: string) {
-  preferencesForm.value.language = value
-  if (desktopMode) setLocale(value === 'en' ? 'en-US' : 'zh-CN')
-  updatePreferences()
-}
-
 onMounted(async () => {
-  if (desktopMode) {
-    await loadPreferences()
-    return
-  }
-  const profilePromise = loadProfile()
+  if (desktopMode) return
   await Promise.all([
-    loadPreferences(),
+    loadProfile(),
     loadSessions(),
   ])
-  void profilePromise
 })
 
 async function loadProfile() {
@@ -363,38 +313,6 @@ async function loadSessions() {
     log.error('加载登录设备失败:', error)
   } finally {
     sessionsLoading.value = false
-  }
-}
-
-async function loadPreferences() {
-  try {
-    const prefs = await meApi.getPreferences()
-
-    // 主题以本地 localStorage 为准（useDarkMode 在应用启动时已初始化）
-    // 这样可以避免刷新页面时主题被服务端旧值覆盖
-    const { themeMode: currentThemeMode } = useDarkMode()
-    const localTheme = currentThemeMode.value
-
-    preferencesForm.value = {
-      theme: localTheme,  // 使用本地主题，而非服务端返回值
-      language: desktopMode ? (locale.value === 'en-US' ? 'en' : 'zh-CN') : prefs.language || 'zh-CN',
-      timezone: prefs.timezone || 'Asia/Shanghai',
-      notifications: {
-        email: prefs.notifications?.email ?? true,
-        usage_alerts: prefs.notifications?.usage_alerts ?? true,
-        announcements: prefs.notifications?.announcements ?? true
-      }
-    }
-
-    // 如果本地主题和服务端不一致，同步到服务端（静默更新，不提示用户）
-    const serverTheme = prefs.theme || 'light'
-    if (localTheme !== serverTheme) {
-      meApi.updatePreferences({ theme: localTheme }).catch(() => {
-        // 静默失败，不影响用户体验
-      })
-    }
-  } catch (error) {
-    log.error('加载偏好设置失败:', error)
   }
 }
 
@@ -515,25 +433,6 @@ async function handleRevokeOtherSessions() {
     showError(getErrorMessage(error, '退出其他设备失败'))
   } finally {
     sessionActionLoading.value = null
-  }
-}
-
-async function updatePreferences() {
-  try {
-    await meApi.updatePreferences({
-      theme: preferencesForm.value.theme,
-      language: preferencesForm.value.language,
-      timezone: preferencesForm.value.timezone || undefined,
-      notifications: {
-        email: preferencesForm.value.notifications.email,
-        usage_alerts: preferencesForm.value.notifications.usage_alerts,
-        announcements: preferencesForm.value.notifications.announcements
-      }
-    })
-    success('设置已保存')
-  } catch (error) {
-    log.error('更新偏好设置失败:', error)
-    showError('保存设置失败')
   }
 }
 

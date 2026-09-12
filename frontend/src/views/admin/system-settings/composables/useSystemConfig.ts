@@ -106,113 +106,101 @@ function createDefaultConfig(): SystemConfig {
   }
 }
 
+type ConfigKey = keyof SystemConfig
+type SaveGroup = 'proxy' | 'basic' | 'log' | 'cleanup'
+
+const groupItems: Record<SaveGroup, Array<{ key: ConfigKey; description: string }>> = {
+  proxy: [{ key: 'system_proxy_node_id', description: '系统默认代理节点 ID' }],
+  basic: [
+    { key: 'rate_limit_per_minute', description: '每分钟请求限制' },
+    { key: 'auto_delete_expired_keys', description: '是否自动删除过期的API Key' },
+    { key: 'enable_format_conversion', description: '全局格式转换开关：开启时强制允许所有提供商的格式转换' },
+    { key: 'enable_openai_image_sync_heartbeat', description: '同步生图心跳开关：开启后外层 HTTP 状态固定为 200，上游失败写入响应体' },
+    { key: 'enable_standard_text_sync_heartbeat', description: '标准文本非流式心跳开关：开启后外层 HTTP 状态固定为 200，上游失败写入响应体' },
+    { key: 'cyber_continue_failover', description: 'Cyber继续转移开关：开启后在响应内容开始前将Cyber Policy错误按普通错误继续故障转移，可能增加首字等待时间' },
+  ],
+  log: [
+    { key: 'request_record_level', description: '请求记录级别' },
+    { key: 'sensitive_headers', description: '敏感请求头列表' },
+  ],
+  cleanup: [
+    { key: 'detail_log_retention_days', description: '详细记录保留天数' },
+    { key: 'compressed_log_retention_days', description: '压缩记录保留天数' },
+    { key: 'header_retention_days', description: '请求头保留天数' },
+    { key: 'log_retention_days', description: '完整记录保留天数' },
+    { key: 'audit_log_retention_days', description: '审计日志保留天数' },
+    { key: 'request_candidates_retention_days', description: '请求候选记录保留天数' },
+    { key: 'proxy_node_metrics_1m_retention_days', description: '代理节点 1m 指标保留天数' },
+    { key: 'proxy_node_metrics_1h_retention_days', description: '代理节点 1h 指标保留天数' },
+  ],
+}
+
 export function useSystemConfig() {
   const { success, error } = useToast()
-
   const systemConfig = ref<SystemConfig>(createDefaultConfig())
   const originalConfig = ref<SystemConfig | null>(null)
-  const systemVersion = ref<string>('')
+  const systemVersion = ref('')
   const systemConfigLoading = ref(true)
-
-  // 各模块 loading 状态
+  const systemConfigError = ref('')
   const proxyConfigLoading = ref(false)
   const basicConfigLoading = ref(false)
   const logConfigLoading = ref(false)
   const cleanupConfigLoading = ref(false)
+  const autoCleanupLoading = ref(false)
+  const saveErrors = ref<Record<SaveGroup, string>>({ proxy: '', basic: '', log: '', cleanup: '' })
+  const loadingByGroup = { proxy: proxyConfigLoading, basic: basicConfigLoading, log: logConfigLoading, cleanup: cleanupConfigLoading }
 
-  // 变动检测
-  const hasProxyConfigChanges = computed(() => {
-    if (systemConfigLoading.value) return false
-    if (!originalConfig.value) return false
-    return systemConfig.value.system_proxy_node_id !== originalConfig.value.system_proxy_node_id
-  })
-
-  const hasBasicConfigChanges = computed(() => {
-    if (systemConfigLoading.value) return false
-    if (!originalConfig.value) return false
-    return (
-      systemConfig.value.rate_limit_per_minute !== originalConfig.value.rate_limit_per_minute ||
-      systemConfig.value.auto_delete_expired_keys !== originalConfig.value.auto_delete_expired_keys ||
-      systemConfig.value.enable_format_conversion !== originalConfig.value.enable_format_conversion ||
-      systemConfig.value.enable_openai_image_sync_heartbeat !==
-      originalConfig.value.enable_openai_image_sync_heartbeat ||
-      systemConfig.value.enable_standard_text_sync_heartbeat !==
-      originalConfig.value.enable_standard_text_sync_heartbeat ||
-      systemConfig.value.cyber_continue_failover !==
-      originalConfig.value.cyber_continue_failover
+  function changed(group: SaveGroup) {
+    const baseline = originalConfig.value
+    return !systemConfigLoading.value && !!baseline && groupItems[group].some(({ key }) =>
+      JSON.stringify(systemConfig.value[key]) !== JSON.stringify(baseline[key])
     )
-  })
+  }
 
-  const hasLogConfigChanges = computed(() => {
-    if (systemConfigLoading.value) return false
-    if (!originalConfig.value) return false
-    return (
-      systemConfig.value.request_record_level !== originalConfig.value.request_record_level ||
-      JSON.stringify(systemConfig.value.sensitive_headers) !==
-        JSON.stringify(originalConfig.value.sensitive_headers)
-    )
-  })
+  const hasProxyConfigChanges = computed(() => changed('proxy'))
+  const hasBasicConfigChanges = computed(() => changed('basic'))
+  const hasLogConfigChanges = computed(() => changed('log'))
+  const hasCleanupConfigChanges = computed(() => changed('cleanup'))
 
-  const hasCleanupConfigChanges = computed(() => {
-    if (systemConfigLoading.value) return false
-    if (!originalConfig.value) return false
-    return (
-      systemConfig.value.detail_log_retention_days !==
-      originalConfig.value.detail_log_retention_days ||
-      systemConfig.value.compressed_log_retention_days !==
-      originalConfig.value.compressed_log_retention_days ||
-      systemConfig.value.header_retention_days !== originalConfig.value.header_retention_days ||
-      systemConfig.value.log_retention_days !== originalConfig.value.log_retention_days ||
-      systemConfig.value.cleanup_batch_size !== originalConfig.value.cleanup_batch_size ||
-      systemConfig.value.audit_log_retention_days !==
-      originalConfig.value.audit_log_retention_days ||
-      systemConfig.value.request_candidates_retention_days !==
-      originalConfig.value.request_candidates_retention_days ||
-      systemConfig.value.request_candidates_cleanup_batch_size !==
-      originalConfig.value.request_candidates_cleanup_batch_size ||
-      systemConfig.value.proxy_node_metrics_1m_retention_days !==
-      originalConfig.value.proxy_node_metrics_1m_retention_days ||
-      systemConfig.value.proxy_node_metrics_1h_retention_days !==
-      originalConfig.value.proxy_node_metrics_1h_retention_days ||
-      systemConfig.value.proxy_node_metrics_cleanup_batch_size !==
-      originalConfig.value.proxy_node_metrics_cleanup_batch_size
-    )
-  })
-
-  // 敏感请求头数组和字符串之间的转换
   const sensitiveHeadersStr = computed({
     get: () => systemConfig.value.sensitive_headers.join(', '),
-    set: (val: string) => {
-      systemConfig.value.sensitive_headers = val
-        .split(',')
-        .map((s) => s.trim().toLowerCase())
-        .filter((s) => s.length > 0)
+    set: (value: string) => {
+      systemConfig.value.sensitive_headers = value.split(',').map(header => header.trim().toLowerCase()).filter(Boolean)
     },
   })
 
-  // 加载配置
+  function copyValue<K extends ConfigKey>(target: SystemConfig, source: SystemConfig, key: K) {
+    const value = source[key]
+    target[key] = (Array.isArray(value) ? [...value] : value) as SystemConfig[K]
+  }
+
+  function cancelChanges(group: SaveGroup) {
+    if (!originalConfig.value || loadingByGroup[group].value) return
+    for (const { key } of groupItems[group]) copyValue(systemConfig.value, originalConfig.value, key)
+    saveErrors.value[group] = ''
+  }
+
+  function confirmProxyCleared() {
+    if (originalConfig.value) originalConfig.value.system_proxy_node_id = null
+  }
+
   async function loadSystemConfig() {
     systemConfigLoading.value = true
+    systemConfigError.value = ''
     try {
       const configs = await adminApi.getAllSystemConfigs({ cacheTtlMs: 30_000 })
-      const configsByKey = new Map(configs.map((config) => [config.key, config]))
-
       const nextConfig = createDefaultConfig()
-      for (const key of CONFIG_KEYS) {
-        const response = configsByKey.get(key)
-        if (!response) continue
-        try {
-          if (response.value !== null && response.value !== undefined) {
-            ; (nextConfig as unknown as Record<string, unknown>)[key] = response.value
-          }
-        } catch {
-          // 单个配置项加载失败时忽略，使用默认值
+      for (const config of configs) {
+        if (CONFIG_KEYS.includes(config.key) && config.value !== null && config.value !== undefined) {
+          (nextConfig as unknown as Record<string, unknown>)[config.key] = config.value
         }
       }
       systemConfig.value = nextConfig
       originalConfig.value = JSON.parse(JSON.stringify(nextConfig))
+      saveErrors.value = { proxy: '', basic: '', log: '', cleanup: '' }
     } catch (err) {
-      error('加载系统配置失败')
+      systemConfigError.value = '加载系统配置失败'
+      error(systemConfigError.value)
       log.error('加载系统配置失败:', err)
     } finally {
       systemConfigLoading.value = false
@@ -223,275 +211,81 @@ export function useSystemConfig() {
     try {
       if (hasDesktopSession()) {
         try {
-          const status = await desktopApi.status()
-          systemVersion.value = status.version
+          systemVersion.value = (await desktopApi.status()).version
           return
         } catch (err) {
           log.error('加载桌面应用版本失败，回退到网关版本:', err)
         }
       }
-
-      const data = await adminApi.getSystemVersion()
-      systemVersion.value = data.version
+      systemVersion.value = (await adminApi.getSystemVersion()).version
     } catch (err) {
       log.error('加载系统版本失败:', err)
     }
   }
 
-  // 保存函数
-  async function saveProxyConfig() {
-    proxyConfigLoading.value = true
+  // Each API call commits independently. Only acknowledge the captured values that succeeded.
+  async function saveGroup(group: SaveGroup, message: string) {
+    if (loadingByGroup[group].value || !originalConfig.value || !changed(group)) return
+    const baseline = originalConfig.value
+    const snapshot: SystemConfig = JSON.parse(JSON.stringify(systemConfig.value))
+    const items = groupItems[group].filter(({ key }) =>
+      JSON.stringify(snapshot[key]) !== JSON.stringify(baseline[key])
+    )
+    loadingByGroup[group].value = true
+    saveErrors.value[group] = ''
     try {
-      await adminApi.updateSystemConfig(
-        'system_proxy_node_id',
-        systemConfig.value.system_proxy_node_id || null,
-        '系统默认代理节点 ID'
-      )
-      if (originalConfig.value) {
-        originalConfig.value.system_proxy_node_id = systemConfig.value.system_proxy_node_id
+      const results = await Promise.allSettled(items.map(item =>
+        adminApi.updateSystemConfig(item.key, snapshot[item.key], item.description)
+      ))
+      let failed = 0
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          copyValue(baseline, snapshot, items[index].key)
+        } else {
+          failed += 1
+          log.error('保存配置失败:', { key: items[index].key, error: result.reason })
+        }
+      })
+      if (failed) {
+        saveErrors.value[group] = failed === items.length
+          ? '保存失败，修改已保留，请重试。'
+          : '部分配置已保存，其余修改仍待保存，请重试。'
+        error(saveErrors.value[group])
+      } else {
+        success(message)
       }
-      success('网络代理配置已保存')
-    } catch (err) {
-      error('保存代理配置失败')
-      log.error('保存代理配置失败:', err)
     } finally {
-      proxyConfigLoading.value = false
-    }
-  }
-
-  async function saveBasicConfig() {
-    basicConfigLoading.value = true
-    try {
-      const configItems = [
-        {
-          key: 'rate_limit_per_minute',
-          value: systemConfig.value.rate_limit_per_minute,
-          description: '每分钟请求限制',
-        },
-        {
-          key: 'auto_delete_expired_keys',
-          value: systemConfig.value.auto_delete_expired_keys,
-          description: '是否自动删除过期的API Key',
-        },
-        {
-          key: 'enable_format_conversion',
-          value: systemConfig.value.enable_format_conversion,
-          description: '全局格式转换开关：开启时强制允许所有提供商的格式转换',
-        },
-        {
-          key: 'enable_openai_image_sync_heartbeat',
-          value: systemConfig.value.enable_openai_image_sync_heartbeat,
-          description: '同步生图心跳开关：开启后外层 HTTP 状态固定为 200，上游失败写入响应体',
-        },
-        {
-          key: 'enable_standard_text_sync_heartbeat',
-          value: systemConfig.value.enable_standard_text_sync_heartbeat,
-          description: '标准文本非流式心跳开关：开启后外层 HTTP 状态固定为 200，上游失败写入响应体',
-        },
-        {
-          key: 'cyber_continue_failover',
-          value: systemConfig.value.cyber_continue_failover,
-          description: 'Cyber继续转移开关：开启后在响应内容开始前将Cyber Policy错误按普通错误继续故障转移，可能增加首字等待时间',
-        },
-      ]
-
-      await Promise.all(
-        configItems.map((item) =>
-          adminApi.updateSystemConfig(item.key, item.value, item.description)
-        )
-      )
-      if (originalConfig.value) {
-        originalConfig.value.rate_limit_per_minute = systemConfig.value.rate_limit_per_minute
-        originalConfig.value.auto_delete_expired_keys =
-          systemConfig.value.auto_delete_expired_keys
-        originalConfig.value.enable_format_conversion =
-          systemConfig.value.enable_format_conversion
-        originalConfig.value.enable_openai_image_sync_heartbeat =
-          systemConfig.value.enable_openai_image_sync_heartbeat
-        originalConfig.value.enable_standard_text_sync_heartbeat =
-          systemConfig.value.enable_standard_text_sync_heartbeat
-        originalConfig.value.cyber_continue_failover =
-          systemConfig.value.cyber_continue_failover
-      }
-      success('基础配置已保存')
-    } catch (err) {
-      error('保存配置失败')
-      log.error('保存基础配置失败:', err)
-    } finally {
-      basicConfigLoading.value = false
-    }
-  }
-
-  async function saveLogConfig() {
-    logConfigLoading.value = true
-    try {
-      const configItems = [
-        {
-          key: 'request_record_level',
-          value: systemConfig.value.request_record_level,
-          description: '请求记录级别',
-        },
-        {
-          key: 'sensitive_headers',
-          value: systemConfig.value.sensitive_headers,
-          description: '敏感请求头列表',
-        },
-      ]
-
-      await Promise.all(
-        configItems.map((item) =>
-          adminApi.updateSystemConfig(item.key, item.value, item.description)
-        )
-      )
-      if (originalConfig.value) {
-        originalConfig.value.request_record_level = systemConfig.value.request_record_level
-        originalConfig.value.sensitive_headers = [...systemConfig.value.sensitive_headers]
-      }
-      success('请求记录配置已保存')
-    } catch (err) {
-      error('保存配置失败')
-      log.error('保存请求记录配置失败:', err)
-    } finally {
-      logConfigLoading.value = false
-    }
-  }
-
-  async function saveCleanupConfig() {
-    cleanupConfigLoading.value = true
-    try {
-      const configItems = [
-        {
-          key: 'detail_log_retention_days',
-          value: systemConfig.value.detail_log_retention_days,
-          description: '详细记录保留天数',
-        },
-        {
-          key: 'compressed_log_retention_days',
-          value: systemConfig.value.compressed_log_retention_days,
-          description: '压缩记录保留天数',
-        },
-        {
-          key: 'header_retention_days',
-          value: systemConfig.value.header_retention_days,
-          description: '请求头保留天数',
-        },
-        {
-          key: 'log_retention_days',
-          value: systemConfig.value.log_retention_days,
-          description: '完整记录保留天数',
-        },
-        {
-          key: 'cleanup_batch_size',
-          value: systemConfig.value.cleanup_batch_size,
-          description: '每批次清理的记录数',
-        },
-        {
-          key: 'audit_log_retention_days',
-          value: systemConfig.value.audit_log_retention_days,
-          description: '审计日志保留天数',
-        },
-        {
-          key: 'request_candidates_retention_days',
-          value: systemConfig.value.request_candidates_retention_days,
-          description: '请求候选记录保留天数',
-        },
-        {
-          key: 'request_candidates_cleanup_batch_size',
-          value: systemConfig.value.request_candidates_cleanup_batch_size,
-          description: '请求候选记录每批次清理条数',
-        },
-        {
-          key: 'proxy_node_metrics_1m_retention_days',
-          value: systemConfig.value.proxy_node_metrics_1m_retention_days,
-          description: '代理节点 1m 指标保留天数',
-        },
-        {
-          key: 'proxy_node_metrics_1h_retention_days',
-          value: systemConfig.value.proxy_node_metrics_1h_retention_days,
-          description: '代理节点 1h 指标保留天数',
-        },
-        {
-          key: 'proxy_node_metrics_cleanup_batch_size',
-          value: systemConfig.value.proxy_node_metrics_cleanup_batch_size,
-          description: '代理节点指标每批次清理条数',
-        },
-      ]
-
-      await Promise.all(
-        configItems.map((item) =>
-          adminApi.updateSystemConfig(item.key, item.value, item.description)
-        )
-      )
-      if (originalConfig.value) {
-        originalConfig.value.detail_log_retention_days =
-          systemConfig.value.detail_log_retention_days
-        originalConfig.value.compressed_log_retention_days =
-          systemConfig.value.compressed_log_retention_days
-        originalConfig.value.header_retention_days = systemConfig.value.header_retention_days
-        originalConfig.value.log_retention_days = systemConfig.value.log_retention_days
-        originalConfig.value.cleanup_batch_size = systemConfig.value.cleanup_batch_size
-        originalConfig.value.audit_log_retention_days =
-          systemConfig.value.audit_log_retention_days
-        originalConfig.value.request_candidates_retention_days =
-          systemConfig.value.request_candidates_retention_days
-        originalConfig.value.request_candidates_cleanup_batch_size =
-          systemConfig.value.request_candidates_cleanup_batch_size
-        originalConfig.value.proxy_node_metrics_1m_retention_days =
-          systemConfig.value.proxy_node_metrics_1m_retention_days
-        originalConfig.value.proxy_node_metrics_1h_retention_days =
-          systemConfig.value.proxy_node_metrics_1h_retention_days
-        originalConfig.value.proxy_node_metrics_cleanup_batch_size =
-          systemConfig.value.proxy_node_metrics_cleanup_batch_size
-      }
-      success('请求记录清理配置已保存')
-    } catch (err) {
-      error('保存配置失败')
-      log.error('保存请求记录清理配置失败:', err)
-    } finally {
-      cleanupConfigLoading.value = false
+      loadingByGroup[group].value = false
     }
   }
 
   async function handleAutoCleanupToggle(enabled: boolean) {
+    if (autoCleanupLoading.value || !originalConfig.value) return
     const previousValue = systemConfig.value.enable_auto_cleanup
     systemConfig.value.enable_auto_cleanup = enabled
+    autoCleanupLoading.value = true
     try {
-      await adminApi.updateSystemConfig(
-        'enable_auto_cleanup',
-        enabled,
-        '是否启用自动清理任务'
-      )
+      await adminApi.updateSystemConfig('enable_auto_cleanup', enabled, '是否启用自动清理任务')
+      originalConfig.value.enable_auto_cleanup = enabled
       success(enabled ? '已启用自动清理' : '已禁用自动清理')
     } catch (err) {
       error('保存配置失败')
       log.error('保存自动清理配置失败:', err)
       systemConfig.value.enable_auto_cleanup = previousValue
+    } finally {
+      autoCleanupLoading.value = false
     }
   }
 
   return {
-    systemConfig,
-    originalConfig,
-    systemVersion,
-    systemConfigLoading,
-    proxyConfigLoading,
-    basicConfigLoading,
-    logConfigLoading,
-    cleanupConfigLoading,
-    hasProxyConfigChanges,
-    hasBasicConfigChanges,
-    hasLogConfigChanges,
-    hasCleanupConfigChanges,
-    // 计算属性
-    sensitiveHeadersStr,
-    // 加载函数
-    loadSystemConfig,
-    loadSystemVersion,
-    // 保存函数
-    saveProxyConfig,
-    saveBasicConfig,
-    saveLogConfig,
-    saveCleanupConfig,
+    systemConfig, originalConfig, systemVersion, systemConfigLoading, systemConfigError,
+    proxyConfigLoading, basicConfigLoading, logConfigLoading, cleanupConfigLoading, autoCleanupLoading,
+    hasProxyConfigChanges, hasBasicConfigChanges, hasLogConfigChanges, hasCleanupConfigChanges,
+    sensitiveHeadersStr, saveErrors, loadSystemConfig, loadSystemVersion, cancelChanges, confirmProxyCleared,
+    saveProxyConfig: () => saveGroup('proxy', '网络代理配置已保存'),
+    saveBasicConfig: () => saveGroup('basic', '基础配置已保存'),
+    saveLogConfig: () => saveGroup('log', '请求记录配置已保存'),
+    saveCleanupConfig: () => saveGroup('cleanup', '请求记录清理配置已保存'),
     handleAutoCleanupToggle,
   }
 }

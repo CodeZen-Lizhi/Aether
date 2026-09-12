@@ -1,154 +1,110 @@
 <template>
-  <CardSection
-    title="基础配置"
-    description="配置系统默认参数"
-    :collapsible="collapsible"
-    :default-open="defaultOpen"
-  >
-    <template #actions>
-      <Button
-        size="sm"
-        :disabled="loading || !hasChanges"
-        @click="$emit('save')"
-      >
-        {{ loading ? '保存中...' : '保存' }}
-      </Button>
-    </template>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+  <section class="settings-group">
+    <h3 class="settings-heading">
+      请求兼容
+    </h3>
+    <div class="settings-row settings-row--toggle">
       <div>
-        <Label
-          for="rate-limit"
-          class="block text-sm font-medium"
-        >
-          默认速率限制 (请求/分钟)
-        </Label>
+        <Label for="enable-format-conversion">全局格式转换</Label>
+        <p class="settings-description">
+          开启后强制允许所有提供商接受跨格式请求
+        </p>
+      </div>
+      <Switch
+        id="enable-format-conversion"
+        :model-value="enableFormatConversion"
+        @update:model-value="$emit('update:enableFormatConversion', $event)"
+      />
+    </div>
+    <div class="settings-row settings-row--toggle">
+      <div>
+        <Label for="enable-openai-image-sync-heartbeat">同步生图心跳</Label>
+        <p class="settings-description">
+          开启后同步生图外层 HTTP 状态固定为 200，上游失败需读取响应体 error.upstream_status
+        </p>
+      </div>
+      <Switch
+        id="enable-openai-image-sync-heartbeat"
+        :model-value="enableOpenaiImageSyncHeartbeat"
+        @update:model-value="$emit('update:enableOpenaiImageSyncHeartbeat', $event)"
+      />
+    </div>
+    <div class="settings-row settings-row--toggle">
+      <div>
+        <Label for="enable-standard-text-sync-heartbeat">标准文本非流式心跳</Label>
+        <p class="settings-description">
+          开启后标准文本非流式接口外层 HTTP 状态固定为 200，上游失败需读取响应体 error.upstream_status
+        </p>
+      </div>
+      <Switch
+        id="enable-standard-text-sync-heartbeat"
+        :model-value="enableStandardTextSyncHeartbeat"
+        @update:model-value="$emit('update:enableStandardTextSyncHeartbeat', $event)"
+      />
+    </div>
+    <div class="settings-row settings-row--toggle">
+      <div>
+        <Label for="cyber-continue-failover">Cyber 错误继续转移</Label>
+        <p class="settings-description">
+          关闭时直接返回 Cyber Policy 错误；开启后在响应内容开始前继续尝试其他渠道，可能增加首字等待时间
+        </p>
+      </div>
+      <Switch
+        id="cyber-continue-failover"
+        :model-value="cyberContinueFailover"
+        @update:model-value="$emit('update:cyberContinueFailover', $event)"
+      />
+    </div>
+    <h3 class="settings-heading mt-7">
+      密钥默认规则
+    </h3>
+    <div class="settings-row">
+      <div>
+        <Label for="rate-limit">默认请求限速</Label>
+        <p class="settings-description">
+          0 表示默认不限制；未单独配置的 Key 会跟随这里
+        </p>
+      </div>
+      <div class="settings-number">
         <Input
           id="rate-limit"
           :model-value="rateLimitPerMinute"
           type="number"
-          placeholder="0"
-          class="mt-1"
+          min="0"
+          step="1"
           @update:model-value="$emit('update:rateLimitPerMinute', Number($event))"
         />
-        <p class="mt-1 text-xs text-muted-foreground">
-          0 表示默认不限制；未单独配置的 Key 会跟随这里
-        </p>
-      </div>
-
-      <div class="flex items-center h-full">
-        <div class="flex items-center space-x-2">
-          <Checkbox
-            id="auto-delete-expired-keys"
-            :checked="autoDeleteExpiredKeys"
-            @update:checked="$emit('update:autoDeleteExpiredKeys', $event)"
-          />
-          <div>
-            <Label
-              for="auto-delete-expired-keys"
-              class="cursor-pointer"
-            >
-              自动删除过期 Key
-            </Label>
-            <p class="text-xs text-muted-foreground">
-              关闭时仅禁用过期的独立余额 Key
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex items-center h-full">
-        <div class="flex items-center space-x-2">
-          <Checkbox
-            id="enable-format-conversion"
-            :checked="enableFormatConversion"
-            @update:checked="$emit('update:enableFormatConversion', $event)"
-          />
-          <div>
-            <Label
-              for="enable-format-conversion"
-              class="cursor-pointer"
-            >
-              全局格式转换
-            </Label>
-            <p class="text-xs text-muted-foreground">
-              开启后强制允许所有提供商接受跨格式请求
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex items-center h-full">
-        <div class="flex items-center space-x-2">
-          <Checkbox
-            id="enable-openai-image-sync-heartbeat"
-            :checked="enableOpenaiImageSyncHeartbeat"
-            @update:checked="$emit('update:enableOpenaiImageSyncHeartbeat', $event)"
-          />
-          <div>
-            <Label
-              for="enable-openai-image-sync-heartbeat"
-              class="cursor-pointer"
-            >
-              同步生图心跳
-            </Label>
-            <p class="text-xs text-muted-foreground">
-              开启后同步生图外层 HTTP 状态固定为 200，上游失败需读取响应体 error.upstream_status
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex items-center h-full">
-        <div class="flex items-center space-x-2">
-          <Checkbox
-            id="enable-standard-text-sync-heartbeat"
-            :checked="enableStandardTextSyncHeartbeat"
-            @update:checked="$emit('update:enableStandardTextSyncHeartbeat', $event)"
-          />
-          <div>
-            <Label
-              for="enable-standard-text-sync-heartbeat"
-              class="cursor-pointer"
-            >
-              标准文本非流式心跳
-            </Label>
-            <p class="text-xs text-muted-foreground">
-              开启后标准文本非流式接口外层 HTTP 状态固定为 200，上游失败需读取响应体 error.upstream_status
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex items-center h-full">
-        <div class="flex items-center space-x-2">
-          <Checkbox
-            id="cyber-continue-failover"
-            :checked="cyberContinueFailover"
-            @update:checked="$emit('update:cyberContinueFailover', $event)"
-          />
-          <div>
-            <Label
-              for="cyber-continue-failover"
-              class="cursor-pointer"
-            >
-              Cyber继续转移
-            </Label>
-            <p class="text-xs text-muted-foreground">
-              关闭时Cyber Policy错误直接返回客户端；开启后在响应内容开始前按普通错误继续故障转移，可能增加首字等待时间
-            </p>
-          </div>
-        </div>
+        <span>请求/分钟</span>
       </div>
     </div>
-  </CardSection>
+    <div class="settings-row settings-row--toggle">
+      <div>
+        <Label for="auto-delete-expired-keys">自动删除过期 Key</Label>
+        <p class="settings-description">
+          关闭时仅禁用过期的独立余额 Key
+        </p>
+      </div>
+      <Switch
+        id="auto-delete-expired-keys"
+        :model-value="autoDeleteExpiredKeys"
+        @update:model-value="$emit('update:autoDeleteExpiredKeys', $event)"
+      />
+    </div>
+    <SettingsSaveActions
+      :loading="loading"
+      :has-changes="hasChanges"
+      :error="error"
+      @save="$emit('save')"
+      @cancel="$emit('cancel')"
+    />
+  </section>
 </template>
 
 <script setup lang="ts">
-import Button from '@/components/ui/button.vue'
 import Input from '@/components/ui/input.vue'
 import Label from '@/components/ui/label.vue'
-import Checkbox from '@/components/ui/checkbox.vue'
-import { CardSection } from '@/components/layout'
+import Switch from '@/components/ui/switch.vue'
+import SettingsSaveActions from './SettingsSaveActions.vue'
 
 defineProps<{
   rateLimitPerMinute: number
@@ -159,12 +115,12 @@ defineProps<{
   cyberContinueFailover: boolean
   loading: boolean
   hasChanges: boolean
-  collapsible?: boolean
-  defaultOpen?: boolean
+  error?: string
 }>()
 
 defineEmits<{
   save: []
+  cancel: []
   'update:rateLimitPerMinute': [value: number]
   'update:autoDeleteExpiredKeys': [value: boolean]
   'update:enableFormatConversion': [value: boolean]

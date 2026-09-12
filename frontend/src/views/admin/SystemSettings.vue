@@ -1,168 +1,233 @@
 <template>
   <PageContainer>
-    <div class="relative flex gap-6">
-      <!-- 主内容 -->
-      <div class="flex-1 min-w-0">
-        <PageHeader
-          title="系统设置"
-          description="管理系统级别的配置和参数"
-        />
-
-        <div
-          class="mt-6 space-y-6 transition-opacity"
-          :class="{ 'pointer-events-none opacity-60': systemConfigLoading }"
-          :inert="systemConfigLoading"
-          :aria-busy="systemConfigLoading"
+    <div class="system-settings">
+      <PageHeader title="系统设置" />
+      <div class="settings-layout">
+        <nav
+          class="settings-nav"
+          aria-label="设置分类"
         >
+          <RouterLink
+            v-for="item in tabs"
+            :key="item.id"
+            :to="{ query: { ...route.query, tab: item.id }, hash: '' }"
+            :aria-current="activeTab === item.id ? 'page' : undefined"
+          >
+            <component
+              :is="item.icon"
+              class="h-4 w-4 shrink-0"
+              aria-hidden="true"
+            />
+            {{ item.label }}
+          </RouterLink>
+          <p
+            v-if="systemVersion"
+            class="settings-nav-version"
+          >
+            Aether <samp>{{ systemVersion }}</samp>
+          </p>
+        </nav>
+        <div class="settings-mobile-nav">
+          <Select
+            :model-value="activeTab"
+            @update:model-value="selectTab"
+          >
+            <SelectTrigger aria-label="设置分类">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="item in tabs"
+                :key="item.id"
+                :value="item.id"
+              >
+                {{ item.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div class="settings-content">
           <div
             v-if="systemConfigLoading"
-            class="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
+            class="settings-empty"
+            role="status"
           >
             系统配置加载中...
           </div>
-
-          <DesktopGatewaySection
-            v-if="desktopMode"
-            id="section-desktop-gateway"
-          />
-
-          <!-- 数据管理 -->
-          <DataManagementSection
-            id="section-data-mgmt"
-            collapsible
-            :default-open="false"
-            :config-export-loading="exportLoading"
-            :config-import-loading="importLoading"
-            :aggregate-export-loading="exportAggregateLoading"
-            :aggregate-import-loading="importAggregateLoading"
-            @export="handleDataExport"
-            @file-select="handleDataFileSelect"
-          />
-
-          <!-- 网络代理 -->
-          <ProxyConfigSection
-            id="section-proxy"
-            collapsible
-            :default-open="false"
-            :proxy-node-id="systemConfig.system_proxy_node_id"
-            :loading="systemConfigLoading || proxyConfigLoading"
-            :has-changes="hasProxyConfigChanges"
-            @save="saveProxyConfig"
-            @update:proxy-node-id="systemConfig.system_proxy_node_id = $event"
-          />
-
-          <!-- 基础配置 -->
-          <BasicConfigSection
-            id="section-basic"
-            collapsible
-            :default-open="false"
-            :rate-limit-per-minute="systemConfig.rate_limit_per_minute"
-            :auto-delete-expired-keys="systemConfig.auto_delete_expired_keys"
-            :enable-format-conversion="systemConfig.enable_format_conversion"
-            :enable-openai-image-sync-heartbeat="systemConfig.enable_openai_image_sync_heartbeat"
-            :enable-standard-text-sync-heartbeat="systemConfig.enable_standard_text_sync_heartbeat"
-            :cyber-continue-failover="systemConfig.cyber_continue_failover"
-            :loading="systemConfigLoading || basicConfigLoading"
-            :has-changes="hasBasicConfigChanges"
-            @save="saveBasicConfig"
-            @update:rate-limit-per-minute="systemConfig.rate_limit_per_minute = $event"
-            @update:auto-delete-expired-keys="systemConfig.auto_delete_expired_keys = $event"
-            @update:enable-format-conversion="systemConfig.enable_format_conversion = $event"
-            @update:enable-openai-image-sync-heartbeat="systemConfig.enable_openai_image_sync_heartbeat = $event"
-            @update:enable-standard-text-sync-heartbeat="systemConfig.enable_standard_text_sync_heartbeat = $event"
-            @update:cyber-continue-failover="systemConfig.cyber_continue_failover = $event"
-          />
-
-          <!-- 请求记录配置 -->
-          <RequestLogSection
-            id="section-request-log"
-            collapsible
-            :default-open="false"
-            :request-record-level="systemConfig.request_record_level"
-            :sensitive-headers-str="sensitiveHeadersStr"
-            :loading="systemConfigLoading || logConfigLoading"
-            :has-changes="hasLogConfigChanges"
-            @save="saveLogConfig"
-            @update:request-record-level="systemConfig.request_record_level = $event"
-            @update:sensitive-headers-str="sensitiveHeadersStr = $event"
-          />
-
-          <!-- 请求记录清理策略 -->
-          <CleanupPolicySection
-            id="section-cleanup"
-            collapsible
-            :default-open="false"
-            :enable-auto-cleanup="systemConfig.enable_auto_cleanup"
-            :detail-log-retention-days="systemConfig.detail_log_retention_days"
-            :compressed-log-retention-days="systemConfig.compressed_log_retention_days"
-            :header-retention-days="systemConfig.header_retention_days"
-            :log-retention-days="systemConfig.log_retention_days"
-            :cleanup-batch-size="systemConfig.cleanup_batch_size"
-            :audit-log-retention-days="systemConfig.audit_log_retention_days"
-            :request-candidates-retention-days="systemConfig.request_candidates_retention_days"
-            :request-candidates-cleanup-batch-size="systemConfig.request_candidates_cleanup_batch_size"
-            :proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days"
-            :proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days"
-            :proxy-node-metrics-cleanup-batch-size="systemConfig.proxy_node_metrics_cleanup_batch_size"
-            :loading="systemConfigLoading || cleanupConfigLoading"
-            :has-changes="hasCleanupConfigChanges"
-            @save="saveCleanupConfig"
-            @toggle-auto-cleanup="handleAutoCleanupToggle"
-            @update:detail-log-retention-days="systemConfig.detail_log_retention_days = $event"
-            @update:compressed-log-retention-days="systemConfig.compressed_log_retention_days = $event"
-            @update:header-retention-days="systemConfig.header_retention_days = $event"
-            @update:log-retention-days="systemConfig.log_retention_days = $event"
-            @update:cleanup-batch-size="systemConfig.cleanup_batch_size = $event"
-            @update:audit-log-retention-days="systemConfig.audit_log_retention_days = $event"
-            @update:request-candidates-retention-days="systemConfig.request_candidates_retention_days = $event"
-            @update:request-candidates-cleanup-batch-size="systemConfig.request_candidates_cleanup_batch_size = $event"
-            @update:proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days = $event"
-            @update:proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days = $event"
-            @update:proxy-node-metrics-cleanup-batch-size="systemConfig.proxy_node_metrics_cleanup_batch_size = $event"
-          />
-
-          <!-- 系统版本信息 -->
-          <SystemInfoSection
-            id="section-sysinfo"
-            collapsible
-            :default-open="false"
-            :system-version="systemVersion"
-          />
-        </div>
-      </div>
-
-      <!-- 右侧悬浮目录 -->
-      <nav
-        class="hidden w-44 shrink-0"
-        :class="desktopMode ? 'xl:block' : 'lg:block'"
-      >
-        <div class="sticky top-1/2 -translate-y-1/2">
-          <div class="relative">
-            <!-- 竖线：通过绝对定位，以圆点中心为基准 -->
-            <div class="absolute right-[3px] top-0 bottom-0 w-px bg-border" />
-            <ul class="relative text-sm">
-              <li
-                v-for="item in tocItems"
-                :key="item.id"
+          <div
+            v-else-if="systemConfigError"
+            class="settings-toolbar"
+            role="alert"
+          >
+            <p class="settings-error">
+              {{ systemConfigError }}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              @click="loadSystemConfig"
+            >
+              重试
+            </Button>
+          </div>
+          <div
+            :inert="systemConfigLoading || !!systemConfigError"
+            :aria-busy="systemConfigLoading"
+          >
+            <section
+              v-if="visited.has('connection')"
+              v-show="activeTab === 'connection'"
+              class="settings-panel"
+              aria-labelledby="connection-title"
+            >
+              <h2
+                id="connection-title"
+                class="settings-panel-title"
               >
-                <button
-                  class="relative flex items-center justify-end w-full text-right pr-4 pl-2 py-1.5 transition-all duration-200"
-                  :class="activeSection === item.id
-                    ? 'text-primary font-medium'
-                    : 'text-muted-foreground hover:text-foreground'"
-                  @click="scrollToSection(item.id)"
-                >
-                  {{ item.label }}
-                  <span
-                    class="absolute right-0 w-[7px] h-[7px] rounded-full transition-all duration-200"
-                    :class="activeSection === item.id ? 'bg-primary scale-125' : 'bg-border'"
-                  />
-                </button>
-              </li>
-            </ul>
+                {{ desktopMode ? '连接与启动' : '网络连接' }}
+              </h2>
+              <ProxyConfigSection
+                id="section-proxy"
+                :proxy-node-id="systemConfig.system_proxy_node_id"
+                :loading="proxyConfigLoading"
+                :has-changes="hasProxyConfigChanges"
+                :error="saveErrors.proxy"
+                @save="saveProxyConfig"
+                @cancel="cancelChanges('proxy')"
+                @proxy-cleared="confirmProxyCleared"
+                @update:proxy-node-id="systemConfig.system_proxy_node_id = $event"
+              />
+              <DesktopGatewaySection
+                v-if="desktopGateway"
+                id="section-desktop-gateway"
+                :gateway="desktopGateway"
+                view="connection"
+                :port-expanded="route.hash === '#section-desktop-gateway'"
+              />
+            </section>
+
+            <section
+              v-if="visited.has('records')"
+              v-show="activeTab === 'records'"
+              class="settings-panel"
+              aria-labelledby="records-title"
+            >
+              <h2
+                id="records-title"
+                class="settings-panel-title"
+              >
+                记录与存储
+              </h2>
+              <RequestLogSection
+                id="section-request-log"
+                :request-record-level="systemConfig.request_record_level"
+                :sensitive-headers-str="sensitiveHeadersStr"
+                :loading="logConfigLoading"
+                :has-changes="hasLogConfigChanges"
+                :error="saveErrors.log"
+                @save="saveLogConfig"
+                @cancel="cancelChanges('log')"
+                @update:request-record-level="systemConfig.request_record_level = $event"
+                @update:sensitive-headers-str="sensitiveHeadersStr = $event"
+              />
+              <CleanupPolicySection
+                id="section-cleanup"
+                :enable-auto-cleanup="systemConfig.enable_auto_cleanup"
+                :auto-cleanup-loading="autoCleanupLoading"
+                :detail-log-retention-days="systemConfig.detail_log_retention_days"
+                :compressed-log-retention-days="systemConfig.compressed_log_retention_days"
+                :header-retention-days="systemConfig.header_retention_days"
+                :log-retention-days="systemConfig.log_retention_days"
+                :audit-log-retention-days="systemConfig.audit_log_retention_days"
+                :request-candidates-retention-days="systemConfig.request_candidates_retention_days"
+                :proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days"
+                :proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days"
+                :loading="cleanupConfigLoading"
+                :has-changes="hasCleanupConfigChanges"
+                :error="saveErrors.cleanup"
+                @save="saveCleanupConfig"
+                @cancel="cancelChanges('cleanup')"
+                @toggle-auto-cleanup="handleAutoCleanupToggle"
+                @update:detail-log-retention-days="systemConfig.detail_log_retention_days = $event"
+                @update:compressed-log-retention-days="systemConfig.compressed_log_retention_days = $event"
+                @update:header-retention-days="systemConfig.header_retention_days = $event"
+                @update:log-retention-days="systemConfig.log_retention_days = $event"
+                @update:audit-log-retention-days="systemConfig.audit_log_retention_days = $event"
+                @update:request-candidates-retention-days="systemConfig.request_candidates_retention_days = $event"
+                @update:proxy-node-metrics-1m-retention-days="systemConfig.proxy_node_metrics_1m_retention_days = $event"
+                @update:proxy-node-metrics-1h-retention-days="systemConfig.proxy_node_metrics_1h_retention_days = $event"
+              />
+            </section>
+
+            <section
+              v-if="visited.has('backup')"
+              v-show="activeTab === 'backup'"
+              class="settings-panel"
+              aria-labelledby="backup-title"
+            >
+              <h2
+                id="backup-title"
+                class="settings-panel-title"
+              >
+                备份与恢复
+              </h2>
+              <DataManagementSection
+                id="section-data-mgmt"
+                :config-export-loading="exportLoading"
+                :config-import-loading="importLoading"
+                :aggregate-export-loading="exportAggregateLoading"
+                :aggregate-import-loading="importAggregateLoading"
+                @export="handleDataExport"
+                @file-select="handleDataFileSelect"
+              />
+            </section>
+
+            <section
+              v-if="visited.has('advanced')"
+              v-show="activeTab === 'advanced'"
+              class="settings-panel"
+              aria-labelledby="advanced-title"
+            >
+              <h2
+                id="advanced-title"
+                class="settings-panel-title"
+              >
+                高级与诊断
+              </h2>
+              <BasicConfigSection
+                id="section-basic"
+                :rate-limit-per-minute="systemConfig.rate_limit_per_minute"
+                :auto-delete-expired-keys="systemConfig.auto_delete_expired_keys"
+                :enable-format-conversion="systemConfig.enable_format_conversion"
+                :enable-openai-image-sync-heartbeat="systemConfig.enable_openai_image_sync_heartbeat"
+                :enable-standard-text-sync-heartbeat="systemConfig.enable_standard_text_sync_heartbeat"
+                :cyber-continue-failover="systemConfig.cyber_continue_failover"
+                :loading="basicConfigLoading"
+                :has-changes="hasBasicConfigChanges"
+                :error="saveErrors.basic"
+                @save="saveBasicConfig"
+                @cancel="cancelChanges('basic')"
+                @update:rate-limit-per-minute="systemConfig.rate_limit_per_minute = $event"
+                @update:auto-delete-expired-keys="systemConfig.auto_delete_expired_keys = $event"
+                @update:enable-format-conversion="systemConfig.enable_format_conversion = $event"
+                @update:enable-openai-image-sync-heartbeat="systemConfig.enable_openai_image_sync_heartbeat = $event"
+                @update:enable-standard-text-sync-heartbeat="systemConfig.enable_standard_text_sync_heartbeat = $event"
+                @update:cyber-continue-failover="systemConfig.cyber_continue_failover = $event"
+              />
+              <SystemInfoSection
+                id="section-sysinfo"
+                :system-version="systemVersion"
+              />
+              <DesktopGatewaySection
+                v-if="desktopGateway"
+                :gateway="desktopGateway"
+                view="diagnostics"
+              />
+              <DataMaintenanceSection :active="activeTab === 'advanced'" />
+            </section>
           </div>
         </div>
-      </nav>
+      </div>
     </div>
 
     <!-- 导入配置对话框 -->
@@ -202,96 +267,50 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref, onMounted, nextTick, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { Archive, Cable, FileClock, SlidersHorizontal } from 'lucide-vue-next'
 import { PageHeader, PageContainer } from '@/components/layout'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui'
+import Button from '@/components/ui/button.vue'
 import { hasDesktopSession } from '@/desktop/session'
-
-// Composables
+import { useDesktopGateway } from '@/desktop/useDesktopGateway'
 import { useSystemConfig } from './system-settings/composables/useSystemConfig'
 import { useConfigExportImport } from './system-settings/composables/useConfigExportImport'
-
-// Section components
 import DataManagementSection from './system-settings/DataManagementSection.vue'
+import DataMaintenanceSection from './system-settings/DataMaintenanceSection.vue'
 import ProxyConfigSection from './system-settings/ProxyConfigSection.vue'
 import BasicConfigSection from './system-settings/BasicConfigSection.vue'
 import RequestLogSection from './system-settings/RequestLogSection.vue'
 import CleanupPolicySection from './system-settings/CleanupPolicySection.vue'
 import SystemInfoSection from './system-settings/SystemInfoSection.vue'
 import DesktopGatewaySection from '@/desktop/DesktopGatewaySection.vue'
-
-// Dialog components
 import ConfigImportDialog from './system-settings/ConfigImportDialog.vue'
 import AggregateImportDialog from './system-settings/AggregateImportDialog.vue'
+import './system-settings/settings.css'
 
-// TOC 目录导航
 const desktopMode = hasDesktopSession()
+const desktopGateway = desktopMode ? useDesktopGateway() : null
 const route = useRoute()
-const tocItems = [
-  ...(desktopMode ? [{ id: 'section-desktop-gateway', label: '桌面应用' }] : []),
-  { id: 'section-data-mgmt', label: '数据管理' },
-  { id: 'section-proxy', label: '网络代理' },
-  { id: 'section-basic', label: '基础配置' },
-  { id: 'section-request-log', label: '请求记录' },
-  { id: 'section-cleanup', label: '记录清理策略' },
-  { id: 'section-sysinfo', label: '系统信息' },
+const router = useRouter()
+const tabs = [
+  { id: 'connection', label: desktopMode ? '连接与启动' : '网络连接', icon: Cable },
+  { id: 'records', label: '记录与存储', icon: FileClock },
+  { id: 'backup', label: '备份与恢复', icon: Archive },
+  { id: 'advanced', label: '高级与诊断', icon: SlidersHorizontal },
 ]
-
-const activeSection = ref(tocItems[0].id)
-let observer: IntersectionObserver | null = null
-
-function getScrollContainer(): HTMLElement | null {
-  return document.querySelector('.app-shell__content')
+const legacyTabs: Record<string, string> = {
+  '#section-desktop-gateway': 'connection', '#section-proxy': 'connection',
+  '#section-request-log': 'records', '#section-cleanup': 'records',
+  '#section-data-mgmt': 'backup', '#section-basic': 'advanced', '#section-sysinfo': 'advanced',
 }
+const activeTab = computed(() => legacyTabs[route.hash]
+  || (tabs.some(tab => tab.id === route.query.tab) ? String(route.query.tab) : 'connection'))
+const visited = ref(new Set<string>())
+watch(activeTab, tab => visited.value.add(tab), { immediate: true })
 
-function scrollToSection(id: string, behavior: 'smooth' | 'auto' = 'smooth') {
-  const el = document.getElementById(id)
-  const container = getScrollContainer()
-  if (el && container) {
-    const offset = 80
-    const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - offset
-    container.scrollTo({ top, behavior })
-  }
-}
-
-function scrollToHash() {
-  const id = route.hash.slice(1)
-  if (tocItems.some(item => item.id === id)) scrollToSection(id, 'auto')
-}
-
-watch(() => route.hash, async () => {
-  await nextTick()
-  scrollToHash()
-})
-
-function setupScrollSpy() {
-  const sectionIds = tocItems.map(item => item.id)
-  const container = getScrollContainer()
-  if (!container) return
-
-  const visibleSections = new Set<string>()
-
-  observer = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          visibleSections.add(entry.target.id)
-        } else {
-          visibleSections.delete(entry.target.id)
-        }
-      }
-      const topId = sectionIds.find(id => visibleSections.has(id))
-      if (topId) {
-        activeSection.value = topId
-      }
-    },
-    { root: container, rootMargin: '-80px 0px -60% 0px', threshold: 0 }
-  )
-
-  for (const id of sectionIds) {
-    const el = document.getElementById(id)
-    if (el) observer.observe(el)
-  }
+function selectTab(tab: string) {
+  void router.push({ query: { ...route.query, tab }, hash: '' })
 }
 
 // System config composable
@@ -299,6 +318,11 @@ const {
   systemConfig,
   systemVersion,
   systemConfigLoading,
+  systemConfigError,
+  saveErrors,
+  cancelChanges,
+  confirmProxyCleared,
+  autoCleanupLoading,
   proxyConfigLoading,
   basicConfigLoading,
   logConfigLoading,
@@ -365,20 +389,25 @@ function handleDataFileSelect(kind: DataManagementKind, event: Event) {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([
-    loadSystemConfig(),
-    loadSystemVersion(),
-  ])
+
+watch(() => route.fullPath, async () => {
   await nextTick()
-  setupScrollSpy()
-  scrollToHash()
+  scrollToLegacySection()
 })
 
-onBeforeUnmount(() => {
-  if (observer) {
-    observer.disconnect()
-    observer = null
+function scrollToLegacySection() {
+  if (!legacyTabs[route.hash]) return
+  const section = document.getElementById(route.hash.slice(1))
+  if (route.hash === '#section-cleanup') {
+    const details = section?.querySelector('details')
+    if (details) details.open = true
   }
+  section?.scrollIntoView?.({ block: 'start' })
+}
+
+onMounted(async () => {
+  await Promise.all([loadSystemConfig(), loadSystemVersion()])
+  await nextTick()
+  scrollToLegacySection()
 })
 </script>

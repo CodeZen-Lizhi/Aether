@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ChevronDown, FileText, FolderOpen, LoaderCircle, RotateCw, Settings2, Wrench } from 'lucide-vue-next'
+import { ChevronDown, FileText, FolderOpen, LoaderCircle, RotateCw, Save, Wrench } from 'lucide-vue-next'
 import Button from '@/components/ui/button.vue'
 import Input from '@/components/ui/input.vue'
 import Switch from '@/components/ui/switch.vue'
@@ -14,6 +14,8 @@ const props = defineProps<{
   canEditPort: boolean
   savingPort: boolean
   recovery?: boolean
+  view?: 'connection' | 'diagnostics'
+  portExpanded?: boolean
   logs?: readonly string[]
   logsLoading?: boolean
   logsError?: string
@@ -29,7 +31,6 @@ const { legacyT } = useI18n()
 
 const port = ref(String(props.status.port))
 const submitted = ref(false)
-const expanded = ref(true)
 const portError = computed(() => submitted.value ? validatePort(port.value) : '')
 const hasChanges = computed(() => port.value !== String(props.status.port))
 const portErrorElement = ref<HTMLElement | null>(null)
@@ -58,50 +59,64 @@ function toggleLogs(event: Event) {
 
 <template>
   <section
-    class="desktop-panel desktop-settings"
-    aria-labelledby="settings-title"
+    class="desktop-settings settings-group"
+    :class="{ 'desktop-panel': recovery }"
   >
-    <button
-      v-if="!recovery"
-      type="button"
-      class="desktop-section-heading desktop-section-toggle"
-      aria-controls="desktop-settings-content"
-      :aria-expanded="expanded"
-      :aria-label="legacyT('桌面应用')"
-      @click="expanded = !expanded"
-    >
-      <Settings2
-        class="h-4 w-4 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <h2 id="settings-title">
-        桌面应用
-      </h2>
-      <ChevronDown
-        class="ml-auto h-4 w-4 text-muted-foreground transition-transform"
-        :class="{ 'rotate-180': expanded }"
-        aria-hidden="true"
-      />
-    </button>
-    <div
-      v-else
-      class="desktop-section-heading"
-    >
-      <Wrench
-        class="h-4 w-4 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <h2 id="settings-title">
+    <template v-if="recovery || view !== 'diagnostics'">
+      <h3
+        v-if="!recovery"
+        class="settings-heading"
+      >
+        启动与端口
+      </h3>
+      <h2
+        v-else
+        class="desktop-section-heading"
+      >
+        <Wrench
+          class="h-4 w-4"
+          aria-hidden="true"
+        />
         恢复网关
       </h2>
-    </div>
-
-    <div
-      v-show="recovery || expanded"
-      id="desktop-settings-content"
-      class="desktop-settings-content"
-    >
-      <div class="desktop-settings-grid">
+      <div
+        v-if="!recovery"
+        class="desktop-autostart settings-row settings-row--toggle"
+      >
+        <div>
+          <label
+            id="autostart-label"
+            for="desktop-autostart"
+          >登录 Mac 时自动启动</label>
+          <p
+            id="autostart-hint"
+            class="settings-description"
+          >
+            启动 Aether 并运行本机网关。
+          </p>
+        </div>
+        <Switch
+          id="desktop-autostart"
+          :model-value="status.autostart"
+          :disabled="disabled"
+          aria-labelledby="autostart-label"
+          aria-describedby="autostart-hint"
+          @update:model-value="emit('setAutostart', $event)"
+        />
+      </div>
+      <component
+        :is="recovery ? 'div' : 'details'"
+        class="settings-disclosure desktop-port-disclosure"
+        :open="portExpanded"
+      >
+        <summary v-if="!recovery">
+          网关端口
+          <samp class="ml-auto text-muted-foreground">{{ status.port }}</samp>
+          <ChevronDown
+            class="settings-chevron !ml-1"
+            aria-hidden="true"
+          />
+        </summary>
         <form
           class="desktop-field"
           novalidate
@@ -109,33 +124,19 @@ function toggleLogs(event: Event) {
           @submit.prevent="savePort"
         >
           <label for="gateway-port">网关端口</label>
-          <div class="desktop-port-input">
-            <Input
-              id="gateway-port"
-              v-model="port"
-              type="number"
-              inputmode="numeric"
-              min="1024"
-              max="65535"
-              step="1"
-              :disabled="disabled || !canEditPort"
-              :aria-invalid="!!portError"
-              aria-describedby="gateway-port-hint gateway-port-error"
-            />
-            <Button
-              type="submit"
-              variant="outline"
-              class="shrink-0 gap-2"
-              :disabled="disabled || !canEditPort || !hasChanges"
-            >
-              <LoaderCircle
-                v-if="savingPort"
-                class="desktop-spin h-4 w-4"
-                aria-hidden="true"
-              />
-              保存端口
-            </Button>
-          </div>
+          <Input
+            id="gateway-port"
+            v-model="port"
+            type="number"
+            inputmode="numeric"
+            min="1024"
+            max="65535"
+            step="1"
+            class="max-w-48 rounded-md"
+            :disabled="disabled || !canEditPort"
+            :aria-invalid="!!portError"
+            aria-describedby="gateway-port-hint gateway-port-error"
+          />
           <p id="gateway-port-hint">
             保存后会自动重启网关，仅允许本机访问。
           </p>
@@ -149,34 +150,41 @@ function toggleLogs(event: Event) {
           >
             {{ portError }}
           </p>
-        </form>
-
-        <div
-          v-if="!recovery"
-          class="desktop-autostart"
-        >
-          <div>
-            <label
-              id="autostart-label"
-              for="desktop-autostart"
-            >登录 Mac 时自动启动</label>
-            <p id="autostart-hint">
-              启动 Aether 并运行本机网关。
-            </p>
+          <div
+            v-if="hasChanges || savingPort"
+            class="settings-actions desktop-port-actions"
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              :disabled="disabled"
+              @click="port = String(status.port); submitted = false"
+            >
+              取消
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              :disabled="disabled || !canEditPort || !hasChanges"
+            >
+              <LoaderCircle
+                v-if="savingPort"
+                class="desktop-spin h-4 w-4"
+                aria-hidden="true"
+              />
+              <Save
+                v-else
+                class="h-4 w-4"
+                aria-hidden="true"
+              />
+              {{ savingPort ? '保存中...' : '保存端口' }}
+            </Button>
           </div>
-          <Switch
-            id="desktop-autostart"
-            :model-value="status.autostart"
-            :disabled="disabled"
-            aria-labelledby="autostart-label"
-            aria-describedby="autostart-hint"
-            @update:model-value="emit('setAutostart', $event)"
-          />
-        </div>
-      </div>
-
+        </form>
+      </component>
+    </template>
+    <template v-else>
       <div
-        v-if="!recovery"
         class="desktop-directories"
       >
         <div class="desktop-directory">
@@ -224,7 +232,6 @@ function toggleLogs(event: Event) {
       </div>
 
       <details
-        v-if="!recovery"
         class="desktop-diagnostics group"
         @toggle="toggleLogs"
       >
@@ -288,47 +295,35 @@ function toggleLogs(event: Event) {
           </p>
         </div>
       </details>
-    </div>
+    </template>
   </section>
 </template>
 
 <style scoped>
-.desktop-panel { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
-.desktop-settings { padding: 20px 24px; }
-.desktop-section-heading { display: flex; align-items: center; gap: 10px; }
-.desktop-section-heading h2 { font-size: 15px; font-weight: 600; }
-.desktop-section-toggle { width: 100%; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
-.desktop-section-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 4px; }
-.desktop-settings-content { min-width: 0; }
-.desktop-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin-top: 20px; }
-.desktop-field { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
+.desktop-panel { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 20px 24px; }
+.desktop-settings { min-width: 0; }
+.desktop-section-heading { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; }
+.desktop-field { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 0 0 16px; }
+.desktop-panel .desktop-field { padding-top: 20px; }
 .desktop-field label,
 .desktop-autostart label { font-size: 13px; font-weight: 500; }
-.desktop-field > p,
-.desktop-autostart p { font-size: 12px; color: var(--muted-foreground); }
-.desktop-port-input { display: flex; align-items: center; gap: 8px; }
-.desktop-port-input input { min-width: 0; }
-.desktop-autostart { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.desktop-autostart p { margin-top: 4px; }
-.desktop-autostart > button { flex-shrink: 0; margin-top: 2px; }
-.desktop-directories { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; }
-.desktop-directory { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.desktop-field > p { font-size: 12px; color: var(--muted-foreground); }
+.desktop-port-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.desktop-port-actions > button { gap: 8px; }
+.desktop-directory { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .desktop-directory > div { min-width: 0; }
-.desktop-directory > button { flex-shrink: 0; }
+.desktop-directory > button { flex-shrink: 0; border-radius: 6px; }
 .desktop-directory-label { font-size: 12px; color: var(--muted-foreground); }
-.desktop-directory code { display: block; overflow-wrap: anywhere; font-size: 12px; user-select: text; }
+.desktop-directory code { display: block; overflow-wrap: anywhere; font-size: 12px; user-select: text; margin-top: 4px; }
+.desktop-field .desktop-field-error,
 .desktop-field-error { color: var(--destructive); }
-.desktop-diagnostics { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; }
-.desktop-diagnostics > summary { display: flex; cursor: pointer; align-items: center; gap: 10px; list-style: none; font-size: 13px; font-weight: 500; }
+.desktop-diagnostics { margin-top: 16px; }
+.desktop-diagnostics > summary { display: flex; cursor: pointer; align-items: center; gap: 10px; list-style: none; font-size: 13px; font-weight: 500; min-height: 40px; }
 .desktop-diagnostics > summary::-webkit-details-marker { display: none; }
 .desktop-diagnostics-content { margin-top: 12px; }
 .desktop-diagnostics-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .desktop-diagnostics-toolbar p { min-width: 0; font-size: 12px; color: var(--muted-foreground); }
+.desktop-diagnostics-toolbar > div { flex-wrap: wrap; }
 .desktop-log-output { max-height: 280px; overflow: auto; margin-top: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--muted); padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; }
 .desktop-log-empty { margin-top: 12px; font-size: 12px; color: var(--muted-foreground); }
-
-@media (max-width: 640px) {
-  .desktop-settings { padding: 20px; }
-  .desktop-settings-grid { grid-template-columns: 1fr; gap: 20px; }
-}
 </style>

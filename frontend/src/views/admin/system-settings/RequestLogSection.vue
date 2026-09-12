@@ -1,78 +1,65 @@
 <template>
-  <CardSection
-    title="请求记录"
-    description="控制请求/响应详情的入库方式和内容"
-    :collapsible="collapsible"
-    :default-open="defaultOpen"
-  >
-    <template #actions>
-      <Button
-        size="sm"
-        :disabled="loading || !hasChanges"
-        @click="$emit('save')"
-      >
-        {{ loading ? '保存中...' : '保存' }}
-      </Button>
-    </template>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+  <section class="settings-group">
+    <h3 class="settings-heading">
+      请求记录
+    </h3>
+    <div class="settings-row">
       <div>
-        <Label
-          for="request-log-level"
-          class="block text-sm font-medium mb-2"
-        >
-          记录详细程度
-        </Label>
+        <Label for="request-log-level">记录详细程度</Label>
+        <p class="settings-description">
+          敏感信息会自动脱敏
+        </p>
+      </div>
+      <div class="settings-row-control">
         <Select
           :model-value="requestRecordLevel"
           @update:model-value="$emit('update:requestRecordLevel', $event)"
         >
-          <SelectTrigger
-            id="request-log-level"
-            class="mt-1"
-          >
+          <SelectTrigger id="request-log-level">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="basic">
-              BASIC - 基本信息 (~1KB/条)
+              基本信息
             </SelectItem>
             <SelectItem value="headers">
-              HEADERS - 含请求头 (~2-3KB/条)
+              基本信息与请求头
             </SelectItem>
             <SelectItem value="full">
-              FULL - 完整请求响应
+              完整请求与响应
             </SelectItem>
           </SelectContent>
         </Select>
-        <p class="mt-1 text-xs text-muted-foreground">
-          敏感信息会自动脱敏
-        </p>
       </div>
-
-      <div>
-        <Label
-          for="sensitive-headers"
-          class="block text-sm font-medium"
-        >
-          敏感请求头
-        </Label>
+    </div>
+    <details class="settings-disclosure">
+      <summary>敏感请求头<ChevronDown class="settings-chevron" /></summary>
+      <div class="settings-disclosure-content">
+        <Label for="sensitive-headers">脱敏请求头</Label>
         <Input
           id="sensitive-headers"
           :model-value="sensitiveHeadersStr"
           placeholder="authorization, x-api-key, cookie"
-          class="mt-1"
+          class="mt-2 rounded-md"
           @update:model-value="$emit('update:sensitiveHeadersStr', $event)"
         />
-        <p class="mt-1 text-xs text-muted-foreground">
+        <p class="settings-description">
           逗号分隔，这些请求头会被脱敏处理
         </p>
       </div>
-    </div>
-  </CardSection>
+    </details>
+    <SettingsSaveActions
+      :loading="loading"
+      :has-changes="hasChanges"
+      :error="error"
+      @save="$emit('save')"
+      @cancel="$emit('cancel')"
+    />
+  </section>
 </template>
 
 <script setup lang="ts">
-import Button from '@/components/ui/button.vue'
+import { ChevronDown } from 'lucide-vue-next'
 import Input from '@/components/ui/input.vue'
 import Label from '@/components/ui/label.vue'
 import Select from '@/components/ui/select.vue'
@@ -80,19 +67,19 @@ import SelectTrigger from '@/components/ui/select-trigger.vue'
 import SelectValue from '@/components/ui/select-value.vue'
 import SelectContent from '@/components/ui/select-content.vue'
 import SelectItem from '@/components/ui/select-item.vue'
-import { CardSection } from '@/components/layout'
+import SettingsSaveActions from './SettingsSaveActions.vue'
 
 defineProps<{
   requestRecordLevel: string
   sensitiveHeadersStr: string
   loading: boolean
   hasChanges: boolean
-  collapsible?: boolean
-  defaultOpen?: boolean
+  error?: string
 }>()
 
 defineEmits<{
   save: []
+  cancel: []
   'update:requestRecordLevel': [value: string]
   'update:sensitiveHeadersStr': [value: string]
 }>()

@@ -1,55 +1,53 @@
 <template>
-  <CardSection
-    title="网络代理"
-    description="配置提供商出站请求的代理，仅影响大模型 API、余额查询、OAuth 等提供商请求"
-    :collapsible="collapsible"
-    :default-open="defaultOpen"
-  >
-    <template #actions>
-      <Button
-        size="sm"
-        :disabled="loading || !hasChanges"
-        :title="hasChanges ? undefined : '暂无改动'"
-        @click="$emit('save')"
-      >
-        {{ loading ? '保存中...' : '保存默认代理' }}
-      </Button>
-    </template>
-
-    <div class="max-w-md space-y-5">
+  <section class="settings-group">
+    <h3 class="settings-heading">
+      默认出站代理
+    </h3>
+    <div>
       <!-- 区块一：默认代理 -->
-      <div class="space-y-1.5">
-        <Label class="block text-sm font-medium">默认代理</Label>
-        <Select
-          :model-value="proxyNodeId || '__direct__'"
-          @update:model-value="(v: string) => $emit('update:proxyNodeId', v === '__direct__' ? null : v)"
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="直连（不使用代理）" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__direct__">
-              直连（不使用代理）
-            </SelectItem>
-            <SelectItem
-              v-for="node in selectableNodes"
-              :key="node.id"
-              :value="node.id"
-            >
-              {{ node.name }}{{ node.region ? ` · ${node.region}` : '' }} ({{ node.ip }}:{{ node.port }})
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <p class="text-xs text-muted-foreground">
-          对未单独配置代理的提供商生效，覆盖大模型 API 请求、余额查询、OAuth 刷新等。不影响系统内部接口。
-        </p>
+      <div class="settings-row">
+        <div>
+          <Label for="default-proxy">默认代理</Label>
+          <p class="settings-description">
+            用于未单独配置代理的提供商请求，包括模型调用、余额查询和 OAuth。
+          </p>
+        </div>
+        <div class="settings-row-control">
+          <Select
+            :model-value="proxyNodeId || '__direct__'"
+            @update:model-value="(v: string) => $emit('update:proxyNodeId', v === '__direct__' ? null : v)"
+          >
+            <SelectTrigger id="default-proxy">
+              <SelectValue placeholder="直连（不使用代理）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__direct__">
+                直连（不使用代理）
+              </SelectItem>
+              <SelectItem
+                v-for="node in selectableNodes"
+                :key="node.id"
+                :value="node.id"
+              >
+                {{ node.name }}{{ node.region ? ` · ${node.region}` : '' }} ({{ node.ip }}:{{ node.port }})
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <div class="border-t border-border" />
+      <SettingsSaveActions
+        :loading="loading"
+        :has-changes="hasChanges"
+        :error="error"
+        label="保存默认代理"
+        @save="$emit('save')"
+        @cancel="$emit('cancel')"
+      />
 
       <!-- 区块二：代理节点管理 -->
-      <div class="space-y-3">
-        <div class="flex items-center justify-between gap-2">
+      <div class="settings-group mt-7">
+        <div class="settings-toolbar">
           <div class="flex items-center gap-2">
             <Label class="text-sm font-medium">代理节点</Label>
             <span
@@ -59,18 +57,25 @@
           </div>
           <div class="flex items-center gap-2">
             <Button
-              variant="outline"
-              size="sm"
+              variant="ghost"
+              size="icon"
+              class="settings-icon-button"
+              title="刷新节点"
+              aria-label="刷新节点"
               :disabled="store.loading"
               @click="store.fetchNodes()"
             >
-              刷新节点
+              <RefreshCw
+                class="h-4 w-4"
+                :class="{ 'animate-spin': store.loading }"
+              />
             </Button>
             <Button
               variant="outline"
               size="sm"
               @click="openAddDialog"
             >
+              <Plus class="mr-1.5 h-4 w-4" />
               添加节点
             </Button>
           </div>
@@ -104,14 +109,15 @@
           <div
             v-for="node in nodes"
             :key="node.id"
-            class="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2"
+            class="settings-proxy-row"
+            data-proxy-node
           >
             <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="truncate text-sm font-medium text-foreground">{{ node.name }}</span>
+              <div class="flex flex-wrap items-center gap-2">
+                <samp class="settings-node-name text-sm font-medium font-sans text-foreground">{{ node.name }}</samp>
                 <span
                   v-if="node.region"
-                  class="truncate text-xs text-muted-foreground"
+                  class="text-xs text-muted-foreground [overflow-wrap:anywhere]"
                 >{{ node.region }}</span>
                 <Badge
                   :variant="node.status === 'online' ? 'success' : 'secondary'"
@@ -120,7 +126,7 @@
                   {{ node.status === 'online' ? '在线' : '离线' }}
                 </Badge>
               </div>
-              <p class="mt-0.5 truncate text-xs text-muted-foreground">
+              <p class="settings-node-address">
                 {{ nodeAddress(node) }}
               </p>
             </div>
@@ -134,11 +140,14 @@
                 {{ isNodeTesting(node.id) ? '测试中...' : '测试' }}
               </Button>
               <Button
-                variant="outline"
-                size="sm"
+                variant="ghost"
+                size="icon"
+                class="settings-icon-button"
+                title="编辑"
+                aria-label="编辑"
                 @click="openEditDialog(node)"
               >
-                编辑
+                <Pencil class="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -146,7 +155,7 @@
 
         <div
           v-else
-          class="rounded-md border border-dashed border-border/60 px-4 py-6 text-center"
+          class="settings-empty"
         >
           <p class="text-sm text-muted-foreground">
             暂无代理节点
@@ -168,7 +177,7 @@
         @deleted="handleNodeDeleted"
       />
     </div>
-  </CardSection>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -181,7 +190,8 @@ import SelectTrigger from '@/components/ui/select-trigger.vue'
 import SelectValue from '@/components/ui/select-value.vue'
 import SelectContent from '@/components/ui/select-content.vue'
 import SelectItem from '@/components/ui/select-item.vue'
-import { CardSection } from '@/components/layout'
+import { Pencil, Plus, RefreshCw } from 'lucide-vue-next'
+import SettingsSaveActions from './SettingsSaveActions.vue'
 import { useProxyNodesStore } from '@/stores/proxy-nodes'
 import { clearModelsDevCache } from '@/api/models-dev'
 import { useToast } from '@/composables/useToast'
@@ -194,12 +204,13 @@ const props = defineProps<{
   proxyNodeId: string | null
   loading: boolean
   hasChanges: boolean
-  collapsible?: boolean
-  defaultOpen?: boolean
+  error?: string
 }>()
 
 const emit = defineEmits<{
   save: []
+  cancel: []
+  proxyCleared: []
   'update:proxyNodeId': [value: string | null]
 }>()
 
@@ -276,7 +287,8 @@ function handleNodeDeleted(payload: ProxyNodeDeletedPayload) {
   if (payload.clearedExternalModelsProxy) {
     clearModelsDevCache()
   }
-  if (payload.clearedSystemProxy || props.proxyNodeId === payload.nodeId) {
+  if (payload.clearedSystemProxy) emit('proxyCleared')
+  if (props.proxyNodeId === payload.nodeId || (payload.clearedSystemProxy && !props.proxyNodeId)) {
     emit('update:proxyNodeId', null)
   }
 }

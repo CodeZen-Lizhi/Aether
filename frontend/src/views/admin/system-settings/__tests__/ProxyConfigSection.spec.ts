@@ -161,16 +161,12 @@ function findButton(root: HTMLElement, text: string): HTMLButtonElement | undefi
 }
 
 function findEditButton(root: HTMLElement, nodeName: string): HTMLButtonElement | undefined {
-  return Array.from(root.querySelectorAll('button')).find(
-    btn =>
-      btn.textContent?.trim() === '编辑'
-      && btn.parentElement?.parentElement?.textContent?.includes(nodeName)
-  )
+  return findNodeActionButton(root, nodeName, '编辑')
 }
 
 function findNodeActionButton(root: HTMLElement, nodeName: string, text: string): HTMLButtonElement | undefined {
   return Array.from(root.querySelectorAll('button')).find(
-    btn => btn.textContent?.trim() === text
+    btn => (btn.textContent?.trim() === text || btn.getAttribute('aria-label') === text)
       && btn.parentElement?.parentElement?.textContent?.includes(nodeName)
   )
 }
@@ -226,14 +222,13 @@ describe('ProxyConfigSection', () => {
     expect(root.querySelector('[role="alert"]')).toBeNull()
   })
 
-  it('renders the default proxy save button with a disabled hint until changes exist', async () => {
+  it('hides default proxy save and cancel actions until changes exist', async () => {
     const { root } = mountSection({ hasChanges: false })
     await flushAsync()
 
     const saveButton = findButton(root, '保存默认代理')
-    expect(saveButton).toBeTruthy()
-    expect(saveButton?.disabled).toBe(true)
-    expect(saveButton?.getAttribute('title')).toBe('暂无改动')
+    expect(saveButton).toBeUndefined()
+    expect(findButton(root, '取消')).toBeUndefined()
   })
 
   it('enables the save button and drops the hint once there are changes', async () => {
