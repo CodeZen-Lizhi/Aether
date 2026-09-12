@@ -260,15 +260,11 @@ const cards = computed<StatCard[]>(() => {
 
 @container dashboard-overview (min-width: 36rem) {
   .dashboard-today-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
-  .dashboard-today-card:nth-child(-n + 3) {
-    grid-column: span 2 / span 2;
-  }
-
-  .dashboard-today-card:nth-child(n + 4) {
-    grid-column: span 3 / span 3;
+  .dashboard-today-card:nth-child(n) {
+    grid-column: span 1 / span 1;
   }
 
   .dashboard-lifetime-grid {
@@ -277,16 +273,6 @@ const cards = computed<StatCard[]>(() => {
   }
 
   .dashboard-lifetime-cost {
-    grid-column: span 1 / span 1;
-  }
-}
-
-@container dashboard-overview (min-width: 56rem) {
-  .dashboard-today-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
-  .dashboard-today-card:nth-child(n) {
     grid-column: span 1 / span 1;
   }
 }

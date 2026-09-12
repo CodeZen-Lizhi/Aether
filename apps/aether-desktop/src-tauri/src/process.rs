@@ -21,6 +21,31 @@ pub const LOG_LINES: usize = 100;
 const MAX_LINE_BYTES: usize = 8192;
 pub const SHUTDOWN_SECONDS: u64 = 20;
 
+#[cfg(unix)]
+fn prepare_gateway_file_limit() -> std::io::Result<()> {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // GUI launches can inherit 256 descriptors, exhausting the gateway's reserve.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let target = limit.rlim_max.min(10_240).max(limit.rlim_cur);
+        if target <= 256 {
+            return Err(std::io::Error::from_raw_os_error(libc::EMFILE));
+        }
+        if target > limit.rlim_cur {
+            limit.rlim_cur = target;
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+    }
+    Ok(())
+}
+
 pub struct ManagedChild {
     pub child: Child,
     pub ready: Arc<AtomicBool>,
@@ -126,7 +151,7 @@ impl ManagedChild {
             unsafe {
                 command.pre_exec(|| {
                     libc::umask(0o077);
-                    Ok(())
+                    prepare_gateway_file_limit()
                 });
             }
         }
@@ -260,6 +285,60 @@ fn bounded_line(reader: &mut impl BufRead) -> std::io::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn gateway_file_limit_recovers_low_soft_limit_and_respects_hard_limit() {
+        use std::os::unix::process::CommandExt;
+
+        for (soft, hard, expected) in [(256, 10_240, 10_240), (256, 512, 512), (1024, 1024, 1024)] {
+            let mut command = Command::new("/bin/sh");
+            command.args(["-c", "ulimit -Sn"]);
+            unsafe {
+                command.pre_exec(move || {
+                    let limit = libc::rlimit {
+                        rlim_cur: soft,
+                        rlim_max: hard,
+                    };
+                    if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    prepare_gateway_file_limit()
+                });
+            }
+            let output = command.output().unwrap();
+            assert!(output.status.success());
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap().trim(),
+                expected.to_string()
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn gateway_file_limit_rejects_exhausted_hard_limit() {
+        use std::os::unix::process::CommandExt;
+
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exit 0"]);
+        unsafe {
+            command.pre_exec(|| {
+                let limit = libc::rlimit {
+                    rlim_cur: 256,
+                    rlim_max: 256,
+                };
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                prepare_gateway_file_limit()
+            });
+        }
+        assert_eq!(
+            command.output().unwrap_err().raw_os_error(),
+            Some(libc::EMFILE)
+        );
+    }
 
     #[test]
     fn readiness_requires_structured_gateway_event() {

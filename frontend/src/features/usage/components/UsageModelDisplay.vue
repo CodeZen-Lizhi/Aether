@@ -8,11 +8,11 @@
       : undefined"
   >
     <div
-      class="flex min-w-0 max-w-full items-center gap-1"
+      class="flex w-fit min-w-0 max-w-full items-center gap-1"
       :class="[modelRowClass, actualModel ? 'flex-wrap' : '']"
     >
       <span
-        class="min-w-0 [overflow-wrap:anywhere]"
+        class="min-w-0 max-w-full [overflow-wrap:anywhere]"
         :class="modelClass"
         data-usage-model-source
       >{{ record.model }}</span>

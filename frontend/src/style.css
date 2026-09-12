@@ -1019,7 +1019,7 @@ body[theme-mode='dark'] .literary-annotation {
    * close to its intrinsic icon-and-label width. The 52rem threshold still
    * keeps the minimum window compact.
    */
-  @container list (min-width: 52rem) {
+  @container list (min-width: 36rem) {
     .responsive-list .table-card-actions {
       width: auto;
     }

@@ -613,11 +613,11 @@
             v-if="isColumnVisible('time')"
             class="py-4 align-top"
           >
-            <div class="flex flex-col gap-0.5 leading-tight">
-              <span class="text-xs text-foreground tabular-nums whitespace-normal">
+            <div class="flex w-full min-w-0 flex-col items-start gap-0.5 leading-tight">
+              <span class="block w-full text-left text-xs text-foreground tabular-nums whitespace-nowrap">
                 {{ formatRecordTime(record.created_at) }}
               </span>
-              <span class="text-[11px] text-muted-foreground tabular-nums whitespace-normal">
+              <span class="block w-full text-left text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
                 {{ formatRecordDate(record.created_at) }}
               </span>
             </div>
@@ -788,31 +788,31 @@
             class="py-4"
           >
             <template v-if="record.usage_available !== false">
-              <div class="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-1 text-xs leading-tight tabular-nums">
-                <span class="justify-self-end whitespace-normal text-right">
+              <div class="flex w-full min-w-0 items-center justify-end gap-1 text-xs leading-tight tabular-nums whitespace-nowrap">
+                <span class="text-right">
                   {{ formatTokens(getRecordEffectiveInputTokens(record)) }}
                 </span>
-                <span class="justify-self-center text-muted-foreground">
+                <span class="text-muted-foreground">
                   /
                 </span>
-                <span class="justify-self-start whitespace-normal text-left">
+                <span class="text-left">
                   {{ formatTokens(record.output_tokens || 0) }}
                 </span>
               </div>
-              <div class="mt-0.5 grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-1 text-xs leading-tight tabular-nums text-muted-foreground">
+              <div class="mt-0.5 flex w-full min-w-0 items-center justify-end gap-1 text-xs leading-tight tabular-nums text-muted-foreground whitespace-nowrap">
                 <span
-                  class="justify-self-end whitespace-normal text-right"
+                  class="text-right"
                   :class="[
                     hasPositiveTokens(getRecordCacheReadTokens(record)) ? 'text-foreground/70' : ''
                   ]"
                 >
                   {{ formatOptionalTokens(getRecordCacheReadTokens(record)) }}
                 </span>
-                <span class="justify-self-center">
+                <span>
                   /
                 </span>
                 <span
-                  class="justify-self-start whitespace-normal text-left"
+                  class="text-left"
                   :class="[
                     hasPositiveTokens(getRecordCacheCreationTokens(record)) ? 'text-foreground/70' : ''
                   ]"
@@ -822,7 +822,7 @@
               </div>
               <div
                 v-if="(record.input_audio_tokens || 0) > 0 || (record.output_audio_tokens || 0) > 0"
-                class="mt-0.5 text-right text-[10px] leading-tight tabular-nums text-muted-foreground"
+                class="mt-0.5 text-right text-[10px] leading-tight tabular-nums text-muted-foreground whitespace-nowrap"
               >
                 音频 {{ formatOptionalTokens(record.input_audio_tokens) }} / {{ formatOptionalTokens(record.output_audio_tokens) }}
               </div>
@@ -842,12 +842,12 @@
           >
             <div
               v-if="record.usage_available !== false && record.usage_pricing_available !== false"
-              class="flex flex-col items-end text-xs gap-0.5"
+              class="flex flex-col items-end text-xs gap-0.5 whitespace-nowrap"
             >
-              <span class="text-primary font-medium">{{ formatRecordCost(record.cost) }}</span>
+              <span class="text-primary font-medium whitespace-nowrap">{{ formatRecordCost(record.cost) }}</span>
               <span
                 v-if="showActualCost && record.actual_cost !== undefined && record.rate_multiplier && record.rate_multiplier !== 1.0"
-                class="text-muted-foreground"
+                class="text-muted-foreground whitespace-nowrap"
               >
                 {{ formatRecordCost(record.actual_cost) }}
               </span>
@@ -1088,9 +1088,9 @@ const USAGE_RECORD_COLUMN_OPTIONS: UsageRecordColumnOption[] = [
   { id: 'model', label: '模型', width: 16 },
   { id: 'provider', label: '提供商', width: 14, adminOnly: true },
   { id: 'api_format', label: 'API格式', width: 14 },
-  { id: 'status', label: '类型/状态', width: 10 },
-  { id: 'tokens', label: 'Tokens', width: 12 },
-  { id: 'cost', label: '费用', width: 10 },
+  { id: 'status', label: '类型/状态', width: 6 },
+  { id: 'tokens', label: 'Tokens', width: 13 },
+  { id: 'cost', label: '费用', width: 13 },
   { id: 'performance', label: '耗时/速度', width: 12 },
   { id: 'client_family', label: '客户端类型', width: 12 },
   { id: 'client_ip', label: 'IP 地址', width: 11 },
@@ -1242,11 +1242,7 @@ function parseRecordDateTime(dateStr: string): Date {
 }
 
 function formatRecordDate(dateStr: string): string {
-  const date = parseRecordDateTime(dateStr)
-  const year = String(date.getFullYear())
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return formatRecordShortDate(dateStr)
 }
 
 function formatRecordShortDate(dateStr: string): string {
