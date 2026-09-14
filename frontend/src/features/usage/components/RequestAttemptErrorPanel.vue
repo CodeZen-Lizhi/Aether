@@ -30,6 +30,13 @@
         <p class="error-description">
           {{ presentation.description }}
         </p>
+        <p
+          v-if="error.technicalMessage && error.technicalMessage !== presentation.description"
+          class="error-message-preview"
+          :title="error.technicalMessage"
+        >
+          {{ error.technicalMessage }}
+        </p>
         <p class="error-guidance">
           {{ presentation.guidance }}
         </p>
@@ -197,40 +204,50 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 
 <style scoped>
 .error-block {
-  --error-accent: #b45309;
-  --error-icon-background: #fef3c7;
-  --error-surface: color-mix(in srgb, #f59e0b 7%, var(--card));
-  --error-border: color-mix(in srgb, #f59e0b 28%, var(--border));
+  --error-accent: #b7791f;
+  --error-icon-background: color-mix(in srgb, #b7791f 9%, var(--card));
+  --error-surface: var(--card);
+  --error-border: var(--border);
 
-  margin-top: 1rem;
+  position: relative;
+  margin-top: 0.75rem;
   overflow: hidden;
   background: var(--error-surface);
   border: 1px solid var(--error-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.error-block::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--error-accent);
+  content: '';
 }
 
 .error-block.is-danger {
   --error-accent: var(--destructive);
   --error-icon-background: color-mix(in srgb, var(--destructive) 12%, var(--card));
-  --error-surface: color-mix(in srgb, var(--destructive) 5%, var(--card));
-  --error-border: color-mix(in srgb, var(--destructive) 25%, var(--border));
+  --error-surface: var(--card);
+  --error-border: color-mix(in srgb, var(--destructive) 28%, var(--border));
 }
 
 .error-summary {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem 0.875rem 1.125rem;
 }
 
 .error-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  flex: 0 0 2rem;
-  border-radius: 6px;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 2.25rem;
+  border-radius: 8px;
   background: var(--error-icon-background);
   color: var(--error-accent);
 }
@@ -254,7 +271,7 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 .error-title {
   margin: 0.125rem 0 0;
   color: var(--foreground);
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 650;
   line-height: 1.35;
 }
@@ -279,9 +296,9 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 }
 
 .error-status-badge.is-warning {
-  border-color: color-mix(in srgb, #d97706 24%, transparent);
-  background: color-mix(in srgb, #f59e0b 14%, var(--card));
-  color: #92400e;
+  border-color: color-mix(in srgb, #b7791f 34%, var(--border));
+  background: color-mix(in srgb, #b7791f 7%, var(--card));
+  color: #8a631d;
 }
 
 .error-status-badge.is-danger {
@@ -291,7 +308,7 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 }
 
 .error-description {
-  margin: 0.5rem 0 0;
+  margin: 0.4rem 0 0;
   color: var(--foreground);
   font-size: 0.85rem;
   line-height: 1.55;
@@ -306,17 +323,30 @@ const presentation = computed<AttemptErrorPresentation>(() => {
   word-break: break-word;
 }
 
+.error-message-preview {
+  display: -webkit-box;
+  margin: 0.45rem 0 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .error-details {
   border-top: 1px solid var(--error-border);
 }
 
 .error-details-toggle {
   display: flex;
-  min-height: 44px;
+  min-height: 42px;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.65rem 1rem;
+  padding: 0.6rem 1rem 0.6rem 1.125rem;
   color: var(--muted-foreground);
   cursor: pointer;
   user-select: none;
@@ -360,16 +390,17 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 }
 
 .error-details-content {
-  padding: 0 1rem 1rem;
+  padding: 0.75rem 1rem 1rem 1.125rem;
+  background: color-mix(in srgb, var(--background) 45%, transparent);
 }
 
 .error-technical-message {
   display: grid;
   gap: 0.35rem;
-  padding: 0.75rem;
+  padding: 0.7rem 0.8rem;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 82%, var(--background));
 }
 
 .error-technical-label {
@@ -393,8 +424,8 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 }
 
 .dark .error-block.is-warning {
-  --error-accent: #fbbf24;
-  --error-icon-background: color-mix(in srgb, #f59e0b 16%, var(--card));
+  --error-accent: #d6a84f;
+  --error-icon-background: color-mix(in srgb, #d6a84f 14%, var(--card));
 }
 
 .dark .error-status-badge.is-warning {

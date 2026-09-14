@@ -39,15 +39,22 @@
           aria-labelledby="batch-config-title"
         >
           <div class="border-b border-[var(--color-border)] p-4 sm:p-5">
-            <h2
-              id="batch-config-title"
-              class="text-sm font-semibold"
-            >
-              配置映射
-            </h2>
-            <p class="mt-1 text-xs text-muted-foreground">
-              先选择一个客户端模型，再从下拉列表中多选提供商模型。
-            </p>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h2
+                  id="batch-config-title"
+                  class="text-sm font-semibold"
+                >
+                  编辑映射
+                </h2>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  为每个客户端模型维护独立的供应商模型集合。
+                </p>
+              </div>
+              <span class="rounded-md bg-muted px-2 py-1 text-[11px] font-medium tabular-nums text-muted-foreground">
+                {{ changedClientCount }} / {{ props.models.length }} 已修改
+              </span>
+            </div>
           </div>
 
           <div class="space-y-5 p-4 sm:p-5">
@@ -182,14 +189,22 @@
                 默认范围映射会在保存时更新。
               </p>
             </div>
-            <span class="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+            <label class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+              <input
+                v-model="showOnlyChanged"
+                type="checkbox"
+                class="h-3.5 w-3.5 rounded border-border accent-primary"
+              >
+              只看已修改
+            </label>
+            <span class="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
               {{ mappedMappingCount }}
             </span>
           </div>
 
           <div class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 sm:p-4">
             <article
-              v-for="entry in mappingEntries"
+              v-for="entry in visibleMappingEntries"
               :key="entry.model.id"
               class="rounded-lg border border-[var(--color-border)] bg-background p-3"
             >
@@ -252,7 +267,7 @@
             </article>
 
             <div
-              v-if="mappingEntries.length === 0"
+              v-if="visibleMappingEntries.length === 0"
               class="flex min-h-48 flex-col items-center justify-center px-4 text-center text-muted-foreground"
             >
               <Link2
@@ -260,10 +275,10 @@
                 aria-hidden="true"
               />
               <p class="text-sm">
-                暂无默认范围映射
+                {{ showOnlyChanged ? '暂无待保存的映射更改' : '暂无默认范围映射' }}
               </p>
               <p class="mt-1 text-xs">
-                选择客户端模型并添加提供商模型，映射会显示在这里。
+                {{ showOnlyChanged ? '修改任意客户端模型后，它会出现在这里。' : '选择客户端模型并添加供应商模型，映射会显示在这里。' }}
               </p>
             </div>
           </div>
@@ -405,6 +420,7 @@ const initialMappings = ref<Record<string, string[]>>({})
 const loadingUpstream = ref(false)
 const saving = ref(false)
 const feedback = ref<MappingFeedback | null>(null)
+const showOnlyChanged = ref(false)
 
 const selectedClientModel = computed(() => {
   return props.models.find(model => model.id === selectedClientId.value) ?? null
@@ -452,6 +468,11 @@ const mappingEntries = computed<MappingEntry[]>(() => {
   })
 })
 
+const visibleMappingEntries = computed<MappingEntry[]>(() => {
+  if (!showOnlyChanged.value) return mappingEntries.value
+  return mappingEntries.value.filter(entry => isMappingChanged(entry.model.id))
+})
+
 const changedEntries = computed<DraftEntry[]>(() => {
   return props.models.flatMap(model => {
     const upstreamNames = drafts.value[model.id] ?? []
@@ -497,6 +518,7 @@ function isMappingChanged(modelId: string): boolean {
 
 function clearSelectionFeedback() {
   feedback.value = null
+  showOnlyChanged.value = false
 }
 
 function selectClientModel(modelId: string) {

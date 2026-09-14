@@ -23,7 +23,7 @@
 
     <div
       v-if="showSetup"
-      class="space-y-4"
+      class="space-y-3"
     >
       <div
         v-if="endpoints.length > 0"
@@ -76,7 +76,7 @@
             v-for="endpoint in endpoints"
             :key="endpoint.id"
             type="button"
-            class="h-full w-full rounded-lg border px-3 py-3 text-left transition-colors"
+            class="h-full w-full rounded-lg border px-3 py-2 text-left transition-colors"
             :class="selectedEndpoint?.id === endpoint.id
               ? 'border-primary bg-primary/5'
               : 'border-border/60 hover:bg-muted/40'"
@@ -126,7 +126,7 @@
         />
       </div>
 
-      <div class="dialog-grid-wide items-start gap-4">
+      <div class="dialog-grid-wide items-start gap-3">
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-3">
             <div class="text-sm font-medium">
@@ -155,7 +155,7 @@
           </div>
           <Textarea
             :model-value="requestHeadersDraft"
-            class="min-h-[220px] font-mono text-xs"
+            class="h-[120px] min-h-[120px] font-mono text-xs"
             placeholder="输入 JSON 请求头"
             @update:model-value="emit('update:requestHeadersDraft', $event)"
           />
@@ -165,7 +165,7 @@
           >
             {{ requestHeadersError }}
           </div>
-          <div class="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+          <div class="rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground">
             这里的请求头会合并到测试请求里；鉴权头和必要系统头仍由后端按端点规则补齐。
           </div>
         </div>
@@ -198,7 +198,7 @@
           </div>
           <Textarea
             :model-value="requestBodyDraft"
-            class="min-h-[220px] font-mono text-xs"
+            class="h-[120px] min-h-[120px] font-mono text-xs"
             placeholder="输入 JSON 请求体"
             @update:model-value="emit('update:requestBodyDraft', $event)"
           />
@@ -208,7 +208,7 @@
           >
             {{ requestBodyError }}
           </div>
-          <div class="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+          <div class="rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground">
             请求体中的 model 会按当前编辑内容发送；未填写时使用当前测试模型，实际发送时会按端点格式转换并应用规则。
           </div>
         </div>
