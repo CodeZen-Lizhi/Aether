@@ -102,6 +102,7 @@ pub(super) fn sample_plan(url: &str, provider_api_format: &str) -> ExecutionPlan
         }),
         transport_profile: None,
         timeouts: Some(ExecutionTimeouts {
+            stream_failover_budget_ms: None,
             connect_ms: Some(10_000),
             read_ms: Some(30_000),
             first_byte_ms: None,

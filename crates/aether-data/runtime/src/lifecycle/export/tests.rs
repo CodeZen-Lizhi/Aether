@@ -71,6 +71,8 @@ fn core_export_domains_only_include_current_sqlite_domains() {
 
 #[tokio::test]
 async fn sqlite_core_export_covers_every_portable_table() {
+    // Pending health facts are live runtime work, not portable configuration.
+    // Importing them into another gateway must not replay old model effects.
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -86,7 +88,7 @@ SELECT name
 FROM sqlite_master
 WHERE type = 'table'
   AND name NOT LIKE 'sqlite_%'
-  AND name NOT IN ('_sqlx_migrations', 'schema_backfills')
+  AND name NOT IN ('_sqlx_migrations', 'schema_backfills', 'provider_key_health_pending_facts')
 ORDER BY name
 "#,
     )
@@ -131,6 +133,34 @@ ORDER BY name
         .expect("default export must read every current table");
     let plan = build_import_plan(&encoded).expect("default export should decode");
     assert_eq!(plan.manifest.domains, sqlite_core_export_domains());
+}
+
+#[tokio::test]
+async fn health_settlement_receipts_survive_database_jsonl_roundtrip() {
+    let source = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let target = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    run_sqlite_migrations(&source).await.unwrap();
+    run_sqlite_migrations(&target).await.unwrap();
+    let receipt_id = serde_json::to_string(&("attempt-1", "key-1", "openai:chat", 2)).unwrap();
+    sqlx::query("INSERT INTO provider_key_health_settlements (id, key_id, api_format, policy_version, attempt_started_at, settled_at, expires_at) VALUES (?, 'key-1', 'openai:chat', 2, 1, 2, 86401)")
+        .bind(&receipt_id).execute(&source).await.unwrap();
+    let exported = export_sqlite_core_jsonl(&source, 3).await.unwrap();
+    import_sqlite_jsonl(&target, &exported).await.unwrap();
+    import_sqlite_jsonl(&target, &exported).await.unwrap();
+    let receipts: Vec<(String, i64, i64)> =
+        sqlx::query_as("SELECT id, settled_at, expires_at FROM provider_key_health_settlements")
+            .fetch_all(&target)
+            .await
+            .unwrap();
+    assert_eq!(receipts, vec![(receipt_id, 2, 86401)]);
 }
 
 #[tokio::test]

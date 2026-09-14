@@ -368,11 +368,15 @@ impl IntoResponse for ExecutionRuntimeAppError {
                 | ExecutionRuntimeTransportError::InvalidHeaderValue(_)
                 | ExecutionRuntimeTransportError::InvalidProxy(_)
                 | ExecutionRuntimeTransportError::UnsupportedTransportProfile(_)
+                | ExecutionRuntimeTransportError::LocalConfiguration(_)
                 | ExecutionRuntimeTransportError::BodyEncode(_),
             ) => StatusCode::BAD_REQUEST,
             ExecutionRuntimeServerError::Transport(
                 ExecutionRuntimeTransportError::UpstreamHttpStatus { status_code, .. },
             ) => StatusCode::from_u16(status_code).unwrap_or(StatusCode::BAD_GATEWAY),
+            ExecutionRuntimeServerError::Transport(
+                ExecutionRuntimeTransportError::UpstreamTimeout(_),
+            ) => StatusCode::GATEWAY_TIMEOUT,
             ExecutionRuntimeServerError::Transport(
                 ExecutionRuntimeTransportError::ClientBuild(_)
                 | ExecutionRuntimeTransportError::BrowserClientBuild(_)

@@ -122,7 +122,7 @@ describe('ProviderKeyActionCluster', () => {
     })
 
     expect(root.querySelector('[data-testid="provider-key-circuit-badge"]')?.textContent).toContain('熔断 2m')
-    expect(root.querySelector('[data-testid="provider-key-health"]')?.textContent).toContain('42%')
+    expect(root.querySelector('[data-testid="provider-key-health"]')?.textContent).toContain('4.2/10')
     expect(root.querySelector('button[title="Recover key"]')).toBeTruthy()
     expect(root.querySelector('button[title="代理: Tokyo"]')).toBeTruthy()
     expect(root.querySelector('[data-testid="provider-key-toggle-active"]')?.getAttribute('aria-label')).toBe('点击停用')

@@ -1,0 +1,24 @@
+# Retry Runtime Integration
+
+Owner: retry_runtime. Source implementation is ready for integration; Cargo verification belongs to main/integration's shared gateway build.
+
+Follow-up: the original owner has ended. F1-F3, managed HTTP probe integration, credential capture ordering, and streaming authoritative ordering are superseded by [http-retry-fix-contract.md](http-retry-fix-contract.md), including the latest 12/12 real HTTP test evidence. Historical limitations below describe the initial handoff, not the final follow-up state.
+
+- `orchestration/attempt.rs` now consumes `aether_contracts::chat_retry::resolve_chat_max_attempts` only for chat. Legacy non-chat logic remains separate. Saved 2 produces two slots, explicit precedence is the shared resolver's responsibility.
+- `orchestration/recovery.rs` maps `SameCredential` to `RetryNextCandidate`; `execution_runtime/mod.rs` prioritizes that action and maps it to `Candidate` scope. Without both mappings the new classifier would stop or skip the repeated K slots.
+- `execution_runtime/chat_retry.rs` owns cumulative request/K/format wait, full request-local `Retry-After` monotonic deadlines, continuation target binding, first-output budget, and attempt fence capture.
+- The serving port has a default `prepare_attempt` readiness hook. Static/dynamic loops mark rejected slots Unused before `record_attempt_started`; they do not turn cooldown/wait-budget skips into provider failures. A per-K/format effective attempt limit prevents duplicate endpoint candidates from multiplying the same K's configured count.
+- `stream_path.rs` enters `with_stream_first_output_budget` before planning. The first candidate configures the budget once from `ExecutionTimeouts.stream_failover_budget_ms`, relative to the original entry instant. Later K values cannot reset it. No separate system config is used. Compact and non-chat are excluded.
+- SSE under the budget uses the existing framed precommit path, including paths that previously returned direct passthrough headers. Heartbeats/setup/empty deltas do not close the gate; text/reasoning/tool output or legal terminal events do. Prefetch remains bounded. On useful output, the budget is discharged before terminal/persistence work; response-body execution remains under existing stream lifecycle rules.
+- Sync and SSE ports call `capture_chat_health_attempt` and preserve the same fence for execution and watchdog timeout settlement. Watchdog attempt timeout scores one point; whole-request budget cancellation does not generate an extra key timeout.
+- Request-budget expiry drops the active upstream future and records the captured candidate snapshot Cancelled with `stream_failover_budget_exhausted`, using bounded bookkeeping. It does not penalize an unfinished K as a separate transport timeout.
+- `observe_chat_retry_after` consumes `parse_chat_retry_after_secs` for chat. It also records exact request-local monotonic delay, avoiding a one-second header shrinking to a fraction through second-granularity persistence. Ordinary backoff is 0.5-1 second then exponential, with a 2-second cumulative cap. Readiness is checked after sleep without holding the execution gate.
+- HTTP bodies still containing `previous_response_id` cannot move to a different provider/endpoint/K after their first selected target. This does not invent missing history or establish that an arbitrary first target owns that reference; existing planning owns original reference resolution.
+- `stream/execution_failures.rs` removed its duplicate health failure for first-byte/read timeouts and now uses classified facts. Real upstream status errors use UpstreamResponse; protocol errors and transport timeouts remain distinct.
+
+## Remaining Cross-Owner Items
+
+- Main is integrating storage's new managed probe guards. Existing `try_claim_local_circuit_probe`/rate-limit probe remain the recheck primitives used here until main replaces planner/runtime duplicate claims with one managed owner. See probe-lease-contract.md; this child does not claim that production guard integration is complete.
+- Fence capture reads current stored credentials; plan credentials can be older after administrative rotation. The capture owner must fence the plan's actual credential generation or reject a stale plan.
+- Shared cooldown persistence currently uses whole seconds. This runtime preserves the full exact wait within the failing request, but other requests can see a deadline rounded down by less than one second unless the health/storage projection adds a precise or conservatively rounded shared deadline.
+- Gateway-targeted tests (candidate loop, retry module, stream module, real routed suite) have not been run by this owner while main owns compilation. Rustfmt and focused `git diff --check` pass. No paid upstream requests, commits, or production migrations.

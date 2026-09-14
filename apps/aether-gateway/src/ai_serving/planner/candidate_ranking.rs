@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use aether_ai_serving::{
     ai_ranking_context, build_ai_rankable_candidate, run_ai_candidate_ranking,
     AiCandidateRankingPort, AiRankableCandidateParts, AiRankingContextConfig,
@@ -34,6 +36,7 @@ struct GatewayLocalCandidateRankingPort<'a> {
     ordering_config: SchedulerOrderingConfig,
     routing_policy: Option<&'a ResolvedRoutingPolicy>,
     transport_ranking_facts_cache: Mutex<CandidateTransportRankingFactsCache>,
+    rate_multipliers: HashMap<String, f64>,
 }
 
 #[async_trait]
@@ -136,31 +139,11 @@ impl AiCandidateRankingPort for GatewayLocalCandidateRankingPort<'_> {
                 rankable.latency_ewma_ms = latency.get(&routing_overlaid_candidate.key_id).copied();
             }
         }
-        // R10 cost-based: attach this key's default rate multiplier. Only the
-        // CostBased mode consults it, but attaching unconditionally keeps the
-        // ranking port free of mode-specific branches; the DB read is one
-        // small key-row lookup and the ordering config cache already dedups
-        // system-config reads. The legacy per-format `rate_multipliers` map
-        // is no longer consulted — the key-level `default_rate_multiplier`
-        // (invalid values treated as absent, i.e. neutral 1.0) is the single
-        // source of truth.
-        if self.ordering_config.scheduling_mode == SchedulerSchedulingMode::CostBased {
-            if let Ok(keys) = self
-                .state
-                .app()
-                .read_provider_catalog_keys_by_ids(std::slice::from_ref(
-                    &routing_overlaid_candidate.key_id,
-                ))
-                .await
-            {
-                let multiplier = keys
-                    .first()
-                    .map(|key| key.default_rate_multiplier)
-                    .filter(|value| value.is_finite() && *value >= 0.0);
-                if let Some(multiplier) = multiplier {
-                    rankable = rankable.with_rate_multiplier(multiplier);
-                }
-            }
+        if let Some(multiplier) = self
+            .rate_multipliers
+            .get(&routing_overlaid_candidate.key_id)
+        {
+            rankable = rankable.with_rate_multiplier(*multiplier);
         }
         Ok(rankable)
     }
@@ -189,6 +172,40 @@ pub(crate) async fn rank_eligible_local_execution_candidates(
     routing_policy: Option<&ResolvedRoutingPolicy>,
 ) -> Vec<EligibleLocalExecutionCandidate> {
     let ordering_config = scheduler_ordering_config_for_routing_policy(state, routing_policy).await;
+    let mut rate_multipliers = HashMap::new();
+    if ordering_config.scheduling_mode == SchedulerSchedulingMode::CostBased
+        && !candidates.is_empty()
+    {
+        let mut key_ids: Vec<_> = candidates
+            .iter()
+            .map(|candidate| candidate.candidate.key_id.clone())
+            .collect();
+        key_ids.sort_unstable();
+        key_ids.dedup();
+        match state
+            .app()
+            .read_provider_catalog_keys_by_ids(&key_ids)
+            .await
+        {
+            Ok(keys) => {
+                for key in keys {
+                    let multiplier = key.default_rate_multiplier;
+                    if multiplier.is_finite() && multiplier >= 0.0 {
+                        rate_multipliers.insert(key.id, multiplier);
+                    } else {
+                        warn!(
+                            event_name = "planner_invalid_rate_multiplier",
+                            log_type = "event",
+                            "invalid legacy key rate multiplier; using neutral multiplier"
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                warn!(event_name = "planner_rate_multipliers_load_failed", log_type = "event", error = ?error, "failed to load key rate multipliers; using neutral multipliers");
+            }
+        }
+    }
     let port = GatewayLocalCandidateRankingPort {
         state,
         requested_model,
@@ -198,6 +215,7 @@ pub(crate) async fn rank_eligible_local_execution_candidates(
         ordering_config,
         routing_policy,
         transport_ranking_facts_cache: Mutex::new(CandidateTransportRankingFactsCache::default()),
+        rate_multipliers,
     };
 
     match run_ai_candidate_ranking(&port, candidates, normalized_client_api_format).await {
@@ -1392,6 +1410,83 @@ mod tests {
         assert_eq!(ranked[0].candidate.endpoint_id, "endpoint-same");
         assert_eq!(ranked[1].candidate.endpoint_id, "endpoint-cross");
         assert!(skipped.is_empty());
+    }
+
+    #[tokio::test]
+    async fn configured_modes_rank_catalog_prices_and_real_session_affinity() {
+        for (mode, cached_key, has_session, expected) in [
+            ("fixed_order", "key-c", true, ["key-a", "key-b", "key-c"]),
+            ("cache_affinity", "key-c", true, ["key-c", "key-a", "key-b"]),
+            ("cost_based", "key-c", true, ["key-a", "key-b", "key-c"]),
+            ("cost_based", "key-b", true, ["key-b", "key-a", "key-c"]),
+            ("cost_based", "key-b", false, ["key-a", "key-b", "key-c"]),
+        ] {
+            let mut keys = Vec::new();
+            let mut candidates = Vec::new();
+            for (priority, (id, multiplier)) in [("key-a", 0.5), ("key-b", 0.5), ("key-c", 1.5)]
+                .into_iter()
+                .enumerate()
+            {
+                let mut key = sample_key(id, "");
+                key.default_rate_multiplier = multiplier;
+                keys.push(key);
+                let mut candidate = sample_candidate("endpoint-1", id);
+                candidate.key_internal_priority = priority as i32;
+                candidates.push(candidate);
+            }
+            let provider_catalog = InMemoryProviderCatalogReadRepository::seed(
+                vec![sample_provider()],
+                vec![sample_endpoint("endpoint-1")],
+                keys,
+            );
+            let data_state = GatewayDataState::with_provider_transport_reader_for_tests(
+                std::sync::Arc::new(provider_catalog),
+                "development-key",
+            )
+            .with_system_config_values_for_tests(vec![(
+                "scheduling_mode".to_string(),
+                json!(mode),
+            )]);
+            let state = AppState::new()
+                .expect("state should build")
+                .with_data_state_for_tests(data_state);
+            let auth_snapshot = sample_auth_snapshot();
+            let session = ClientSessionAffinity::from_session_key("ranking-session");
+            remember_scheduler_affinity_for_candidate(
+                PlannerAppState::new(&state),
+                Some(&auth_snapshot),
+                Some(&session),
+                "openai:chat",
+                "gpt-4.1",
+                candidates
+                    .iter()
+                    .find(|candidate| candidate.key_id == cached_key)
+                    .unwrap(),
+            );
+            candidates.reverse();
+            let (ranked, skipped) = resolve_and_rank_local_execution_candidates(
+                PlannerAppState::new(&state),
+                candidates,
+                "openai:chat",
+                "gpt-4.1",
+                Some(&auth_snapshot),
+                has_session.then_some(&session),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+            assert!(skipped.is_empty(), "{mode}: {skipped:?}");
+            assert_eq!(
+                ranked
+                    .iter()
+                    .map(|eligible| eligible.candidate.key_id.as_str())
+                    .collect::<Vec<_>>(),
+                expected,
+                "mode={mode}, cached={cached_key}, session={has_session}"
+            );
+        }
     }
 
     #[tokio::test]

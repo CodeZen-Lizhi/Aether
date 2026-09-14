@@ -229,8 +229,16 @@ impl<'a> AdminAppState<'a> {
         if payload.provider_id.trim() != provider.id {
             return Err("provider_id 不匹配".to_string());
         }
-        if !(0..=999).contains(&payload.max_retries) {
-            return Err("max_retries 必须在 0 到 999 之间".to_string());
+        if let Some(value) = payload.max_retries {
+            aether_admin::provider::failover::validate_legacy_attempts(value)?;
+            aether_admin::provider::failover::validate_scope_aliases(
+                payload
+                    .config
+                    .as_ref()
+                    .and_then(|config| config.get("failover_rules")),
+                "max_attempts",
+                Some(value),
+            )?;
         }
 
         let (normalized_api_format, api_family, endpoint_kind) =
@@ -272,7 +280,26 @@ impl<'a> AdminAppState<'a> {
             .map(|duration| duration.as_secs())
             .unwrap_or(0);
 
-        admin_provider_endpoints_pure::build_admin_provider_endpoint_record(
+        let mut config = payload
+            .config
+            .as_ref()
+            .map(|value| {
+                value
+                    .as_object()
+                    .cloned()
+                    .ok_or_else(|| "config 必须是对象".to_string())
+            })
+            .transpose()?
+            .unwrap_or_default();
+        aether_admin::provider::failover::normalize_config_rules(&mut config)?;
+        if payload.max_retries.is_some() {
+            aether_admin::provider::failover::set_scope_attempts(
+                &mut config,
+                "max_attempts",
+                payload.max_retries,
+            )?;
+        }
+        let mut record = admin_provider_endpoints_pure::build_admin_provider_endpoint_record(
             uuid::Uuid::new_v4().to_string(),
             provider.id.clone(),
             normalized_api_format.to_string(),
@@ -282,12 +309,14 @@ impl<'a> AdminAppState<'a> {
             payload.custom_path,
             payload.header_rules,
             body_rules,
-            payload.max_retries,
-            payload.config,
+            payload.max_retries.unwrap_or(1),
+            (!config.is_empty()).then_some(serde_json::Value::Object(config)),
             payload.proxy,
             payload.format_acceptance_config,
             now_unix_secs,
-        )
+        )?;
+        record.max_retries = payload.max_retries;
+        Ok(record)
     }
 
     pub(crate) async fn build_admin_update_provider_endpoint_record(

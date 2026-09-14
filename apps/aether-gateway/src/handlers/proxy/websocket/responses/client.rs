@@ -4,7 +4,6 @@ use axum::extract::ws::{Message as AxumWsMessage, WebSocket};
 use futures_util::SinkExt;
 use serde_json::Value;
 use uuid::Uuid;
-use wreq::ws::message::Message as WreqWsMessage;
 
 use super::adapter::{resolve_responses_websocket_adapter, ResponsesWebSocketDrainDirective};
 use super::control::{resolve_responses_websocket_turn_control, ResponsesWebSocketTurnControl};
@@ -32,9 +31,7 @@ use super::turn::{
     ResponsesWebSocketTurnOutcome,
 };
 use super::turn_state::LogicalTurn;
-use super::upstream::{
-    bind_responses_upstream, decision_bound_upstream_change_fields, decision_reuses_bound_upstream,
-};
+use super::upstream::{decision_bound_upstream_change_fields, decision_reuses_bound_upstream};
 use crate::ai_serving::ResponsesWebSocketPinnedCandidate;
 use crate::clock::current_unix_secs;
 use crate::control::GatewayControlDecision;
@@ -43,7 +40,7 @@ use crate::handlers::proxy::websocket::session::{CLOSE_INTERNAL_ERROR, WEBSOCKET
 use crate::handlers::proxy::websocket::transport::{
     close_client_socket, close_upstream_socket, send_client_message, send_gateway_error,
     send_gateway_error_with_status, send_gateway_error_with_stream_id,
-    send_responses_websocket_error_with_param, send_upstream_message,
+    send_responses_websocket_error_with_param,
 };
 use crate::privacy::RedactionSession;
 use crate::rate_limit::FrontdoorUserRpmOutcome;
@@ -516,6 +513,8 @@ async fn forward_pinned_continuation(
     turn_control: ResponsesWebSocketTurnControl,
     turn_redaction_session: Option<RedactionSession>,
 ) -> RelayDisposition {
+    let logical_started_at = std::time::Instant::now();
+    let logical_turn_id = Uuid::now_v7().to_string();
     let Some(pinned_candidate) =
         ResponsesWebSocketPinnedCandidate::from_decision(&bound.decision_template)
     else {
@@ -556,18 +555,20 @@ async fn forward_pinned_continuation(
         };
 
     let turn_request_id = Uuid::new_v4().to_string();
-    let logical_turn_id = Uuid::new_v4().to_string();
-    let planned = match await_owned_responses_websocket_plan(spawn_owned_responses_websocket_plan(
-        state.clone(),
-        planning_parts,
-        turn_request_id.clone(),
-        turn_control.decision.clone(),
-        turn_control.auth_snapshot.clone(),
-        planning_event,
-        None,
-        None,
-        Some(pinned_candidate),
-    ))
+    let planned = match await_owned_responses_websocket_plan(
+        spawn_owned_responses_websocket_plan(
+            state.clone(),
+            planning_parts,
+            turn_request_id.clone(),
+            turn_control.decision.clone(),
+            turn_control.auth_snapshot.clone(),
+            planning_event,
+            None,
+            None,
+            Some(pinned_candidate),
+        ),
+        super::turn_state::first_output_deadline(logical_started_at, None),
+    )
     .await
     {
         Ok(Some(decision)) => decision,
@@ -713,6 +714,7 @@ async fn forward_pinned_continuation(
         turn_decision,
         &client_event,
         planned_lease,
+        super::turn_state::first_output_deadline(logical_started_at, decision.timeouts.as_ref()),
     )
     .await
     {
@@ -742,18 +744,25 @@ async fn forward_pinned_continuation(
         .await;
         return RelayDisposition::UpstreamError("responses_websocket_send_failed");
     };
-    if send_upstream_message(upstream, WreqWsMessage::text(outbound))
+    if let Err(code) = turn
+        .with_probe_lease(super::upstream::send_response_create_before(
+            upstream,
+            outbound,
+            super::turn_state::first_output_deadline(
+                logical_started_at,
+                decision.timeouts.as_ref(),
+            ),
+        ))
         .await
-        .is_err()
     {
         queue_turn_finalization(
             bound,
             state,
             turn,
-            ResponsesWebSocketTurnOutcome::upstream_send_failed(),
+            ResponsesWebSocketTurnOutcome::upstream_connect_failed(code),
         )
         .await;
-        return RelayDisposition::UpstreamError("responses_websocket_send_failed");
+        return RelayDisposition::UpstreamError(code);
     }
 
     turn.mark_upstream_request_sent();
@@ -766,6 +775,11 @@ async fn forward_pinned_continuation(
     bound.body_normalization = normalization;
     bound.turn_state.begin(
         LogicalTurn::new(client_event, turn_index, logical_turn_id)
+            .with_failover_budget(
+                logical_started_at,
+                bound.decision_template.timeouts.as_ref(),
+                bound.decision_template.key_id.as_deref(),
+            )
             .with_provider_store(provider_event.get("store") == Some(&Value::Bool(true)))
             .with_turn_control(turn_control),
         turn,
@@ -804,25 +818,29 @@ async fn forward_replanned_response_create(
     raw_responses_lite_static_config: ResponsesLiteStaticConfig,
     turn_redaction_session: Option<RedactionSession>,
 ) -> RelayDisposition {
+    let logical_started_at = std::time::Instant::now();
     let turn_request_id = Uuid::new_v4().to_string();
-    let logical_turn_id = Uuid::new_v4().to_string();
+    let logical_turn_id = Uuid::now_v7().to_string();
     let now_unix_secs = current_unix_secs();
     let excluded_key_ids = bound.exhausted_exclusions.key_ids(now_unix_secs);
     let excluded_codex_account_ids = bound.exhausted_exclusions.codex_account_ids(now_unix_secs);
     let excluded_key_ids = (!excluded_key_ids.is_empty()).then_some(excluded_key_ids);
     let excluded_codex_account_ids =
         (!excluded_codex_account_ids.is_empty()).then_some(excluded_codex_account_ids);
-    let planned = match await_owned_responses_websocket_plan(spawn_owned_responses_websocket_plan(
-        state.clone(),
-        planning_parts,
-        turn_request_id.clone(),
-        turn_control.decision.clone(),
-        turn_control.auth_snapshot.clone(),
-        client_event.clone(),
-        excluded_key_ids,
-        excluded_codex_account_ids,
-        None,
-    ))
+    let planned = match await_owned_responses_websocket_plan(
+        spawn_owned_responses_websocket_plan(
+            state.clone(),
+            planning_parts,
+            turn_request_id.clone(),
+            turn_control.decision.clone(),
+            turn_control.auth_snapshot.clone(),
+            client_event.clone(),
+            excluded_key_ids,
+            excluded_codex_account_ids,
+            None,
+        ),
+        super::turn_state::first_output_deadline(logical_started_at, None),
+    )
     .await
     {
         Ok(Some(decision)) => decision,
@@ -905,6 +923,7 @@ async fn forward_replanned_response_create(
         turn_decision,
         &client_event,
         planned_lease,
+        super::turn_state::first_output_deadline(logical_started_at, decision.timeouts.as_ref()),
     )
     .await
     {
@@ -955,18 +974,25 @@ async fn forward_replanned_response_create(
             .await;
             return RelayDisposition::UpstreamError("responses_websocket_send_failed");
         };
-        if send_upstream_message(upstream, WreqWsMessage::text(outbound))
+        if let Err(code) = turn
+            .with_probe_lease(super::upstream::send_response_create_before(
+                upstream,
+                outbound,
+                super::turn_state::first_output_deadline(
+                    logical_started_at,
+                    decision.timeouts.as_ref(),
+                ),
+            ))
             .await
-            .is_err()
         {
             queue_turn_finalization(
                 bound,
                 state,
                 turn,
-                ResponsesWebSocketTurnOutcome::upstream_send_failed(),
+                ResponsesWebSocketTurnOutcome::upstream_connect_failed(code),
             )
             .await;
-            return RelayDisposition::UpstreamError("responses_websocket_send_failed");
+            return RelayDisposition::UpstreamError(code);
         }
 
         // A response.create without previous_response_id starts a new chain.
@@ -992,6 +1018,11 @@ async fn forward_replanned_response_create(
         bound.body_normalization = normalization;
         bound.turn_state.begin(
             LogicalTurn::new(client_event.clone(), turn_index, logical_turn_id.clone())
+                .with_failover_budget(
+                    logical_started_at,
+                    bound.decision_template.timeouts.as_ref(),
+                    bound.decision_template.key_id.as_deref(),
+                )
                 .with_provider_store(provider_event.get("store") == Some(&Value::Bool(true)))
                 .with_turn_control(turn_control),
             turn,
@@ -1015,37 +1046,48 @@ async fn forward_replanned_response_create(
         return RelayDisposition::Continue;
     }
 
-    let mut replacement =
-        match bind_responses_upstream(&decision, normalization, &client_event, adapter).await {
-            Ok(connection) => connection,
-            Err(code) => {
-                queue_turn_finalization(
-                    bound,
-                    state,
-                    turn,
-                    ResponsesWebSocketTurnOutcome::upstream_connect_failed(code),
-                )
-                .await;
-                warn!(
-                    event_name = "responses_websocket_followup_model_rebind_failed",
-                    log_type = "ops",
-                    transport = WEBSOCKET_LOG_TRANSPORT,
-                    websocket = true,
-                    trace_id = %context.trace_id,
-                    requested_model = %requested_model,
-                    error_code = code,
-                    "gateway failed to rebind Responses WebSocket follow-up model"
-                );
-                send_gateway_error_with_status(
-                    client_socket,
-                    502,
-                    code,
-                    "Gateway could not establish the requested model",
-                )
-                .await;
-                return RelayDisposition::Continue;
-            }
-        };
+    let mut replacement = match turn
+        .with_probe_lease(super::upstream::bind_responses_upstream_before(
+            &decision,
+            normalization,
+            &client_event,
+            adapter,
+            super::turn_state::first_output_deadline(
+                logical_started_at,
+                decision.timeouts.as_ref(),
+            ),
+        ))
+        .await
+    {
+        Ok(connection) => connection,
+        Err(code) => {
+            queue_turn_finalization(
+                bound,
+                state,
+                turn,
+                ResponsesWebSocketTurnOutcome::upstream_connect_failed(code),
+            )
+            .await;
+            warn!(
+                event_name = "responses_websocket_followup_model_rebind_failed",
+                log_type = "ops",
+                transport = WEBSOCKET_LOG_TRANSPORT,
+                websocket = true,
+                trace_id = %context.trace_id,
+                requested_model = %requested_model,
+                error_code = code,
+                "gateway failed to rebind Responses WebSocket follow-up model"
+            );
+            send_gateway_error_with_status(
+                client_socket,
+                502,
+                code,
+                "Gateway could not establish the requested model",
+            )
+            .await;
+            return RelayDisposition::Continue;
+        }
+    };
     if replacement.responses_lite_static_config.is_some() {
         replacement.responses_lite_static_config = Some(raw_responses_lite_static_config);
     }
@@ -1076,6 +1118,11 @@ async fn forward_replanned_response_create(
     bound.binding_identity = replacement.binding_identity;
     bound.turn_state.begin(
         LogicalTurn::new(client_event, turn_index, logical_turn_id)
+            .with_failover_budget(
+                logical_started_at,
+                bound.decision_template.timeouts.as_ref(),
+                bound.decision_template.key_id.as_deref(),
+            )
             .with_provider_store(provider_event.get("store") == Some(&Value::Bool(true)))
             .with_turn_control(turn_control),
         turn,

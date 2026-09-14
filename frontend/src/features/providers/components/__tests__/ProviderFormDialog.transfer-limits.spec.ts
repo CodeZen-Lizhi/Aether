@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, nextTick, type App } from 'vue'
+import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { ProviderWithEndpointsSummary } from '@/api/endpoints/types'
 import ProviderFormDialog from '../ProviderFormDialog.vue'
@@ -103,13 +103,19 @@ function makeProvider(
 function mountDialog(provider?: ProviderWithEndpointsSummary | null) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const app = createApp(ProviderFormDialog, {
-    modelValue: true,
-    provider,
-    'onUpdate:modelValue': vi.fn(),
+  const open = ref(true)
+  const entity = ref(provider)
+  const app = createApp({
+    render: () => h(ProviderFormDialog, {
+      modelValue: open.value,
+      provider: entity.value,
+      'onUpdate:modelValue': (value: boolean) => { open.value = value },
+      onProviderUpdated: (value: ProviderWithEndpointsSummary) => { entity.value = value },
+    }),
   })
   app.mount(root)
   mountedApps.push({ app, root })
+  return { open, entity }
 }
 
 async function settle() {
@@ -150,6 +156,75 @@ afterEach(() => {
 })
 
 describe('ProviderFormDialog transfer limits', () => {
+  it('reopens with authoritative attempts, source and budget returned after saving', async () => {
+    const saved = makeProvider({
+      effective_max_attempts: 3,
+      effective_max_attempts_source: 'failover_rules.max_attempts',
+      stream_failover_budget_ms: 45000,
+      failover_rules: { max_attempts: 3, stream_failover_budget_ms: 45000 },
+    })
+    endpointMocks.updateProvider.mockResolvedValue(saved)
+    const dialog = mountDialog(makeProvider({
+      effective_max_attempts: 2,
+      effective_max_attempts_source: 'provider.max_retries',
+      stream_failover_budget_ms: 90000,
+    }))
+    await settle()
+    await setInput('#chat-max-attempts', '3')
+    await setInput('#stream-failover-budget', '45000')
+    clickButton('保存')
+    await settle()
+    expect(dialog.open.value).toBe(false)
+    expect(dialog.entity.value).toEqual(saved)
+    dialog.open.value = true
+    await settle()
+    expect(document.body.querySelector<HTMLInputElement>('#chat-max-attempts')?.value).toBe('3')
+    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.value).toBe('45000')
+    expect(document.body.textContent).toContain('故障转移规则')
+    clickButton('保存')
+    await settle()
+    expect(endpointMocks.updateProvider.mock.calls[1]?.[1]).not.toHaveProperty('failover_rules')
+  })
+
+  it('edits attempts and budget without replacing unrelated failover rules', async () => {
+    mountDialog(makeProvider({
+      effective_max_attempts: 2,
+      effective_max_attempts_source: 'provider.max_retries',
+      stream_failover_budget_ms: 90000,
+      failover_rules: { stop_on_transport_errors: true, future_rule: { enabled: true } },
+    }))
+    await settle()
+    expect(document.body.querySelector<HTMLInputElement>('#chat-max-attempts')?.value).toBe('2')
+    expect(document.body.textContent).toContain('当前生效次数')
+    await setInput('#chat-max-attempts', '3')
+    await setInput('#stream-failover-budget', '45000')
+    clickButton('保存')
+    await settle()
+    expect(endpointMocks.updateProvider).toHaveBeenCalledWith('provider-1', expect.objectContaining({
+      failover_rules: { max_attempts: 3, stream_failover_budget_ms: 45000 },
+    }))
+  })
+
+  it('keeps inherited attempts absent when saving another field', async () => {
+    mountDialog(makeProvider({ effective_max_attempts: 5, effective_max_attempts_source: 'provider.max_retries' }))
+    await settle()
+    clickButton('保存')
+    await settle()
+    expect(endpointMocks.updateProvider.mock.calls[0]?.[1]).not.toHaveProperty('failover_rules')
+    expect(endpointMocks.updateProvider.mock.calls[0]?.[1]).not.toHaveProperty('max_retries')
+  })
+
+  it('rejects fractional or out-of-range attempts before saving', async () => {
+    mountDialog(makeProvider({ effective_max_attempts: 2 }))
+    await settle()
+    for (const value of ['0', '100', '2.5']) {
+      await setInput('#chat-max-attempts', value)
+      clickButton('保存')
+      await settle()
+    }
+    expect(endpointMocks.updateProvider).not.toHaveBeenCalled()
+  })
+
   it('loads and submits configured limits in edit mode', async () => {
     mountDialog(makeProvider({
       max_transfer_count: 10,

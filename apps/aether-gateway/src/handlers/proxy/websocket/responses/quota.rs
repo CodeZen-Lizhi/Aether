@@ -1,6 +1,7 @@
 //! Quota exhaustion, replay safety, and upstream replacement policy.
 
 use serde_json::Value;
+use std::time::Duration;
 use uuid::Uuid;
 use wreq::ws::message::Message as WreqWsMessage;
 
@@ -19,10 +20,12 @@ use super::request::{
 use super::state::BoundResponsesConnection;
 use super::turn::{prepare_responses_websocket_turn_decision, ResponsesWebSocketTurnOutcome};
 use super::upstream::{bind_responses_upstream, close_bound_upstream};
+use crate::ai_serving::ResponsesWebSocketPinnedCandidate;
 use crate::clock::current_unix_secs;
 use crate::handlers::proxy::websocket::ingress::WebSocketRequestContext;
 use crate::handlers::proxy::websocket::session::WEBSOCKET_LOG_TRANSPORT;
 use crate::handlers::proxy::websocket::transport::close_upstream_socket;
+use crate::orchestration::{local_attempt_slot_count, ChatFailureFact};
 use crate::AppState;
 
 const LOG_TARGET: &str = "aether_gateway::handlers::proxy::responses_ws";
@@ -103,6 +106,28 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
     state: &AppState,
     context: &WebSocketRequestContext,
     _previous_settled: PreviousAttemptSettled,
+    failure: Option<(ChatFailureFact, Option<u64>)>,
+) -> bool {
+    let Some(deadline) = bound
+        .turn_state
+        .logical()
+        .and_then(|turn| turn.first_output_deadline)
+    else {
+        return false;
+    };
+    tokio::time::timeout_at(
+        deadline.into(),
+        retry_active_turn_inner(bound, state, context, failure),
+    )
+    .await
+    .unwrap_or(false)
+}
+
+async fn retry_active_turn_inner(
+    bound: &mut BoundResponsesConnection,
+    state: &AppState,
+    context: &WebSocketRequestContext,
+    failure: Option<(ChatFailureFact, Option<u64>)>,
 ) -> bool {
     // `LogicalTurn::client_event` is intentionally redacted before it is
     // retained for replay.  The binding, however, keeps the hash of the raw
@@ -115,9 +140,9 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
     let Some(active) = bound.turn_state.logical_mut() else {
         return false;
     };
-    if let Some(reason) = active.quota_retry_block_reason() {
+    if let Some(reason) = active.retry_block_reason() {
         debug!(
-            event_name = "responses_websocket_quota_retry_skipped",
+            event_name = "responses_websocket_retry_skipped",
             log_type = "event",
             transport = WEBSOCKET_LOG_TRANSPORT,
             websocket = true,
@@ -130,7 +155,6 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
         );
         return false;
     }
-    active.retry_attempted = true;
     active.turn_attempt = active.turn_attempt.saturating_add(1);
     let client_event = active.client_event.clone();
     let Some(turn_control) = active.turn_control.clone() else {
@@ -151,55 +175,160 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
     let retry_exclusion_until_unix_secs = bound
         .pending_adapter_drain
         .and_then(|directive| directive.retry_exclusion_until_unix_secs);
-    let exhausted_key = record_exhausted_bound_key(bound, retry_exclusion_until_unix_secs);
-    let exhausted_key_id = exhausted_key.as_ref().map(|(key_id, _)| key_id.clone());
+    let exhausted_key_id = if failure.is_none() {
+        record_exhausted_bound_key(bound, retry_exclusion_until_unix_secs).map(|(key, _)| key)
+    } else {
+        None
+    };
 
-    let planning_parts = build_planning_parts(context);
+    let Some(current_key) = bound.decision_template.key_id.clone() else {
+        return false;
+    };
+    let max_attempts = match (
+        bound.decision_template.provider_id.as_deref(),
+        bound.decision_template.endpoint_id.as_deref(),
+    ) {
+        (Some(provider), Some(endpoint)) => match state
+            .read_provider_transport_snapshot_arc(provider, endpoint, &current_key)
+            .await
+        {
+            Ok(Some(snapshot)) => local_attempt_slot_count(&snapshot),
+            _ => return false,
+        },
+        _ => return false,
+    };
+    let cooldown_wait = match state
+        .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&current_key))
+        .await
+    {
+        Ok(keys) => keys
+            .into_iter()
+            .next()
+            .and_then(|key| {
+                aether_scheduler_core::provider_key_rate_limit_cooldown(
+                    &key,
+                    bound
+                        .decision_template
+                        .provider_api_format
+                        .as_deref()
+                        .unwrap_or("openai:responses"),
+                )
+            })
+            .filter(|cooldown| {
+                cooldown.until_unix_secs.saturating_mul(1000) > crate::clock::current_unix_ms()
+            })
+            .map(|cooldown| {
+                Duration::from_millis(
+                    cooldown
+                        .until_unix_secs
+                        .saturating_mul(1000)
+                        .saturating_sub(crate::clock::current_unix_ms()),
+                )
+            }),
+        Err(_) => return false,
+    };
+    let active = bound
+        .turn_state
+        .logical_mut()
+        .expect("retry retains logical turn");
+    let attempts = *active
+        .attempts_by_key
+        .entry(current_key.clone())
+        .or_insert(1);
+    let retry_after = failure.and_then(|(_, retry_after)| retry_after);
+    let delay = cooldown_wait
+        .or_else(|| retry_after.map(Duration::from_secs))
+        .unwrap_or_else(|| {
+            if failure.is_some_and(|(fact, _)| fact.rate_limited) {
+                Duration::from_secs(1u64 << attempts.saturating_sub(1).min(6))
+            } else {
+                let jitter_ms = 500 + (Uuid::new_v4().as_u128() % 501) as u64;
+                Duration::from_millis((jitter_ms << attempts.saturating_sub(1).min(2)).min(2_000))
+            }
+        });
+    let retry_same_key = failure.is_some_and(|(fact, _)| fact.retryable())
+        && active.reserve_same_key_retry(&current_key, max_attempts, delay);
+    if retry_same_key {
+        tokio::time::sleep(delay).await;
+    } else {
+        active.excluded_keys.insert(current_key.clone());
+    }
+
     let turn_request_id = Uuid::new_v4().to_string();
     let now_unix_secs = current_unix_secs();
-    let excluded_key_ids = bound.exhausted_exclusions.key_ids(now_unix_secs);
+    let mut excluded_key_ids = bound.exhausted_exclusions.key_ids(now_unix_secs);
+    excluded_key_ids.extend(
+        bound
+            .turn_state
+            .logical()
+            .unwrap()
+            .excluded_keys
+            .iter()
+            .cloned(),
+    );
     let excluded_codex_account_ids = bound.exhausted_exclusions.codex_account_ids(now_unix_secs);
-    let excluded_key_ids = (!excluded_key_ids.is_empty()).then_some(excluded_key_ids);
     let excluded_codex_account_ids =
         (!excluded_codex_account_ids.is_empty()).then_some(excluded_codex_account_ids);
-    let planned = match await_owned_responses_websocket_plan(spawn_owned_responses_websocket_plan(
-        state.clone(),
-        planning_parts,
-        turn_request_id.clone(),
-        turn_control.decision.clone(),
-        turn_control.auth_snapshot.clone(),
-        client_event.clone(),
-        excluded_key_ids,
-        excluded_codex_account_ids,
-        None,
-    ))
-    .await
-    {
-        Ok(Some(decision)) => decision,
-        Ok(None) => {
-            warn!(
-                event_name = "responses_websocket_quota_retry_provider_unavailable",
-                log_type = "ops",
-                transport = WEBSOCKET_LOG_TRANSPORT,
-                websocket = true,
-                trace_id = %context.trace_id,
-                exhausted_key_id = ?exhausted_key_id,
-                "gateway could not find an alternate Responses WebSocket provider after quota exhaustion"
-            );
-            return false;
-        }
-        Err(error) => {
-            warn!(
-                event_name = "responses_websocket_quota_retry_planning_failed",
-                log_type = "ops",
-                transport = WEBSOCKET_LOG_TRANSPORT,
-                websocket = true,
-                trace_id = %context.trace_id,
-                exhausted_key_id = ?exhausted_key_id,
-                error = ?error,
-                "gateway could not plan an alternate Responses WebSocket provider after quota exhaustion"
-            );
-            return false;
+    let mut pinned = retry_same_key
+        .then(|| ResponsesWebSocketPinnedCandidate::from_decision(&bound.decision_template))
+        .flatten();
+    let planned = loop {
+        let result = await_owned_responses_websocket_plan(
+            spawn_owned_responses_websocket_plan(
+                state.clone(),
+                build_planning_parts(context),
+                turn_request_id.clone(),
+                turn_control.decision.clone(),
+                turn_control.auth_snapshot.clone(),
+                client_event.clone(),
+                (!excluded_key_ids.is_empty()).then_some(excluded_key_ids.clone()),
+                excluded_codex_account_ids.clone(),
+                pinned.clone(),
+            ),
+            bound
+                .turn_state
+                .logical()
+                .and_then(|turn| turn.first_output_deadline)
+                .expect("retry requires first output budget"),
+        )
+        .await;
+        match result {
+            Ok(Some(decision)) => break decision,
+            Ok(None) if pinned.take().is_some() => {
+                excluded_key_ids.insert(current_key.clone());
+                bound
+                    .turn_state
+                    .logical_mut()
+                    .unwrap()
+                    .excluded_keys
+                    .insert(current_key.clone());
+                continue;
+            }
+            Ok(None) => {
+                warn!(
+                    event_name = "responses_websocket_retry_provider_unavailable",
+                    log_type = "ops",
+                    transport = WEBSOCKET_LOG_TRANSPORT,
+                    websocket = true,
+                    trace_id = %context.trace_id,
+                    exhausted_key_id = ?exhausted_key_id,
+                    "gateway could not find an eligible Responses WebSocket retry target"
+                );
+                return false;
+            }
+            Err(error) => {
+                warn!(
+                    event_name = "responses_websocket_retry_planning_failed",
+                    log_type = "ops",
+                    transport = WEBSOCKET_LOG_TRANSPORT,
+                    websocket = true,
+                    trace_id = %context.trace_id,
+                    exhausted_key_id = ?exhausted_key_id,
+                    error = ?error,
+                    "gateway could not plan an eligible Responses WebSocket retry target"
+                );
+                return false;
+            }
         }
     };
     let OwnedResponsesWebSocketDecision {
@@ -210,7 +339,11 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
     let adapter = resolve_responses_websocket_adapter(planned.adapter);
     let normalization = planned.normalization;
     let decision = planned.execution;
-    if exhausted_key_id.as_deref() == decision.key_id.as_deref() {
+    if decision
+        .key_id
+        .as_ref()
+        .is_some_and(|key| excluded_key_ids.contains(key))
+    {
         planned_lease.release().await;
         warn!(
             event_name = "responses_websocket_quota_retry_selected_exhausted_key",
@@ -266,6 +399,11 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
         turn_decision,
         &client_event,
         planned_lease,
+        bound
+            .turn_state
+            .logical()
+            .and_then(|turn| turn.first_output_deadline)
+            .expect("retry requires first output budget"),
     )
     .await
     {
@@ -283,13 +421,14 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
             return false;
         }
     };
-    let mut replacement = match bind_responses_upstream(
-        &decision,
-        normalization,
-        &client_event,
-        adapter,
-    )
-    .await
+    let mut replacement = match turn
+        .with_probe_lease(bind_responses_upstream(
+            &decision,
+            normalization,
+            &client_event,
+            adapter,
+        ))
+        .await
     {
         Ok(connection) => connection,
         Err(code) => {
@@ -301,13 +440,13 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
             )
             .await;
             warn!(
-                event_name = "responses_websocket_quota_retry_rebind_failed",
+                event_name = "responses_websocket_retry_rebind_failed",
                 log_type = "ops",
                 transport = WEBSOCKET_LOG_TRANSPORT,
                 websocket = true,
                 trace_id = %context.trace_id,
                 error_code = code,
-                "gateway could not bind an alternate Responses WebSocket provider after quota exhaustion"
+                "gateway could not bind the Responses WebSocket retry target"
             );
             return false;
         }
@@ -346,11 +485,14 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
     }
     if let Some(logical) = bound.turn_state.logical_mut() {
         logical.provider_store = replacement_provider_store;
+        if let Some(key) = bound.decision_template.key_id.as_ref() {
+            logical.record_attempt(key);
+        }
     }
     bound.upstream_response_headers = replacement.upstream_response_headers;
     bound.pending_adapter_drain = None;
     debug!(
-        event_name = "responses_websocket_quota_retry_rebound",
+        event_name = "responses_websocket_retry_rebound",
         log_type = "event",
         transport = WEBSOCKET_LOG_TRANSPORT,
         websocket = true,
@@ -360,7 +502,7 @@ pub(super) async fn retry_active_turn_after_quota_exhaustion(
         turn_attempt,
         previous_key_id = ?previous_key_id,
         key_id = ?bound.decision_template.key_id,
-        "gateway transparently rebound a Responses WebSocket turn after quota exhaustion"
+        "gateway transparently rebound a rejected Responses WebSocket turn"
     );
     true
 }

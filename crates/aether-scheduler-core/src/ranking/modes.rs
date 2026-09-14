@@ -24,13 +24,8 @@ pub(super) fn compare_rankable_candidates(
     }
 }
 
-/// R10 cost-based (成本优先): cheapest-key-first within the requested model.
-///
-/// Affinity still outranks cost (prompt-cache stickiness beats a cheaper key),
-/// cross-format demotion and format preference keep their existing roles, and
-/// the multiplier itself replaces the priority slot. Equal multipliers fall
-/// back to the priority slot, then health, then the dynamic signals, then the
-/// seeded hash — mirroring the CacheAffinity tail for deterministic behavior.
+/// Compare cost within the same capability and format compatibility tier.
+/// Cached affinity only breaks equal-price ties before manual priority.
 fn compare_cost_based(
     left: &SchedulerRankableCandidate,
     right: &SchedulerRankableCandidate,
@@ -38,10 +33,10 @@ fn compare_cost_based(
 ) -> Ordering {
     left.capability_priority
         .cmp(&right.capability_priority)
-        .then_with(|| right.cached_affinity_match.cmp(&left.cached_affinity_match))
         .then_with(|| compare_cross_format_demotion(left, right))
-        .then_with(|| compare_demoted_format_preference(left, right))
+        .then_with(|| compare_format_preference(left, right))
         .then_with(|| left.rate_multiplier.total_cmp(&right.rate_multiplier))
+        .then_with(|| right.cached_affinity_match.cmp(&left.cached_affinity_match))
         .then_with(|| compare_candidate_priority_slot(left, right, context.priority_mode))
         .then(left.tunnel_bucket.cmp(&right.tunnel_bucket))
         .then_with(|| compare_format_preference(left, right))

@@ -64,12 +64,11 @@ use crate::execution_runtime::{
 };
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
-    apply_local_execution_effect, build_local_error_flow_metadata, parse_retry_after_secs,
-    trace_upstream_response_body, with_error_flow_report_context,
-    with_upstream_response_report_context, LocalAdaptiveRateLimitEffect,
-    LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
-    LocalExecutionEffectContext, LocalFailoverClassification, LocalHealthFailureEffect,
-    LocalHealthSuccessEffect,
+    apply_local_execution_effect, build_local_error_flow_metadata, trace_upstream_response_body,
+    with_error_flow_report_context, with_upstream_response_report_context,
+    LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
+    LocalExecutionEffect, LocalExecutionEffectContext, LocalFailoverClassification,
+    LocalHealthFailureEffect, LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::acquire_provider_pool_in_flight_guard;
 use crate::request_candidate_runtime::{
@@ -125,6 +124,7 @@ fn calibrated_sync_candidate_first_byte_elapsed_ms(
 
 #[derive(Debug)]
 struct SyncExecutionFailure {
+    health_source: crate::orchestration::ChatFailureSource,
     error_type: &'static str,
     message: String,
     status_code: Option<u16>,
@@ -325,6 +325,7 @@ async fn record_sync_attempt_forced_terminal_state(
 
 impl SyncExecutionFailure {
     fn from_transport(err: ExecutionRuntimeTransportError) -> Self {
+        crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
         let fallback_kind = match &err {
             ExecutionRuntimeTransportError::UpstreamResponseTooLarge { .. } => {
                 Some(SyncExecutionFailureFallbackKind::UpstreamResponseTooLarge)
@@ -335,6 +336,7 @@ impl SyncExecutionFailure {
             _ => None,
         };
         Self {
+            health_source: err.chat_failure_source(),
             error_type: fallback_kind
                 .map(SyncExecutionFailureFallbackKind::error_type)
                 .unwrap_or("execution_runtime_unavailable"),
@@ -347,6 +349,7 @@ impl SyncExecutionFailure {
 
     fn image_sync_total_timeout(timeout_ms: u64, elapsed_ms: u64) -> Self {
         Self {
+            health_source: crate::orchestration::ChatFailureSource::UpstreamTimeout,
             error_type: "image_sync_total_timeout",
             message: format!(
                 "OpenAI image sync execution exceeded total timeout of {timeout_ms}ms"
@@ -652,6 +655,66 @@ fn build_sync_report_payload(
         client_body_json: None,
         body_base64,
         telemetry,
+    }
+}
+
+fn aggregate_chat_sync_success(
+    plan: &ExecutionPlan,
+    report_kind: Option<&str>,
+    report_context: Option<&Value>,
+    body_bytes: &[u8],
+    body_base64: Option<&str>,
+) -> Option<Value> {
+    // Same-family Responses preserves authoritative terminal output extensions.
+    // Reuse the finalizer's strict lifecycle checks and conversion boundary.
+    match aether_ai_formats::api::maybe_build_openai_responses_same_family_sync_body_from_normalized_payload(
+        report_kind.unwrap_or_default(), 200, report_context, None, body_base64,
+    ) {
+        Ok(Some(body)) => Some(body),
+        Ok(None) => crate::ai_serving::aggregate_standard_chat_stream_sync_response(
+            body_bytes, &plan.provider_api_format,
+        ),
+        Err(_) => None,
+    }
+}
+
+fn invalid_chat_sync_success(plan: &ExecutionPlan, body: &serde_json::Value) -> bool {
+    if body.get("error").is_some_and(|error| !error.is_null())
+        || body.get("status").and_then(serde_json::Value::as_str) == Some("failed")
+    {
+        return true;
+    }
+    match plan.provider_api_format.as_str() {
+        "openai:chat" => !body
+            .get("choices")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|choices| {
+                !choices.is_empty()
+                    && choices.iter().all(|choice| {
+                        choice
+                            .get("message")
+                            .is_some_and(serde_json::Value::is_object)
+                            && choice
+                                .get("finish_reason")
+                                .and_then(serde_json::Value::as_str)
+                                .is_some()
+                    })
+            }),
+        "openai:responses" => {
+            !matches!(
+                body.get("status").and_then(serde_json::Value::as_str),
+                Some("completed" | "incomplete")
+            ) || !body.get("output").is_some_and(serde_json::Value::is_array)
+        }
+        "claude:messages" => {
+            body.get("type").and_then(serde_json::Value::as_str) != Some("message")
+                || !body.get("content").is_some_and(serde_json::Value::is_array)
+                || body
+                    .get("stop_reason")
+                    .and_then(serde_json::Value::as_str)
+                    .is_none()
+        }
+        _ => false,
     }
 }
 
@@ -1895,19 +1958,19 @@ async fn execute_execution_runtime_sync_impl(
                 },
             )
             .await;
-            // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）也计入健康投影与熔断，
-            // 502 为上游不可达语义（Transient 类，走 8 连败 + 成功率窗口）。
             apply_local_execution_effect(
                 state,
                 LocalExecutionEffectContext {
                     plan: &plan,
                     report_context: report_context.as_ref(),
                 },
-                LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                LocalExecutionEffect::ClassifiedHealthFailure(LocalHealthFailureEffect {
                     status_code: 502,
                     classification: LocalFailoverClassification::UseDefault,
                     retry_after_secs: None,
-                }),
+                }, crate::orchestration::classify_chat_failure_for_plan(
+                    &plan, 502, None, err.health_source,
+                )),
             )
             .await;
             if let Some(response) = maybe_build_sync_transport_error_stop_response(
@@ -1965,19 +2028,19 @@ async fn execute_execution_runtime_sync_impl(
                         },
                     )
                     .await;
-                    // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）也计入健康投影与熔断，
-                    // 502 为上游不可达语义（Transient 类，走 8 连败 + 成功率窗口）。
                     apply_local_execution_effect(
                         state,
                         LocalExecutionEffectContext {
                             plan: &plan,
                             report_context: report_context.as_ref(),
                         },
-                        LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                        LocalExecutionEffect::ClassifiedHealthFailure(LocalHealthFailureEffect {
                             status_code: 502,
                             classification: LocalFailoverClassification::UseDefault,
                             retry_after_secs: None,
-                        }),
+                        }, crate::orchestration::classify_chat_failure_for_plan(
+                            &plan, 502, None, crate::orchestration::ChatFailureSource::Neutral,
+                        )),
                     )
                     .await;
                     if let Some(response) = maybe_build_sync_transport_error_stop_response(
@@ -2054,19 +2117,19 @@ async fn execute_execution_runtime_sync_impl(
                     },
                 )
                 .await;
-            // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）也计入健康投影与熔断，
-            // 502 为上游不可达语义（Transient 类，走 8 连败 + 成功率窗口）。
             apply_local_execution_effect(
                 state,
                 LocalExecutionEffectContext {
                     plan: &plan,
                     report_context: report_context.as_ref(),
                 },
-                LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                LocalExecutionEffect::ClassifiedHealthFailure(LocalHealthFailureEffect {
                     status_code: 502,
                     classification: LocalFailoverClassification::UseDefault,
                     retry_after_secs: None,
-                }),
+                }, crate::orchestration::classify_chat_failure_for_plan(
+                    &plan, 502, None, err.health_source,
+                )),
             )
             .await;
                 if let Some(response) = maybe_build_sync_transport_error_stop_response(
@@ -2110,6 +2173,7 @@ async fn execute_execution_runtime_sync_impl(
             }
         }
     };
+    crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
     let mut candidate_first_byte_elapsed_ms =
         calibrated_sync_candidate_first_byte_elapsed_ms(candidate_started_at, &result);
     let initial_response_observed_at_unix_ms = current_request_candidate_unix_ms();
@@ -2132,7 +2196,7 @@ async fn execute_execution_runtime_sync_impl(
         body_base64,
         local_failover_response_text,
         local_failover_analysis,
-    ) = loop {
+    ) = {
         let result_latency_ms = result
             .telemetry
             .as_ref()
@@ -2178,6 +2242,24 @@ async fn execute_execution_runtime_sync_impl(
                 body_json = Some(error_body_json);
             }
         }
+        if result.status_code < 400
+            && crate::orchestration::chat_health_policy_applies(&plan.provider_api_format)
+        {
+            // Sync callers may use a forced upstream SSE response. Validate its
+            // complete terminal product before rejecting a non-JSON body; keep
+            // the original payload for the existing finalizer and diagnostics.
+            let aggregated = body_json.is_none().then(|| {
+                aggregate_chat_sync_success(
+                    &plan, report_kind.as_deref(), report_context.as_ref(),
+                    &body_bytes, body_base64.as_deref(),
+                )
+            }).flatten();
+            if body_json.as_ref().or(aggregated.as_ref())
+                .is_none_or(|body| invalid_chat_sync_success(&plan, body))
+            {
+                result.status_code = StatusCode::BAD_GATEWAY.as_u16();
+            }
+        }
         let local_failover_response_text = local_failover_response_text(
             body_json.as_ref(),
             &body_bytes,
@@ -2193,7 +2275,7 @@ async fn execute_execution_runtime_sync_impl(
             local_failover_response_text.as_deref(),
         )
         .await;
-        break (
+        (
             result_error_type,
             result_error_message,
             result_latency_ms,
@@ -2203,7 +2285,7 @@ async fn execute_execution_runtime_sync_impl(
             body_base64,
             local_failover_response_text,
             local_failover_analysis,
-        );
+        )
     };
     let mut report_context = attach_provider_response_headers_to_report_context(
         report_context,
@@ -2213,6 +2295,10 @@ async fn execute_execution_runtime_sync_impl(
         &provider_response_observation.request_order_id,
     );
     if result.status_code >= 400 {
+        let chat_failure = crate::orchestration::classify_chat_failure_for_plan(
+            &plan, result.status_code, local_failover_response_text.as_deref(),
+            crate::orchestration::ChatFailureSource::UpstreamResponse,
+        );
         apply_local_execution_effect(
             state,
             LocalExecutionEffectContext {
@@ -2244,14 +2330,13 @@ async fn execute_execution_runtime_sync_impl(
                 plan: &plan,
                 report_context: report_context.as_ref(),
             },
-            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+            LocalExecutionEffect::ClassifiedHealthFailure(LocalHealthFailureEffect {
                 status_code: result.status_code,
                 classification: local_failover_analysis.classification,
-                retry_after_secs: parse_retry_after_secs(
-                    headers.get("retry-after").map(String::as_str),
-                    crate::clock::current_unix_secs(),
+                retry_after_secs: crate::execution_runtime::chat_retry::observe_chat_retry_after(
+                    &plan, headers.get("retry-after").map(String::as_str),
                 ),
-            }),
+            }, chat_failure),
         )
         .await;
     }
@@ -2918,6 +3003,7 @@ mod tests {
     use aether_data_contracts::repository::candidates::RequestCandidateReadRepository;
     use aether_data_contracts::repository::usage::UsageReadRepository;
     use aether_usage_runtime::UsageRuntimeConfig;
+    use base64::Engine as _;
     use futures_util::{pin_mut, StreamExt as _};
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -2954,6 +3040,79 @@ mod tests {
         plan.provider_api_format = "gemini:generate_content".to_string();
         plan.model_name = Some("gemini-3-flash-preview".to_string());
         plan
+    }
+
+    #[test]
+    fn responses_sync_success_preserves_same_family_terminal_extensions_only() {
+        let mut plan = test_openai_image_plan(false);
+        plan.provider_api_format = "openai:responses".into();
+        plan.client_api_format = "openai:responses".into();
+        let terminal = json!({
+            "id":"resp-extended", "object":"response", "status":"completed",
+            "output":[
+                {"type":"program", "call_id":"program-1", "fingerprint":"fp-1"},
+                {"type":"program_output", "call_id":"program-1", "result":"hello", "status":"completed"},
+                {"type":"multi_agent_call", "call_id":"agent-1", "action":"delegate", "arguments":{"query":"local"}, "agent":"researcher"}
+            ]
+        });
+        let wire = format!(
+            "event: response.completed\ndata: {}\n\n",
+            json!({"type":"response.completed", "response":terminal})
+        );
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&wire);
+        let mut context = json!({
+            "provider_api_format":"openai:responses",
+            "client_api_format":"openai:responses", "needs_conversion":false
+        });
+        let accepted = aggregate_chat_sync_success(
+            &plan,
+            Some("openai_responses_sync_finalize"),
+            Some(&context),
+            wire.as_bytes(),
+            Some(&encoded),
+        )
+        .expect("same-family authoritative terminal extensions are valid");
+        assert_eq!(accepted, terminal);
+        assert!(!invalid_chat_sync_success(&plan, &accepted));
+
+        plan.client_api_format = "openai:chat".into();
+        context["client_api_format"] = json!("openai:chat");
+        context["needs_conversion"] = json!(true);
+        assert!(
+            aggregate_chat_sync_success(
+                &plan,
+                Some("openai_chat_sync_finalize"),
+                Some(&context),
+                wire.as_bytes(),
+                Some(&encoded),
+            )
+            .is_none(),
+            "cross-format conversion cannot accept unknown output items"
+        );
+    }
+
+    #[test]
+    fn responses_sync_success_rejects_unknown_intermediate_events() {
+        let mut plan = test_openai_image_plan(false);
+        plan.provider_api_format = "openai:responses".into();
+        plan.client_api_format = "openai:responses".into();
+        let wire = concat!(
+            "event: response.program.delta\ndata: {\"type\":\"response.program.delta\",\"delta\":\"print\"}\n\n",
+            "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-unknown\",\"object\":\"response\",\"status\":\"completed\",\"output\":[]}}\n\n"
+        );
+        let encoded = base64::engine::general_purpose::STANDARD.encode(wire);
+        let context = json!({
+            "provider_api_format":"openai:responses",
+            "client_api_format":"openai:responses", "needs_conversion":false
+        });
+        assert!(aggregate_chat_sync_success(
+            &plan,
+            Some("openai_responses_sync_finalize"),
+            Some(&context),
+            wire.as_bytes(),
+            Some(&encoded),
+        )
+        .is_none());
     }
 
     fn test_decision() -> GatewayControlDecision {

@@ -107,7 +107,7 @@ pub(super) async fn maybe_handle(
     Ok(Some(
         Json(build_admin_provider_endpoint_response(
             &created,
-            &provider.name,
+            &provider,
             0,
             0,
             now_unix_secs,

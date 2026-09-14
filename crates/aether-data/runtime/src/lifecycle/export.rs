@@ -96,6 +96,10 @@ struct AuxiliaryTable {
 #[cfg(feature = "sqlite")]
 const AUXILIARY_TABLES: &[AuxiliaryTable] = &[
     AuxiliaryTable {
+        name: "provider_key_health_settlements",
+        primary_key: &["id"],
+    },
+    AuxiliaryTable {
         name: "audit_logs",
         primary_key: &["id"],
     },

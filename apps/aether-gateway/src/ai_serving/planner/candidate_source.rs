@@ -475,7 +475,9 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
         if !self.priority_page_emitted {
             self.priority_page_emitted = true;
             let mut priority_page = self.cached_next_priority_page().await?;
-            if self.routing_policy.is_some() {
+            if self.routing_policy.is_some()
+                || self.ordering_config.scheduling_mode == SchedulerSchedulingMode::CostBased
+            {
                 while let Some(mut page) = self.next_page_after_priority().await? {
                     priority_page.candidates.append(&mut page.candidates);
                     priority_page
@@ -1426,7 +1428,7 @@ mod tests {
         StoredProviderModelMapping, StoredRequestedModelCandidateRowsQuery,
     };
     use aether_data_contracts::repository::provider_catalog::{
-        StoredProviderCatalogKey, StoredProviderCatalogProvider,
+        StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,
     };
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1764,6 +1766,134 @@ mod tests {
             .next_page()
             .await
             .expect("routing scan should be exhausted")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn cost_mode_without_routing_policy_ranks_cheaper_key_from_later_page_first() {
+        let total_rows = REQUESTED_MODEL_CANDIDATE_PAGE_SIZE + 1;
+        let repository = Arc::new(PagedFallbackRepository::new(total_rows));
+        let mut providers = Vec::new();
+        let mut endpoints = Vec::new();
+        let mut keys = Vec::new();
+        for index in 0..total_rows {
+            let provider_id = format!("fallback-provider-{index:04}");
+            providers.push(catalog_provider(&provider_id));
+            endpoints.push(
+                StoredProviderCatalogEndpoint::new(
+                    format!("endpoint-{provider_id}"),
+                    provider_id.clone(),
+                    "openai:chat".to_string(),
+                    Some("openai".to_string()),
+                    Some("chat".to_string()),
+                    true,
+                )
+                .expect("endpoint should build")
+                .with_transport_fields(
+                    "https://example.com".to_string(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("endpoint transport should build"),
+            );
+            let mut key = catalog_key(&format!("key-{provider_id}"), &provider_id, None)
+                .with_transport_fields(
+                    Some(serde_json::json!(["openai:chat"])),
+                    "plain-upstream-key".to_string(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("key transport should build");
+            key.default_rate_multiplier = if index == total_rows - 1 { 0.1 } else { 1.0 };
+            keys.push(key);
+        }
+        let catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+            providers, endpoints, keys,
+        ));
+        let data_state =
+            GatewayDataState::with_minimal_candidate_selection_reader_for_tests(repository.clone())
+                .with_provider_catalog_reader(catalog)
+                .with_encryption_key_for_tests("development-key")
+                .with_system_config_values_for_tests(vec![(
+                    "scheduling_mode".to_string(),
+                    serde_json::json!("cost_based"),
+                )]);
+        let app = AppState::new()
+            .expect("state should build")
+            .with_data_state_for_tests(data_state);
+        let auth_snapshot = unrestricted_auth_snapshot();
+        let model_directive_policy =
+            crate::system_features::ModelDirectivePolicySnapshot::load(&app).await;
+        let mut cursor = LocalCandidatePreselectionPageCursor::new(
+            PlannerAppState::new(&app),
+            &model_directive_policy,
+            "openai:chat",
+            "gpt-5",
+            None,
+            false,
+            None,
+            &auth_snapshot,
+            None,
+            None,
+            None,
+            true,
+            LocalCandidatePreselectionKeyMode::ProviderEndpointKeyModelAndApiFormat,
+            false,
+            None,
+        )
+        .await;
+        let page = cursor
+            .next_page()
+            .await
+            .expect("scan should succeed")
+            .expect("candidates should exist");
+        assert!(page.skipped_candidates.is_empty());
+        assert_eq!(page.candidates.len(), total_rows as usize);
+        let queries = repository
+            .page_queries()
+            .into_iter()
+            .filter(|query| normalize_api_format(&query.api_format) == "openai:chat")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            queries.iter().map(|query| query.offset).collect::<Vec<_>>(),
+            [0, REQUESTED_MODEL_CANDIDATE_PAGE_SIZE]
+        );
+        assert!(queries
+            .iter()
+            .all(|query| query.limit == REQUESTED_MODEL_CANDIDATE_PAGE_SIZE));
+        let (ranked, skipped) =
+            super::super::candidate_resolution::resolve_and_rank_local_execution_candidates(
+                PlannerAppState::new(&app),
+                page.candidates,
+                "openai:chat",
+                "gpt-5",
+                Some(&auth_snapshot),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(skipped.is_empty(), "{skipped:?}");
+        assert_eq!(ranked.len(), total_rows as usize);
+        assert_eq!(
+            ranked[0].candidate.key_id,
+            format!("key-fallback-provider-{:04}", total_rows - 1)
+        );
+        assert!(cursor
+            .next_page()
+            .await
+            .expect("scan should be exhausted")
             .is_none());
     }
 

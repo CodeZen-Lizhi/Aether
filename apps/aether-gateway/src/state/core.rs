@@ -121,13 +121,7 @@ impl AppState {
         Some(queue)
     }
 
-    fn spawn_scheduler_affinity_runtime_write(
-        &self,
-        cache_key: &str,
-        target: &SchedulerAffinityTarget,
-        ttl: Duration,
-        epoch: u64,
-    ) {
+    fn spawn_scheduler_affinity_runtime_write(&self, cache_key: &str, ttl: Duration, epoch: u64) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             return;
         };
@@ -135,14 +129,13 @@ impl AppState {
         let cache_key = cache_key.to_string();
         let runtime_state = self.runtime_state.clone();
         let scheduler_affinity_epoch = self.scheduler_affinity_epoch.clone();
-        let provider_id = target.provider_id.clone();
-        let endpoint_id = target.endpoint_id.clone();
-        let key_id = target.key_id.clone();
+        let scheduler_affinity_cache = self.scheduler_affinity_cache.clone();
         let ttl_seconds = ttl.as_secs();
         let now_unix_secs = chrono::Utc::now().timestamp().max(0) as u64;
         let expire_at = now_unix_secs.saturating_add(ttl_seconds);
 
         handle.spawn(async move {
+            let _write_guard = scheduler_affinity_cache.runtime_write_gate.lock().await;
             if scheduler_affinity_epoch.load(Ordering::Acquire) != epoch {
                 return;
             }
@@ -163,14 +156,20 @@ impl AppState {
                 .and_then(|value| value.get("created_at"))
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or(now_unix_secs);
+            let Some((target, request_order)) =
+                scheduler_affinity_cache.get_fresh_write_for_epoch(&cache_key, ttl, epoch)
+            else {
+                return;
+            };
             let payload = serde_json::json!({
-                "provider_id": provider_id,
-                "endpoint_id": endpoint_id,
-                "key_id": key_id,
+                "provider_id": target.provider_id,
+                "endpoint_id": target.endpoint_id,
+                "key_id": target.key_id,
                 "created_at": created_at,
                 "expire_at": expire_at,
                 "request_count": request_count,
                 "scheduler_affinity_epoch": epoch,
+                "scheduler_affinity_request_order": request_order.map(|order| order.to_string()),
             });
             if let Ok(serialized) = serde_json::to_string(&payload) {
                 if scheduler_affinity_epoch.load(Ordering::Acquire) != epoch {
@@ -1921,7 +1920,7 @@ impl AppState {
             .scheduler_affinity_epoch
             .fetch_add(1, Ordering::AcqRel)
             .saturating_add(1);
-        self.scheduler_affinity_cache.clear();
+        self.scheduler_affinity_cache.clear_for_epoch(next_epoch);
         self.candidate_row_page_cache.clear();
         self.candidate_page_cache.clear();
         self.candidate_resolved_page_cache.clear();
@@ -1969,15 +1968,44 @@ impl AppState {
         if self.scheduler_affinity_epoch() != epoch {
             return false;
         }
-        self.spawn_scheduler_affinity_runtime_write(cache_key, &target, ttl, epoch);
-        self.scheduler_affinity_cache.insert_for_epoch(
+        let inserted = self.scheduler_affinity_cache.insert_for_epoch(
             cache_key.to_string(),
             target,
             ttl,
             max_entries,
             epoch,
         );
-        true
+        if inserted {
+            self.spawn_scheduler_affinity_runtime_write(cache_key, ttl, epoch);
+        }
+        inserted
+    }
+
+    pub(crate) fn remember_scheduler_affinity_target_for_request(
+        &self,
+        cache_key: &str,
+        target: SchedulerAffinityTarget,
+        ttl: Duration,
+        max_entries: usize,
+        expected_epoch: u64,
+        request_order: uuid::Uuid,
+    ) -> bool {
+        if self.scheduler_affinity_epoch() != expected_epoch || request_order.get_version_num() != 7
+        {
+            return false;
+        }
+        let inserted = self.scheduler_affinity_cache.insert_for_request(
+            cache_key.to_string(),
+            target,
+            ttl,
+            max_entries,
+            expected_epoch,
+            Some(request_order),
+        );
+        if inserted {
+            self.spawn_scheduler_affinity_runtime_write(cache_key, ttl, expected_epoch);
+        }
+        inserted
     }
 
     pub(crate) fn list_scheduler_affinity_entries(
@@ -2046,6 +2074,10 @@ impl AppState {
                 background_state.clone(),
                 self.usage_counter_flush_metrics.clone(),
             ),
+        );
+        supervise_worker(
+            crate::task_runtime::TASK_KEY_CHAT_HEALTH_SETTLEMENT,
+            crate::orchestration::spawn_health_settlement_worker(background_state.clone()),
         );
         supervise_worker(
             crate::task_runtime::TASK_KEY_PROVIDER_QUOTA_RESET,
@@ -4585,6 +4617,69 @@ mod tests {
             .background_worker_state()
             .data
             .has_usage_worker_queue());
+    }
+
+    #[test]
+    fn scheduler_affinity_request_order_blocks_late_success_in_the_same_epoch() {
+        let state = AppState::new().expect("state should build");
+        let cache_key = "scheduler_affinity:ordered-session";
+        let ttl = Duration::from_secs(300);
+        let epoch = state.scheduler_affinity_epoch();
+        let old_order = uuid::Uuid::now_v7();
+        let new_order = uuid::Uuid::now_v7();
+        let target = |key: &str| crate::cache::SchedulerAffinityTarget {
+            provider_id: "provider-1".to_string(),
+            endpoint_id: "endpoint-1".to_string(),
+            key_id: key.to_string(),
+        };
+        assert!(state.remember_scheduler_affinity_target_for_request(
+            cache_key,
+            target("new"),
+            ttl,
+            16,
+            epoch,
+            new_order
+        ));
+        assert!(!state.remember_scheduler_affinity_target_for_request(
+            cache_key,
+            target("old"),
+            ttl,
+            16,
+            epoch,
+            old_order
+        ));
+        assert_eq!(
+            state.read_scheduler_affinity_target(cache_key, ttl),
+            Some(target("new"))
+        );
+        assert!(!state.remember_scheduler_affinity_target_for_epoch(
+            cache_key,
+            target("legacy"),
+            ttl,
+            16,
+            Some(epoch)
+        ));
+        assert_eq!(
+            state.list_scheduler_affinity_entries(ttl)[0].target,
+            target("new")
+        );
+        let next_epoch = state.invalidate_scheduler_affinity_cache();
+        assert!(!state.remember_scheduler_affinity_target_for_request(
+            cache_key,
+            target("stale-epoch"),
+            ttl,
+            16,
+            epoch,
+            uuid::Uuid::now_v7()
+        ));
+        assert!(state.remember_scheduler_affinity_target_for_request(
+            cache_key,
+            target("next-epoch"),
+            ttl,
+            16,
+            next_epoch,
+            uuid::Uuid::now_v7()
+        ));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 pub mod endpoints;
+pub mod failover;
 pub mod models;
 pub mod models_write;
 pub mod oauth;

@@ -28,6 +28,17 @@ pub(crate) fn parse_retry_after_secs(value: Option<&str>, now_unix_secs: u64) ->
     (delta_secs <= crate::orchestration::RATE_LIMIT_COOLDOWN_MAX_SECS).then_some(delta_secs)
 }
 
+/// Unlike the legacy non-chat parser, a valid provider deadline is never shortened.
+pub(crate) fn parse_chat_retry_after_secs(value: Option<&str>, now_unix_secs: u64) -> Option<u64> {
+    let value = value.map(str::trim).filter(|value| !value.is_empty())?;
+    if let Ok(delta_secs) = value.parse::<u64>() {
+        return Some(delta_secs);
+    }
+    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let target = u64::try_from(date.timestamp()).ok()?;
+    Some(target.saturating_sub(now_unix_secs))
+}
+
 // Health is the remaining failure budget: one retryable failure spends 1/8,
 // and the eighth failure opens the circuit and sets the score to zero.
 pub(crate) const LOCAL_KEY_CIRCUIT_FAILURE_THRESHOLD: u64 = 8;
@@ -832,7 +843,7 @@ fn next_probe_at_unix_secs(observed_at_unix_secs: u64, interval_minutes: u64) ->
     observed_at_unix_secs.saturating_add(interval_minutes.saturating_mul(60))
 }
 
-fn append_request_result_window(
+pub(super) fn append_request_result_window(
     current: &serde_json::Map<String, Value>,
     observed_at_unix_secs: u64,
     ok: bool,

@@ -10,7 +10,11 @@ pub fn promoted_by(
     candidate: &SchedulerRankableCandidate,
     ranking_mode: SchedulerRankingMode,
 ) -> Option<&'static str> {
-    if ranking_mode == SchedulerRankingMode::CacheAffinity && candidate.cached_affinity_match {
+    if matches!(
+        ranking_mode,
+        SchedulerRankingMode::CacheAffinity | SchedulerRankingMode::CostBased
+    ) && candidate.cached_affinity_match
+    {
         return Some(RANKING_REASON_CACHED_AFFINITY);
     }
     if ranking_mode == SchedulerRankingMode::CacheAffinity

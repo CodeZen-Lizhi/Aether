@@ -127,17 +127,19 @@ where
     Port: AiCandidateRankingPort,
 {
     let ranking_context = port.ranking_context();
-    let cached_affinity_target =
-        if ranking_context.ranking_mode == SchedulerRankingMode::CacheAffinity {
-            let affinity_requested_model = port.affinity_requested_model(&candidates);
-            port.read_cached_affinity_target(
-                normalized_client_api_format,
-                affinity_requested_model.as_deref(),
-            )
-            .await?
-        } else {
-            None
-        };
+    let cached_affinity_target = if matches!(
+        ranking_context.ranking_mode,
+        SchedulerRankingMode::CacheAffinity | SchedulerRankingMode::CostBased
+    ) {
+        let affinity_requested_model = port.affinity_requested_model(&candidates);
+        port.read_cached_affinity_target(
+            normalized_client_api_format,
+            affinity_requested_model.as_deref(),
+        )
+        .await?
+    } else {
+        None
+    };
 
     let mut rankables = Vec::with_capacity(candidates.len());
     for (original_index, candidate) in candidates.iter().enumerate() {
@@ -298,6 +300,38 @@ mod tests {
         assert!(ranked[0].cached_affinity);
         assert_eq!(ranked[1].id, "candidate-a");
         assert_eq!(ranked[1].ranking_index, Some(1));
+        assert_eq!(
+            port.calls.lock().unwrap().as_slice(),
+            [
+                "affinity:openai:chat:model-a",
+                "rankable:candidate-a:false",
+                "rankable:candidate-b:true",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn cost_ranking_reads_affinity_once_and_reuses_it_for_equal_price_candidates() {
+        let port = TestPort {
+            ranking_mode: SchedulerRankingMode::CostBased,
+            calls: Mutex::new(Vec::new()),
+        };
+        let candidates = ["candidate-a", "candidate-b"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| TestCandidate {
+                id,
+                priority: index as i32,
+                ranking_index: None,
+                cached_affinity: false,
+            })
+            .collect();
+        let ranked = run_ai_candidate_ranking(&port, candidates, "openai:chat")
+            .await
+            .unwrap();
+        assert_eq!(ranked[0].id, "candidate-b");
+        assert_eq!(ranked[1].id, "candidate-a");
+        assert!(ranked[0].cached_affinity);
         assert_eq!(
             port.calls.lock().unwrap().as_slice(),
             [

@@ -89,10 +89,9 @@ pub(crate) fn apply_provider_failure_disposition(
     let disposition =
         classify_failure_disposition(provider_api_format, analysis.classification, status_code);
     let decision = match disposition.retry_action {
-        FailureRetryAction::Stop | FailureRetryAction::SameCredential => {
-            LocalFailoverDecision::StopLocalFailover
-        }
-        FailureRetryAction::NextCandidate
+        FailureRetryAction::Stop => LocalFailoverDecision::StopLocalFailover,
+        FailureRetryAction::SameCredential
+        | FailureRetryAction::NextCandidate
         | FailureRetryAction::NextCredential
         | FailureRetryAction::NextEndpoint => LocalFailoverDecision::RetryNextCandidate,
     };

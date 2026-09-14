@@ -58,7 +58,7 @@ pub(crate) async fn build_admin_provider_endpoints_payload(
                 let endpoint_api_format = normalize_endpoint_api_format(&endpoint.api_format);
                 build_admin_provider_endpoint_response(
                     &endpoint,
-                    &provider.name,
+                    &provider,
                     total_keys_by_format
                         .get(endpoint_api_format.as_str())
                         .copied()
@@ -111,7 +111,7 @@ pub(crate) async fn build_admin_endpoint_payload(
 
     Some(build_admin_provider_endpoint_response(
         &endpoint,
-        &provider.name,
+        &provider,
         total_keys_by_format
             .get(endpoint_api_format.as_str())
             .copied()

@@ -154,10 +154,7 @@ pub(crate) fn local_attempt_slot_count(transport: &GatewayProviderTransportSnaps
     local_attempt_slots_from_transport(transport).unwrap_or(1)
 }
 
-/// For endpoint/provider table fields, `2` is the legacy admin default and is
-/// treated as "not explicitly configured" so existing local-execution behaviour
-/// (one attempt slot per candidate) stays unchanged. Values `0`, `1`, and `>2`
-/// are treated as explicit.
+/// Explicit legacy overrides take precedence over a saved default of two.
 const LEGACY_DEFAULT_MAX_RETRIES: u32 = 2;
 
 /// Upper bound on local attempt slots. This is intentionally stricter than
@@ -166,6 +163,18 @@ const LEGACY_DEFAULT_MAX_RETRIES: u32 = 2;
 const MAX_LOCAL_ATTEMPT_SLOTS: u32 = 99;
 
 fn local_attempt_slots_from_transport(transport: &GatewayProviderTransportSnapshot) -> Option<u32> {
+    let chat = super::chat_health_policy_applies(&transport.endpoint.api_format);
+    if chat {
+        return Some(
+            aether_contracts::chat_retry::resolve_chat_max_attempts(
+                transport.provider.config.as_ref(),
+                transport.endpoint.config.as_ref(),
+                transport.endpoint.max_retries,
+                transport.provider.max_retries,
+            )
+            .max_attempts,
+        );
+    }
     let rules = transport
         .provider
         .config
@@ -345,11 +354,36 @@ mod tests {
     }
 
     #[test]
-    fn build_local_attempt_identities_default_two_treated_as_unset() {
+    fn build_local_attempt_identities_saved_chat_default_two_is_effective() {
         let identities =
             build_local_attempt_identities(5, &sample_transport(Some(2), Some(2), None));
 
-        assert_eq!(identities, vec![ExecutionAttemptIdentity::new(5, 0)]);
+        assert_eq!(
+            identities,
+            vec![
+                ExecutionAttemptIdentity::new(5, 0),
+                ExecutionAttemptIdentity::new(5, 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn saved_default_two_preserves_non_chat_single_attempt() {
+        let mut transport = sample_transport(Some(2), Some(2), None);
+        transport.endpoint.api_format = "openai:images".to_string();
+        assert_eq!(build_local_attempt_identities(0, &transport).len(), 1);
+    }
+
+    #[test]
+    fn normalized_attempt_count_overrides_legacy_values() {
+        let transport = sample_transport(
+            Some(3),
+            Some(4),
+            Some(json!({
+                "failover_rules": {"max_attempts": 2, "max_retries": 5}
+            })),
+        );
+        assert_eq!(build_local_attempt_identities(0, &transport).len(), 2);
     }
 
     #[test]

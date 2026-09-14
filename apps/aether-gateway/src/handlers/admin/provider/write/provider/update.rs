@@ -184,9 +184,24 @@ pub(crate) fn build_admin_update_provider_record_from_existing(
     }
 
     if fields.contains("max_retries") {
+        for rules in [
+            payload.failover_rules.as_ref(),
+            payload
+                .config
+                .as_ref()
+                .and_then(|config| config.get("failover_rules")),
+        ] {
+            aether_admin::provider::failover::validate_scope_aliases(
+                rules,
+                "provider_max_attempts",
+                payload.max_retries,
+            )?;
+        }
         updated.max_retries = match payload.max_retries {
-            Some(value) if (0..=999).contains(&value) => Some(value),
-            Some(_) => return Err("max_retries 必须是 0 到 999 之间的整数".to_string()),
+            Some(value) => {
+                aether_admin::provider::failover::validate_legacy_attempts(value)?;
+                Some(value)
+            }
             None => None,
         };
     }
@@ -229,6 +244,12 @@ pub(crate) fn build_admin_update_provider_record_from_existing(
             for (key, value) in patch_map {
                 if value.is_null() {
                     config_map.remove(&key);
+                } else if key == "failover_rules" {
+                    let rules = aether_admin::provider::failover::merge_failover_rules(
+                        config_map.get(&key),
+                        value,
+                    )?;
+                    config_map.insert(key, rules);
                 } else {
                     config_map.insert(key, value);
                 }
@@ -269,8 +290,20 @@ pub(crate) fn build_admin_update_provider_record_from_existing(
         } else {
             let value = normalize_json_object(payload.failover_rules, "failover_rules")?
                 .ok_or_else(|| "failover_rules 必须是 JSON 对象".to_string())?;
-            config_map.insert("failover_rules".to_string(), value);
+            let rules = aether_admin::provider::failover::merge_failover_rules(
+                config_map.get("failover_rules"),
+                value,
+            )?;
+            config_map.insert("failover_rules".to_string(), rules);
         }
+    }
+
+    if fields.contains("max_retries") {
+        aether_admin::provider::failover::set_scope_attempts(
+            &mut config_map,
+            "provider_max_attempts",
+            updated.max_retries,
+        )?;
     }
 
     if config_map.contains_key("chat_pii_redaction") {

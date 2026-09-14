@@ -356,6 +356,25 @@ CREATE TABLE IF NOT EXISTS models (
 );
 CREATE INDEX IF NOT EXISTS models_provider_id_idx ON models (provider_id);
 
+CREATE TABLE IF NOT EXISTS provider_key_health_settlements (
+    id TEXT PRIMARY KEY NOT NULL,
+    key_id TEXT NOT NULL,
+    api_format TEXT NOT NULL,
+    policy_version INTEGER NOT NULL,
+    attempt_started_at INTEGER NOT NULL,
+    settled_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS provider_key_health_settlements_expiry_idx ON provider_key_health_settlements (expires_at);
+
+CREATE TABLE IF NOT EXISTS provider_key_health_pending_facts (
+    id TEXT PRIMARY KEY NOT NULL,
+    observed_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS provider_key_health_pending_facts_order_idx ON provider_key_health_pending_facts (observed_at, id);
+
 CREATE TABLE IF NOT EXISTS global_models (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,

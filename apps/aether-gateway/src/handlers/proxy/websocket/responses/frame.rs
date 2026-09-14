@@ -202,6 +202,43 @@ fn event_is_started(event: &Value) -> bool {
     )
 }
 
+/// Progress and replay safety are separate: response.created commits public
+/// state but contains no model output. Empty deltas and private heartbeats do
+/// not release the logical turn's first-output deadline.
+pub(super) fn frame_has_effective_output(frame: &ParsedResponsesWebSocketFrame<'_>) -> bool {
+    frame.protocol_events().into_iter().any(|event| {
+        let event_type = event_type_of(event).unwrap_or_default();
+        match event_type {
+            "response.output_text.delta"
+            | "response.reasoning_text.delta"
+            | "response.reasoning_summary_text.delta"
+            | "response.function_call_arguments.delta"
+            | "response.refusal.delta" => event
+                .get("delta")
+                .and_then(Value::as_str)
+                .is_some_and(|delta| !delta.is_empty()),
+            "response.output_item.added" | "response.output_item.done" => event
+                .pointer("/item/type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| matches!(kind, "function_call" | "custom_tool_call")),
+            _ => terminal_for_event(event)
+                .is_some_and(|terminal| terminal.status_code < 400 && !terminal.cancelled),
+        }
+    })
+}
+
+/// A complete error before any public response event proves rejection. A
+/// mixed batch containing response/tool state cannot be transparently replayed.
+pub(super) fn frame_is_replayable_rejection(frame: &ParsedResponsesWebSocketFrame<'_>) -> bool {
+    frame
+        .terminal()
+        .is_some_and(|terminal| terminal.status_code >= 400 && !terminal.cancelled)
+        && frame
+            .protocol_events()
+            .into_iter()
+            .all(|event| matches!(event_type_of(event), Some("error" | "response.failed")))
+}
+
 /// 读取 `response.incomplete` 携带的 `incomplete_details.reason`。
 ///
 /// 标准位置是 `response.incomplete_details.reason`；批量封装偶尔把

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Chat retry configuration fixture</title></head>
+<body><main id="fixture"></main>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import { createPinia } from 'pinia'
+import { createI18n } from '/src/i18n/index.ts'
+import ProviderFormDialog from '/src/features/providers/components/ProviderFormDialog.vue'
+import client from '/src/api/client.ts'
+import '/src/style.css'
+
+const initial = {
+  id: 'fixture-provider', name: 'Local fixture', is_active: true,
+  enable_format_conversion: true, total_endpoints: 0, active_endpoints: 0,
+  total_keys: 0, active_keys: 0, total_models: 0, active_models: 0,
+  global_model_ids: [], avg_health_score: 1, unhealthy_endpoints: 0,
+  api_formats: [], endpoint_health_details: [], effective_max_attempts: 2,
+  effective_max_attempts_source: 'provider.max_retries', stream_failover_budget_ms: 90000,
+  failover_rules: { stop_on_transport_errors: true, fixture_future_field: true },
+  created_at: '', updated_at: '',
+}
+const provider = ref(JSON.parse(localStorage.getItem('chat-retry-ui-fixture') || 'null') || initial)
+const open = ref(true)
+// This fixture exercises only the UI; its adapter never contacts a gateway.
+client.patch = async (url, patch) => {
+  const rules = { ...provider.value.failover_rules, ...patch.failover_rules }
+  provider.value = {
+    ...provider.value, ...patch, failover_rules: rules,
+    effective_max_attempts: rules.max_attempts ?? provider.value.effective_max_attempts,
+    effective_max_attempts_source: rules.max_attempts ? 'failover_rules.max_attempts' : provider.value.effective_max_attempts_source,
+    stream_failover_budget_ms: rules.stream_failover_budget_ms ?? 90000,
+  }
+  localStorage.setItem('chat-retry-ui-fixture', JSON.stringify(provider.value))
+  return { data: provider.value, status: 200, statusText: 'OK', headers: {}, config: { url } }
+}
+createApp({
+  render: () => [
+    h('button', { onClick: () => open.value = true }, 'Edit'),
+    h(ProviderFormDialog, {
+      modelValue: open.value, provider: provider.value,
+      'onUpdate:modelValue': value => open.value = value,
+      onProviderUpdated: value => provider.value = value,
+    }),
+  ],
+}).use(createPinia()).use(createI18n()).mount('#fixture')
+</script>
+</body>
+</html>

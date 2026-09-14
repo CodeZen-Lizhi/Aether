@@ -1,7 +1,7 @@
 use crate::handlers::admin::shared::AdminTypedObjectPatch;
 use aether_admin::provider::endpoints as admin_provider_endpoints_pure;
 use aether_data_contracts::repository::provider_catalog::{
-    StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
+    StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,
 };
 use serde::Deserialize;
 
@@ -29,22 +29,42 @@ pub(super) fn normalize_endpoint_api_format(api_format: &str) -> String {
 
 pub(super) fn build_admin_provider_endpoint_response(
     endpoint: &StoredProviderCatalogEndpoint,
-    provider_name: &str,
+    provider: &StoredProviderCatalogProvider,
     total_keys: usize,
     active_keys: usize,
     now_unix_secs: u64,
 ) -> serde_json::Value {
-    admin_provider_endpoints_pure::build_admin_provider_endpoint_response(
+    let mut response = admin_provider_endpoints_pure::build_admin_provider_endpoint_response(
         endpoint,
-        provider_name,
+        &provider.name,
         total_keys,
         active_keys,
         now_unix_secs,
-    )
-}
-
-fn default_admin_endpoint_max_retries() -> i32 {
-    2
+    );
+    let legacy = aether_contracts::chat_retry::resolve_legacy_max_attempts(
+        provider.config.as_ref(),
+        endpoint.max_retries,
+        provider.max_retries,
+    );
+    let chat = crate::orchestration::chat_health_policy_applies(&endpoint.api_format);
+    let attempts = if chat {
+        aether_contracts::chat_retry::resolve_chat_max_attempts(
+            provider.config.as_ref(),
+            endpoint.config.as_ref(),
+            endpoint.max_retries,
+            provider.max_retries,
+        )
+    } else {
+        legacy
+    };
+    response["effective_max_attempts"] = serde_json::json!(attempts.max_attempts);
+    response["effective_max_attempts_source"] = serde_json::json!(attempts.source);
+    if chat {
+        response["chat_policy_version"] =
+            serde_json::json!(aether_contracts::chat_retry::CHAT_POLICY_VERSION);
+        response["legacy_effective_max_attempts"] = serde_json::json!(legacy.max_attempts);
+    }
+    response
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,8 +78,8 @@ pub(crate) struct AdminProviderEndpointCreateRequest {
     pub(crate) header_rules: Option<serde_json::Value>,
     #[serde(default)]
     pub(crate) body_rules: Option<serde_json::Value>,
-    #[serde(default = "default_admin_endpoint_max_retries")]
-    pub(crate) max_retries: i32,
+    #[serde(default)]
+    pub(crate) max_retries: Option<i32>,
     #[serde(default)]
     pub(crate) config: Option<serde_json::Value>,
     #[serde(default)]

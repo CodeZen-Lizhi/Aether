@@ -20,7 +20,10 @@ use crate::orchestration::{
     insert_pool_key_lease_report_context_fields, ExecutionAttemptIdentity,
     SCHEDULER_AFFINITY_EPOCH_REPORT_FIELD,
 };
-use crate::scheduler::affinity::insert_scheduler_affinity_policy_report_context_field;
+use crate::scheduler::affinity::{
+    insert_scheduler_affinity_policy_report_context_field,
+    SCHEDULER_AFFINITY_REQUEST_ORDER_REPORT_FIELD,
+};
 
 pub(crate) struct LocalExecutionReportContextParts<'a> {
     pub(crate) auth_context: &'a ExecutionRuntimeAuthContext,
@@ -78,6 +81,14 @@ pub(crate) fn build_local_execution_report_context(
         parts.original_request_body_base64,
     );
     let mut extra_fields = parts.extra_fields;
+    if let Some(diagnostics) = crate::request_diagnostics::current_request_diagnostics() {
+        extra_fields.insert(
+            SCHEDULER_AFFINITY_REQUEST_ORDER_REPORT_FIELD.to_string(),
+            Value::String(diagnostics.request_order().to_string()),
+        );
+    } else {
+        extra_fields.remove(SCHEDULER_AFFINITY_REQUEST_ORDER_REPORT_FIELD);
+    }
     if let Some(value) = parts
         .client_session_affinity
         .and_then(client_session_affinity_report_context_value)
@@ -221,8 +232,8 @@ mod tests {
     use crate::ai_serving::RequestOrigin;
     use crate::orchestration::ExecutionAttemptIdentity;
 
-    #[test]
-    fn local_execution_report_context_records_request_origin_and_session_affinity() {
+    #[tokio::test]
+    async fn local_execution_report_context_records_request_origin_and_session_affinity() {
         let auth_context = ExecutionRuntimeAuthContext {
             user_id: "user-1".to_string(),
             api_key_id: "api-key-1".to_string(),
@@ -239,12 +250,15 @@ mod tests {
             Some("account=account-1;session=session-1".to_string()),
         );
 
-        let report_context =
+        let diagnostics =
+            std::sync::Arc::new(crate::request_diagnostics::RequestDiagnostics::default());
+        let request_order = diagnostics.request_order();
+        let build_attempt_context = |attempt_identity| {
             build_local_execution_report_context(LocalExecutionReportContextParts {
                 auth_context: &auth_context,
                 request_id: "trace-1",
                 candidate_id: "candidate-1",
-                attempt_identity: ExecutionAttemptIdentity::new(0, 0),
+                attempt_identity,
                 model: "gpt-5",
                 provider_name: "OpenAI",
                 provider_id: "provider-1",
@@ -282,7 +296,41 @@ mod tests {
                 has_envelope: false,
                 needs_conversion: false,
                 extra_fields: Map::new(),
-            });
+            })
+        };
+        let report_context = crate::request_diagnostics::scope_request_diagnostics_with(
+            Some(diagnostics.clone()),
+            async { build_attempt_context(ExecutionAttemptIdentity::new(0, 0)) },
+        )
+        .await;
+        let later_request_order =
+            crate::request_diagnostics::RequestDiagnostics::default().request_order();
+        let retry_context = crate::request_diagnostics::scope_request_diagnostics_with(
+            Some(diagnostics.clone()),
+            async { build_attempt_context(ExecutionAttemptIdentity::new(0, 1)) },
+        )
+        .await;
+        let backup_context =
+            crate::request_diagnostics::scope_request_diagnostics_with(Some(diagnostics), async {
+                build_attempt_context(ExecutionAttemptIdentity::new(1, 0))
+            })
+            .await;
+        assert!(request_order < later_request_order);
+        for context in [&report_context, &retry_context, &backup_context] {
+            assert_eq!(
+                crate::scheduler::affinity::scheduler_affinity_request_order_from_report_context(
+                    Some(context)
+                ),
+                Some(request_order)
+            );
+        }
+        let unscoped_context = build_attempt_context(ExecutionAttemptIdentity::new(2, 0));
+        assert_eq!(
+            crate::scheduler::affinity::scheduler_affinity_request_order_from_report_context(Some(
+                &unscoped_context
+            )),
+            None,
+        );
 
         assert_eq!(
             report_context["client_ip"],

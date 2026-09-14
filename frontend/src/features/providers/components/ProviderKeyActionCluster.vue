@@ -26,7 +26,7 @@
         class="text-[10px] font-medium tabular-nums"
         :class="healthScoreTextClass"
       >
-        {{ healthScorePercent.toFixed(0) }}%
+        {{ (healthScorePercent / 10).toFixed(1) }}/10
       </span>
     </div>
 

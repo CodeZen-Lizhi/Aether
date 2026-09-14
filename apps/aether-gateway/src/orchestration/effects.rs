@@ -7,7 +7,7 @@ use aether_cache::ExpiringMap;
 use aether_contracts::{ExecutionPlan, ExecutionTelemetry};
 use aether_data_contracts::repository::provider_catalog::{
     ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyAdaptiveStateUpdate,
-    ProviderCatalogKeyHealthStateUpdate,
+    ProviderCatalogKeyHealthStateUpdate, StoredProviderCatalogKey,
 };
 use aether_scheduler_core::{
     build_scheduler_affinity_cache_key_for_api_key_id_with_client_session_and_scope,
@@ -19,18 +19,19 @@ use aether_usage_runtime::{
     GatewayStreamReportRequest, GatewaySyncReportRequest, TerminalUsageOutcome,
 };
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex as TokioMutex;
 use tracing::warn;
 
 use super::{
-    circuit_ramp_active, classify_failure_disposition, local_failover_error_message,
-    project_local_adaptive_rate_limit, project_local_adaptive_success,
-    project_local_circuit_open_health, project_local_failure_health,
-    project_local_key_circuit_closed_with_ramp,
+    chat_health_policy_applies, circuit_ramp_active, classify_chat_failure,
+    classify_failure_disposition, local_failover_error_message, project_local_adaptive_rate_limit,
+    project_local_adaptive_success, project_local_circuit_open_health,
+    project_local_failure_health, project_local_key_circuit_closed_with_ramp,
     project_local_key_circuit_failure_with_success_rate, project_local_key_circuit_open,
     project_local_ramp_success_health, project_local_rate_limit_cooldown,
-    resolve_local_failover_analysis_for_attempt, FailureScope, LocalFailoverAnalysis,
-    LocalFailoverClassification,
+    resolve_local_failover_analysis_for_attempt, ChatFailureFact, ChatFailureSource, FailureScope,
+    LocalFailoverAnalysis, LocalFailoverClassification,
 };
 use crate::client_session_affinity::{
     client_session_affinity_from_report_context_value, CLIENT_SESSION_AFFINITY_REPORT_CONTEXT_FIELD,
@@ -56,6 +57,185 @@ const PROVIDER_KEY_EFFECT_LOCK_PRUNE_THRESHOLD: usize = 8_192;
 // Same-process writers are serialized by the per-key lock. Keep remote-writer
 // retries bounded so request/report completion cannot accumulate a long DB tail.
 const PROVIDER_KEY_STATE_CAS_MAX_ATTEMPTS: usize = 4;
+
+pub(crate) const CHAT_HEALTH_ATTEMPT_REPORT_FIELD: &str = "chat_health_attempt";
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub(super) struct ChatHealthAttemptFence {
+    pub(super) attempt_id: String,
+    pub(super) started_at_unix_secs: u64,
+    pub(super) credential_fingerprint: String,
+    pub(super) circuit_epoch: u64,
+    #[serde(default)]
+    pub(super) transport_fingerprint: Option<String>,
+}
+
+pub(super) fn chat_credential_fingerprint(
+    key: &StoredProviderCatalogKey,
+    provider_type: &str,
+) -> String {
+    let serialized = serde_json::to_vec(&(
+        &key.encrypted_api_key,
+        &key.encrypted_auth_config,
+        &key.auth_type,
+        &key.provider_id,
+        provider_type,
+    ))
+    .expect("credential tuple is serializable");
+    format!("{:x}", Sha256::digest(serialized))
+}
+
+/// Capture before the real model attempt; only a digest, never credentials, enters reports.
+pub(crate) async fn capture_chat_health_attempt(
+    state: &AppState,
+    plan: &ExecutionPlan,
+) -> Result<Option<Value>, crate::GatewayError> {
+    if !chat_health_policy_applies(&plan.client_api_format) {
+        return Ok(None);
+    }
+    let Some(key) = state
+        .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&plan.key_id))
+        .await?
+        .into_iter()
+        .next()
+    else {
+        return Ok(None);
+    };
+    let Some(provider) = state
+        .read_provider_catalog_providers_by_ids(std::slice::from_ref(&plan.provider_id))
+        .await?
+        .into_iter()
+        .next()
+    else {
+        return Ok(None);
+    };
+    let fence = ChatHealthAttemptFence {
+        attempt_id: uuid::Uuid::new_v4().to_string(),
+        started_at_unix_secs: current_unix_secs(),
+        credential_fingerprint: chat_credential_fingerprint(&key, &provider.provider_type),
+        circuit_epoch: key
+            .circuit_breaker_by_format
+            .as_ref()
+            .and_then(|v| v.get(&plan.provider_api_format))
+            .and_then(|v| v.get("circuit_epoch"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        transport_fingerprint: state
+            .read_provider_transport_snapshot_uncached(
+                &plan.provider_id,
+                &plan.endpoint_id,
+                &plan.key_id,
+            )
+            .await?
+            .as_ref()
+            .map(super::policy::chat_transport_credential_fingerprint),
+    };
+    Ok(Some(
+        serde_json::to_value(fence).expect("attempt fence is serializable"),
+    ))
+}
+
+pub(crate) fn classify_chat_failure_for_plan(
+    plan: &ExecutionPlan,
+    status_code: u16,
+    response_text: Option<&str>,
+    source: ChatFailureSource,
+) -> ChatFailureFact {
+    // API-compatible relay envelopes do not establish whose account failed.
+    let trusted_origin = reqwest::Url::parse(&plan.url).ok().is_some_and(|url| {
+        url.scheme() == "https"
+            && matches!(url.host_str(), Some("api.openai.com" | "api.anthropic.com"))
+            && plan.proxy.is_none()
+    });
+    classify_chat_failure(status_code, response_text, source, trusted_origin)
+}
+
+async fn record_chat_health_effect(
+    state: &AppState,
+    context: LocalExecutionEffectContext<'_>,
+    failure: Option<(LocalHealthFailureEffect, ChatFailureFact)>,
+) {
+    let api_format = context.plan.provider_api_format.trim();
+    if api_format.is_empty() {
+        return;
+    }
+    // Stored cooldowns use seconds; round up so a 1-second Retry-After is
+    // never shortened by the fractional part of its receipt time.
+    let observed_at = crate::clock::current_unix_ms().saturating_add(999) / 1000;
+    let captured_fence = context
+        .report_context
+        .and_then(|v| v.get(CHAT_HEALTH_ATTEMPT_REPORT_FIELD))
+        .cloned()
+        .and_then(|v| serde_json::from_value::<ChatHealthAttemptFence>(v).ok());
+    if !state.has_provider_catalog_data_reader() {
+        if failure.is_none() && captured_fence.is_none() {
+            remember_successful_local_scheduler_affinity(state, context).await;
+        }
+        return;
+    }
+    let Some(captured_fence) = captured_fence else {
+        warn!(event_name = "chat_health_attempt_identity_missing", request_id = %context.plan.request_id);
+        return;
+    };
+    if context
+        .report_context
+        .and_then(|v| v.get("planned_chat_credential_fingerprint"))
+        .and_then(Value::as_str)
+        .is_some_and(|planned| captured_fence.transport_fingerprint.as_deref() != Some(planned))
+    {
+        warn!(event_name = "chat_health_plan_credential_changed", request_id = %context.plan.request_id);
+        return;
+    }
+    if failure.is_some_and(|(_, fact)| fact.penalty == super::ChatHealthPenalty::Neutral) {
+        return;
+    }
+    let pending = super::health_settlement::build_pending_fact(
+        &context.plan.provider_id,
+        &context.plan.key_id,
+        api_format,
+        captured_fence,
+        context.report_context,
+        failure.map(|(effect, fact)| (fact, effect.retry_after_secs)),
+        observed_at,
+    );
+    if super::health_settlement::persist_and_settle(state, pending).await && failure.is_none() {
+        remember_successful_local_scheduler_affinity(state, context).await;
+        record_scheduler_latency_observation(context);
+    }
+}
+
+pub(super) fn chat_health_effect_lock(key_id: &str) -> Arc<TokioMutex<()>> {
+    PROVIDER_KEY_EFFECT_LOCKS.lock_for(key_id)
+}
+
+pub(super) fn chat_probe_reports_are_current(
+    key: &StoredProviderCatalogKey,
+    api_format: &str,
+    report_context: Option<&Value>,
+    now: u64,
+) -> bool {
+    let reports = match report_context.and_then(|v| v.get(super::PROBE_LEASES_REPORT_FIELD)) {
+        None => &[][..],
+        Some(Value::Array(reports)) => reports.as_slice(),
+        Some(_) => return false,
+    };
+    if !reports.iter().all(|report| {
+        report.get("api_format").and_then(Value::as_str) == Some(api_format)
+            && super::probe_lease_report_is_current(key, report, now)
+    }) {
+        return false;
+    }
+    // A captured report is mandatory for every owned recovery slot. Recheck
+    // against each CAS snapshot so a late result cannot settle for a new owner.
+    [
+        (key.circuit_breaker_by_format.as_ref(), "half_open_lease"),
+        (key.health_by_format.as_ref(), "rate_limit_probe_lease"),
+    ]
+    .into_iter()
+    .filter_map(|(state, field)| state?.get(api_format)?.get(field))
+    .filter(|owner| !owner.is_null())
+    .all(|owner| reports.contains(owner))
+}
 
 #[derive(Debug)]
 struct ProviderKeyEffectLockPoolState {
@@ -208,6 +388,7 @@ pub(crate) enum LocalExecutionEffect<'a> {
     AttemptFailure(LocalAttemptFailureEffect),
     AdaptiveRateLimit(LocalAdaptiveRateLimitEffect<'a>),
     HealthFailure(LocalHealthFailureEffect),
+    ClassifiedHealthFailure(LocalHealthFailureEffect, ChatFailureFact),
     HealthSuccess(LocalHealthSuccessEffect),
     AdaptiveSuccess(LocalAdaptiveSuccessEffect),
 }
@@ -279,6 +460,13 @@ pub(crate) async fn apply_local_execution_effect(
         }
         LocalExecutionEffect::HealthFailure(effect) => {
             record_health_failure_effect(state, context, effect).await;
+        }
+        LocalExecutionEffect::ClassifiedHealthFailure(effect, fact) => {
+            if chat_health_policy_applies(&context.plan.client_api_format) {
+                record_chat_health_effect(state, context, Some((effect, fact))).await;
+            } else {
+                record_health_failure_effect(state, context, effect).await;
+            }
         }
         LocalExecutionEffect::HealthSuccess(effect) => {
             record_health_success_effect(state, context, effect).await;
@@ -352,11 +540,32 @@ pub(crate) async fn apply_local_stream_failure_effects(
     apply_local_execution_effect(
         state,
         context,
-        LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
-            status_code: effect.status_code,
-            classification: analysis.classification,
-            retry_after_secs: None,
-        }),
+        LocalExecutionEffect::ClassifiedHealthFailure(
+            LocalHealthFailureEffect {
+                status_code: effect.status_code,
+                classification: analysis.classification,
+                retry_after_secs: super::parse_chat_retry_after_secs(
+                    effect
+                        .headers
+                        .iter()
+                        .find(|(name, _)| name.eq_ignore_ascii_case("retry-after"))
+                        .map(|(_, value)| value.as_str()),
+                    current_unix_secs(),
+                ),
+            },
+            classify_chat_failure_for_plan(
+                context.plan,
+                effect.status_code,
+                effect.response_text,
+                if effect.stream_timeout {
+                    ChatFailureSource::UpstreamTimeout
+                } else if effect.status_code < 400 {
+                    ChatFailureSource::UpstreamProtocol
+                } else {
+                    ChatFailureSource::UpstreamResponse
+                },
+            ),
+        ),
     )
     .await;
 
@@ -475,11 +684,7 @@ async fn local_scheduler_affinity_matches_failed_target(
     cached_target: &SchedulerAffinityTarget,
     failed_target: &SchedulerAffinityTarget,
 ) -> bool {
-    if cached_target == failed_target {
-        return true;
-    }
-    cached_target.provider_id == failed_target.provider_id
-        && cached_target.endpoint_id == failed_target.endpoint_id
+    cached_target == failed_target
 }
 
 async fn scheduler_cache_affinity_enabled(
@@ -494,7 +699,10 @@ async fn scheduler_cache_affinity_enabled(
             .is_some_and(|context| context.cache_affinity_enabled());
     }
     match read_scheduler_ordering_config(state).await {
-        Ok(config) => config.scheduling_mode == SchedulerSchedulingMode::CacheAffinity,
+        Ok(config) => matches!(
+            config.scheduling_mode,
+            SchedulerSchedulingMode::CacheAffinity | SchedulerSchedulingMode::CostBased
+        ),
         Err(error) => {
             warn!(
                 event_name = "orchestration_scheduler_affinity_config_load_failed",
@@ -523,6 +731,28 @@ async fn remember_successful_local_scheduler_affinity(
     let expected_epoch =
         local_execution_candidate_metadata_from_report_context(context.report_context)
             .scheduler_affinity_epoch;
+
+    if chat_health_policy_applies(&context.plan.client_api_format) {
+        let Some(expected_epoch) = expected_epoch else {
+            return;
+        };
+        let Some(request_order) =
+            crate::scheduler::affinity::scheduler_affinity_request_order_from_report_context(
+                context.report_context,
+            )
+        else {
+            return;
+        };
+        let _ = state.remember_scheduler_affinity_target_for_request(
+            &cache_key,
+            target,
+            SCHEDULER_AFFINITY_TTL,
+            LOCAL_EXECUTION_SCHEDULER_AFFINITY_MAX_ENTRIES,
+            expected_epoch,
+            request_order,
+        );
+        return;
+    }
 
     let _ = state.remember_scheduler_affinity_target_for_epoch(
         &cache_key,
@@ -584,6 +814,10 @@ async fn record_attempt_failure_effect(
     context: LocalExecutionEffectContext<'_>,
     effect: LocalAttemptFailureEffect,
 ) {
+    if chat_health_policy_applies(&context.plan.client_api_format) {
+        // Retain the binding through retries; a completed backup migrates it.
+        return;
+    }
     if !local_candidate_failure_should_invalidate_affinity_for_provider(
         &context.plan.provider_api_format,
         effect.classification,
@@ -1077,6 +1311,16 @@ async fn record_health_failure_effect(
     context: LocalExecutionEffectContext<'_>,
     effect: LocalHealthFailureEffect,
 ) {
+    if chat_health_policy_applies(&context.plan.client_api_format) {
+        let source = if effect.classification == LocalFailoverClassification::RetrySuccessPattern {
+            ChatFailureSource::UpstreamProtocol
+        } else {
+            ChatFailureSource::UpstreamResponse
+        };
+        let fact = classify_chat_failure(effect.status_code, None, source, false);
+        record_chat_health_effect(state, context, Some((effect, fact))).await;
+        return;
+    }
     let failure_class =
         aether_scheduler_core::UpstreamFailureClass::from_status_code(effect.status_code);
 
@@ -1228,6 +1472,10 @@ async fn record_health_success_effect(
     context: LocalExecutionEffectContext<'_>,
     _effect: LocalHealthSuccessEffect,
 ) {
+    if chat_health_policy_applies(&context.plan.client_api_format) {
+        record_chat_health_effect(state, context, None).await;
+        return;
+    }
     remember_successful_local_scheduler_affinity(state, context).await;
     record_scheduler_latency_observation(context);
 
@@ -1448,11 +1696,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        apply_local_execution_effect, apply_local_stream_failure_effects,
-        apply_local_stream_success_effects, local_candidate_failure_should_apply_key_effects,
-        LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
-        LocalExecutionEffect, LocalExecutionEffectContext, LocalHealthFailureEffect,
-        LocalHealthSuccessEffect, LocalStreamFailureEffect,
+        local_candidate_failure_should_apply_key_effects, LocalAdaptiveRateLimitEffect,
+        LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
+        LocalExecutionEffectContext, LocalHealthFailureEffect, LocalHealthSuccessEffect,
+        LocalStreamFailureEffect,
     };
     use crate::data::{GatewayDataConfig, GatewayDataState};
     use crate::orchestration::{
@@ -1467,6 +1714,441 @@ mod tests {
         build_scheduler_affinity_cache_key_for_api_key_id_with_client_session_and_scope,
         ClientSessionAffinity, SchedulerAffinityScope, SchedulerAffinityTarget,
     };
+
+    async fn attempt_context(
+        state: &AppState,
+        context: LocalExecutionEffectContext<'_>,
+    ) -> Option<Value> {
+        let mut report = context.report_context.cloned();
+        if let Some(Value::Object(report)) = report.as_mut() {
+            report
+                .entry("scheduler_affinity_epoch")
+                .or_insert_with(|| json!(state.scheduler_affinity_epoch()));
+            report
+                .entry("scheduler_affinity_request_order")
+                .or_insert_with(|| json!(uuid::Uuid::now_v7().to_string()));
+        }
+        if report
+            .as_ref()
+            .and_then(|v| v.get(super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD))
+            .is_none()
+        {
+            if let Some(fence) = super::capture_chat_health_attempt(state, context.plan)
+                .await
+                .unwrap()
+            {
+                report.get_or_insert_with(|| json!({}))[super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD] =
+                    fence;
+            }
+        }
+        report
+    }
+
+    async fn apply_local_execution_effect(
+        state: &AppState,
+        context: LocalExecutionEffectContext<'_>,
+        effect: LocalExecutionEffect<'_>,
+    ) {
+        let report = attempt_context(state, context).await;
+        super::apply_local_execution_effect(
+            state,
+            LocalExecutionEffectContext {
+                report_context: report.as_ref(),
+                ..context
+            },
+            effect,
+        )
+        .await;
+    }
+
+    async fn apply_local_stream_success_effects(
+        state: &AppState,
+        context: LocalExecutionEffectContext<'_>,
+        payload: &GatewayStreamReportRequest,
+    ) {
+        let report = attempt_context(state, context).await;
+        super::apply_local_stream_success_effects(
+            state,
+            LocalExecutionEffectContext {
+                report_context: report.as_ref(),
+                ..context
+            },
+            payload,
+        )
+        .await;
+    }
+
+    async fn apply_local_stream_failure_effects(
+        state: &AppState,
+        context: LocalExecutionEffectContext<'_>,
+        effect: LocalStreamFailureEffect<'_>,
+    ) -> super::LocalFailoverAnalysis {
+        let report = attempt_context(state, context).await;
+        super::apply_local_stream_failure_effects(
+            state,
+            LocalExecutionEffectContext {
+                report_context: report.as_ref(),
+                ..context
+            },
+            effect,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn missing_attempt_fence_cannot_score_current_credentials() {
+        let state = health_state();
+        let plan = sample_plan();
+        super::apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: None,
+            },
+            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                status_code: 500,
+                classification: LocalFailoverClassification::RetryUpstreamFailure,
+                retry_after_secs: None,
+            }),
+        )
+        .await;
+        let key = state
+            .read_provider_catalog_keys_by_ids_strong(&[plan.key_id])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert!(key.health_by_format.is_none());
+        assert!(key.circuit_breaker_by_format.is_none());
+    }
+
+    #[tokio::test]
+    async fn credentials_replaced_after_planning_do_not_score_the_replacement() {
+        let old_state = health_state();
+        let plan = sample_plan();
+        let transport = old_state
+            .read_provider_transport_snapshot_uncached(
+                &plan.provider_id,
+                &plan.endpoint_id,
+                &plan.key_id,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let mut report =
+            super::super::policy::append_local_failover_policy_to_value(json!({}), &transport);
+        let mut replacement = sample_health_key();
+        replacement.encrypted_api_key = Some(
+            encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY, "sk-replacement").unwrap(),
+        );
+        let state = health_state_with_key(replacement);
+        report[super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD] =
+            super::capture_chat_health_attempt(&state, &plan)
+                .await
+                .unwrap()
+                .unwrap();
+        super::apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: Some(&report),
+            },
+            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                status_code: 401,
+                classification: LocalFailoverClassification::RetryUpstreamFailure,
+                retry_after_secs: None,
+            }),
+        )
+        .await;
+        let key = state
+            .read_provider_catalog_keys_by_ids_strong(&[plan.key_id])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert!(key.health_by_format.is_none());
+        assert!(key.circuit_breaker_by_format.is_none());
+    }
+
+    #[tokio::test]
+    async fn probe_success_requires_the_current_owner_and_settles_before_release() {
+        let plan = sample_plan();
+        let mut key = sample_health_key();
+        key.health_by_format = Some(json!({"openai:chat": {
+            "health_score": 0.0, "health_policy_version": 2,
+            "consecutive_failures": 6,
+        }}));
+        key.circuit_breaker_by_format = Some(json!({"openai:chat": {
+            "open": true, "circuit_epoch": 1, "next_probe_at_unix_secs": 1,
+        }}));
+        let state = health_state_with_key(key);
+        let crate::orchestration::LocalProbeLeaseClaim::Acquired(first) =
+            crate::orchestration::try_claim_managed_local_circuit_probe(
+                &state,
+                &plan.key_id,
+                &plan.provider_api_format,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("first probe should be admitted");
+        };
+        let fence = super::capture_chat_health_attempt(&state, &plan)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut report = json!({super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD: fence});
+        super::apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: Some(&report),
+            },
+            LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+        )
+        .await;
+        let after_missing = state
+            .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&plan.key_id))
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(
+            after_missing.health_by_format.as_ref().unwrap()["openai:chat"]["health_score"],
+            json!(0.0)
+        );
+
+        report[crate::orchestration::PROBE_LEASES_REPORT_FIELD] = json!([first.report_context()]);
+        first.finish().await;
+        let crate::orchestration::LocalProbeLeaseClaim::Acquired(second) =
+            crate::orchestration::try_claim_managed_local_circuit_probe(
+                &state,
+                &plan.key_id,
+                &plan.provider_api_format,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("released probe should admit a successor");
+        };
+        super::apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: Some(&report),
+            },
+            LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+        )
+        .await;
+        let after_old = state
+            .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&plan.key_id))
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(
+            after_old.health_by_format.as_ref().unwrap()["openai:chat"]["health_score"],
+            json!(0.0)
+        );
+
+        report[super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD] =
+            super::capture_chat_health_attempt(&state, &plan)
+                .await
+                .unwrap()
+                .unwrap();
+        report[crate::orchestration::PROBE_LEASES_REPORT_FIELD] = json!([second.report_context()]);
+        super::apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: Some(&report),
+            },
+            LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+        )
+        .await;
+        let after_success = state
+            .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&plan.key_id))
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(
+            after_success.health_by_format.as_ref().unwrap()["openai:chat"]["health_score"],
+            json!(0.1)
+        );
+        assert_eq!(
+            after_success.circuit_breaker_by_format.as_ref().unwrap()["openai:chat"]["open"],
+            json!(false)
+        );
+        assert!(
+            after_success.circuit_breaker_by_format.as_ref().unwrap()["openai:chat"]
+                .get("half_open_lease")
+                .is_none()
+        );
+        assert!(state
+            .list_provider_catalog_key_health_pending_facts(10)
+            .await
+            .unwrap()
+            .is_empty());
+        // Receipt lookup precedes owner checks: an uncertain committed success
+        // stays a single +1 even though its atomic projection consumed the owner.
+        super::apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: Some(&report),
+            },
+            LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+        )
+        .await;
+        second.finish().await;
+        let replayed = state
+            .read_provider_catalog_keys_by_ids_strong(&[plan.key_id])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(
+            replayed.health_by_format.as_ref().unwrap()["openai:chat"]["health_score"],
+            json!(0.1)
+        );
+    }
+
+    #[tokio::test]
+    async fn deferred_health_fact_reprojects_once_and_preserves_observation_time() {
+        let state = health_state();
+        let plan = sample_plan();
+        let fence = super::capture_chat_health_attempt(&state, &plan)
+            .await
+            .unwrap()
+            .unwrap();
+        let fence = serde_json::from_value(fence).unwrap();
+        let observed = crate::clock::current_unix_secs();
+        let pending = super::super::health_settlement::build_pending_fact(
+            &plan.provider_id,
+            &plan.key_id,
+            &plan.provider_api_format,
+            fence,
+            None,
+            Some((
+                crate::orchestration::classify_chat_failure_for_plan(
+                    &plan,
+                    503,
+                    None,
+                    crate::orchestration::ChatFailureSource::UpstreamResponse,
+                ),
+                Some(30),
+            )),
+            observed,
+        );
+        state
+            .enqueue_provider_catalog_key_health_fact(&pending)
+            .await
+            .unwrap();
+        // A separate attempt settles before the deferred one. Reconciliation
+        // must project from this new score, not persist a captured old snapshot.
+        apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: None,
+            },
+            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                status_code: 500,
+                classification: LocalFailoverClassification::RetryUpstreamFailure,
+                retry_after_secs: None,
+            }),
+        )
+        .await;
+        assert_eq!(
+            super::super::health_settlement::drain_pending_health_facts(&state)
+                .await
+                .unwrap(),
+            1
+        );
+        // Recreating a pending delivery after commit is an uncertain-ACK replay.
+        state
+            .enqueue_provider_catalog_key_health_fact(&pending)
+            .await
+            .unwrap();
+        super::super::health_settlement::drain_pending_health_facts(&state)
+            .await
+            .unwrap();
+        let key = state
+            .read_provider_catalog_keys_by_ids_strong(&[plan.key_id])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let health = &key.health_by_format.as_ref().unwrap()["openai:chat"];
+        assert_eq!(health["health_score"], json!(0.7));
+        assert_eq!(health["consecutive_failures"], json!(2));
+        assert_eq!(
+            health["rate_limit_cooldown_until_unix_secs"],
+            json!(observed + 30)
+        );
+        assert!(state
+            .list_provider_catalog_key_health_pending_facts(10)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn duplicate_pending_delivery_settles_the_original_fact_and_timestamp() {
+        let state = health_state();
+        let plan = sample_plan();
+        let fence = super::capture_chat_health_attempt(&state, &plan)
+            .await
+            .unwrap()
+            .unwrap();
+        let fence = serde_json::from_value(fence).unwrap();
+        let observed = crate::clock::current_unix_secs();
+        let original = super::super::health_settlement::build_pending_fact(
+            &plan.provider_id,
+            &plan.key_id,
+            &plan.provider_api_format,
+            fence,
+            None,
+            Some((
+                crate::orchestration::classify_chat_failure_for_plan(
+                    &plan,
+                    503,
+                    None,
+                    crate::orchestration::ChatFailureSource::UpstreamResponse,
+                ),
+                Some(30),
+            )),
+            observed,
+        );
+        state
+            .enqueue_provider_catalog_key_health_fact(&original)
+            .await
+            .unwrap();
+        let mut duplicate = original.clone();
+        duplicate.observed_at_unix_secs += 10;
+        duplicate.fact["failure"]["penalty"] = json!({"Points": 2});
+        assert!(super::super::health_settlement::persist_and_settle(&state, duplicate).await);
+        let key = state
+            .read_provider_catalog_keys_by_ids_strong(&[plan.key_id])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let health = &key.health_by_format.as_ref().unwrap()["openai:chat"];
+        assert_eq!(health["health_score"], json!(0.9));
+        assert_eq!(health["consecutive_failures"], json!(1));
+        assert_eq!(
+            health["rate_limit_cooldown_until_unix_secs"],
+            json!(observed + 30)
+        );
+        assert!(state
+            .list_provider_catalog_key_health_pending_facts(10)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
     async fn start_managed_redis_or_skip() -> Option<ManagedRedisServer> {
         match ManagedRedisServer::start().await {
             Ok(server) => Some(server),
@@ -1480,7 +2162,7 @@ mod tests {
     fn sample_plan() -> ExecutionPlan {
         ExecutionPlan {
             request_id: "req-1".to_string(),
-            candidate_id: Some("cand-1".to_string()),
+            candidate_id: None,
             provider_name: Some("openai".to_string()),
             provider_id: "prov-1".to_string(),
             endpoint_id: "ep-1".to_string(),
@@ -1691,7 +2373,7 @@ mod tests {
             )
     }
     #[tokio::test]
-    async fn attempt_failure_invalidates_scheduler_affinity_cache() {
+    async fn chat_attempt_failure_retains_scheduler_affinity_cache() {
         let state = AppState::new().expect("gateway state should build");
         let plan = sample_plan();
         let report_context = json!({
@@ -1730,13 +2412,12 @@ mod tests {
         )
         .await;
 
-        // 失败会使亲和缓存失效（条目被清除）。
         assert!(state
             .read_scheduler_affinity_target(cache_key.as_str(), SCHEDULER_AFFINITY_TTL)
-            .is_none());
+            .is_some());
     }
     #[tokio::test]
-    async fn attempt_failure_invalidates_session_scoped_scheduler_affinity_cache() {
+    async fn chat_attempt_failure_retains_session_scoped_scheduler_affinity_cache() {
         let state = AppState::new().expect("gateway state should build");
         let plan = sample_plan();
         let report_context = session_report_context();
@@ -1773,7 +2454,7 @@ mod tests {
 
         assert!(state
             .read_scheduler_affinity_target(session_cache_key.as_str(), SCHEDULER_AFFINITY_TTL)
-            .is_none());
+            .is_some());
         assert!(state
             .read_scheduler_affinity_target(legacy_cache_key.as_str(), SCHEDULER_AFFINITY_TTL)
             .is_some());
@@ -2243,7 +2924,7 @@ mod tests {
             .is_none());
     }
     #[tokio::test]
-    async fn fallback_success_rewarms_scheduler_affinity_after_failed_candidate_invalidates() {
+    async fn fallback_success_migrates_retained_scheduler_affinity() {
         let state = AppState::new().expect("gateway state should build");
         let failed_plan = sample_plan();
         let mut success_plan = sample_plan();
@@ -2283,7 +2964,7 @@ mod tests {
         .await;
         assert!(state
             .read_scheduler_affinity_target(cache_key.as_str(), SCHEDULER_AFFINITY_TTL)
-            .is_none());
+            .is_some());
 
         apply_local_execution_effect(
             &state,
@@ -2305,18 +2986,18 @@ mod tests {
         );
     }
     #[test]
-    fn anthropic_non_credential_failures_do_not_apply_key_wide_effects() {
-        assert!(!local_candidate_failure_should_apply_key_effects(
+    fn chat_server_and_rate_limit_failures_apply_only_to_attempted_key() {
+        assert!(local_candidate_failure_should_apply_key_effects(
             "claude:messages",
             LocalFailoverClassification::RetryUpstreamFailure,
             529,
         ));
-        assert!(!local_candidate_failure_should_apply_key_effects(
+        assert!(local_candidate_failure_should_apply_key_effects(
             "claude:messages",
             LocalFailoverClassification::RetryUpstreamFailure,
             429,
         ));
-        assert!(!local_candidate_failure_should_apply_key_effects(
+        assert!(local_candidate_failure_should_apply_key_effects(
             "claude:messages",
             LocalFailoverClassification::RetryUpstreamFailure,
             503,
@@ -2378,22 +3059,134 @@ mod tests {
             .into_iter()
             .next()
             .expect("stored key should exist");
+        let health = &stored_key.health_by_format.as_ref().unwrap()["openai:chat"];
+        assert_eq!(health["health_score"], json!(0.9));
+        assert_eq!(health["consecutive_failures"], json!(1));
+        assert_eq!(health["health_policy_version"], json!(2));
+    }
+
+    #[tokio::test]
+    async fn chat_health_atomic_settlement_deduplicates_the_real_attempt() {
+        let state = health_state();
+        let plan = sample_plan();
+        let fence = super::capture_chat_health_attempt(&state, &plan)
+            .await
+            .unwrap()
+            .unwrap();
+        let report = json!({super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD: fence});
+        for _ in 0..2 {
+            apply_local_execution_effect(
+                &state,
+                LocalExecutionEffectContext {
+                    plan: &plan,
+                    report_context: Some(&report),
+                },
+                LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                    status_code: 500,
+                    classification: LocalFailoverClassification::RetryUpstreamFailure,
+                    retry_after_secs: None,
+                }),
+            )
+            .await;
+        }
+        let key = state
+            .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&plan.key_id))
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let health = &key.health_by_format.as_ref().unwrap()["openai:chat"];
+        assert_eq!(health["health_score"], json!(0.8));
+        assert_eq!(health["consecutive_failures"], json!(1));
+    }
+
+    #[tokio::test]
+    async fn chat_health_old_success_cannot_close_a_new_circuit_epoch() {
+        let state = health_state();
+        let plan = sample_plan();
+        let old_fence = super::capture_chat_health_attempt(&state, &plan)
+            .await
+            .unwrap()
+            .unwrap();
+        for _ in 0..4 {
+            let fence = super::capture_chat_health_attempt(&state, &plan)
+                .await
+                .unwrap()
+                .unwrap();
+            let report = json!({super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD: fence});
+            apply_local_execution_effect(
+                &state,
+                LocalExecutionEffectContext {
+                    plan: &plan,
+                    report_context: Some(&report),
+                },
+                LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
+                    status_code: 500,
+                    classification: LocalFailoverClassification::RetryUpstreamFailure,
+                    retry_after_secs: None,
+                }),
+            )
+            .await;
+        }
+        let old_report = json!({super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD: old_fence});
+        apply_local_execution_effect(
+            &state,
+            LocalExecutionEffectContext {
+                plan: &plan,
+                report_context: Some(&old_report),
+            },
+            LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+        )
+        .await;
+        let key = state
+            .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&plan.key_id))
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
         assert_eq!(
-            stored_key.health_by_format,
-            Some(json!({
-                "openai:chat": {
-                    "health_score": 0.875,
-                    "consecutive_failures": 1,
-                    "last_failure_at": stored_key
-                        .health_by_format
-                        .as_ref()
-                        .and_then(|value| value.get("openai:chat"))
-                        .and_then(|value| value.get("last_failure_at"))
-                        .cloned()
-                        .unwrap_or(Value::Null)
-                }
-            }))
+            key.health_by_format.as_ref().unwrap()["openai:chat"]["health_score"],
+            json!(0.0)
         );
+        assert_eq!(
+            key.circuit_breaker_by_format.as_ref().unwrap()["openai:chat"]["open"],
+            json!(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_complete_successes_are_not_dropped_by_persist_throttling() {
+        let mut key = sample_health_key();
+        key.health_by_format = Some(json!({"openai:chat": {
+            "health_score": 0.2, "health_policy_version": 2, "consecutive_failures": 3,
+        }}));
+        let state = health_state_with_key(key);
+        let plan = sample_plan();
+        for _ in 0..3 {
+            let fence = super::capture_chat_health_attempt(&state, &plan)
+                .await
+                .unwrap()
+                .unwrap();
+            let report = json!({super::CHAT_HEALTH_ATTEMPT_REPORT_FIELD: fence});
+            apply_local_execution_effect(
+                &state,
+                LocalExecutionEffectContext {
+                    plan: &plan,
+                    report_context: Some(&report),
+                },
+                LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
+            )
+            .await;
+        }
+        let key = state
+            .read_provider_catalog_keys_by_ids_strong(std::slice::from_ref(&plan.key_id))
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let health = &key.health_by_format.as_ref().unwrap()["openai:chat"];
+        assert_eq!(health["health_score"], json!(0.5));
+        assert_eq!(health["consecutive_failures"], json!(0));
     }
     #[tokio::test]
     async fn runtime_health_failure_does_not_reactivate_admin_disabled_key() {
@@ -2435,11 +3228,11 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn health_failure_opens_circuit_after_eight_consecutive_failures() {
+    async fn chat_health_failure_opens_circuit_after_six_light_failures() {
         let state = health_state();
         let plan = sample_plan();
 
-        for _ in 0..8 {
+        for _ in 0..6 {
             apply_local_execution_effect(
                 &state,
                 LocalExecutionEffectContext {
@@ -2468,7 +3261,7 @@ mod tests {
             .and_then(|value| value.get("openai:chat"))
             .expect("format circuit should be stored");
         assert_eq!(circuit["open"], json!(true));
-        assert_eq!(circuit["reason"], json!("consecutive_failures_8"));
+        assert_eq!(circuit["reason"], json!("upstream_temporary"));
         assert_eq!(
             stored_key
                 .health_by_format
@@ -2485,7 +3278,7 @@ mod tests {
                 .as_array()
                 .map(Vec::len)
                 .unwrap_or_default(),
-            8
+            6
         );
     }
     #[tokio::test]
@@ -2494,7 +3287,9 @@ mod tests {
         let plan = sample_plan();
         let mut tasks = tokio::task::JoinSet::new();
 
-        for _ in 0..8 {
+        // Stay within one circuit epoch: zero-score transitions deliberately reject
+        // late old-epoch attempts, covered by the separate stale-result test.
+        for _ in 0..4 {
             let state = state.clone();
             let plan = plan.clone();
             tasks.spawn(async move {
@@ -2536,10 +3331,13 @@ mod tests {
                 .and_then(|value| value.get("openai:chat"))
                 .and_then(|value| value.get("consecutive_failures"))
                 .and_then(Value::as_u64),
-            Some(8)
+            Some(4)
         );
-        assert_eq!(circuit["open"], json!(true));
-        assert_eq!(circuit["reason"], json!("consecutive_failures_8"));
+        assert_ne!(circuit["open"], json!(true));
+        assert_eq!(
+            stored_key.health_by_format.as_ref().unwrap()["openai:chat"]["health_score"],
+            json!(0.4)
+        );
     }
     #[tokio::test]
     async fn health_success_projection_recovers_key_health_for_format() {
@@ -2576,19 +3374,10 @@ mod tests {
             .into_iter()
             .next()
             .expect("stored key should exist");
-        assert_eq!(
-            stored_key.health_by_format,
-            Some(json!({
-                "openai:chat": {
-                    "health_score": 1.0,
-                    "consecutive_failures": 0,
-                    "last_failure_at": Value::Null,
-                    "rate_limit_cooldown_until_unix_secs": Value::Null,
-                    "consecutive_rate_limits": 0,
-                    "rate_limit_probe_until_unix_secs": Value::Null
-                }
-            }))
-        );
+        let health = &stored_key.health_by_format.as_ref().unwrap()["openai:chat"];
+        assert_eq!(health["health_score"], json!(1.0));
+        assert_eq!(health["consecutive_failures"], json!(0));
+        assert_eq!(health["rate_limit_cooldown_until_unix_secs"], Value::Null);
     }
     #[tokio::test]
     async fn health_success_projection_is_rate_limited_until_failure_resets_gate() {
@@ -2783,7 +3572,7 @@ mod tests {
         assert_eq!(circuit["open"], json!(false));
         assert_eq!(circuit["reason"], Value::Null);
         assert_eq!(circuit["next_probe_at_unix_secs"], Value::Null);
-        assert_eq!(circuit["ramp_remaining_successes"], json!(3));
+        assert!(circuit.get("ramp_remaining_successes").is_none());
         assert_eq!(
             stored_key
                 .health_by_format
@@ -2791,7 +3580,7 @@ mod tests {
                 .and_then(|value| value.get("openai:chat"))
                 .and_then(|value| value.get("health_score"))
                 .and_then(Value::as_f64),
-            Some(0.25)
+            Some(0.1)
         );
         assert_eq!(
             circuit["request_results_window"]

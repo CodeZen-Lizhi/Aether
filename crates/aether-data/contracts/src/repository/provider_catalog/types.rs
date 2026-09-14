@@ -837,6 +837,53 @@ pub trait ProviderCatalogReadRepository: Send + Sync {
 
 #[async_trait]
 pub trait ProviderCatalogWriteRepository: Send + Sync {
+    /// Retain and return the first immutable fact for this attempt identity.
+    /// Duplicate callers must settle the returned fact, not their own payload.
+    async fn enqueue_key_health_fact(
+        &self,
+        _fact: &super::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<super::ProviderCatalogKeyHealthPendingFact, crate::DataLayerError> {
+        Err(crate::DataLayerError::InvalidInput(
+            "provider health pending facts are not supported by this repository".into(),
+        ))
+    }
+
+    async fn list_key_health_pending_facts(
+        &self,
+        _limit: usize,
+    ) -> Result<Vec<super::ProviderCatalogKeyHealthPendingFact>, crate::DataLayerError> {
+        Err(crate::DataLayerError::InvalidInput(
+            "provider health pending facts are not supported by this repository".into(),
+        ))
+    }
+
+    async fn remove_key_health_pending_fact(
+        &self,
+        _fact: &super::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<(), crate::DataLayerError> {
+        Err(crate::DataLayerError::InvalidInput(
+            "provider health pending facts are not supported by this repository".into(),
+        ))
+    }
+
+    async fn key_health_attempt_is_settled(
+        &self,
+        _fact: &super::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<bool, crate::DataLayerError> {
+        Err(crate::DataLayerError::InvalidInput(
+            "provider health settlement receipts are not supported by this repository".into(),
+        ))
+    }
+
+    async fn settle_key_health_attempt(
+        &self,
+        _settlement: &super::ProviderCatalogKeyHealthSettlement,
+    ) -> Result<super::ProviderCatalogKeyHealthSettlementResult, crate::DataLayerError> {
+        Err(crate::DataLayerError::InvalidInput(
+            "atomic provider health settlement is not supported by this repository".into(),
+        ))
+    }
+
     async fn create_provider(
         &self,
         provider: &StoredProviderCatalogProvider,

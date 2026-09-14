@@ -3,6 +3,137 @@ use serde_json::Value;
 
 use super::{LocalFailoverPolicy, LocalFailoverRegexRule};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChatFailureSource {
+    UpstreamResponse,
+    UpstreamTimeout,
+    UpstreamTransport,
+    UpstreamProtocol,
+    Neutral,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ChatHealthPenalty {
+    Neutral,
+    Points(u8),
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChatFailureFact {
+    pub(crate) penalty: ChatHealthPenalty,
+    pub(crate) rate_limited: bool,
+    pub(crate) reason: &'static str,
+}
+
+impl ChatFailureFact {
+    pub(crate) const fn retryable(self) -> bool {
+        matches!(self.penalty, ChatHealthPenalty::Points(_))
+    }
+}
+
+pub(crate) fn chat_health_policy_applies(api_format: &str) -> bool {
+    matches!(
+        api_format.trim().to_ascii_lowercase().as_str(),
+        "openai:chat"
+            | "openai:responses"
+            | "openai:cli"
+            | "claude:messages"
+            | "claude:chat"
+            | "claude:cli"
+            | "gemini:chat"
+            | "gemini:generate_content"
+            | "gemini:cli"
+    )
+}
+
+/// The caller must establish credential scope using a trusted provider adapter.
+/// A relay's compatible error envelope alone is not evidence about the current K.
+pub(crate) fn classify_chat_failure(
+    status_code: u16,
+    response_text: Option<&str>,
+    source: ChatFailureSource,
+    credential_scope_verified: bool,
+) -> ChatFailureFact {
+    let fact = |penalty, rate_limited, reason| ChatFailureFact {
+        penalty,
+        rate_limited,
+        reason,
+    };
+    match source {
+        ChatFailureSource::Neutral => return fact(ChatHealthPenalty::Neutral, false, "neutral"),
+        ChatFailureSource::UpstreamTimeout => {
+            return fact(ChatHealthPenalty::Points(1), false, "upstream_timeout");
+        }
+        ChatFailureSource::UpstreamTransport => {
+            return fact(ChatHealthPenalty::Points(2), false, "upstream_transport");
+        }
+        ChatFailureSource::UpstreamProtocol => {
+            return fact(ChatHealthPenalty::Points(2), false, "upstream_protocol");
+        }
+        ChatFailureSource::UpstreamResponse => {}
+    }
+
+    // Only inspect an error envelope, never generated text or nested relay messages.
+    let error_body = response_text
+        .filter(|text| text.len() <= 64 * 1024)
+        .and_then(|text| serde_json::from_str::<Value>(text).ok());
+    let error = error_body
+        .as_ref()
+        .and_then(|body| body.get("error"))
+        .and_then(Value::as_object);
+    let code = error
+        .and_then(|error| {
+            error
+                .get("code")
+                .and_then(Value::as_str)
+                .or_else(|| error.get("type").and_then(Value::as_str))
+        })
+        .unwrap_or_default();
+    if credential_scope_verified
+        && matches!(
+            code,
+            "invalid_api_key"
+                | "invalid_authentication"
+                | "insufficient_quota"
+                | "credit_balance_too_low"
+                | "billing_hard_limit_reached"
+                | "account_deactivated"
+        )
+    {
+        return fact(
+            ChatHealthPenalty::Unavailable,
+            false,
+            "credential_unavailable",
+        );
+    }
+    if matches!(
+        code,
+        "rate_limit_exceeded"
+            | "rate_limit_error"
+            | "concurrency_limit_exceeded"
+            | "too_many_concurrent_requests"
+            | "overloaded_error"
+            | "server_overloaded"
+    ) {
+        return fact(ChatHealthPenalty::Points(1), true, "upstream_busy");
+    }
+    match status_code {
+        429 => fact(ChatHealthPenalty::Points(1), true, "rate_limited"),
+        408 | 503 | 504 => fact(ChatHealthPenalty::Points(1), false, "upstream_temporary"),
+        401..=403 => fact(
+            ChatHealthPenalty::Points(2),
+            false,
+            "unconfirmed_authentication",
+        ),
+        500..=599 => fact(ChatHealthPenalty::Points(2), false, "upstream_failure"),
+        200..=299 if error.is_some() => {
+            fact(ChatHealthPenalty::Points(2), false, "invalid_success")
+        }
+        _ => fact(ChatHealthPenalty::Neutral, false, "unclassified"),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct ParsedLocalErrorResponse {
     message: Option<String>,
@@ -286,6 +417,34 @@ pub(crate) fn classify_failure_disposition(
     classification: LocalFailoverClassification,
     status_code: u16,
 ) -> FailureDisposition {
+    if chat_health_policy_applies(provider_api_format)
+        && !matches!(
+            classification,
+            LocalFailoverClassification::StopStatusCode
+                | LocalFailoverClassification::StopErrorPattern
+                | LocalFailoverClassification::StopExecutionError
+                | LocalFailoverClassification::StopCyberPolicy
+        )
+        && (classify_chat_failure(
+            status_code,
+            None,
+            ChatFailureSource::UpstreamResponse,
+            false,
+        )
+        .retryable()
+            || classification == LocalFailoverClassification::RetrySuccessPattern)
+    {
+        return FailureDisposition::new(
+            FailureRetryAction::SameCredential,
+            FailureScope::Credential,
+            if status_code == 401 {
+                FailureTokenAction::ForceRefresh
+            } else {
+                FailureTokenAction::None
+            },
+            status_code >= 400,
+        );
+    }
     if provider_api_format
         .trim()
         .eq_ignore_ascii_case("claude:messages")
@@ -516,6 +675,105 @@ mod tests {
         LocalFailoverClassification, LocalFailoverInput, LocalTransportFailoverClassification,
     };
     use crate::orchestration::{LocalFailoverPolicy, LocalFailoverRegexRule};
+
+    #[test]
+    fn chat_failure_weights_and_attribution_are_shared() {
+        use super::{classify_chat_failure, ChatFailureSource, ChatHealthPenalty};
+        for status in [429, 503, 504] {
+            assert_eq!(
+                classify_chat_failure(status, None, ChatFailureSource::UpstreamResponse, false)
+                    .penalty,
+                ChatHealthPenalty::Points(1)
+            );
+        }
+        for status in [401, 402, 403, 500, 502, 529] {
+            assert_eq!(
+                classify_chat_failure(status, None, ChatFailureSource::UpstreamResponse, false)
+                    .penalty,
+                ChatHealthPenalty::Points(2)
+            );
+        }
+        let quota = r#"{"error":{"code":"insufficient_quota","message":"quota"}}"#;
+        assert_eq!(
+            classify_chat_failure(429, Some(quota), ChatFailureSource::UpstreamResponse, true)
+                .penalty,
+            ChatHealthPenalty::Unavailable
+        );
+        assert_eq!(
+            classify_chat_failure(429, Some(quota), ChatFailureSource::UpstreamResponse, false)
+                .penalty,
+            ChatHealthPenalty::Points(1)
+        );
+        assert_eq!(
+            classify_chat_failure(500, None, ChatFailureSource::Neutral, true).penalty,
+            ChatHealthPenalty::Neutral
+        );
+        assert_eq!(
+            classify_chat_failure(502, None, ChatFailureSource::UpstreamTimeout, false).penalty,
+            ChatHealthPenalty::Points(1)
+        );
+        for status in [400, 404, 413, 422] {
+            assert_eq!(
+                classify_chat_failure(status, None, ChatFailureSource::UpstreamResponse, false)
+                    .penalty,
+                ChatHealthPenalty::Neutral
+            );
+        }
+    }
+
+    #[test]
+    fn chat_error_envelopes_do_not_scan_generated_text_or_nested_relay_faults() {
+        use super::{classify_chat_failure, ChatFailureSource, ChatHealthPenalty};
+        let generated =
+            r#"{"choices":[{"message":{"content":"invalid_api_key insufficient_quota"}}]}"#;
+        assert_eq!(
+            classify_chat_failure(
+                200,
+                Some(generated),
+                ChatFailureSource::UpstreamResponse,
+                true
+            )
+            .penalty,
+            ChatHealthPenalty::Neutral
+        );
+        let nested = r#"{"error":{"message":"{\"error\":{\"code\":\"insufficient_quota\"}}"}}"#;
+        assert_eq!(
+            classify_chat_failure(500, Some(nested), ChatFailureSource::UpstreamResponse, true)
+                .penalty,
+            ChatHealthPenalty::Points(2)
+        );
+        let busy = r#"{"error":{"type":"overloaded_error"}}"#;
+        assert_eq!(
+            classify_chat_failure(500, Some(busy), ChatFailureSource::UpstreamResponse, false)
+                .penalty,
+            ChatHealthPenalty::Points(1)
+        );
+    }
+
+    #[test]
+    fn chat_disposition_preserves_same_key_slots_and_explicit_stop_rules() {
+        use super::classify_failure_disposition;
+        for format in ["openai:chat", "claude:messages", "openai:cli"] {
+            for status in [429, 500, 502, 503, 504] {
+                let disposition = classify_failure_disposition(
+                    format,
+                    LocalFailoverClassification::RetryUpstreamFailure,
+                    status,
+                );
+                assert_eq!(disposition.retry_action, FailureRetryAction::SameCredential);
+                assert_eq!(disposition.failure_scope, FailureScope::Credential);
+                assert_eq!(
+                    classify_failure_disposition(
+                        format,
+                        LocalFailoverClassification::StopStatusCode,
+                        status
+                    )
+                    .retry_action,
+                    FailureRetryAction::Stop
+                );
+            }
+        }
+    }
 
     #[test]
     fn classifier_honors_explicit_stop_before_default_retryable_status() {

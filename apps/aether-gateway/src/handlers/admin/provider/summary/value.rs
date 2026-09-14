@@ -182,6 +182,12 @@ pub(crate) fn build_admin_provider_summary_value(
         .or(provider.quota_expires_at_unix_secs)
         .and_then(unix_secs_to_rfc3339);
 
+    let effective_attempts = aether_contracts::chat_retry::resolve_chat_max_attempts(
+        provider.config.as_ref(),
+        None,
+        None,
+        provider.max_retries,
+    );
     json!({
         "id": provider.id.clone(),
         "name": provider.name.clone(),
@@ -197,6 +203,11 @@ pub(crate) fn build_admin_provider_summary_value(
         "quota_last_reset_at": quota_last_reset_at,
         "quota_expires_at": quota_expires_at,
         "max_retries": provider.max_retries,
+        "effective_max_attempts": effective_attempts.max_attempts,
+        "effective_max_attempts_source": effective_attempts.source,
+        "chat_policy_version": aether_contracts::chat_retry::CHAT_POLICY_VERSION,
+        "legacy_effective_max_attempts": aether_contracts::chat_retry::resolve_legacy_max_attempts(provider.config.as_ref(), None, provider.max_retries).max_attempts,
+        "stream_failover_budget_ms": aether_contracts::chat_retry::resolve_stream_failover_budget_ms(provider.config.as_ref()),
         "max_transfer_count": max_transfer_count,
         "max_transfer_timeout_seconds": max_transfer_timeout_seconds,
         "proxy": provider.proxy.clone(),

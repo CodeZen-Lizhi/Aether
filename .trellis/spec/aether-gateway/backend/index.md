@@ -21,6 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Provider Model Test API](./model-test-api.md) | Model-test diagnostic contract: on/off state bypass, key-existence precondition, status-neutral probe pattern | Filled |
 | [Transport Diagnostics and SOCKS DNS](./transport-diagnostics-and-proxy.md) | Credential-safe diagnostics, preserved error context and configured proxy DNS semantics | Filled |
 | [External Model Catalog Reliability](./external-model-catalog.md) | Bounded external retries, cache freshness, create-preset fallback and strict price sync | Filled |
+| [Chat Scheduling and Failover](./chat-failover.md) | Three-mode ordering, finite retries, weighted health, owned probes and durable terminal settlement | Filled |
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |

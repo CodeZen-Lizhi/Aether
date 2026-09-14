@@ -12,7 +12,9 @@ use super::client::{adapter_drain_ready, forward_client_message, RelayDispositio
 use super::continuation::{
     ResponsesWebSocketContinuationRecord, ResponsesWebSocketContinuationRegistry,
 };
-use super::frame::{encode_opaque_websocket_event, ParsedResponsesWebSocketFrame};
+use super::frame::{
+    encode_opaque_websocket_event, frame_is_replayable_rejection, ParsedResponsesWebSocketFrame,
+};
 use super::lifecycle::{
     await_pending_adapter_observation, finalize_active_turn, queue_turn_finalization,
     settle_turn_finalization, spawn_bounded_adapter_observation, PreviousAttemptSettled,
@@ -27,7 +29,8 @@ use super::relay_policy::{
 use super::settlement::settle_signal_for_client_delivery_failure;
 use super::state::BoundResponsesConnection;
 use super::turn::{
-    ResponsesProviderAttempt, ResponsesWebSocketTurnObservation, ResponsesWebSocketTurnOutcome,
+    ResponsesProviderAttempt, ResponsesWebSocketTurnDeadline, ResponsesWebSocketTurnObservation,
+    ResponsesWebSocketTurnOutcome, ResponsesWebSocketTurnTimeoutPhase,
 };
 use super::turn_state::LogicalTurn;
 use super::upstream::{close_bound_upstream, receive_optional_upstream};
@@ -49,6 +52,15 @@ const CONTINUATION_REGISTRATION_TIMEOUT: Duration = Duration::from_millis(500);
 const CLIENT_DELIVERY_FAILED_REASON: &str =
     "gateway could not relay the provider event to the client";
 
+async fn wait_for_optional_probe_loss(
+    attempt: Option<&mut super::lifecycle::ActiveProviderAttempt>,
+) -> crate::orchestration::ProbeLeaseLoss {
+    match attempt {
+        Some(attempt) => attempt.probe_lost().await,
+        None => std::future::pending().await,
+    }
+}
+
 macro_rules! debug {
     ($($arg:tt)*) => {
         tracing::debug!(target: LOG_TARGET, $($arg)*)
@@ -68,8 +80,44 @@ pub(super) async fn relay_bound_connection(
     context: &WebSocketRequestContext,
 ) {
     loop {
-        let active_turn_deadline = bound.turn_state.attempt().map(|turn| turn.deadline());
+        let active_turn_deadline = bound.turn_state.attempt().map(|turn| {
+            let deadline = turn.deadline();
+            match bound
+                .turn_state
+                .logical()
+                .and_then(|logical| logical.first_output_deadline)
+            {
+                Some(first_output) if first_output <= deadline.deadline => {
+                    ResponsesWebSocketTurnDeadline {
+                        phase: ResponsesWebSocketTurnTimeoutPhase::EffectiveOutput,
+                        deadline: first_output,
+                        timeout: first_output.saturating_duration_since(std::time::Instant::now()),
+                    }
+                }
+                _ => deadline,
+            }
+        });
         tokio::select! {
+            loss = wait_for_optional_probe_loss(bound.turn_state.attempt_mut()) => {
+                warn!(
+                    event_name = "responses_websocket_probe_lease_lost",
+                    log_type = "ops",
+                    transport = WEBSOCKET_LOG_TRANSPORT,
+                    websocket = true,
+                    trace_id = %context.trace_id,
+                    reason = ?loss,
+                    "Responses WebSocket stopped after recovery probe ownership was lost"
+                );
+                mark_active_response_retry_unsafe(bound, super::probe::PROBE_LEASE_LOST);
+                close_bound_upstream(bound).await;
+                finalize_active_turn(bound, state, ResponsesWebSocketTurnOutcome::Cancelled {
+                    reason: super::probe::PROBE_LEASE_LOST,
+                }).await;
+                send_gateway_error_with_status(client_socket, 503, super::probe::PROBE_LEASE_LOST,
+                    "Recovery probe ownership was lost; reconnect to continue").await;
+                close_client_socket(client_socket, CLOSE_TRY_AGAIN, super::probe::PROBE_LEASE_LOST).await;
+                break;
+            }
             _ = wait_for_optional_deadline(active_turn_deadline.map(|deadline| deadline.deadline)) => {
                 let Some(turn_deadline) = active_turn_deadline else {
                     continue;
@@ -291,7 +339,12 @@ pub(super) async fn relay_bound_connection(
                     mark_active_response_retry_unsafe(bound, "invalid_upstream_event");
                 }
                 if let Some(event) = parsed_upstream_event {
-                    observe_active_response_rebind_safety(bound, event);
+                    if !parsed_upstream_frame.as_ref().is_some_and(frame_is_replayable_rejection) {
+                        observe_active_response_rebind_safety(bound, event);
+                    }
+                    if let (Some(frame), Some(logical)) = (parsed_upstream_frame.as_ref(), bound.turn_state.logical_mut()) {
+                        logical.observe_effective_output(frame);
+                    }
                     if bound.pending_adapter_drain.is_none()
                         && bound.adapter.observes_upstream_events()
                     {
@@ -444,7 +497,15 @@ pub(super) async fn relay_bound_connection(
                     upstream_closed: is_close,
                 };
                 let mut quota_relay_action = classify_quota_relay(quota_facts);
-                if matches!(quota_relay_action, QuotaRelayAction::AttemptTransparentRetry) {
+                let rejection = parsed_upstream_frame.as_ref()
+                    .filter(|frame| frame_is_replayable_rejection(frame))
+                    .filter(|_| bound.turn_state.logical().is_some_and(|turn| turn.retry_block_reason().is_none()));
+                let chat_failure = match (rejection, bound.turn_state.attempt()) {
+                    (Some(frame), Some(attempt)) => attempt.chat_failure(state, frame.status().unwrap_or(502)).await,
+                    _ => None,
+                };
+                let quota_retry = matches!(quota_relay_action, QuotaRelayAction::AttemptTransparentRetry);
+                if quota_retry || chat_failure.is_some() {
                     // detach_attempt 保留 logical turn：重试是同一轮请求的下一个 attempt。
                     let retry_turn = bound.turn_state.detach_attempt();
                     // 先结算旧 attempt 并等它落地，再规划下一个 attempt。两个理由：
@@ -476,11 +537,21 @@ pub(super) async fn relay_bound_connection(
                     // off the relay task's stack; the default Tokio/test worker
                     // stack is otherwise easy to exhaust on this rare branch.
                     if Box::pin(retry_active_turn_after_quota_exhaustion(
-                        bound, state, context, settled,
+                        bound, state, context, settled, if quota_retry { None } else { chat_failure },
                     ))
                     .await
                     {
                         continue;
+                    }
+                    if bound.turn_state.logical().is_some_and(|turn| {
+                        turn.first_output_deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
+                    }) {
+                        let phase = ResponsesWebSocketTurnTimeoutPhase::EffectiveOutput;
+                        finalize_active_turn(bound, state, phase.outcome()).await;
+                        send_gateway_error_with_status(client_socket, 504, phase.error_code(), phase.client_message()).await;
+                        close_bound_upstream(bound).await;
+                        close_client_socket(client_socket, CLOSE_TRY_AGAIN, phase.error_code()).await;
+                        break;
                     }
                     // 重试失败。旧 attempt 已经结算，logical turn 仍停在
                     // Replanning，所以后面分支里的 end() / finalize_active_turn
@@ -490,6 +561,11 @@ pub(super) async fn relay_bound_connection(
                         transparent_retry_failed: true,
                         ..quota_facts
                     });
+                }
+                // Once an error is delivered, a subsequent provider event cannot
+                // resurrect this attempt or authorize another transparent replay.
+                if parsed_upstream_frame.as_ref().is_some_and(frame_is_replayable_rejection) {
+                    mark_active_response_retry_unsafe(bound, "terminal_error_delivered");
                 }
                 let detach_after_forward =
                     matches!(quota_relay_action, QuotaRelayAction::ForwardQuotaAndDetach);

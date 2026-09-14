@@ -75,6 +75,11 @@ where
         Ok(false)
     }
 
+    /// Wait/recheck request-local readiness without recording an upstream attempt.
+    async fn prepare_attempt(&self, _attempt: &Attempt) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+
     async fn record_attempt_started(&self, _attempt: &Attempt) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -109,6 +114,10 @@ where
         if retry_filters.iter().any(|filter| filter.matches(&attempt))
             || port.should_skip_attempt(&attempt).await?
         {
+            port.mark_unused_attempts(vec![attempt]).await?;
+            continue;
+        }
+        if !port.prepare_attempt(&attempt).await? {
             port.mark_unused_attempts(vec![attempt]).await?;
             continue;
         }
@@ -271,6 +280,10 @@ mod tests {
         type Response = &'static str;
         type Exhaustion = ();
         type Error = &'static str;
+
+        async fn prepare_attempt(&self, attempt: &TestAttempt) -> Result<bool, Self::Error> {
+            Ok(attempt.id != "unavailable")
+        }
 
         async fn execute_attempt(
             &self,
@@ -456,6 +469,29 @@ mod tests {
             *port.unused.lock().expect("unused attempts should lock"),
             vec!["same-endpoint", "same-credential", "same-provider"]
         );
+    }
+
+    #[tokio::test]
+    async fn readiness_skip_does_not_execute_or_filter_other_keys_in_the_provider() {
+        let port = ScopedRetryPort {
+            executed: Mutex::new(Vec::new()),
+            unused: Mutex::new(Vec::new()),
+        };
+        let outcome = run_ai_attempt_loop(
+            &port,
+            vec![
+                routed_attempt("unavailable", "provider-a", "endpoint-a", "key-a"),
+                routed_attempt("success", "provider-a", "endpoint-a", "key-b"),
+            ],
+        )
+        .await
+        .expect("ready backup should run");
+        assert!(matches!(
+            outcome,
+            super::AiAttemptLoopOutcome::Responded("success")
+        ));
+        assert_eq!(*port.executed.lock().unwrap(), vec!["success"]);
+        assert_eq!(*port.unused.lock().unwrap(), vec!["unavailable"]);
     }
 
     #[tokio::test]

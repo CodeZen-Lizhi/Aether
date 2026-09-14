@@ -779,6 +779,10 @@ pub(crate) enum ExecutionRuntimeTransportError {
     UpstreamHttpStatus { status_code: u16, message: String },
     #[error("failed to execute upstream request: {}", sanitize_error_detail(.0))]
     UpstreamRequest(String),
+    #[error("{}", sanitize_error_detail(.0))]
+    UpstreamTimeout(String),
+    #[error("invalid local transport configuration: {}", sanitize_error_detail(.0))]
+    LocalConfiguration(String),
     #[error("upstream response {phase} body exceeds {limit_bytes} bytes")]
     UpstreamResponseTooLarge {
         phase: UpstreamResponseBodyPhase,
@@ -852,6 +856,14 @@ impl std::fmt::Debug for ExecutionRuntimeTransportError {
                 .field("status_code", status_code)
                 .field("message", &sanitize_error_detail(message))
                 .finish(),
+            Self::UpstreamTimeout(detail) => formatter
+                .debug_tuple("UpstreamTimeout")
+                .field(&sanitize_error_detail(detail))
+                .finish(),
+            Self::LocalConfiguration(detail) => formatter
+                .debug_tuple("LocalConfiguration")
+                .field(&sanitize_error_detail(detail))
+                .finish(),
             Self::UpstreamRequest(detail) => formatter
                 .debug_tuple("UpstreamRequest")
                 .field(&sanitize_error_detail(detail))
@@ -874,6 +886,43 @@ impl std::fmt::Debug for ExecutionRuntimeTransportError {
                 .debug_tuple("InvalidJson")
                 .field(&sanitize_error_detail(&error.to_string()))
                 .finish(),
+        }
+    }
+}
+
+impl ExecutionRuntimeTransportError {
+    pub(crate) fn chat_failure_source(&self) -> crate::orchestration::ChatFailureSource {
+        use crate::orchestration::ChatFailureSource;
+        match self {
+            Self::UpstreamTimeout(_) => ChatFailureSource::UpstreamTimeout,
+            Self::UpstreamRequest(_) | Self::BrowserBody(_) => ChatFailureSource::UpstreamTransport,
+            Self::UpstreamHttpStatus { .. } => ChatFailureSource::UpstreamResponse,
+            Self::UpstreamResponseTooLarge { .. }
+            | Self::UpstreamResponseDecode { .. }
+            | Self::InvalidJson(_) => ChatFailureSource::UpstreamProtocol,
+            _ => ChatFailureSource::Neutral,
+        }
+    }
+
+    fn from_reqwest_send(error: reqwest::Error) -> Self {
+        let detail = format_upstream_request_error(&error);
+        if error.is_builder() {
+            Self::LocalConfiguration(detail)
+        } else if error.is_timeout() {
+            Self::UpstreamTimeout(detail)
+        } else {
+            Self::UpstreamRequest(detail)
+        }
+    }
+
+    fn from_wreq_send(error: wreq::Error) -> Self {
+        let detail = format_wreq_upstream_request_error(&error);
+        if error.is_builder() {
+            Self::LocalConfiguration(detail)
+        } else if error.is_timeout() {
+            Self::UpstreamTimeout(detail)
+        } else {
+            Self::UpstreamRequest(detail)
         }
     }
 }
@@ -1227,7 +1276,7 @@ pub(crate) async fn execute_stream_plan_via_local_tunnel(
     };
 
     if let Some(detail) = gateway_frontdoor_self_loop_guard_error(plan.url.as_str()) {
-        return Err(ExecutionRuntimeTransportError::UpstreamRequest(detail));
+        return Err(ExecutionRuntimeTransportError::LocalConfiguration(detail));
     }
 
     let body_bytes = build_request_body(plan)?;
@@ -1366,7 +1415,7 @@ async fn execute_sync_plan_via_local_tunnel_inner(
         ExecutionRuntimeTransportError::RelayError("local tunnel node unavailable".to_string())
     })?;
     if let Some(detail) = gateway_frontdoor_self_loop_guard_error(plan.url.as_str()) {
-        return Err(ExecutionRuntimeTransportError::UpstreamRequest(detail));
+        return Err(ExecutionRuntimeTransportError::LocalConfiguration(detail));
     }
 
     let body_bytes = build_request_body(plan)?;
@@ -1553,7 +1602,7 @@ async fn send_request_inner(
     apply_request_total_timeout: bool,
 ) -> Result<DirectHttpResponse, ExecutionRuntimeTransportError> {
     if let Some(detail) = gateway_frontdoor_self_loop_guard_error(plan.url.as_str()) {
-        return Err(ExecutionRuntimeTransportError::UpstreamRequest(detail));
+        return Err(ExecutionRuntimeTransportError::LocalConfiguration(detail));
     }
 
     let prepare_started_at = Instant::now();
@@ -1768,17 +1817,17 @@ where
         return Ok(future.await);
     };
     let Some(remaining) = timeout.checked_sub(started_at.elapsed()) else {
-        return Err(ExecutionRuntimeTransportError::UpstreamRequest(
+        return Err(ExecutionRuntimeTransportError::UpstreamTimeout(
             stream_first_byte_timeout_message(timeout),
         ));
     };
     if remaining.is_zero() {
-        return Err(ExecutionRuntimeTransportError::UpstreamRequest(
+        return Err(ExecutionRuntimeTransportError::UpstreamTimeout(
             stream_first_byte_timeout_message(timeout),
         ));
     }
     tokio::time::timeout(remaining, future).await.map_err(|_| {
-        ExecutionRuntimeTransportError::UpstreamRequest(stream_first_byte_timeout_message(timeout))
+        ExecutionRuntimeTransportError::UpstreamTimeout(stream_first_byte_timeout_message(timeout))
     })
 }
 
@@ -1801,9 +1850,7 @@ async fn collect_reqwest_stream_body(
         let Some(item) = item else {
             break;
         };
-        let chunk = item.map_err(|err| {
-            ExecutionRuntimeTransportError::UpstreamRequest(format_upstream_request_error(&err))
-        })?;
+        let chunk = item.map_err(|err| ExecutionRuntimeTransportError::from_reqwest_send(err))?;
         if first_byte_ms.is_none() && !chunk.is_empty() {
             first_byte_ms = Some(started_at.elapsed().as_millis() as u64);
         }
@@ -2141,7 +2188,7 @@ fn direct_h2c_client_cache_key(
     timeouts: Option<&aether_contracts::ExecutionTimeouts>,
 ) -> Result<DirectHyperH2cClientCacheKey, ExecutionRuntimeTransportError> {
     let upstream_origin = direct_reqwest_upstream_origin(request_url).ok_or_else(|| {
-        ExecutionRuntimeTransportError::UpstreamRequest(format!(
+        ExecutionRuntimeTransportError::LocalConfiguration(format!(
             "invalid h2c upstream origin: {request_url}"
         ))
     })?;
@@ -2192,7 +2239,7 @@ async fn connect_direct_h2c_sender_on_runtime(
         .spawn(async move { connect_direct_h2c_sender_on_current_runtime(&cache_key).await })
         .await
         .map_err(|err| {
-            ExecutionRuntimeTransportError::UpstreamRequest(format!(
+            ExecutionRuntimeTransportError::LocalConfiguration(format!(
                 "direct H2C connect task failed: {err}"
             ))
         })?
@@ -2202,19 +2249,19 @@ async fn connect_direct_h2c_sender_on_current_runtime(
     cache_key: &DirectHyperH2cClientCacheKey,
 ) -> Result<DirectHyperH2cSender, ExecutionRuntimeTransportError> {
     let upstream = reqwest::Url::parse(&cache_key.upstream_origin).map_err(|err| {
-        ExecutionRuntimeTransportError::UpstreamRequest(format!(
+        ExecutionRuntimeTransportError::LocalConfiguration(format!(
             "invalid h2c upstream origin {}: {err}",
             cache_key.upstream_origin
         ))
     })?;
     let host = upstream.host_str().ok_or_else(|| {
-        ExecutionRuntimeTransportError::UpstreamRequest(format!(
+        ExecutionRuntimeTransportError::LocalConfiguration(format!(
             "missing h2c upstream host: {}",
             cache_key.upstream_origin
         ))
     })?;
     let port = upstream.port_or_known_default().ok_or_else(|| {
-        ExecutionRuntimeTransportError::UpstreamRequest(format!(
+        ExecutionRuntimeTransportError::LocalConfiguration(format!(
             "missing h2c upstream port: {}",
             cache_key.upstream_origin
         ))
@@ -2225,7 +2272,7 @@ async fn connect_direct_h2c_sender_on_current_runtime(
         tokio::time::timeout(timeout, connect)
             .await
             .map_err(|_| {
-                ExecutionRuntimeTransportError::UpstreamRequest(stream_first_byte_timeout_message(
+                ExecutionRuntimeTransportError::UpstreamTimeout(stream_first_byte_timeout_message(
                     timeout,
                 ))
             })?
@@ -2447,7 +2494,9 @@ async fn send_via_direct_h2c_fast_path(
 
     let request_build_started_at = Instant::now();
     let uri = plan.url.parse::<hyper::Uri>().map_err(|err| {
-        ExecutionRuntimeTransportError::UpstreamRequest(format!("invalid h2c upstream uri: {err}"))
+        ExecutionRuntimeTransportError::LocalConfiguration(format!(
+            "invalid h2c upstream uri: {err}"
+        ))
     })?;
     let authority = uri
         .authority()
@@ -2455,7 +2504,7 @@ async fn send_via_direct_h2c_fast_path(
     let mut builder = hyper::Request::builder().method(method.as_str()).uri(uri);
     {
         let target_headers = builder.headers_mut().ok_or_else(|| {
-            ExecutionRuntimeTransportError::UpstreamRequest(
+            ExecutionRuntimeTransportError::LocalConfiguration(
                 "failed to prepare h2c request headers".to_string(),
             )
         })?;
@@ -2472,7 +2521,7 @@ async fn send_via_direct_h2c_fast_path(
     let request = builder
         .body(Full::new(Bytes::from(body_bytes)))
         .map_err(|err| {
-            ExecutionRuntimeTransportError::UpstreamRequest(format!(
+            ExecutionRuntimeTransportError::LocalConfiguration(format!(
                 "failed to build h2c request: {err}"
             ))
         })?;
@@ -2501,11 +2550,11 @@ async fn send_hyper_h2c_request(
                 Ok(Err(err)) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
                     format_hyper_error_chain(&err),
                 )),
-                Err(_) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
+                Err(_) => Err(ExecutionRuntimeTransportError::UpstreamTimeout(
                     stream_first_byte_timeout_message(timeout),
                 )),
             },
-            None => Err(ExecutionRuntimeTransportError::UpstreamRequest(
+            None => Err(ExecutionRuntimeTransportError::UpstreamTimeout(
                 stream_first_byte_timeout_message(timeout),
             )),
         }
@@ -2536,11 +2585,11 @@ async fn send_hyper_h2c_request(
                 Ok(Err(err)) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
                     format_hyper_error_chain(&err),
                 )),
-                Err(_) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
+                Err(_) => Err(ExecutionRuntimeTransportError::UpstreamTimeout(
                     stream_first_byte_timeout_message(timeout),
                 )),
             },
-            None => Err(ExecutionRuntimeTransportError::UpstreamRequest(
+            None => Err(ExecutionRuntimeTransportError::UpstreamTimeout(
                 stream_first_byte_timeout_message(timeout),
             )),
         }
@@ -2945,7 +2994,7 @@ where
 
     match tokio::time::timeout(timeout, future).await {
         Ok(result) => result,
-        Err(_) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
+        Err(_) => Err(ExecutionRuntimeTransportError::UpstreamTimeout(
             non_stream_total_timeout_message(timeout),
         )),
     }
@@ -2965,18 +3014,17 @@ async fn send_reqwest_request(
                 );
                 Ok(response)
             }
-            Ok(Err(error)) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
-                format_upstream_request_error(&error),
-            )),
-            Err(_) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
+            Ok(Err(error)) => Err(ExecutionRuntimeTransportError::from_reqwest_send(error)),
+            Err(_) => Err(ExecutionRuntimeTransportError::UpstreamTimeout(
                 stream_first_byte_timeout_message(timeout),
             )),
         };
     }
 
-    let response = request.send().await.map_err(|err| {
-        ExecutionRuntimeTransportError::UpstreamRequest(format_upstream_request_error(&err))
-    })?;
+    let response = request
+        .send()
+        .await
+        .map_err(|err| ExecutionRuntimeTransportError::from_reqwest_send(err))?;
     observe_gateway_stage_ms(
         "direct_reqwest_request_send",
         started_at.elapsed().as_millis() as u64,
@@ -2991,18 +3039,17 @@ async fn send_wreq_request(
     if let Some(timeout) = stream_first_byte_timeout {
         return match tokio::time::timeout(timeout, request.send()).await {
             Ok(Ok(response)) => Ok(response),
-            Ok(Err(error)) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
-                format_wreq_upstream_request_error(&error),
-            )),
-            Err(_) => Err(ExecutionRuntimeTransportError::UpstreamRequest(
+            Ok(Err(error)) => Err(ExecutionRuntimeTransportError::from_wreq_send(error)),
+            Err(_) => Err(ExecutionRuntimeTransportError::UpstreamTimeout(
                 stream_first_byte_timeout_message(timeout),
             )),
         };
     }
 
-    request.send().await.map_err(|err| {
-        ExecutionRuntimeTransportError::UpstreamRequest(format_wreq_upstream_request_error(&err))
-    })
+    request
+        .send()
+        .await
+        .map_err(|err| ExecutionRuntimeTransportError::from_wreq_send(err))
 }
 
 fn non_stream_total_timeout_message(timeout: Duration) -> String {
@@ -5105,6 +5152,14 @@ mod tests {
             Ok(_) => panic!("stream should hit first-byte timeout"),
             Err(error) => error,
         };
+        assert!(matches!(
+            error,
+            ExecutionRuntimeTransportError::UpstreamTimeout(_)
+        ));
+        assert_eq!(
+            error.chat_failure_source(),
+            crate::orchestration::ChatFailureSource::UpstreamTimeout
+        );
         assert!(
             error
                 .to_string()

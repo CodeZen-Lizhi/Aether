@@ -104,7 +104,7 @@ use crate::execution_runtime::{
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
     apply_local_execution_effect, build_local_error_flow_metadata, classify_failure_disposition,
-    parse_retry_after_secs, trace_upstream_response_body, with_error_flow_report_context,
+    trace_upstream_response_body, with_error_flow_report_context,
     with_upstream_response_report_context, FailureDisposition, FailureTokenAction,
     LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
     LocalExecutionEffect, LocalExecutionEffectContext, LocalFailoverAnalysis,
@@ -911,10 +911,17 @@ async fn execute_in_process_stream(
         }
     }
 
-    let upstream_target_permit = state
-        .upstream_target_admission
-        .acquire(plan, trace_id)
-        .await?;
+    let upstream_target_permit =
+        if crate::orchestration::chat_health_policy_applies(&plan.client_api_format)
+            && crate::execution_runtime::chat_retry::chat_attempt_admission_held()
+        {
+            None
+        } else {
+            state
+                .upstream_target_admission
+                .acquire(plan, trace_id)
+                .await?
+        };
     match DirectSyncExecutionRuntime::new().execute_stream(plan).await {
         Ok(mut execution) => {
             log_upstream_response_headers_received(
@@ -974,6 +981,10 @@ fn should_use_direct_sse_passthrough(
     report_context: Option<&Value>,
     execution: &DirectUpstreamStreamExecution,
 ) -> bool {
+    if crate::execution_runtime::chat_retry::current_first_output_deadline().is_some() {
+        // The shared precommit path owns the first useful-output gate.
+        return false;
+    }
     if !(200..300).contains(&execution.status_code) {
         return false;
     }
@@ -2145,6 +2156,9 @@ fn should_defer_stream_pending_for_direct_inline(
     if direct_passthrough_mode() != DirectPassthroughMode::Inline {
         return false;
     }
+    if crate::execution_runtime::chat_retry::current_chat_probe_session().is_some() {
+        return false;
+    }
     #[cfg(test)]
     if state
         .execution_runtime_override_base_url()
@@ -2387,7 +2401,7 @@ async fn execute_stream_from_direct_passthrough(
     let provider_pool_in_flight_guard_for_report = in_flight_guard;
     record_stream_pre_first_byte_spawn();
     let usage_handoff = state_for_report.usage_runtime.track_persistence_handoff();
-    tokio::spawn(async move {
+    crate::execution_runtime::chat_retry::spawn_chat_stream_pump(tx.clone(), async move {
         let _usage_handoff = usage_handoff;
         let mut stage_trace_for_report = stage_trace_for_report;
         let _stream_total_guard =
@@ -2627,6 +2641,7 @@ async fn execute_stream_from_direct_passthrough(
             }
         }
         drop(upstream);
+        crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
         drop(_provider_pool_in_flight_guard);
         drop(_upstream_target_permit);
 
@@ -3092,6 +3107,7 @@ async fn execute_execution_runtime_stream_inner(
                 return Err(err);
             }
             Err(InProcessStreamExecutionError::Transport(err)) => {
+                crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
                 let transport_error_message = err.to_string();
                 info!(
                     event_name = "stream_execution_runtime_unavailable",
@@ -3123,18 +3139,25 @@ async fn execute_execution_runtime_stream_inner(
                     },
                 )
                 .await;
-                // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）计入健康投影与熔断（502=上游不可达，Transient）。
                 apply_local_execution_effect(
                     state,
                     LocalExecutionEffectContext {
                         plan: &plan,
                         report_context: report_context.as_ref(),
                     },
-                    LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
-                        status_code: 502,
-                        classification: LocalFailoverClassification::UseDefault,
-                        retry_after_secs: None,
-                    }),
+                    LocalExecutionEffect::ClassifiedHealthFailure(
+                        LocalHealthFailureEffect {
+                            status_code: 502,
+                            classification: LocalFailoverClassification::UseDefault,
+                            retry_after_secs: None,
+                        },
+                        crate::orchestration::classify_chat_failure_for_plan(
+                            &plan,
+                            502,
+                            None,
+                            err.chat_failure_source(),
+                        ),
+                    ),
                 )
                 .await;
 
@@ -3247,6 +3270,7 @@ async fn execute_execution_runtime_stream_inner(
                     return Err(err);
                 }
                 Err(InProcessStreamExecutionError::Transport(err)) => {
+                    crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
                     let transport_error_message = err.to_string();
                     info!(
                         event_name = "stream_execution_runtime_unavailable",
@@ -3278,18 +3302,25 @@ async fn execute_execution_runtime_stream_inner(
                         },
                     )
                     .await;
-                    // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）计入健康投影与熔断（502=上游不可达，Transient）。
                     apply_local_execution_effect(
                         state,
                         LocalExecutionEffectContext {
                             plan: &plan,
                             report_context: report_context.as_ref(),
                         },
-                        LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
-                            status_code: 502,
-                            classification: LocalFailoverClassification::UseDefault,
-                            retry_after_secs: None,
-                        }),
+                        LocalExecutionEffect::ClassifiedHealthFailure(
+                            LocalHealthFailureEffect {
+                                status_code: 502,
+                                classification: LocalFailoverClassification::UseDefault,
+                                retry_after_secs: None,
+                            },
+                            crate::orchestration::classify_chat_failure_for_plan(
+                                &plan,
+                                502,
+                                None,
+                                err.chat_failure_source(),
+                            ),
+                        ),
                     )
                     .await;
 
@@ -3416,7 +3447,6 @@ async fn execute_execution_runtime_stream_inner(
                     },
                 )
                 .await;
-                // Bug1 补丁: 传输层失败（连接拒绝/DNS/TLS）计入健康投影与熔断（502=上游不可达，Transient）。
                 apply_local_execution_effect(
                     state,
                     LocalExecutionEffectContext {
@@ -4641,6 +4671,125 @@ fn prefetched_openai_responses_body_has_output_boundary(body: &[u8]) -> bool {
     false
 }
 
+fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
+    let mut remaining = body;
+    while let Some((end, separator)) = find_sse_record_boundary(remaining) {
+        let record = &remaining[..end];
+        remaining = &remaining[end + separator..];
+        let Ok(record) = std::str::from_utf8(record) else {
+            continue;
+        };
+        let normalized = record.replace("\r\n", "\n").replace('\r', "\n");
+        let data = normalized
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let Ok(event) = serde_json::from_str::<Value>(&data) else {
+            continue;
+        };
+        let nonempty = |value: Option<&Value>| {
+            value
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.is_empty())
+        };
+        match event.get("type").and_then(Value::as_str) {
+            Some(
+                "response.output_text.delta"
+                | "response.reasoning_text.delta"
+                | "response.reasoning_summary_text.delta"
+                | "response.function_call_arguments.delta",
+            ) if nonempty(event.get("delta")) => return true,
+            Some("response.output_item.added")
+                if event
+                    .get("item")
+                    .and_then(|item| item.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("function_call") =>
+            {
+                return true
+            }
+            Some("response.completed")
+                if event
+                    .get("response")
+                    .and_then(|response| response.get("status"))
+                    .and_then(Value::as_str)
+                    == Some("completed") =>
+            {
+                return true
+            }
+            Some("content_block_delta")
+                if event.get("delta").is_some_and(|delta| {
+                    ["text", "thinking", "partial_json"]
+                        .iter()
+                        .any(|field| nonempty(delta.get(*field)))
+                }) =>
+            {
+                return true
+            }
+            Some("content_block_start")
+                if event.get("content_block").is_some_and(|block| {
+                    nonempty(block.get("text"))
+                        || (block.get("type").and_then(Value::as_str) == Some("tool_use")
+                            && nonempty(block.get("name")))
+                }) =>
+            {
+                return true
+            }
+            Some("message_stop") => return true,
+            _ => {}
+        }
+        if event
+            .get("choices")
+            .and_then(Value::as_array)
+            .is_some_and(|choices| {
+                choices.iter().any(|choice| {
+                    choice
+                        .get("finish_reason")
+                        .is_some_and(|value| !value.is_null())
+                        || choice.get("delta").is_some_and(|delta| {
+                            ["content", "reasoning_content", "reasoning"]
+                                .iter()
+                                .any(|field| nonempty(delta.get(*field)))
+                                || delta
+                                    .get("tool_calls")
+                                    .and_then(Value::as_array)
+                                    .is_some_and(|calls| !calls.is_empty())
+                                || delta
+                                    .get("function_call")
+                                    .and_then(Value::as_object)
+                                    .is_some_and(|call| !call.is_empty())
+                        })
+                })
+            })
+        {
+            return true;
+        }
+        if event
+            .get("candidates")
+            .and_then(Value::as_array)
+            .is_some_and(|candidates| {
+                candidates.iter().any(|candidate| {
+                    nonempty(candidate.get("finishReason"))
+                        || candidate
+                            .get("content")
+                            .and_then(|content| content.get("parts"))
+                            .and_then(Value::as_array)
+                            .is_some_and(|parts| {
+                                parts.iter().any(|part| {
+                                    nonempty(part.get("text"))
+                                        || part.get("functionCall").is_some_and(Value::is_object)
+                                })
+                            })
+                })
+            })
+        {
+            return true;
+        }
+    }
+    false
+}
+
 fn should_probe_success_failover_before_stream(headers: &BTreeMap<String, String>) -> bool {
     let content_type = headers
         .get("content-type")
@@ -4887,6 +5036,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             };
         let error_response_text =
             local_failover_response_text(client_body_json.as_ref(), &client_error_body, None);
+        crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
         let failover_analysis = resolve_local_candidate_failover_analysis_stream(
             state,
             &plan,
@@ -4895,6 +5045,12 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             error_response_text.as_deref(),
         )
         .await;
+        let chat_failure = crate::orchestration::classify_chat_failure_for_plan(
+            &plan,
+            status_code,
+            error_response_text.as_deref(),
+            crate::orchestration::ChatFailureSource::UpstreamResponse,
+        );
         apply_local_execution_effect(
             state,
             LocalExecutionEffectContext {
@@ -4926,14 +5082,18 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 plan: &plan,
                 report_context: report_context.as_ref(),
             },
-            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
-                status_code,
-                classification: failover_analysis.classification,
-                retry_after_secs: parse_retry_after_secs(
-                    headers.get("retry-after").map(String::as_str),
-                    crate::clock::current_unix_secs(),
-                ),
-            }),
+            LocalExecutionEffect::ClassifiedHealthFailure(
+                LocalHealthFailureEffect {
+                    status_code,
+                    classification: failover_analysis.classification,
+                    retry_after_secs:
+                        crate::execution_runtime::chat_retry::observe_chat_retry_after(
+                            &plan,
+                            headers.get("retry-after").map(String::as_str),
+                        ),
+                },
+                chat_failure,
+            ),
         )
         .await;
         let failover_decision = failover_analysis.decision;
@@ -5205,6 +5365,8 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     // Responses providers can return HTTP 200 before emitting a terminal
     // `response.failed` event. Keep the stream uncommitted until the first
     // business event so that this failure can still advance the candidate loop.
+    let wait_for_useful_chat_output =
+        crate::execution_runtime::chat_retry::current_first_output_deadline().is_some();
     let prefetch_openai_responses_stream =
         is_openai_responses_family_format(plan.provider_api_format.as_str());
     let stream_commit_policy = StreamCommitPolicy::for_response(
@@ -5214,15 +5376,15 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         plan.client_api_format.as_str(),
         false,
         local_stream_rewriter.is_some(),
-        prefetch_openai_responses_stream,
+        prefetch_openai_responses_stream || wait_for_useful_chat_output,
     );
     let reuse_committed_precommit =
         stream_precommit_committed && stream_commit_policy.is_native_anthropic();
     let skip_direct_finalize_prefetch =
         stream_commit_policy.commits_on_response_headers() || reuse_committed_precommit;
-    let limit_direct_finalize_prefetch =
-        should_limit_direct_finalize_prefetch(plan_kind, local_stream_rewriter.is_some())
-            || stream_commit_policy.requires_bounded_frame_wait();
+    let limit_direct_finalize_prefetch = !wait_for_useful_chat_output
+        && (should_limit_direct_finalize_prefetch(plan_kind, local_stream_rewriter.is_some())
+            || stream_commit_policy.requires_bounded_frame_wait());
     let mut stream_commit_gate = StreamCommitGate::new(stream_commit_policy);
     let mut prefetch_client_completion_tracker = ClientVisibleStreamCompletionTracker::default();
     let mut prefetched_client_visible_stream_completed = false;
@@ -5265,7 +5427,8 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         .as_ref()
         .filter(|_| !skip_direct_finalize_prefetch)
     {
-        while (stream_commit_policy.requires_bounded_frame_wait()
+        while (wait_for_useful_chat_output
+            || stream_commit_policy.requires_bounded_frame_wait()
             || prefetched_chunks.len() < MAX_STREAM_PREFETCH_FRAMES)
             && prefetched_inspection_body.len() < MAX_STREAM_PREFETCH_BYTES
         {
@@ -5622,6 +5785,8 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                                     prefetched_body.extend_from_slice(&outcome.sse_body);
                                     prefetched_chunks.push(Bytes::from(outcome.sse_body));
                                     sync_json_stream_bridge_active = true;
+                                    crate::execution_runtime::chat_retry::mark_useful_stream_output(
+                                    );
                                     break;
                                 }
                                 Ok(None) => {}
@@ -5696,13 +5861,19 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                         prefetched_chunks.push(Bytes::from(rewritten_chunk));
                     }
 
-                    if anthropic_commit_ready
-                        || (matches!(inspection, StreamPrefetchInspection::NonError)
-                            && (!prefetch_openai_responses_stream
-                                || prefetched_openai_responses_body_has_output_boundary(
-                                    &prefetched_inspection_body,
-                                )))
+                    if (wait_for_useful_chat_output
+                        && prefetched_chat_body_has_useful_output(&prefetched_inspection_body))
+                        || (!wait_for_useful_chat_output
+                            && (anthropic_commit_ready
+                                || (matches!(inspection, StreamPrefetchInspection::NonError)
+                                    && (!prefetch_openai_responses_stream
+                                        || prefetched_openai_responses_body_has_output_boundary(
+                                            &prefetched_inspection_body,
+                                        )))))
                     {
+                        if wait_for_useful_chat_output {
+                            crate::execution_runtime::chat_retry::mark_useful_stream_output();
+                        }
                         break;
                     }
                 }
@@ -5777,6 +5948,32 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 StreamFramePayload::Headers { .. } => {}
             }
         }
+    }
+    if wait_for_useful_chat_output
+        && !sync_json_stream_bridge_active
+        && !prefetched_chat_body_has_useful_output(&prefetched_inspection_body)
+    {
+        return handle_prefetch_stream_failure(
+            state,
+            trace_id,
+            decision,
+            &plan,
+            report_context,
+            request_id,
+            candidate_id,
+            report_kind.as_deref().unwrap_or_default(),
+            headers,
+            prefetched_usage_telemetry,
+            &provider_prefetched_body,
+            candidate_started_unix_secs,
+            stream_elapsed_ms_since(stream_started_at),
+            build_stream_failure_from_provider_error_body(502, &json!({"error": {
+                "type": "stream_missing_useful_output",
+                "message": "Upstream stream ended or exceeded precommit limits without useful output"
+            }})),
+            retry_scope_out,
+        )
+        .await;
     }
     if stream_commit_gate.is_uncommitted() {
         stream_commit_gate.commit();
@@ -5869,7 +6066,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     let request_diagnostics_for_report = current_request_diagnostics();
     let provider_pool_in_flight_guard_for_report = in_flight_guard;
     let usage_handoff = state_for_report.usage_runtime.track_persistence_handoff();
-    tokio::spawn(async move {
+    crate::execution_runtime::chat_retry::spawn_chat_stream_pump(tx.clone(), async move {
         let _usage_handoff = usage_handoff;
         let mut stage_trace_for_report = stage_trace_for_report;
         let _stream_total_guard =
@@ -6467,6 +6664,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         }
         drop(lines);
         drop(buffered_frames);
+        crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
         drop(_provider_pool_in_flight_guard);
 
         if downstream_dropped {
@@ -8961,7 +9159,7 @@ mod tests {
         else {
             panic!("precommit 529 should retry with the upstream response preserved")
         };
-        assert_eq!(scope, AiAttemptRetryScope::Provider);
+        assert_eq!(scope, AiAttemptRetryScope::Candidate);
         assert_eq!(fallback_response.status(), StatusCode::OK);
         let fallback_body = to_bytes(fallback_response.into_body(), usize::MAX)
             .await
@@ -8985,14 +9183,14 @@ mod tests {
             fallback_response,
         } = outcome
         else {
-            panic!("EOF before the first semantic event should retry another endpoint")
+            panic!("EOF before the first semantic event should permit a bounded retry")
         };
-        assert_eq!(scope, AiAttemptRetryScope::Endpoint);
+        assert_eq!(scope, AiAttemptRetryScope::Candidate);
         assert!(fallback_response.is_none());
     }
 
     #[tokio::test]
-    async fn native_anthropic_auth_error_moves_to_the_next_credential() {
+    async fn native_anthropic_uncertain_auth_error_permits_same_credential_retry() {
         let upstream_error = concat!(
             "event: error\n",
             "data: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid credential\"}\n\n",
@@ -9008,9 +9206,9 @@ mod tests {
             fallback_response: Some(fallback_response),
         } = outcome
         else {
-            panic!("precommit authentication error should retry another credential")
+            panic!("uncertain precommit authentication error should permit a bounded retry")
         };
-        assert_eq!(scope, AiAttemptRetryScope::Credential);
+        assert_eq!(scope, AiAttemptRetryScope::Candidate);
         let fallback_body = to_bytes(fallback_response.into_body(), usize::MAX)
             .await
             .expect("fallback response body should read");
@@ -9731,6 +9929,38 @@ mod tests {
         assert!(prefetched_openai_responses_body_has_output_boundary(
             b"event: response.created\ndata: {\"type\":\"response.created\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n"
         ));
+    }
+
+    #[test]
+    fn useful_output_gate_ignores_setup_heartbeat_and_empty_deltas() {
+        for body in [
+            ": ping\n\n",
+            "data: {\"type\":\"response.created\"}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"\"}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n",
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}}\n\n",
+            "data: [DONE]\n\n",
+            "data: {\"arbitrary\":true}\n\n",
+        ] {
+            assert!(
+                !super::prefetched_chat_body_has_useful_output(body.as_bytes()),
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn useful_output_gate_accepts_complete_text_reasoning_and_tool_events() {
+        for body in [
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"code\"}\n\n",
+            "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"thinking\"}\r\n\r\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\"}]}}]}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"partial_json\":\"{\"}}\n\n",
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"code\"}]}}]}\n\n",
+        ] {
+            assert!(super::prefetched_chat_body_has_useful_output(body.as_bytes()), "{body}");
+            assert!(!super::prefetched_chat_body_has_useful_output(&body.as_bytes()[..body.len()-2]), "incomplete event must remain buffered");
+        }
     }
 
     #[test]

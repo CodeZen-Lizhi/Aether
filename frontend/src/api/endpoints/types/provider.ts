@@ -195,7 +195,9 @@ export interface ProviderEndpoint {
   header_rules?: HeaderRule[]  // 请求头规则列表，支持 set/drop/rename 操作
   // 请求体配置
   body_rules?: BodyRule[]  // 请求体规则列表，支持 set/drop/rename 操作
-  max_retries: number
+  max_retries: number | null
+  effective_max_attempts?: number
+  effective_max_attempts_source?: string
   is_active: boolean
   config?: Record<string, unknown>
   proxy?: ProxyConfig | null
@@ -548,6 +550,11 @@ export interface FailoverRuleItem {
 }
 
 export interface FailoverRulesConfig {
+  [key: string]: unknown
+  chat_policy_version?: number
+  max_attempts?: number | null
+  provider_max_attempts?: number
+  stream_failover_budget_ms?: number | null
   max_retries?: number
   stop_on_transport_errors?: boolean
   stop_status_codes?: number[]
@@ -563,6 +570,9 @@ export interface FailoverRulesConfig {
 }
 
 export interface ProviderWithEndpointsSummary {
+  effective_max_attempts?: number
+  effective_max_attempts_source?: string
+  stream_failover_budget_ms?: number
   id: string
   name: string
   provider_type?: ProviderType

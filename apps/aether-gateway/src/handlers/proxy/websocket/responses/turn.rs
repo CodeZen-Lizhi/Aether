@@ -73,33 +73,39 @@ pub(super) enum ResponsesWebSocketTurnObservation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ResponsesWebSocketTurnTimeoutPhase {
-    AwaitingFirstEvent,
-    AwaitingTerminal,
+    FirstEvent,
+    Terminal,
+    EffectiveOutput,
 }
 
 impl ResponsesWebSocketTurnTimeoutPhase {
     pub(super) const fn error_code(self) -> &'static str {
         match self {
-            Self::AwaitingFirstEvent => "responses_websocket_first_event_timeout",
-            Self::AwaitingTerminal => "responses_websocket_turn_timeout",
+            Self::FirstEvent => "responses_websocket_first_event_timeout",
+            Self::Terminal => "responses_websocket_turn_timeout",
+            Self::EffectiveOutput => "stream_failover_budget_exhausted",
         }
     }
 
     pub(super) const fn client_message(self) -> &'static str {
         match self {
-            Self::AwaitingFirstEvent => {
+            Self::FirstEvent => {
                 "Provider did not emit a response event before the configured timeout"
             }
-            Self::AwaitingTerminal => {
-                "Provider did not finish the response before the configured timeout"
+            Self::Terminal => "Provider did not finish the response before the configured timeout",
+            Self::EffectiveOutput => {
+                "The response did not produce output within the failover budget"
             }
         }
     }
 
     pub(super) const fn outcome(self) -> ResponsesWebSocketTurnOutcome {
         match self {
-            Self::AwaitingFirstEvent => ResponsesWebSocketTurnOutcome::first_event_timeout(),
-            Self::AwaitingTerminal => ResponsesWebSocketTurnOutcome::terminal_timeout(),
+            Self::FirstEvent => ResponsesWebSocketTurnOutcome::first_event_timeout(),
+            Self::Terminal => ResponsesWebSocketTurnOutcome::terminal_timeout(),
+            Self::EffectiveOutput => ResponsesWebSocketTurnOutcome::Cancelled {
+                reason: "stream_failover_budget_exhausted",
+            },
         }
     }
 }
@@ -166,7 +172,11 @@ impl ResponsesWebSocketTurnOutcome {
         }
     }
 
-    pub(super) const fn upstream_connect_failed(reason: &'static str) -> Self {
+    pub(super) fn upstream_connect_failed(reason: &'static str) -> Self {
+        if reason == "stream_failover_budget_exhausted" || reason == super::probe::PROBE_LEASE_LOST
+        {
+            return Self::Cancelled { reason };
+        }
         Self::Failure {
             status_code: 502,
             reason,
@@ -244,6 +254,7 @@ pub(super) struct ResponsesProviderAttempt {
     first_event_timeout: Duration,
     terminal_timeout: Duration,
     admission: Option<ResponsesWebSocketTurnAdmission>,
+    probe_leases: super::probe::ResponsesProbeLeases,
     terminal_error_body: Option<String>,
     /// 观察到的 provider 终态事实，与「为什么现在结算」这个信号分开保存。
     /// 客户端投递失败不会把它擦掉。
@@ -367,6 +378,44 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
         }
     };
 
+    // Recheck recovery eligibility after admission, and keep the owner alive
+    // through both upstream transport and the terminal health effect.
+    let probe_leases =
+        match super::probe::ResponsesProbeLeases::claim(state, &plan, &mut report_context).await {
+            Ok(leases) => leases,
+            Err(error) => {
+                admission.release().await;
+                record_responses_websocket_admission_failure(
+                    state,
+                    &plan,
+                    report_context.as_ref(),
+                    candidate_started_at_unix_ms,
+                    &error,
+                )
+                .await;
+                return Err(error);
+            }
+        };
+    // A fresh attempt fence is required even when the handshake will fail.
+    if let Err(error) = crate::execution_runtime::chat_retry::capture_attempt_report_context(
+        state,
+        &plan,
+        &mut report_context,
+    )
+    .await
+    {
+        admission.release().await;
+        record_responses_websocket_admission_failure(
+            state,
+            &plan,
+            report_context.as_ref(),
+            candidate_started_at_unix_ms,
+            &error,
+        )
+        .await;
+        return Err(error);
+    }
+
     let lifecycle = ExecutionAttemptLifecycle::begin(
         state,
         AttemptLifecycleSeed {
@@ -394,6 +443,7 @@ pub(super) async fn begin_unowned_responses_websocket_turn(
         first_event_timeout,
         terminal_timeout,
         admission: Some(admission),
+        probe_leases,
         terminal_error_body: None,
         provider_outcome: None,
         client_delivery: AttemptClientDelivery::Complete,
@@ -500,6 +550,17 @@ fn websocket_auth_rejection_error(rejection: GatewayLocalAuthRejection) -> Gatew
 }
 
 impl ResponsesProviderAttempt {
+    pub(super) async fn probe_lost(&mut self) -> crate::orchestration::ProbeLeaseLoss {
+        self.probe_leases.lost().await
+    }
+
+    pub(super) async fn with_probe_lease<T>(
+        &mut self,
+        work: impl std::future::Future<Output = Result<T, &'static str>>,
+    ) -> Result<T, &'static str> {
+        self.probe_leases.run(work).await
+    }
+
     /// Releases all per-turn capacity before terminal persistence starts.
     /// Provider-pool runtime tokens normally use an awaited removal. The
     /// bounded wait prevents a broken runtime backend from stalling the relay;
@@ -552,12 +613,12 @@ impl ResponsesProviderAttempt {
     pub(super) fn deadline(&self) -> ResponsesWebSocketTurnDeadline {
         let (phase, timeout) = if self.first_event_elapsed_ms.is_some() {
             (
-                ResponsesWebSocketTurnTimeoutPhase::AwaitingTerminal,
+                ResponsesWebSocketTurnTimeoutPhase::Terminal,
                 self.terminal_timeout,
             )
         } else {
             (
-                ResponsesWebSocketTurnTimeoutPhase::AwaitingFirstEvent,
+                ResponsesWebSocketTurnTimeoutPhase::FirstEvent,
                 self.first_event_timeout.min(self.terminal_timeout),
             )
         };
@@ -566,6 +627,39 @@ impl ResponsesProviderAttempt {
             deadline: self.started_at + timeout,
             timeout,
         }
+    }
+
+    pub(super) async fn chat_failure(
+        &self,
+        state: &AppState,
+        status: u16,
+    ) -> Option<(crate::orchestration::ChatFailureFact, Option<u64>)> {
+        let decision = crate::orchestration::resolve_local_failover_decision_for_attempt(
+            state,
+            self.lifecycle.plan(),
+            self.lifecycle.report_context(),
+            status,
+            self.terminal_error_body.as_deref(),
+        )
+        .await;
+        if decision == crate::orchestration::LocalFailoverDecision::StopLocalFailover {
+            return None;
+        }
+        let fact = crate::orchestration::classify_chat_failure_for_plan(
+            self.lifecycle.plan(),
+            status,
+            self.terminal_error_body.as_deref(),
+            crate::orchestration::ChatFailureSource::UpstreamResponse,
+        );
+        let retry_after = crate::orchestration::parse_chat_retry_after_secs(
+            self.provider_headers.get("retry-after").map(String::as_str),
+            crate::clock::current_unix_secs(),
+        );
+        (!matches!(
+            fact.penalty,
+            crate::orchestration::ChatHealthPenalty::Neutral
+        ))
+        .then_some((fact, retry_after))
     }
 
     pub(super) fn observe_upstream_frame(
@@ -600,9 +694,33 @@ impl ResponsesProviderAttempt {
 
         let event_type = frame.event_type().unwrap_or_default();
         if matches!(event_type, "error" | "response.failed") {
-            self.terminal_error_body = frame
+            if let Some(headers) = frame
                 .terminal_event()
-                .and_then(|event| serde_json::to_string(event).ok());
+                .and_then(|event| event.get("headers"))
+                .and_then(Value::as_object)
+            {
+                for (name, value) in headers {
+                    if name.eq_ignore_ascii_case("retry-after") {
+                        if let Some(value) = value.as_str().filter(|value| value.len() <= 256) {
+                            self.provider_headers
+                                .insert("retry-after".to_string(), value.to_string());
+                        }
+                    }
+                }
+            }
+            self.terminal_error_body = frame.terminal_event().and_then(|event| {
+                // Normalize Responses' nested error for the shared classifier
+                // and health settlement. Captured/relayed frames stay intact.
+                let mut error_event = event.clone();
+                if error_event.get("error").is_none() {
+                    if let Some(error) = event.pointer("/response/error") {
+                        error_event
+                            .as_object_mut()?
+                            .insert("error".to_string(), error.clone());
+                    }
+                }
+                serde_json::to_string(&error_event).ok()
+            });
         }
         if let Some(outcome) = provider_terminal_outcome(frame) {
             // provider 的终态是独立事实：先记下来，之后即使客户端投递失败、
@@ -714,6 +832,7 @@ impl ResponsesProviderAttempt {
                 },
             )
             .await;
+        self.probe_leases.finish().await;
     }
 
     fn capture_sse_event(&mut self, event: &Value) {
@@ -800,6 +919,9 @@ fn prepare_websocket_report_context(
         Some(other) => Map::from_iter([("seed".to_string(), other)]),
         None => Map::new(),
     };
+    // A new attempt must never inherit another attempt's settlement identity.
+    object.remove(crate::orchestration::CHAT_HEALTH_ATTEMPT_REPORT_FIELD);
+    object.remove(crate::orchestration::PROBE_LEASES_REPORT_FIELD);
     object.insert(
         "request_id".to_string(),
         Value::String(request_id.to_string()),
@@ -816,7 +938,6 @@ fn prepare_websocket_report_context(
             "pool_key_lease_token",
             "pool_key_lease_fencing_token",
             "pool_key_lease_ttl_ms",
-            "scheduler_affinity_epoch",
         ] {
             object.remove(field);
         }
@@ -968,6 +1089,49 @@ mod tests {
     use crate::GatewayError;
 
     #[test]
+    fn health_attempt_fence_survives_ws_terminal_context_updates() {
+        use super::super::adapter::resolve_responses_websocket_adapter;
+        use crate::orchestration::{ResponsesWebSocketAdapter, CHAT_HEALTH_ATTEMPT_REPORT_FIELD};
+
+        let fence = json!({
+            "attempt_id": "attempt-handshake-1",
+            "started_at_unix_secs": 100,
+            "credential_fingerprint": "test-fingerprint",
+            "circuit_epoch": 3
+        });
+        let probe_owner = json!({"owner_token":"ws-owner", "kind":"circuit", "circuit_epoch":3});
+        let mut context = Some(
+            json!({CHAT_HEALTH_ATTEMPT_REPORT_FIELD: fence.clone(), "probe_leases": [probe_owner.clone()]}),
+        );
+        context = crate::execution_runtime::attach_provider_response_headers_to_report_context(
+            context,
+            &std::collections::BTreeMap::new(),
+            100_000,
+            100_001,
+            "request-order",
+        );
+        resolve_responses_websocket_adapter(ResponsesWebSocketAdapter::Codex)
+            .decorate_turn_report_context(
+                &mut context,
+                &json!({
+                    "type": "codex.rate_limits",
+                    "rate_limits": {"allowed": true, "limit_reached": false}
+                }),
+            );
+        assert_eq!(
+            context.as_ref().unwrap()[CHAT_HEALTH_ATTEMPT_REPORT_FIELD],
+            fence
+        );
+        let terminal =
+            attach_client_delivery_to_report_context(context, "client_disconnected").unwrap();
+        assert_eq!(terminal[CHAT_HEALTH_ATTEMPT_REPORT_FIELD], fence);
+        assert_eq!(
+            terminal[crate::orchestration::PROBE_LEASES_REPORT_FIELD],
+            json!([probe_owner])
+        );
+    }
+
+    #[test]
     fn admission_timeout_terminalizes_the_seeded_candidate() {
         let update = responses_websocket_admission_failure_update(
             1_000,
@@ -1014,6 +1178,37 @@ mod tests {
     }
 
     #[test]
+    fn ws_attempt_replacement_preserves_planning_epoch_and_logical_order() {
+        let logical_order = uuid::Uuid::now_v7();
+        let mut context = Some(json!({
+            "scheduler_affinity_epoch": 17,
+            "scheduler_affinity_request_order": uuid::Uuid::now_v7().to_string(),
+            "candidate_id": "old-candidate"
+        }));
+        for (attempt, reuse) in [(1, true), (2, false), (3, true)] {
+            let prepared = prepare_websocket_report_context(
+                context,
+                &format!("attempt-{attempt}"),
+                reuse,
+                &json!({"type":"response.create", "model":"public"}),
+                &json!({"type":"response.create", "model":"provider-public"}),
+                "connection",
+                1,
+                &logical_order.to_string(),
+                attempt,
+            );
+            assert_eq!(prepared["scheduler_affinity_epoch"], 17);
+            assert_eq!(
+                crate::scheduler::affinity::scheduler_affinity_request_order_from_report_context(
+                    Some(&prepared)
+                ),
+                Some(logical_order)
+            );
+            context = Some(prepared);
+        }
+    }
+
+    #[test]
     fn followup_context_uses_a_fresh_request_and_candidate() {
         let context = prepare_websocket_report_context(
             Some(json!({
@@ -1051,6 +1246,8 @@ mod tests {
             Some(json!({
                 "request_id": "prewarm",
                 "candidate_id": "terra-candidate",
+                "chat_health_attempt": {"attempt_id": "previous-attempt"},
+                "probe_leases": [{"owner_token": "previous-owner"}],
                 "original_request_body": {"model": "gpt-5.6-sol", "generate": false}
             })),
             "turn-2",
@@ -1073,6 +1270,12 @@ mod tests {
 
         assert_eq!(context["request_id"], "turn-2");
         assert_eq!(context["candidate_id"], "terra-candidate");
+        assert!(context
+            .get(crate::orchestration::CHAT_HEALTH_ATTEMPT_REPORT_FIELD)
+            .is_none());
+        assert!(context
+            .get(crate::orchestration::PROBE_LEASES_REPORT_FIELD)
+            .is_none());
         assert_eq!(context["original_request_body"]["model"], "gpt-5.6-terra");
         assert_eq!(context["model"], "gpt-5.6-terra");
         assert_eq!(context["mapped_model"], "gpt-5.6-terra-provider");
@@ -1316,6 +1519,31 @@ mod tests {
     }
 
     #[test]
+    fn lost_probe_ownership_cancels_without_an_upstream_health_effect() {
+        let outcome = ResponsesWebSocketTurnOutcome::upstream_connect_failed(
+            super::super::probe::PROBE_LEASE_LOST,
+        );
+        let facts = attempt_facts_for_outcome(None, AttemptClientDelivery::Complete, outcome);
+        assert!(!facts.provider.stream_timeout());
+        let settlement = classify_attempt_settlement(AttemptSettlementInputs {
+            facts,
+            report_represents_failure: false,
+            observed_finish: false,
+            has_parser_error: false,
+        });
+        assert_eq!(settlement.status_code, 499);
+        assert_eq!(settlement.billing, AttemptBilling::Void);
+        assert_eq!(
+            settlement.candidate_status,
+            AttemptCandidateStatus::Cancelled
+        );
+        assert_eq!(
+            settlement.provider_effect,
+            AttemptProviderEffect::NoProviderEffect
+        );
+    }
+
+    #[test]
     fn an_abandoned_turn_before_upstream_send_is_void_and_does_not_penalize_provider() {
         let outcome = ResponsesWebSocketTurnOutcome::relay_task_abandonment(false);
         let facts = attempt_facts_for_outcome(None, AttemptClientDelivery::Complete, outcome);
@@ -1359,14 +1587,14 @@ mod tests {
         let first_event = Duration::from_secs(30);
         let terminal = Duration::from_secs(10);
         let deadline = ResponsesWebSocketTurnDeadline {
-            phase: ResponsesWebSocketTurnTimeoutPhase::AwaitingFirstEvent,
+            phase: ResponsesWebSocketTurnTimeoutPhase::FirstEvent,
             deadline: started_at + first_event.min(terminal),
             timeout: first_event.min(terminal),
         };
 
         assert_eq!(
             deadline.phase,
-            ResponsesWebSocketTurnTimeoutPhase::AwaitingFirstEvent
+            ResponsesWebSocketTurnTimeoutPhase::FirstEvent
         );
         assert_eq!(deadline.timeout, Duration::from_secs(10));
         assert_eq!(deadline.deadline, started_at + Duration::from_secs(10));

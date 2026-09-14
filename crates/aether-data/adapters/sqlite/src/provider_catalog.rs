@@ -17,6 +17,10 @@ use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogKeyMaintenanceSummary, StoredProviderCatalogKeyPage,
     StoredProviderCatalogKeyStats, StoredProviderCatalogProvider,
 };
+use aether_data_contracts::repository::provider_catalog::{
+    ProviderCatalogKeyHealthPendingFact, ProviderCatalogKeyHealthSettlement,
+    ProviderCatalogKeyHealthSettlementResult, PROVIDER_KEY_HEALTH_PENDING_BATCH_LIMIT,
+};
 use aether_data_contracts::DataLayerError;
 
 use crate::error::SqlResultExt;
@@ -2180,6 +2184,163 @@ WHERE id = ?
         Ok(rows_affected > 0)
     }
 
+    pub async fn enqueue_key_health_fact(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<ProviderCatalogKeyHealthPendingFact, DataLayerError> {
+        fact.validate_enqueue(current_unix_secs())?;
+        let payload = serde_json::to_string(fact)
+            .map_err(|err| DataLayerError::InvalidInput(err.to_string()))?;
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
+        sqlx::query("INSERT INTO provider_key_health_pending_facts (id, observed_at, expires_at, payload) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")
+            .bind(fact.receipt_id()?).bind(fact.observed_at_unix_secs as i64).bind(fact.expires_at_unix_secs() as i64).bind(payload)
+            .execute(&mut *tx).await.map_sql_err()?;
+        // Revalidate after SQLite's write lock was acquired, including queued writers.
+        fact.validate_enqueue(current_unix_secs())?;
+        // Read under the same write transaction: duplicate delivery must return
+        // the first terminal fact, including its original observation time.
+        let retained: String = sqlx::query_scalar(
+            "SELECT payload FROM provider_key_health_pending_facts WHERE id = ?",
+        )
+        .bind(fact.receipt_id()?)
+        .fetch_one(&mut *tx)
+        .await
+        .map_sql_err()?;
+        let retained = serde_json::from_str(&retained)
+            .map_err(|err| DataLayerError::UnexpectedValue(err.to_string()))?;
+        tx.commit().await.map_sql_err()?;
+        Ok(retained)
+    }
+
+    pub async fn list_key_health_pending_facts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ProviderCatalogKeyHealthPendingFact>, DataLayerError> {
+        let payloads: Vec<String> = sqlx::query_scalar("SELECT payload FROM provider_key_health_pending_facts ORDER BY observed_at, id LIMIT ?")
+            .bind(limit.min(PROVIDER_KEY_HEALTH_PENDING_BATCH_LIMIT) as i64)
+            .fetch_all(&mut *self.source.acquire().await.map_sql_err()?).await.map_sql_err()?;
+        payloads
+            .into_iter()
+            .map(|payload| {
+                serde_json::from_str(&payload)
+                    .map_err(|err| DataLayerError::UnexpectedValue(err.to_string()))
+            })
+            .collect()
+    }
+
+    pub async fn remove_key_health_pending_fact(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<(), DataLayerError> {
+        sqlx::query("DELETE FROM provider_key_health_pending_facts WHERE id = ?")
+            .bind(fact.receipt_id()?)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?)
+            .await
+            .map_sql_err()?;
+        Ok(())
+    }
+
+    pub async fn key_health_attempt_is_settled(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<bool, DataLayerError> {
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM provider_key_health_settlements WHERE id = ? AND expires_at > CAST(strftime('%s', 'now') AS INTEGER))")
+            .bind(fact.receipt_id()?)
+            .fetch_one(&mut *self.source.acquire().await.map_sql_err()?).await.map_sql_err()
+    }
+
+    pub async fn settle_key_health_attempt(
+        &self,
+        settlement: &ProviderCatalogKeyHealthSettlement,
+    ) -> Result<ProviderCatalogKeyHealthSettlementResult, DataLayerError> {
+        use ProviderCatalogKeyHealthSettlementResult as Outcome;
+        let now = current_unix_secs();
+        settlement.validate(now)?;
+        if settlement.expires_at_unix_secs() <= now {
+            return Ok(Outcome::Expired);
+        }
+        let mut connection = self.source.acquire().await.map_sql_err()?;
+        let mut tx = sqlx::Connection::begin(&mut *connection)
+            .await
+            .map_sql_err()?;
+        // The first write serializes competing writers before reading health.
+        // A conflict rolls this claim back together with every other mutation.
+        let inserted = sqlx::query("INSERT INTO provider_key_health_settlements (id, key_id, api_format, policy_version, attempt_started_at, settled_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")
+            .bind(settlement.receipt_id()?)
+            .bind(&settlement.update.key_id)
+            .bind(&settlement.api_format)
+            .bind(i64::from(settlement.policy_version))
+            .bind(settlement.attempt_started_at_unix_secs as i64)
+            .bind(now as i64)
+            .bind(settlement.expires_at_unix_secs() as i64)
+            .execute(&mut *tx).await.map_sql_err()?.rows_affected();
+        let now = current_unix_secs();
+        if settlement.expires_at_unix_secs() <= now {
+            tx.rollback().await.map_sql_err()?;
+            return Ok(Outcome::Expired);
+        }
+        if inserted == 0 {
+            tx.rollback().await.map_sql_err()?;
+            return Ok(Outcome::Duplicate);
+        }
+        let update = &settlement.update;
+        let rows = build_list_query(
+            LIST_KEYS_BY_IDS_PREFIX,
+            std::slice::from_ref(&update.key_id),
+            "",
+        )
+        .build()
+        .fetch_all(&mut *tx)
+        .await
+        .map_sql_err()?;
+        let Some(row) = rows.first() else {
+            tx.rollback().await.map_sql_err()?;
+            return Ok(Outcome::MissingKey);
+        };
+        let key = map_key_row(row)?;
+        let provider_type: Option<String> =
+            sqlx::query_scalar("SELECT provider_type FROM providers WHERE id = ?")
+                .bind(&key.provider_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_sql_err()?;
+        if !settlement.generation_matches(&key, provider_type.as_deref().unwrap_or_default()) {
+            tx.rollback().await.map_sql_err()?;
+            return Ok(Outcome::StaleGeneration);
+        }
+        if key.health_by_format != update.expected_health_by_format
+            || key.circuit_breaker_by_format != update.expected_circuit_breaker_by_format
+        {
+            tx.rollback().await.map_sql_err()?;
+            return Ok(Outcome::Conflict);
+        }
+        if settlement
+            .expected_probe_lease_expires_at_unix_secs
+            .is_some_and(|deadline| deadline <= current_unix_secs())
+        {
+            tx.rollback().await.map_sql_err()?;
+            return Ok(Outcome::ProbeLeaseExpired);
+        }
+        let updated = sqlx::query("UPDATE provider_api_keys SET health_by_format = ?, circuit_breaker_by_format = ?, updated_at = ? WHERE id = ? AND (? IS NULL OR ? > CAST(strftime('%s', 'now') AS INTEGER))")
+            .bind(optional_json_to_string(&update.health_by_format, "provider_api_keys.health_by_format")?)
+            .bind(optional_json_to_string(&update.circuit_breaker_by_format, "provider_api_keys.circuit_breaker_by_format")?)
+            .bind(now as i64).bind(&update.key_id)
+            .bind(settlement.expected_probe_lease_expires_at_unix_secs.map(|value| i64::try_from(value).unwrap_or(i64::MAX)))
+            .bind(settlement.expected_probe_lease_expires_at_unix_secs.map(|value| i64::try_from(value).unwrap_or(i64::MAX)))
+            .execute(&mut *tx).await.map_sql_err()?.rows_affected();
+        if updated == 0 {
+            tx.rollback().await.map_sql_err()?;
+            return Ok(Outcome::ProbeLeaseExpired);
+        }
+        sqlx::query("DELETE FROM provider_key_health_settlements WHERE id IN (SELECT id FROM provider_key_health_settlements WHERE expires_at <= ? ORDER BY expires_at LIMIT 128)")
+            .bind(now as i64).execute(&mut *tx).await.map_sql_err()?;
+        tx.commit().await.map_sql_err()?;
+        Ok(Outcome::Applied)
+    }
+
     pub async fn compare_and_update_key_health_state(
         &self,
         update: &ProviderCatalogKeyHealthStateUpdate,
@@ -2591,6 +2752,41 @@ impl ProviderCatalogWriteRepository for SqliteProviderCatalogReadRepository {
         update: &ProviderCatalogKeyStatusSnapshotUpdate,
     ) -> Result<bool, DataLayerError> {
         Self::update_key_status_snapshot(self, update).await
+    }
+
+    async fn enqueue_key_health_fact(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<ProviderCatalogKeyHealthPendingFact, DataLayerError> {
+        Self::enqueue_key_health_fact(self, fact).await
+    }
+
+    async fn list_key_health_pending_facts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ProviderCatalogKeyHealthPendingFact>, DataLayerError> {
+        Self::list_key_health_pending_facts(self, limit).await
+    }
+
+    async fn remove_key_health_pending_fact(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<(), DataLayerError> {
+        Self::remove_key_health_pending_fact(self, fact).await
+    }
+
+    async fn key_health_attempt_is_settled(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<bool, DataLayerError> {
+        Self::key_health_attempt_is_settled(self, fact).await
+    }
+
+    async fn settle_key_health_attempt(
+        &self,
+        settlement: &ProviderCatalogKeyHealthSettlement,
+    ) -> Result<ProviderCatalogKeyHealthSettlementResult, DataLayerError> {
+        Self::settle_key_health_attempt(self, settlement).await
     }
 
     async fn compare_and_update_key_health_state(
@@ -4206,7 +4402,7 @@ mod tests {
             .expect("matching OAuth runtime CAS should succeed"));
 
         let stored = repository
-            .list_keys_by_ids(&[key.id.clone()])
+            .list_keys_by_ids(std::slice::from_ref(&key.id))
             .await
             .expect("key should reload")
             .pop()
@@ -4262,7 +4458,7 @@ mod tests {
             .await
             .expect("stale metadata namespace should conflict"));
         let stored_after_metadata_conflict = repository
-            .list_keys_by_ids(&[key.id.clone()])
+            .list_keys_by_ids(std::slice::from_ref(&key.id))
             .await
             .expect("key should reload after metadata conflict")
             .pop()
@@ -4850,6 +5046,435 @@ mod tests {
             .delete_provider("provider-write-1")
             .await
             .expect("provider should delete"));
+    }
+
+    fn health_settlement(
+        key: &StoredProviderCatalogKey,
+        provider_type: String,
+        attempt_id: &str,
+    ) -> aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthSettlement
+    {
+        aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthSettlement {
+            attempt_id: attempt_id.into(),
+            api_format: "openai:chat".into(),
+            policy_version: 2,
+            attempt_started_at_unix_secs: super::current_unix_secs(),
+            expected_credential: ProviderCatalogKeyOAuthCredentialFence {
+                encrypted_api_key: key.encrypted_api_key.clone(),
+                auth_type: key.auth_type.clone(),
+                provider_id: key.provider_id.clone(),
+                provider_type,
+            },
+            expected_encrypted_auth_config: key.encrypted_auth_config.clone(),
+            expected_circuit_epoch: 0,
+            expected_probe_lease_expires_at_unix_secs: None,
+            update: ProviderCatalogKeyHealthStateUpdate {
+                key_id: key.id.clone(),
+                expected_encrypted_auth_config: None,
+                expected_health_by_format: key.health_by_format.clone(),
+                expected_circuit_breaker_by_format: key.circuit_breaker_by_format.clone(),
+                health_by_format: Some(
+                    json!({"openai:chat":{"health_score":0.8,"health_policy_version":2}}),
+                ),
+                circuit_breaker_by_format: None,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn health_pending_survives_reopen_preserves_first_fact_and_recognizes_commit() {
+        use aether_data_contracts::repository::provider_catalog::{
+            ProviderCatalogKeyHealthPendingFact,
+            ProviderCatalogKeyHealthSettlementResult as Outcome,
+        };
+        let path = std::env::temp_dir().join(format!(
+            "aether-health-pending-{}.sqlite",
+            uuid::Uuid::new_v4()
+        ));
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options.clone())
+            .await
+            .unwrap();
+        run_migrations(&pool).await.unwrap();
+        seed_rows(&pool).await;
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
+        let key = repository
+            .list_keys_by_ids(&["key-1".into()])
+            .await
+            .unwrap()
+            .remove(0);
+        let provider = repository.list_providers(true).await.unwrap().remove(0);
+        let mut settlement = health_settlement(&key, provider.provider_type, "pending");
+        let original = ProviderCatalogKeyHealthPendingFact {
+            attempt_id: settlement.attempt_id.clone(),
+            key_id: key.id.clone(),
+            api_format: settlement.api_format.clone(),
+            policy_version: settlement.policy_version,
+            attempt_started_at_unix_secs: settlement.attempt_started_at_unix_secs - 10,
+            observed_at_unix_secs: settlement.attempt_started_at_unix_secs,
+            fact: json!({"fence":"original", "failure":1}),
+        };
+        settlement.attempt_started_at_unix_secs = original.attempt_started_at_unix_secs;
+        repository.enqueue_key_health_fact(&original).await.unwrap();
+        let mut duplicate = original.clone();
+        duplicate.fact = json!({"fence":"changed", "failure":2});
+        duplicate.observed_at_unix_secs += 1;
+        assert_eq!(
+            repository
+                .enqueue_key_health_fact(&duplicate)
+                .await
+                .unwrap(),
+            original
+        );
+        assert!(!repository
+            .key_health_attempt_is_settled(&original)
+            .await
+            .unwrap());
+        let mut older = original.clone();
+        older.attempt_id = "older".into();
+        older.observed_at_unix_secs -= 1;
+        repository.enqueue_key_health_fact(&older).await.unwrap();
+        assert_eq!(
+            repository.list_key_health_pending_facts(1).await.unwrap(),
+            vec![older.clone()]
+        );
+        assert!(repository
+            .list_key_health_pending_facts(0)
+            .await
+            .unwrap()
+            .is_empty());
+        repository
+            .remove_key_health_pending_fact(&older)
+            .await
+            .unwrap();
+        repository
+            .remove_key_health_pending_fact(&older)
+            .await
+            .unwrap();
+        let mut expired = original.clone();
+        expired.attempt_id = "expired".into();
+        expired.attempt_started_at_unix_secs = super::current_unix_secs() - 86_400;
+        assert!(repository.enqueue_key_health_fact(&expired).await.is_err());
+        drop(repository);
+        pool.close().await;
+
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
+        assert_eq!(
+            repository.list_key_health_pending_facts(100).await.unwrap(),
+            vec![original.clone()]
+        );
+        settlement.expected_probe_lease_expires_at_unix_secs = Some(super::current_unix_secs());
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::ProbeLeaseExpired
+        );
+        assert!(!repository
+            .key_health_attempt_is_settled(&original)
+            .await
+            .unwrap());
+        assert_eq!(
+            repository
+                .list_keys_by_ids(std::slice::from_ref(&key.id))
+                .await
+                .unwrap()[0]
+                .health_by_format,
+            key.health_by_format
+        );
+        assert_eq!(
+            repository.list_key_health_pending_facts(100).await.unwrap(),
+            vec![original.clone()]
+        );
+        settlement.expected_probe_lease_expires_at_unix_secs = None;
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Applied
+        );
+        // Receipt is authoritative even after credentials/epoch/owner changed.
+        sqlx::query("UPDATE provider_api_keys SET api_key = 'rotated', circuit_breaker_by_format = '{\"openai:chat\":{\"circuit_epoch\":99}}' WHERE id = 'key-1'").execute(&pool).await.unwrap();
+        settlement.expected_probe_lease_expires_at_unix_secs = Some(0);
+        assert!(repository
+            .key_health_attempt_is_settled(&original)
+            .await
+            .unwrap());
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Duplicate
+        );
+        assert_eq!(
+            repository.list_keys_by_ids(&[key.id]).await.unwrap()[0].health_by_format,
+            settlement.update.health_by_format
+        );
+        repository
+            .remove_key_health_pending_fact(&original)
+            .await
+            .unwrap();
+        assert!(repository
+            .list_key_health_pending_facts(100)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(repository
+            .key_health_attempt_is_settled(&original)
+            .await
+            .unwrap());
+        drop(repository);
+        pool.close().await;
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn health_settlement_checks_probe_expiry_after_waiting_for_sqlite_connection() {
+        use aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthSettlementResult as Outcome;
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        run_migrations(&pool).await.unwrap();
+        seed_rows(&pool).await;
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
+        let key = repository
+            .list_keys_by_ids(&["key-1".into()])
+            .await
+            .unwrap()
+            .remove(0);
+        let provider = repository.list_providers(true).await.unwrap().remove(0);
+        let mut settlement = health_settlement(&key, provider.provider_type, "wait-expiry");
+        let deadline = super::current_unix_secs() + 1;
+        settlement.expected_probe_lease_expires_at_unix_secs = Some(deadline);
+        let connection = pool.acquire().await.unwrap();
+        let attempt = repository.settle_key_health_attempt(&settlement);
+        tokio::pin!(attempt);
+        tokio::select! {
+            _ = &mut attempt => panic!("settlement cannot finish without the occupied connection"),
+            _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+        }
+        while super::current_unix_secs() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        drop(connection);
+        assert_eq!(attempt.await.unwrap(), Outcome::ProbeLeaseExpired);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM provider_key_health_settlements")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            repository
+                .list_keys_by_ids(&["key-1".into()])
+                .await
+                .unwrap()[0]
+                .health_by_format,
+            key.health_by_format
+        );
+    }
+
+    #[tokio::test]
+    async fn health_settlement_serializes_independent_sqlite_connections_and_replays() {
+        use aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthSettlementResult as Outcome;
+        let path =
+            std::env::temp_dir().join(format!("aether-health-{}.sqlite", uuid::Uuid::new_v4()));
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .busy_timeout(std::time::Duration::from_secs(5));
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options.clone())
+            .await
+            .unwrap();
+        run_migrations(&pool).await.unwrap();
+        seed_rows(&pool).await;
+        let peer_pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options.clone())
+            .await
+            .unwrap();
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
+        let peer = SqliteProviderCatalogReadRepository::new(peer_pool.clone());
+        let key = repository
+            .list_keys_by_ids(&["key-1".into()])
+            .await
+            .unwrap()
+            .remove(0);
+        let provider = repository.list_providers(true).await.unwrap().remove(0);
+        let first = health_settlement(&key, provider.provider_type, "first");
+        let (left, right) = tokio::join!(
+            repository.settle_key_health_attempt(&first),
+            peer.settle_key_health_attempt(&first)
+        );
+        let results = [left.unwrap(), right.unwrap()];
+        assert!(results.contains(&Outcome::Applied));
+        assert!(results.contains(&Outcome::Duplicate));
+        let mut second = first.clone();
+        second.attempt_id = "second".into();
+        assert_eq!(
+            peer.settle_key_health_attempt(&second).await.unwrap(),
+            Outcome::Conflict
+        );
+        second.update.expected_health_by_format = first.update.health_by_format.clone();
+        second.update.health_by_format =
+            Some(json!({"openai:chat":{"health_score":0.6,"health_policy_version":2}}));
+        let mut third = second.clone();
+        third.attempt_id = "third".into();
+        let (left, right) = tokio::join!(
+            repository.settle_key_health_attempt(&second),
+            peer.settle_key_health_attempt(&third)
+        );
+        let results = [left.unwrap(), right.unwrap()];
+        assert!(results.contains(&Outcome::Applied));
+        assert!(results.contains(&Outcome::Conflict));
+        let pending = if results[0] == Outcome::Conflict {
+            &mut second
+        } else {
+            &mut third
+        };
+        pending.update.expected_health_by_format = pending.update.health_by_format.clone();
+        pending.update.health_by_format =
+            Some(json!({"openai:chat":{"health_score":0.7,"health_policy_version":2}}));
+        assert_eq!(
+            peer.settle_key_health_attempt(pending).await.unwrap(),
+            Outcome::Applied
+        );
+        assert_eq!(
+            repository
+                .list_keys_by_ids(&["key-1".into()])
+                .await
+                .unwrap()[0]
+                .health_by_format,
+            pending.update.health_by_format
+        );
+        pool.close().await;
+        peer_pool.close().await;
+        let reopened = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        let repository = SqliteProviderCatalogReadRepository::new(reopened.clone());
+        assert_eq!(
+            repository.settle_key_health_attempt(&first).await.unwrap(),
+            Outcome::Duplicate
+        );
+        reopened.close().await;
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn health_settlement_rolls_back_receipt_and_rejects_obsolete_reports() {
+        use aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthSettlementResult as Outcome;
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        run_migrations(&pool).await.unwrap();
+        seed_rows(&pool).await;
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
+        let key = repository
+            .list_keys_by_ids(&["key-1".into()])
+            .await
+            .unwrap()
+            .remove(0);
+        let provider = repository.list_providers(true).await.unwrap().remove(0);
+        let mut settlement = health_settlement(&key, provider.provider_type, "rollback");
+        sqlx::raw_sql("CREATE TRIGGER fail_health BEFORE UPDATE OF health_by_format ON provider_api_keys BEGIN SELECT RAISE(ABORT, 'test storage failure'); END;").execute(&pool).await.unwrap();
+        assert!(repository
+            .settle_key_health_attempt(&settlement)
+            .await
+            .is_err());
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM provider_key_health_settlements")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            repository
+                .list_keys_by_ids(&["key-1".into()])
+                .await
+                .unwrap()[0]
+                .health_by_format,
+            key.health_by_format
+        );
+        sqlx::query("DROP TRIGGER fail_health")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Applied
+        );
+        settlement.attempt_id = "late".into();
+        sqlx::query("UPDATE provider_api_keys SET api_key = 'replacement' WHERE id = 'key-1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::StaleGeneration
+        );
+        sqlx::query("UPDATE provider_api_keys SET api_key = 'enc-key', circuit_breaker_by_format = '{\"openai:chat\":{\"circuit_epoch\":1}}' WHERE id = 'key-1'").execute(&pool).await.unwrap();
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::StaleGeneration
+        );
+        settlement.attempt_started_at_unix_secs -= 86_400;
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Expired
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM provider_key_health_settlements")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            1
+        );
+        sqlx::query("DELETE FROM provider_key_health_settlements")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Expired
+        );
     }
 
     async fn seed_rows(pool: &sqlx::SqlitePool) {

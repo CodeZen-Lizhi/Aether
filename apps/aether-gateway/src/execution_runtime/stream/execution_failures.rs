@@ -23,7 +23,7 @@ use crate::execution_runtime::submission::{
 };
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
-    apply_local_execution_effect, classify_failure_disposition, parse_retry_after_secs,
+    apply_local_execution_effect, classify_failure_disposition,
     resolve_local_failover_analysis_for_attempt,
     resolve_local_transport_failover_analysis_for_attempt, with_upstream_response_report_context,
     LocalAdaptiveRateLimitEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
@@ -351,6 +351,7 @@ async fn record_stream_sync_failure(
     started_at_unix_ms: Option<u64>,
     handling: StreamFailureHandling,
 ) -> LocalFailoverAnalysis {
+    crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
     let error_type = stream_failure_body_field(payload, "type").unwrap_or("internal");
     let error_message = stream_failure_body_field(payload, "message").unwrap_or_default();
     let error_body = payload
@@ -365,21 +366,19 @@ async fn record_stream_sync_failure(
         error_body.as_deref(),
     )
     .await;
-    if matches!(error_type, "first_byte_timeout" | "read_timeout") {
-        apply_local_execution_effect(
-            state,
-            LocalExecutionEffectContext {
-                plan,
-                report_context,
-            },
-            LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
-                status_code: payload.status_code,
-                classification: failure_analysis.classification,
-                retry_after_secs: None,
-            }),
-        )
-        .await;
-    }
+    let source = if matches!(error_type, "first_byte_timeout" | "read_timeout") {
+        crate::orchestration::ChatFailureSource::UpstreamTimeout
+    } else if candidate_status_code.is_some() {
+        crate::orchestration::ChatFailureSource::UpstreamResponse
+    } else {
+        crate::orchestration::ChatFailureSource::UpstreamProtocol
+    };
+    let chat_failure = crate::orchestration::classify_chat_failure_for_plan(
+        plan,
+        payload.status_code,
+        error_body.as_deref(),
+        source,
+    );
     apply_local_execution_effect(
         state,
         LocalExecutionEffectContext {
@@ -411,14 +410,17 @@ async fn record_stream_sync_failure(
             plan,
             report_context,
         },
-        LocalExecutionEffect::HealthFailure(LocalHealthFailureEffect {
-            status_code: payload.status_code,
-            classification: failure_analysis.classification,
-            retry_after_secs: parse_retry_after_secs(
-                payload.headers.get("retry-after").map(String::as_str),
-                crate::clock::current_unix_secs(),
-            ),
-        }),
+        LocalExecutionEffect::ClassifiedHealthFailure(
+            LocalHealthFailureEffect {
+                status_code: payload.status_code,
+                classification: failure_analysis.classification,
+                retry_after_secs: crate::execution_runtime::chat_retry::observe_chat_retry_after(
+                    plan,
+                    payload.headers.get("retry-after").map(String::as_str),
+                ),
+            },
+            chat_failure,
+        ),
     )
     .await;
     let retrying_next_candidate = matches!(

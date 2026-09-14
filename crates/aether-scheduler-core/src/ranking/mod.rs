@@ -779,27 +779,114 @@ mod cost_based_and_signal_tests {
     }
 
     #[test]
-    fn cost_based_equal_multipliers_fall_back_to_priority_then_hash() {
-        let first = base_candidate("key-a").with_rate_multiplier(0.5);
-        let second = base_candidate("key-b").with_rate_multiplier(0.5);
+    fn cost_based_equal_multipliers_fall_back_to_manual_priority() {
+        let mut first = base_candidate("key-a").with_rate_multiplier(0.5);
+        first.key_internal_priority = 0;
+        let mut second = base_candidate("key-b").with_rate_multiplier(0.5);
+        second.key_internal_priority = 10;
         let candidates = vec![second, first];
         let mut items = candidates.clone();
         apply_scheduler_candidate_ranking(&mut items, &candidates, cost_based_context());
-        let mut again = candidates.clone();
-        apply_scheduler_candidate_ranking(&mut again, &candidates, cost_based_context());
-        assert_eq!(items, again);
+        assert_eq!(items[0].key_id, "key-a");
+        assert_eq!(items[1].key_id, "key-b");
     }
 
     #[test]
-    fn cost_based_affinity_outranks_cheaper_key() {
+    fn cost_based_cheaper_key_outranks_affinity() {
         let sticky_expensive = base_candidate("key-a")
             .with_rate_multiplier(1.5)
             .with_cached_affinity_match(true);
         let cheap = base_candidate("key-b").with_rate_multiplier(0.4);
-        let candidates = vec![cheap, sticky_expensive];
+        let candidates = vec![sticky_expensive, cheap];
         let mut items = candidates.clone();
         apply_scheduler_candidate_ranking(&mut items, &candidates, cost_based_context());
-        assert_eq!(items[0].key_id, "key-a");
+        assert_eq!(items[0].key_id, "key-b");
+    }
+
+    #[test]
+    fn cost_based_equal_price_affinity_beats_manual_priority() {
+        let mut preferred = base_candidate("key-a").with_rate_multiplier(0.5);
+        preferred.key_internal_priority = 0;
+        let mut sticky = base_candidate("key-b")
+            .with_rate_multiplier(0.5)
+            .with_cached_affinity_match(true);
+        sticky.key_internal_priority = 10;
+        let candidates = vec![preferred, sticky];
+        let mut items = candidates.clone();
+        apply_scheduler_candidate_ranking(&mut items, &candidates, cost_based_context());
+        assert_eq!(items[0].key_id, "key-b");
+    }
+
+    #[test]
+    fn cost_based_preserves_capability_and_format_tiers_before_price_and_affinity() {
+        let exact = base_candidate("exact").with_rate_multiplier(2.0);
+        let converted = base_candidate("converted")
+            .with_rate_multiplier(0.1)
+            .with_cached_affinity_match(true)
+            .with_format_state(true, (1, 0));
+        let less_compatible = base_candidate("less-compatible")
+            .with_rate_multiplier(0.0)
+            .with_cached_affinity_match(true)
+            .with_format_state(true, (2, 0));
+        let less_capable = base_candidate("less-capable")
+            .with_rate_multiplier(0.0)
+            .with_cached_affinity_match(true)
+            .with_capability_priority((1, 0));
+        let candidates = vec![less_capable, less_compatible, converted, exact];
+        let mut items = candidates.clone();
+        apply_scheduler_candidate_ranking(&mut items, &candidates, cost_based_context());
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.key_id.as_str())
+                .collect::<Vec<_>>(),
+            ["exact", "converted", "less-compatible", "less-capable"]
+        );
+    }
+
+    #[test]
+    fn fixed_order_preserves_manual_priorities_despite_health_affinity_and_dynamic_signals() {
+        let mut preferred = base_candidate("preferred").with_rate_multiplier(2.0);
+        preferred.provider_priority = 0;
+        preferred.key_internal_priority = 0;
+        preferred.health_score = 0.1;
+        preferred.inflight_count = Some(20);
+        preferred.latency_ewma_ms = Some(LatencyEwma {
+            samples: 10,
+            ewma_ms: 2000.0,
+        });
+        let mut sibling = base_candidate("sibling").with_cached_affinity_match(true);
+        sibling.key_internal_priority = 1;
+        sibling.inflight_count = Some(0);
+        sibling.latency_ewma_ms = Some(LatencyEwma {
+            samples: 10,
+            ewma_ms: 10.0,
+        });
+        let mut backup = sibling.clone();
+        backup.provider_id = "provider-b".to_string();
+        backup.key_id = "backup".to_string();
+        backup.provider_priority = 1;
+        backup.key_internal_priority = -1;
+        let candidates = vec![backup, sibling, preferred];
+        let mut items = candidates.clone();
+        apply_scheduler_candidate_ranking(
+            &mut items,
+            &candidates,
+            SchedulerRankingContext {
+                ranking_mode: SchedulerRankingMode::FixedOrder,
+                include_health: true,
+                include_inflight: true,
+                include_latency: true,
+                ..SchedulerRankingContext::default()
+            },
+        );
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.key_id.as_str())
+                .collect::<Vec<_>>(),
+            ["preferred", "sibling", "backup"]
+        );
     }
 
     #[test]

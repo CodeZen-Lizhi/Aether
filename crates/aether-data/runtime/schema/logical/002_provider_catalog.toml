@@ -852,6 +852,32 @@ columns = ["user_id"]
 name = "gemini_file_mappings_expires_at_idx"
 columns = ["expires_at"]
 
+[table.provider_key_health_pending_facts]
+domain = "provider_catalog"
+order = 96
+primary_key = ["id"]
+
+[[table.provider_key_health_pending_facts.columns]]
+name = "id"
+type = "text"
+length = 1024
+
+[[table.provider_key_health_pending_facts.columns]]
+name = "observed_at"
+type = "unix_seconds"
+
+[[table.provider_key_health_pending_facts.columns]]
+name = "expires_at"
+type = "unix_seconds"
+
+[[table.provider_key_health_pending_facts.columns]]
+name = "payload"
+type = "json"
+
+[[table.provider_key_health_pending_facts.indexes]]
+name = "provider_key_health_pending_facts_order_idx"
+columns = ["observed_at", "id"]
+
 [[table.gemini_file_mappings.indexes]]
 name = "gemini_file_mappings_source_hash_idx"
 columns = ["source_hash"]
@@ -1859,3 +1885,43 @@ columns = ["group_id", "version"]
 [[table.routing_group_versions.indexes]]
 name = "routing_group_versions_group_id_idx"
 columns = ["group_id"]
+
+[table.provider_key_health_settlements]
+domain = "provider_catalog"
+order = 95
+primary_key = ["id"]
+
+[[table.provider_key_health_settlements.columns]]
+name = "id"
+type = "text"
+length = 1024
+
+[[table.provider_key_health_settlements.columns]]
+name = "key_id"
+type = "text_id"
+length = 64
+
+[[table.provider_key_health_settlements.columns]]
+name = "api_format"
+type = "text"
+length = 64
+
+[[table.provider_key_health_settlements.columns]]
+name = "policy_version"
+type = "int32"
+
+[[table.provider_key_health_settlements.columns]]
+name = "attempt_started_at"
+type = "unix_seconds"
+
+[[table.provider_key_health_settlements.columns]]
+name = "settled_at"
+type = "unix_seconds"
+
+[[table.provider_key_health_settlements.columns]]
+name = "expires_at"
+type = "unix_seconds"
+
+[[table.provider_key_health_settlements.indexes]]
+name = "provider_key_health_settlements_expiry_idx"
+columns = ["expires_at"]

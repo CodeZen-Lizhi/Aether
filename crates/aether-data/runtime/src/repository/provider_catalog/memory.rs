@@ -18,12 +18,18 @@ use super::{
 };
 use crate::repository::usage::{ProviderApiKeyUsageContribution, ProviderApiKeyUsageDelta};
 use crate::DataLayerError;
+use aether_data_contracts::repository::provider_catalog::{
+    ProviderCatalogKeyHealthPendingFact, ProviderCatalogKeyHealthSettlement,
+    ProviderCatalogKeyHealthSettlementResult, PROVIDER_KEY_HEALTH_PENDING_BATCH_LIMIT,
+};
 
 #[derive(Debug, Default)]
 struct MemoryProviderCatalogIndex {
     providers: BTreeMap<String, StoredProviderCatalogProvider>,
     endpoints: BTreeMap<String, StoredProviderCatalogEndpoint>,
     keys: BTreeMap<String, StoredProviderCatalogKey>,
+    health_settlements: BTreeMap<String, u64>,
+    health_pending: BTreeMap<String, ProviderCatalogKeyHealthPendingFact>,
 }
 
 #[derive(Debug, Default)]
@@ -48,6 +54,8 @@ impl InMemoryProviderCatalogReadRepository {
                     .map(|endpoint| (endpoint.id.clone(), endpoint))
                     .collect(),
                 keys: keys.into_iter().map(|key| (key.id.clone(), key)).collect(),
+                health_settlements: BTreeMap::new(),
+                health_pending: BTreeMap::new(),
             }),
         }
     }
@@ -1269,6 +1277,121 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
         Ok(true)
     }
 
+    async fn enqueue_key_health_fact(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<ProviderCatalogKeyHealthPendingFact, DataLayerError> {
+        let mut index = self
+            .index
+            .write()
+            .expect("provider catalog repository lock");
+        fact.validate_enqueue(current_unix_secs())?;
+        Ok(index
+            .health_pending
+            .entry(fact.receipt_id()?)
+            .or_insert_with(|| fact.clone())
+            .clone())
+    }
+
+    async fn list_key_health_pending_facts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ProviderCatalogKeyHealthPendingFact>, DataLayerError> {
+        let index = self.index.read().expect("provider catalog repository lock");
+        let mut entries = index.health_pending.iter().collect::<Vec<_>>();
+        entries.sort_by_key(|(id, fact)| (fact.observed_at_unix_secs, *id));
+        Ok(entries
+            .into_iter()
+            .take(limit.min(PROVIDER_KEY_HEALTH_PENDING_BATCH_LIMIT))
+            .map(|(_, fact)| fact.clone())
+            .collect())
+    }
+
+    async fn remove_key_health_pending_fact(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<(), DataLayerError> {
+        self.index
+            .write()
+            .expect("provider catalog repository lock")
+            .health_pending
+            .remove(&fact.receipt_id()?);
+        Ok(())
+    }
+
+    async fn key_health_attempt_is_settled(
+        &self,
+        fact: &ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<bool, DataLayerError> {
+        Ok(self
+            .index
+            .read()
+            .expect("provider catalog repository lock")
+            .health_settlements
+            .get(&fact.receipt_id()?)
+            .is_some_and(|expires| *expires > current_unix_secs()))
+    }
+
+    async fn settle_key_health_attempt(
+        &self,
+        settlement: &ProviderCatalogKeyHealthSettlement,
+    ) -> Result<ProviderCatalogKeyHealthSettlementResult, DataLayerError> {
+        use ProviderCatalogKeyHealthSettlementResult as Outcome;
+        let now = current_unix_secs();
+        settlement.validate(now)?;
+        if settlement.expires_at_unix_secs() <= now {
+            return Ok(Outcome::Expired);
+        }
+        let receipt_id = settlement.receipt_id()?;
+        let mut index = self
+            .index
+            .write()
+            .expect("provider catalog repository lock");
+        let now = current_unix_secs();
+        if settlement.expires_at_unix_secs() <= now {
+            return Ok(Outcome::Expired);
+        }
+        index.health_settlements.retain(|_, expires| *expires > now);
+        if index.health_settlements.contains_key(&receipt_id) {
+            return Ok(Outcome::Duplicate);
+        }
+        let update = &settlement.update;
+        let Some(key) = index.keys.get(&update.key_id) else {
+            return Ok(Outcome::MissingKey);
+        };
+        let provider_type = index
+            .providers
+            .get(&key.provider_id)
+            .map(|provider| provider.provider_type.as_str())
+            .unwrap_or_default();
+        if !settlement.generation_matches(key, provider_type) {
+            return Ok(Outcome::StaleGeneration);
+        }
+        if key.health_by_format != update.expected_health_by_format
+            || key.circuit_breaker_by_format != update.expected_circuit_breaker_by_format
+        {
+            return Ok(Outcome::Conflict);
+        }
+        if settlement
+            .expected_probe_lease_expires_at_unix_secs
+            .is_some_and(|deadline| deadline <= current_unix_secs())
+        {
+            return Ok(Outcome::ProbeLeaseExpired);
+        }
+        let key = index
+            .keys
+            .get_mut(&update.key_id)
+            .expect("key checked under write lock");
+        key.health_by_format.clone_from(&update.health_by_format);
+        key.circuit_breaker_by_format
+            .clone_from(&update.circuit_breaker_by_format);
+        key.updated_at_unix_secs = Some(now);
+        index
+            .health_settlements
+            .insert(receipt_id, settlement.expires_at_unix_secs());
+        Ok(Outcome::Applied)
+    }
+
     async fn compare_and_update_key_health_state(
         &self,
         update: &ProviderCatalogKeyHealthStateUpdate,
@@ -2455,6 +2578,245 @@ mod tests {
             .await
             .expect("keys should read");
         assert_eq!(reloaded[0].name, "updated");
+    }
+
+    #[tokio::test]
+    async fn health_pending_facts_are_immutable_ordered_and_explicitly_removed() {
+        use aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthPendingFact;
+        let repository = InMemoryProviderCatalogReadRepository::default();
+        let now = super::current_unix_secs();
+        let original = ProviderCatalogKeyHealthPendingFact {
+            attempt_id: "attempt".into(),
+            key_id: "deleted-key".into(),
+            api_format: "openai:chat".into(),
+            policy_version: 2,
+            attempt_started_at_unix_secs: now - 10,
+            observed_at_unix_secs: now,
+            fact: json!({"fence":"original", "failure":1}),
+        };
+        repository.enqueue_key_health_fact(&original).await.unwrap();
+        let mut duplicate = original.clone();
+        duplicate.fact = json!({"fence":"changed", "failure":2});
+        duplicate.observed_at_unix_secs = now + 1;
+        assert_eq!(
+            repository
+                .enqueue_key_health_fact(&duplicate)
+                .await
+                .unwrap(),
+            original
+        );
+        assert_eq!(
+            repository.list_key_health_pending_facts(10).await.unwrap(),
+            vec![original.clone()]
+        );
+        assert!(!repository
+            .key_health_attempt_is_settled(&original)
+            .await
+            .unwrap());
+        let mut older = original.clone();
+        older.attempt_id = "older".into();
+        older.observed_at_unix_secs -= 1;
+        repository.enqueue_key_health_fact(&older).await.unwrap();
+        assert_eq!(
+            repository.list_key_health_pending_facts(1).await.unwrap(),
+            vec![older.clone()]
+        );
+        assert!(repository
+            .list_key_health_pending_facts(0)
+            .await
+            .unwrap()
+            .is_empty());
+        // Expired records already stored remain visible for diagnostic cleanup.
+        repository
+            .index
+            .write()
+            .unwrap()
+            .health_pending
+            .get_mut(&older.receipt_id().unwrap())
+            .unwrap()
+            .attempt_started_at_unix_secs = now - 86_400;
+        assert_eq!(
+            repository
+                .list_key_health_pending_facts(10)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        repository
+            .remove_key_health_pending_fact(&older)
+            .await
+            .unwrap();
+        repository
+            .remove_key_health_pending_fact(&older)
+            .await
+            .unwrap();
+        assert_eq!(
+            repository.list_key_health_pending_facts(10).await.unwrap(),
+            vec![original.clone()]
+        );
+        let mut expired = original.clone();
+        expired.attempt_id = "expired".into();
+        expired.attempt_started_at_unix_secs = now - 86_400;
+        assert!(repository.enqueue_key_health_fact(&expired).await.is_err());
+        repository
+            .remove_key_health_pending_fact(&duplicate)
+            .await
+            .unwrap();
+        assert!(repository
+            .list_key_health_pending_facts(10)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn health_settlement_replay_conflict_and_generation_fences() {
+        use aether_data_contracts::repository::provider_catalog::{
+            ProviderCatalogKeyHealthSettlement,
+            ProviderCatalogKeyHealthSettlementResult as Outcome,
+            ProviderCatalogKeyOAuthCredentialFence,
+        };
+        let provider = sample_provider("provider-1");
+        let key = sample_key("key-1", "provider-1");
+        let repository = InMemoryProviderCatalogReadRepository::seed(
+            vec![provider.clone()],
+            vec![],
+            vec![key.clone()],
+        );
+        let mut settlement = ProviderCatalogKeyHealthSettlement {
+            attempt_id: "attempt-1".into(),
+            api_format: "openai:chat".into(),
+            policy_version: 2,
+            attempt_started_at_unix_secs: super::current_unix_secs(),
+            expected_credential: ProviderCatalogKeyOAuthCredentialFence {
+                encrypted_api_key: key.encrypted_api_key.clone(),
+                auth_type: key.auth_type.clone(),
+                provider_id: key.provider_id.clone(),
+                provider_type: provider.provider_type,
+            },
+            expected_encrypted_auth_config: key.encrypted_auth_config.clone(),
+            expected_circuit_epoch: 0,
+            expected_probe_lease_expires_at_unix_secs: None,
+            update: ProviderCatalogKeyHealthStateUpdate {
+                key_id: key.id,
+                expected_encrypted_auth_config: None,
+                expected_health_by_format: None,
+                expected_circuit_breaker_by_format: None,
+                health_by_format: Some(
+                    json!({"openai:chat":{"health_score":0.8,"health_policy_version":2}}),
+                ),
+                circuit_breaker_by_format: None,
+            },
+        };
+        let pending = aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthPendingFact {
+            attempt_id: settlement.attempt_id.clone(), key_id: settlement.update.key_id.clone(), api_format: settlement.api_format.clone(), policy_version: settlement.policy_version,
+            attempt_started_at_unix_secs: settlement.attempt_started_at_unix_secs, observed_at_unix_secs: settlement.attempt_started_at_unix_secs,
+            fact: json!({"failure":1}),
+        };
+        repository.enqueue_key_health_fact(&pending).await.unwrap();
+        settlement.expected_probe_lease_expires_at_unix_secs = Some(super::current_unix_secs());
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::ProbeLeaseExpired
+        );
+        assert!(!repository
+            .key_health_attempt_is_settled(&pending)
+            .await
+            .unwrap());
+        assert_eq!(
+            repository
+                .list_keys_by_ids(&["key-1".into()])
+                .await
+                .unwrap()[0]
+                .health_by_format,
+            None
+        );
+        settlement.expected_probe_lease_expires_at_unix_secs = None;
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Applied
+        );
+        assert!(repository
+            .key_health_attempt_is_settled(&pending)
+            .await
+            .unwrap());
+        // Uncertain commit replay is Duplicate even after the original probe expires.
+        settlement.expected_probe_lease_expires_at_unix_secs = Some(0);
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Duplicate
+        );
+        settlement.attempt_id = "attempt-2".into();
+        settlement.expected_probe_lease_expires_at_unix_secs = None;
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Conflict
+        );
+        settlement.update.expected_health_by_format = settlement.update.health_by_format.clone();
+        settlement.update.health_by_format =
+            Some(json!({"openai:chat":{"health_score":0.6,"health_policy_version":2}}));
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Applied
+        );
+        settlement.attempt_id = "attempt-3".into();
+        settlement.expected_circuit_epoch = 1;
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::StaleGeneration
+        );
+        settlement.expected_circuit_epoch = 0;
+        settlement.expected_encrypted_auth_config = Some("changed".into());
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::StaleGeneration
+        );
+        settlement.expected_encrypted_auth_config = None;
+        settlement.expected_credential.encrypted_api_key = Some("rotated".into());
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::StaleGeneration
+        );
+        settlement.attempt_started_at_unix_secs -= 86_400;
+        assert_eq!(
+            repository
+                .settle_key_health_attempt(&settlement)
+                .await
+                .unwrap(),
+            Outcome::Expired
+        );
+        let stored = repository
+            .list_keys_by_ids(&["key-1".into()])
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(stored.health_by_format, settlement.update.health_by_format);
+        assert_eq!(repository.index.read().unwrap().health_settlements.len(), 2);
     }
 
     #[tokio::test]

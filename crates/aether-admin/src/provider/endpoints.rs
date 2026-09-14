@@ -142,6 +142,49 @@ mod endpoint_key_count_tests {
     }
 
     #[test]
+    fn explicit_endpoint_two_survives_save_and_inheritance_can_be_restored() {
+        let mut endpoint = sample_endpoint("chat", "openai:chat");
+        endpoint.max_retries = Some(2);
+        endpoint.config = Some(json!({"future_option": true}));
+        let updated = apply_admin_provider_endpoint_update_fields(
+            &endpoint,
+            |field| field == "max_retries",
+            |_| false,
+            &AdminProviderEndpointUpdateFields {
+                max_retries: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.config.as_ref().unwrap()["future_option"], true);
+        let effective = aether_contracts::chat_retry::resolve_chat_max_attempts(
+            None,
+            updated.config.as_ref(),
+            updated.max_retries,
+            Some(5),
+        );
+        assert_eq!(effective.max_attempts, 2);
+        assert_eq!(effective.source, "endpoint.max_attempts");
+        let inherited = apply_admin_provider_endpoint_update_fields(
+            &updated,
+            |field| field == "max_retries",
+            |field| field == "max_retries",
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            aether_contracts::chat_retry::resolve_chat_max_attempts(
+                None,
+                inherited.config.as_ref(),
+                inherited.max_retries,
+                Some(5)
+            )
+            .max_attempts,
+            5
+        );
+    }
+
+    #[test]
     fn endpoint_counts_follow_one_way_format_permissions() {
         let endpoints = vec![
             sample_endpoint("responses", "openai:responses"),
@@ -219,7 +262,7 @@ pub fn build_admin_provider_endpoint_response(
         "custom_path": endpoint.custom_path,
         "header_rules": endpoint.header_rules,
         "body_rules": endpoint.body_rules,
-        "max_retries": endpoint.max_retries.unwrap_or(2),
+        "max_retries": endpoint.max_retries,
         "is_active": endpoint.is_active,
         "config": endpoint.config,
         "proxy": masked_proxy_value(endpoint.proxy.as_ref()),
@@ -347,17 +390,20 @@ where
     }
 
     if contains_field("max_retries") {
-        let Some(max_retries) = payload.max_retries else {
-            return Err(if is_null_field("max_retries") {
-                "max_retries 必须是 0 到 999 之间的整数".to_string()
-            } else {
-                "max_retries 必须是整数".to_string()
-            });
-        };
-        if !(0..=999).contains(&max_retries) {
-            return Err("max_retries 必须在 0 到 999 之间".to_string());
+        if contains_field("config") {
+            super::failover::validate_scope_aliases(
+                payload
+                    .config
+                    .as_ref()
+                    .and_then(|config| config.get("failover_rules")),
+                "max_attempts",
+                payload.max_retries,
+            )?;
         }
-        updated.max_retries = Some(max_retries);
+        if let Some(max_retries) = payload.max_retries {
+            super::failover::validate_legacy_attempts(max_retries)?;
+        }
+        updated.max_retries = payload.max_retries;
     }
 
     if contains_field("is_active") {
@@ -377,8 +423,36 @@ where
             if !config.is_object() {
                 return Err("config 必须是对象或 null".to_string());
             }
-            Some(config.clone())
+            let mut merged = updated
+                .config
+                .as_ref()
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            for (key, value) in config.as_object().expect("validated object") {
+                if value.is_null() {
+                    merged.remove(key);
+                } else if key == "failover_rules" {
+                    let rules =
+                        super::failover::merge_failover_rules(merged.get(key), value.clone())?;
+                    merged.insert(key.clone(), rules);
+                } else {
+                    merged.insert(key.clone(), value.clone());
+                }
+            }
+            Some(Value::Object(merged))
         };
+    }
+
+    if contains_field("max_retries") {
+        let mut config = updated
+            .config
+            .as_ref()
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        super::failover::set_scope_attempts(&mut config, "max_attempts", updated.max_retries)?;
+        updated.config = Some(Value::Object(config));
     }
 
     if contains_field("proxy") {

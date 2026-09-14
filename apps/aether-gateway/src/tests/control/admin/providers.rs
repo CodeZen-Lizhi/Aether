@@ -40,6 +40,9 @@ use crate::data::GatewayDataState;
 
 const ADMIN_PROVIDERS_DATA_UNAVAILABLE_DETAIL: &str = "Admin provider catalog data unavailable";
 
+#[path = "providers/chat_retry.rs"]
+mod chat_retry;
+
 fn trusted_admin_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(GATEWAY_HEADER, HeaderValue::from_static("rust-phase3b"));
@@ -906,7 +909,10 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
     );
     assert_eq!(payload["stream_first_byte_timeout"], 11.0);
     assert_eq!(payload["proxy"], json!({"url": "https://proxy.example"}));
-    assert_eq!(payload["failover_rules"], json!({"strategy": "ordered"}));
+    assert_eq!(
+        payload["failover_rules"],
+        json!({"strategy": "ordered", "provider_max_attempts": 6, "chat_policy_version": 1})
+    );
     assert_eq!(payload["chat_pii_redaction"], json!({"enabled": true}));
     assert_eq!(payload["ops_configured"], true);
     assert_eq!(payload["ops_architecture_id"], "generic_api");
@@ -977,7 +983,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
     assert_eq!(disable_payload["max_transfer_timeout_seconds"], 60);
     assert_eq!(
         disable_payload["failover_rules"],
-        json!({"strategy": "ordered"})
+        json!({"strategy": "ordered", "provider_max_attempts": 6, "chat_policy_version": 1})
     );
     assert_eq!(disable_payload["ops_architecture_id"], "generic_api");
 
@@ -1039,7 +1045,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
             .as_ref()
             .and_then(|value| value.get("failover_rules"))
             .cloned(),
-        Some(json!({"strategy": "ordered"}))
+        Some(json!({"strategy": "ordered", "provider_max_attempts": 6, "chat_policy_version": 1}))
     );
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 

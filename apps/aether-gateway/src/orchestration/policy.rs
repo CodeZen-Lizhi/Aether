@@ -228,6 +228,10 @@ pub(crate) fn append_local_failover_policy_to_value(
         "local_failover_policy".to_string(),
         local_failover_policy_to_value(&local_failover_policy_from_transport(transport)),
     );
+    object.insert(
+        "planned_chat_credential_fingerprint".to_string(),
+        Value::String(chat_transport_credential_fingerprint(transport)),
+    );
     if transport
         .provider
         .provider_type
@@ -253,6 +257,22 @@ pub(crate) fn append_local_failover_policy_to_value(
         }
     }
     Value::Object(object)
+}
+
+pub(super) fn chat_transport_credential_fingerprint(
+    transport: &GatewayProviderTransportSnapshot,
+) -> String {
+    use sha2::{Digest, Sha256};
+    let credential = serde_json::to_vec(&(
+        &transport.provider.id,
+        &transport.provider.provider_type,
+        &transport.key.id,
+        &transport.key.auth_type,
+        &transport.key.decrypted_api_key,
+        &transport.key.decrypted_auth_config,
+    ))
+    .expect("credential tuple is serializable");
+    format!("{:x}", Sha256::digest(credential))
 }
 
 fn parse_status_code_list(value: &Value) -> BTreeSet<u16> {

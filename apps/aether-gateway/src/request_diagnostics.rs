@@ -10,9 +10,19 @@ tokio::task_local! {
     static REQUEST_DIAGNOSTICS: Arc<RequestDiagnostics>;
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct RequestDiagnostics {
+    request_order: uuid::Uuid,
     inner: Mutex<RequestDiagnosticsInner>,
+}
+
+impl Default for RequestDiagnostics {
+    fn default() -> Self {
+        Self {
+            request_order: uuid::Uuid::now_v7(),
+            inner: Mutex::new(RequestDiagnosticsInner::default()),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -39,6 +49,10 @@ struct DbPoolObservation {
 }
 
 impl RequestDiagnostics {
+    pub(crate) fn request_order(&self) -> uuid::Uuid {
+        self.request_order
+    }
+
     fn record_request_accepted_at(&self, accepted_at: Instant) {
         let Ok(mut inner) = self.inner.lock() else {
             return;
@@ -398,6 +412,44 @@ mod tests {
         calibrate_candidate_first_byte_elapsed_ms,
         end_to_end_first_byte_time_ms_from_candidate_start, RequestDiagnostics,
     };
+
+    #[tokio::test]
+    async fn request_order_survives_background_handoff_and_nested_request_scopes() {
+        super::scope_request_diagnostics(async {
+            let original =
+                super::current_request_diagnostics().expect("request scope should exist");
+            let original_order = original.request_order();
+            let later_order = super::scope_request_diagnostics(async {
+                super::current_request_diagnostics()
+                    .unwrap()
+                    .request_order()
+            })
+            .await;
+            assert!(original_order < later_order);
+
+            let inherited = original.clone();
+            let background_order = tokio::spawn(super::scope_request_diagnostics_with(
+                Some(original),
+                async move {
+                    let current = super::current_request_diagnostics()
+                        .expect("background scope should exist");
+                    assert!(Arc::ptr_eq(&current, &inherited));
+                    current.request_order()
+                },
+            ))
+            .await
+            .expect("background task should finish");
+            assert_eq!(background_order, original_order);
+            assert_eq!(
+                super::current_request_diagnostics()
+                    .unwrap()
+                    .request_order(),
+                original_order
+            );
+        })
+        .await;
+        assert!(super::current_request_diagnostics().is_none());
+    }
 
     #[test]
     fn candidate_first_byte_calibration_includes_pre_transport_wait() {

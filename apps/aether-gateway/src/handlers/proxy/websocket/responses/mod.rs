@@ -14,14 +14,19 @@ mod client;
 mod connection;
 mod continuation;
 mod control;
+#[cfg(test)]
+mod failover_tests;
 mod frame;
 mod lifecycle;
 mod observation;
 mod ownership;
+mod probe;
 mod quota;
 mod redaction;
 mod relay_policy;
 mod request;
+#[cfg(test)]
+mod route_smoke;
 mod session;
 mod settlement;
 mod state;

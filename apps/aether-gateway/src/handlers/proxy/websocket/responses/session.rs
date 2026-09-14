@@ -41,7 +41,7 @@ use super::request::{
 use super::state::BoundResponsesConnection;
 use super::turn::{prepare_responses_websocket_turn_decision, ResponsesWebSocketTurnOutcome};
 use super::turn_state::LogicalTurn;
-use super::upstream::{bind_responses_upstream, close_bound_upstream};
+use super::upstream::close_bound_upstream;
 
 use crate::ai_serving::ResponsesWebSocketPinnedCandidate;
 use crate::handlers::proxy::websocket::ingress::{
@@ -432,6 +432,8 @@ async fn bootstrap_responses_websocket(
         }
     };
 
+    let logical_started_at = std::time::Instant::now();
+    let first_logical_turn_id = Uuid::now_v7().to_string();
     let initial_previous_response_id = first_event
         .get("previous_response_id")
         .and_then(Value::as_str)
@@ -708,17 +710,20 @@ async fn bootstrap_responses_websocket(
             return None;
         }
     };
-    let planned = match await_owned_responses_websocket_plan(spawn_owned_responses_websocket_plan(
-        state.clone(),
-        planning_parts,
-        context.trace_id.clone(),
-        turn_control.decision.clone(),
-        turn_control.auth_snapshot.clone(),
-        first_event.clone(),
-        None,
-        None,
-        pinned_candidate,
-    ))
+    let planned = match await_owned_responses_websocket_plan(
+        spawn_owned_responses_websocket_plan(
+            state.clone(),
+            planning_parts,
+            context.trace_id.clone(),
+            turn_control.decision.clone(),
+            turn_control.auth_snapshot.clone(),
+            first_event.clone(),
+            None,
+            None,
+            pinned_candidate,
+        ),
+        super::turn_state::first_output_deadline(logical_started_at, None),
+    )
     .await
     {
         Ok(Some(decision)) => decision,
@@ -860,7 +865,6 @@ async fn bootstrap_responses_websocket(
                 return None;
             }
         };
-    let first_logical_turn_id = Uuid::new_v4().to_string();
     let first_turn_decision = prepare_responses_websocket_turn_decision(
         &decision,
         context.trace_id.clone(),
@@ -880,6 +884,7 @@ async fn bootstrap_responses_websocket(
         first_turn_decision,
         &first_event,
         planned_lease,
+        super::turn_state::first_output_deadline(logical_started_at, decision.timeouts.as_ref()),
     )
     .await
     {
@@ -901,36 +906,47 @@ async fn bootstrap_responses_websocket(
         }
     };
 
-    let mut bound =
-        match bind_responses_upstream(&decision, normalization, &first_event, adapter).await {
-            Ok(connection) => connection,
-            Err(code) => {
-                let finalizer = finalize_unbound_turn(
-                    state.clone(),
-                    first_turn,
-                    ResponsesWebSocketTurnOutcome::upstream_connect_failed(code),
-                );
-                warn!(
-                    event_name = "responses_websocket_upstream_connect_failed",
-                    log_type = "ops",
-                    transport = WEBSOCKET_LOG_TRANSPORT,
-                    websocket = true,
-                    trace_id = %context.trace_id,
-                    error_code = code,
-                    "gateway failed to establish Responses WebSocket upstream"
-                );
-                send_gateway_error_with_status(
-                    client_socket,
-                    502,
-                    code,
-                    "Gateway could not establish the Provider connection",
-                )
-                .await;
-                close_client_socket(client_socket, CLOSE_TRY_AGAIN, code).await;
-                await_turn_finalization_handle(finalizer).await;
-                return None;
-            }
-        };
+    let mut bound = match first_turn
+        .with_probe_lease(super::upstream::bind_responses_upstream_before(
+            &decision,
+            normalization,
+            &first_event,
+            adapter,
+            super::turn_state::first_output_deadline(
+                logical_started_at,
+                decision.timeouts.as_ref(),
+            ),
+        ))
+        .await
+    {
+        Ok(connection) => connection,
+        Err(code) => {
+            let finalizer = finalize_unbound_turn(
+                state.clone(),
+                first_turn,
+                ResponsesWebSocketTurnOutcome::upstream_connect_failed(code),
+            );
+            warn!(
+                event_name = "responses_websocket_upstream_connect_failed",
+                log_type = "ops",
+                transport = WEBSOCKET_LOG_TRANSPORT,
+                websocket = true,
+                trace_id = %context.trace_id,
+                error_code = code,
+                "gateway failed to establish Responses WebSocket upstream"
+            );
+            send_gateway_error_with_status(
+                client_socket,
+                502,
+                code,
+                "Gateway could not establish the Provider connection",
+            )
+            .await;
+            close_client_socket(client_socket, CLOSE_TRY_AGAIN, code).await;
+            await_turn_finalization_handle(finalizer).await;
+            return None;
+        }
+    };
     if bound.responses_lite_static_config.is_some() {
         bound.responses_lite_static_config = continuation_record
             .as_ref()
@@ -954,6 +970,11 @@ async fn bootstrap_responses_websocket(
     }
     bound.turn_state.begin(
         LogicalTurn::new(first_event, 1, first_logical_turn_id)
+            .with_failover_budget(
+                logical_started_at,
+                bound.decision_template.timeouts.as_ref(),
+                bound.decision_template.key_id.as_deref(),
+            )
             .with_provider_store(first_provider_event.get("store") == Some(&Value::Bool(true)))
             .with_turn_control(turn_control),
         first_turn,
@@ -1881,10 +1902,11 @@ mod tests {
             2,
             "logical-turn".to_string(),
         );
-        retried.retry_attempted = true;
+        retried.record_attempt("previous-key");
         assert_eq!(
             retried.quota_retry_block_reason(),
-            Some("quota_retry_already_attempted")
+            None,
+            "a failed key is excluded independently of another key's retry eligibility"
         );
 
         let mut client_control = LogicalTurn::new(
@@ -1972,7 +1994,7 @@ mod tests {
     #[tokio::test]
     async fn expired_turn_deadline_returns_without_waiting_for_socket_io() {
         let deadline = ResponsesWebSocketTurnDeadline {
-            phase: ResponsesWebSocketTurnTimeoutPhase::AwaitingFirstEvent,
+            phase: ResponsesWebSocketTurnTimeoutPhase::FirstEvent,
             deadline: Instant::now() - Duration::from_millis(1),
             timeout: Duration::from_secs(1),
         };

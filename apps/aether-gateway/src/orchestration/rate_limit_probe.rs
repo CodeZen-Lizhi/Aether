@@ -9,6 +9,20 @@ use crate::{AppState, GatewayError};
 
 const PROVIDER_KEY_RATE_LIMIT_PROBE_CAS_MAX_ATTEMPTS: usize = 4;
 
+pub(crate) async fn try_claim_managed_local_rate_limit_probe(
+    state: &AppState,
+    key_id: &str,
+    api_format: &str,
+) -> Result<super::probe_lease::LocalProbeLeaseClaim, GatewayError> {
+    super::probe_lease::claim_managed_probe(
+        state,
+        key_id,
+        api_format,
+        super::probe_lease::ProbeLeaseKind::RateLimit,
+    )
+    .await
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LocalRateLimitProbeClaim {
     /// This key has no prior 429 cooldown for the provider format.
@@ -20,6 +34,9 @@ pub(crate) enum LocalRateLimitProbeClaim {
 }
 
 /// Claim the bounded recovery probe allowed after a rate-limit cooldown expires.
+///
+/// Compatibility-only reservation. Chat execution must use the managed API to
+/// retain an owner token, renew during execution and release on cancellation.
 ///
 /// Selection uses a batch strong read, while the health-state compare-and-set
 /// below remains the final ownership boundary immediately before a candidate

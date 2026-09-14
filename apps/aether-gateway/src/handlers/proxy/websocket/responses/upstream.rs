@@ -56,6 +56,41 @@ pub(super) async fn bind_responses_upstream(
     .map_err(|_| "responses_websocket_upstream_handshake_timeout")?
 }
 
+pub(super) async fn bind_responses_upstream_before(
+    decision: &AiExecutionDecision,
+    normalization: ResponsesWebSocketBodyNormalization,
+    initial_event: &Value,
+    adapter: &'static dyn ResponsesWebSocketProtocolAdapter,
+    deadline: std::time::Instant,
+) -> Result<BoundResponsesConnection, &'static str> {
+    if std::time::Instant::now() >= deadline {
+        return Err("stream_failover_budget_exhausted");
+    }
+    tokio::time::timeout_at(
+        deadline.into(),
+        bind_responses_upstream(decision, normalization, initial_event, adapter),
+    )
+    .await
+    .map_err(|_| "stream_failover_budget_exhausted")?
+}
+
+pub(super) async fn send_response_create_before(
+    upstream: &mut wreq::ws::WebSocket,
+    outbound: String,
+    deadline: std::time::Instant,
+) -> Result<(), &'static str> {
+    if std::time::Instant::now() >= deadline {
+        return Err("stream_failover_budget_exhausted");
+    }
+    tokio::time::timeout_at(
+        deadline.into(),
+        send_upstream_message(upstream, WreqWsMessage::text(outbound)),
+    )
+    .await
+    .map_err(|_| "stream_failover_budget_exhausted")?
+    .map_err(|_| "responses_websocket_send_failed")
+}
+
 /// 实际执行握手 + 首条事件发送的内部函数，由外层 timeout 包裹。
 async fn bind_responses_upstream_inner(
     decision: &AiExecutionDecision,

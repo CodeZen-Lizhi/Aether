@@ -829,6 +829,58 @@ impl GatewayDataState {
         Ok(updated)
     }
 
+    pub(crate) async fn enqueue_provider_catalog_key_health_fact(
+        &self,
+        fact: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<
+        aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthPendingFact,
+        DataLayerError,
+    > {
+        let repository = self.provider_catalog_writer.as_ref().ok_or_else(|| {
+            DataLayerError::InvalidInput("provider health settlement writer is unavailable".into())
+        })?;
+        repository.enqueue_key_health_fact(fact).await
+    }
+
+    pub(crate) async fn list_provider_catalog_key_health_pending_facts(&self, limit: usize) -> Result<Vec<aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthPendingFact>, DataLayerError>{
+        let repository = self.provider_catalog_writer.as_ref().ok_or_else(|| {
+            DataLayerError::InvalidInput("provider health settlement writer is unavailable".into())
+        })?;
+        repository.list_key_health_pending_facts(limit).await
+    }
+
+    pub(crate) async fn remove_provider_catalog_key_health_pending_fact(
+        &self,
+        fact: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<(), DataLayerError> {
+        let repository = self.provider_catalog_writer.as_ref().ok_or_else(|| {
+            DataLayerError::InvalidInput("provider health settlement writer is unavailable".into())
+        })?;
+        repository.remove_key_health_pending_fact(fact).await
+    }
+
+    pub(crate) async fn provider_catalog_key_health_attempt_is_settled(
+        &self,
+        fact: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<bool, DataLayerError> {
+        let repository = self.provider_catalog_writer.as_ref().ok_or_else(|| {
+            DataLayerError::InvalidInput("provider health settlement writer is unavailable".into())
+        })?;
+        repository.key_health_attempt_is_settled(fact).await
+    }
+
+    pub(crate) async fn settle_provider_catalog_key_health_attempt(
+        &self,
+        settlement: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthSettlement,
+    ) -> Result<aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyHealthSettlementResult, DataLayerError>{
+        let repository = self.provider_catalog_writer.as_ref().ok_or_else(|| {
+            DataLayerError::InvalidInput("provider health settlement writer is unavailable".into())
+        })?;
+        let result = repository.settle_key_health_attempt(settlement).await;
+        self.clear_provider_catalog_cache();
+        result
+    }
+
     pub(crate) async fn compare_and_update_provider_catalog_key_health_state(
         &self,
         update: &ProviderCatalogKeyHealthStateUpdate,

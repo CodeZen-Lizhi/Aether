@@ -17,6 +17,7 @@ mod control;
 mod files;
 mod frontdoor;
 mod proxy;
+mod scheduler_failover;
 mod usage;
 mod video;
 

@@ -197,6 +197,13 @@ impl LocalOpenAiChatStreamAttemptSource<'_> {
     async fn next_raw_attempt_with_target_select(
         &mut self,
     ) -> Result<Option<LocalOpenAiChatCandidateAttempt>, GatewayError> {
+        // Complete chat modes already establish authoritative candidate order.
+        // Target pressure/random tie-breaking is legacy load-balance behavior.
+        if !self.input.routing_policy.as_ref().is_some_and(|policy| {
+            policy.scheduling_mode == aether_routing_core::RoutingSchedulingMode::LoadBalance
+        }) {
+            return self.next_raw_attempt_linear().await;
+        }
         let select_window = openai_chat_stream_target_select_window();
         if select_window <= 1 {
             return self.next_raw_attempt_linear().await;

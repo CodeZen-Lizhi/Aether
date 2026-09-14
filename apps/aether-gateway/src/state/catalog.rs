@@ -728,6 +728,58 @@ impl AppState {
         Ok(updated)
     }
 
+    pub(crate) async fn enqueue_provider_catalog_key_health_fact(
+        &self,
+        fact: &provider_catalog::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<provider_catalog::ProviderCatalogKeyHealthPendingFact, GatewayError> {
+        self.data
+            .enqueue_provider_catalog_key_health_fact(fact)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
+    pub(crate) async fn list_provider_catalog_key_health_pending_facts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<provider_catalog::ProviderCatalogKeyHealthPendingFact>, GatewayError> {
+        self.data
+            .list_provider_catalog_key_health_pending_facts(limit)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
+    pub(crate) async fn remove_provider_catalog_key_health_pending_fact(
+        &self,
+        fact: &provider_catalog::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<(), GatewayError> {
+        self.data
+            .remove_provider_catalog_key_health_pending_fact(fact)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
+    pub(crate) async fn provider_catalog_key_health_attempt_is_settled(
+        &self,
+        fact: &provider_catalog::ProviderCatalogKeyHealthPendingFact,
+    ) -> Result<bool, GatewayError> {
+        self.data
+            .provider_catalog_key_health_attempt_is_settled(fact)
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
+    pub(crate) async fn settle_provider_catalog_key_health_attempt(
+        &self,
+        settlement: &provider_catalog::ProviderCatalogKeyHealthSettlement,
+    ) -> Result<provider_catalog::ProviderCatalogKeyHealthSettlementResult, GatewayError> {
+        let result = self
+            .data
+            .settle_provider_catalog_key_health_attempt(settlement)
+            .await;
+        self.invalidate_provider_health_routing_caches();
+        result.map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
     pub(crate) async fn compare_and_update_provider_catalog_key_health_state(
         &self,
         update: &provider_catalog::ProviderCatalogKeyHealthStateUpdate,

@@ -157,7 +157,7 @@ pub(super) async fn maybe_handle(
     Ok(Some(
         Json(build_admin_provider_endpoint_response(
             &updated,
-            &provider.name,
+            &provider,
             total_keys_by_format
                 .get(updated_api_format.as_str())
                 .copied()

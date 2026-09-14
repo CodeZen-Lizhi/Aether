@@ -201,6 +201,18 @@ pub(crate) async fn resolve_local_openai_responses_candidate_payload_parts_with_
     spec: LocalOpenAiResponsesSpec,
     websocket_continuation: bool,
 ) -> Result<Option<LocalOpenAiResponsesCandidatePayloadParts>, GatewayError> {
+    // HTTP history storage does not prove the original upstream physical binding.
+    // Reject before redaction/conversion can remove or expand the reference.
+    if !websocket_continuation
+        && body_json
+            .get("previous_response_id")
+            .is_some_and(|reference| !reference.is_null())
+    {
+        return Err(GatewayError::Client {
+            status: http::StatusCode::CONFLICT,
+            message: "HTTP Responses continuation cannot verify the original upstream binding; submit an independent request with complete context".to_string(),
+        });
+    }
     let spec_metadata = local_openai_responses_spec_metadata(spec);
     let client_api_format = spec_metadata.api_format.trim().to_ascii_lowercase();
     let planner_state = PlannerAppState::new(state);

@@ -90,10 +90,27 @@ pub(crate) fn build_admin_create_provider_record_from_existing(
         None => None,
     };
     let max_retries = match payload.max_retries {
-        Some(value) if (0..=999).contains(&value) => Some(value),
-        Some(_) => return Err("max_retries 必须是 0 到 999 之间的整数".to_string()),
-        None => Some(2),
+        Some(value) => {
+            aether_admin::provider::failover::validate_legacy_attempts(value)?;
+            Some(value)
+        }
+        None => None,
     };
+    if max_retries.is_some() {
+        for rules in [
+            payload.failover_rules.as_ref(),
+            payload
+                .config
+                .as_ref()
+                .and_then(|config| config.get("failover_rules")),
+        ] {
+            aether_admin::provider::failover::validate_scope_aliases(
+                rules,
+                "provider_max_attempts",
+                max_retries,
+            )?;
+        }
+    }
     let proxy = normalize_json_object(payload.proxy, "proxy")?;
     let stream_first_byte_timeout_secs =
         super::normalize_provider_stream_first_byte_timeout(payload.stream_first_byte_timeout)?;
@@ -124,7 +141,19 @@ pub(crate) fn build_admin_create_provider_record_from_existing(
         }
     }
     if let Some(value) = normalize_json_object(payload.failover_rules, "failover_rules")? {
-        config_map.insert("failover_rules".to_string(), value);
+        let rules = aether_admin::provider::failover::merge_failover_rules(
+            config_map.get("failover_rules"),
+            value,
+        )?;
+        config_map.insert("failover_rules".to_string(), rules);
+    }
+    aether_admin::provider::failover::normalize_config_rules(&mut config_map)?;
+    if max_retries.is_some() {
+        aether_admin::provider::failover::set_scope_attempts(
+            &mut config_map,
+            "provider_max_attempts",
+            max_retries,
+        )?;
     }
     if config_map.contains_key("chat_pii_redaction") {
         let value = normalize_chat_pii_redaction_config(config_map.remove("chat_pii_redaction"))?;

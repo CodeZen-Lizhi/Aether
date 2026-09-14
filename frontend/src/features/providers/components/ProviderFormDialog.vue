@@ -43,14 +43,36 @@
         </h3>
         <div class="dialog-grid-2 gap-4">
           <div class="space-y-1.5">
-            <Label>{{ legacyT('最大重试次数') }}</Label>
+            <Label for="chat-max-attempts">{{ legacyT('总尝试次数（含首次）') }}</Label>
             <Input
-              :model-value="form.max_retries ?? ''"
+              id="chat-max-attempts"
+              :model-value="form.max_attempts ?? ''"
               type="number"
-              min="0"
-              max="999"
-              :placeholder="legacyT('默认 2')"
-              @update:model-value="(v) => form.max_retries = parseNumberInput(v)"
+              min="1"
+              max="99"
+              step="1"
+              placeholder="1"
+              @update:model-value="(v) => form.max_attempts = v === '' ? undefined : Number(v)"
+            />
+            <p
+              v-if="provider?.effective_max_attempts !== undefined"
+              class="text-xs text-muted-foreground"
+            >
+              {{ legacyT('当前生效次数') }}: {{ provider.effective_max_attempts }}
+              <span>{{ legacyT(attemptSourceLabel) }}</span>
+            </p>
+          </div>
+          <div class="space-y-1.5">
+            <Label for="stream-failover-budget">{{ legacyT('流式首输出总预算') }} <span class="text-xs text-muted-foreground">{{ legacyT('(毫秒)') }}</span></Label>
+            <Input
+              id="stream-failover-budget"
+              :model-value="form.stream_failover_budget_ms ?? ''"
+              type="number"
+              min="1"
+              max="1200000"
+              step="1"
+              placeholder="90000"
+              @update:model-value="(v) => form.stream_failover_budget_ms = v === '' ? undefined : Number(v)"
             />
           </div>
         </div>
@@ -244,7 +266,8 @@ const form = ref({
   rate_limit: undefined as number | undefined,
   concurrent_limit: undefined as number | undefined,
   // 请求配置
-  max_retries: undefined as number | undefined,
+  max_attempts: undefined as number | undefined,
+  stream_failover_budget_ms: undefined as number | undefined,
   max_transfer_count: 0,
   max_transfer_timeout_seconds: 0,
   // 超时配置（秒）
@@ -264,7 +287,8 @@ function resetForm() {
     rate_limit: undefined,
     concurrent_limit: undefined,
     // 请求配置
-    max_retries: undefined,
+    max_attempts: undefined,
+    stream_failover_budget_ms: undefined,
     max_transfer_count: 0,
     max_transfer_timeout_seconds: 0,
     // 超时配置
@@ -286,7 +310,8 @@ function loadProviderData() {
     rate_limit: undefined,
     concurrent_limit: undefined,
     // 请求配置
-    max_retries: props.provider.max_retries ?? undefined,
+    max_attempts: props.provider.effective_max_attempts,
+    stream_failover_budget_ms: props.provider.stream_failover_budget_ms,
     max_transfer_count: props.provider.max_transfer_count ?? 0,
     max_transfer_timeout_seconds: props.provider.max_transfer_timeout_seconds ?? 0,
     // 超时配置
@@ -307,10 +332,33 @@ const { isEditMode, handleDialogUpdate, handleCancel } = useFormDialog({
   resetForm,
 })
 
+const attemptSourceLabel = computed(() => {
+  const source = props.provider?.effective_max_attempts_source ?? 'default'
+  if (source.startsWith('failover_rules.')) return '故障转移规则'
+  if (source.startsWith('endpoint.')) return '端点配置'
+  if (source.startsWith('provider.')) return '提供商配置'
+  return '默认配置'
+})
+
 // 提交表单
 const handleSubmit = async () => {
   loading.value = true
   try {
+    for (const [value, max, message] of [
+      [form.value.max_attempts, 99, '总尝试次数必须是 1 到 99 之间的整数'],
+      [form.value.stream_failover_budget_ms, 1200000, '首输出总预算必须是 1 到 1200000 之间的整数'],
+    ] as const) {
+      if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > max)) {
+        throw new Error(legacyT(message))
+      }
+    }
+    const retryPatch: Record<string, number | null> = {}
+    if (form.value.max_attempts !== props.provider?.effective_max_attempts) {
+      retryPatch.max_attempts = form.value.max_attempts ?? null
+    }
+    if (form.value.stream_failover_budget_ms !== props.provider?.stream_failover_budget_ms) {
+      retryPatch.stream_failover_budget_ms = form.value.stream_failover_budget_ms ?? null
+    }
     const basePayload = {
       name: form.value.name,
       description: form.value.description || undefined,
@@ -318,7 +366,7 @@ const handleSubmit = async () => {
       responses_websocket_enabled: form.value.responses_websocket_enabled,
       is_active: form.value.is_active,
       // 请求配置
-      max_retries: form.value.max_retries ?? undefined,
+      ...(Object.keys(retryPatch).length ? { failover_rules: retryPatch } : {}),
       max_transfer_count: form.value.max_transfer_count,
       max_transfer_timeout_seconds: form.value.max_transfer_timeout_seconds,
       // 超时配置（null 表示清除，使用全局配置）

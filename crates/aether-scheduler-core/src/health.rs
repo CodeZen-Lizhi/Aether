@@ -652,7 +652,7 @@ impl UpstreamFailureClass {
     /// scheduler-core without the policy engine.
     pub fn from_status_code(status_code: u16) -> Self {
         match status_code {
-            401 | 402 | 403 => Self::CredentialDead,
+            401..=403 => Self::CredentialDead,
             429 => Self::RateLimited,
             _ => Self::Transient,
         }
@@ -680,6 +680,27 @@ pub const RATE_LIMIT_COOLDOWN_MAX_SECS: u64 = 600;
 pub const RATE_LIMIT_PROBE_RESERVATION_SECS: u64 = 60;
 
 impl ProviderKeyRateLimitCooldown {
+    /// Chat policy keeps provider deadlines intact; only the local fallback is capped.
+    pub fn project_chat(
+        current: Option<Self>,
+        observed_at_unix_secs: u64,
+        retry_after_secs: Option<u64>,
+    ) -> Self {
+        let previous = current.unwrap_or(Self {
+            until_unix_secs: 0,
+            consecutive_rate_limits: 0,
+        });
+        let consecutive = previous.consecutive_rate_limits.saturating_add(1);
+        let shift = consecutive.saturating_sub(1).min(6) as u32;
+        let seconds = retry_after_secs.unwrap_or_else(|| (1u64 << shift).min(60));
+        Self {
+            until_unix_secs: observed_at_unix_secs
+                .saturating_add(seconds)
+                .max(previous.until_unix_secs),
+            consecutive_rate_limits: consecutive,
+        }
+    }
+
     /// Project the next cooldown after a 429 observed at `observed_at_unix_secs`.
     /// `retry_after_secs` (from the upstream header) wins when present and sane;
     /// otherwise the exponential ladder advances with the consecutive count.
@@ -1561,6 +1582,26 @@ mod rate_limit_cooldown_tests {
         RATE_LIMIT_COOLDOWN_MAX_SECS,
     };
     use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
+
+    #[test]
+    fn chat_cooldown_starts_at_one_second_and_keeps_provider_deadlines() {
+        let mut previous = None;
+        for expected in [1, 2, 4, 8, 16, 32, 60, 60] {
+            let cooldown = ProviderKeyRateLimitCooldown::project_chat(previous, 100, None);
+            assert_eq!(cooldown.until_unix_secs, 100 + expected);
+            previous = Some(cooldown);
+        }
+        let long = ProviderKeyRateLimitCooldown::project_chat(None, 100, Some(3600));
+        assert_eq!(long.until_unix_secs, 3700);
+        assert_eq!(
+            ProviderKeyRateLimitCooldown::project_chat(Some(long), 101, None).until_unix_secs,
+            3700
+        );
+        assert_eq!(
+            ProviderKeyRateLimitCooldown::project_chat(None, 100, Some(0)).until_unix_secs,
+            100
+        );
+    }
 
     #[test]
     fn failure_class_maps_status_codes() {

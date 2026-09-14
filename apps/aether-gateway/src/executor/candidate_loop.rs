@@ -237,6 +237,13 @@ where
     type Exhaustion = crate::executor::LocalExecutionExhaustion;
     type Error = GatewayError;
 
+    async fn prepare_attempt(&self, attempt: &T) -> Result<bool, Self::Error> {
+        self.transfer_tracker
+            .retries
+            .prepare_attempt(self.state, attempt.execution_plan())
+            .await
+    }
+
     async fn should_skip_attempt(&self, attempt: &T) -> Result<bool, Self::Error> {
         Ok(should_skip_provider_transfer_attempt(
             self.transfer_tracker,
@@ -269,7 +276,7 @@ where
         attempt: &T,
     ) -> Result<AiAttemptExecutionOutcome<Self::Response>, Self::Error> {
         let plan = attempt.execution_plan();
-        let report_context = attempt.report_context();
+        let mut report_context = attempt.report_context();
         if let Some(response) = execution_plan_balance_capacity_response(
             self.state,
             self.trace_id,
@@ -283,18 +290,47 @@ where
         }
         prewarm_direct_reqwest_candidate_client(plan);
         let _permit = acquire_upstream_execution_gate(self.state, self.trace_id).await?;
-        let upstream_execution_gate_held_started_at = std::time::Instant::now();
-        let mut execution = execute_execution_runtime_sync_with_retry_scope(
+        let Some(probe_session) = crate::execution_runtime::chat_retry::claim_chat_attempt_probes(
             self.state,
-            self.parts.uri.path(),
-            plan.clone(),
-            self.trace_id,
-            self.decision,
-            self.plan_kind,
-            attempt.report_kind(),
-            report_context,
+            plan,
+            &mut report_context,
+        )
+        .await?
+        else {
+            return Ok(AiAttemptExecutionOutcome::retry(
+                AiAttemptRetryScope::Candidate,
+            ));
+        };
+        crate::execution_runtime::chat_retry::capture_attempt_report_context(
+            self.state,
+            plan,
+            &mut report_context,
         )
         .await?;
+        let upstream_execution_gate_held_started_at = std::time::Instant::now();
+        let mut execution = self
+            .transfer_tracker
+            .retries
+            .scope_attempt(
+                plan,
+                crate::execution_runtime::chat_retry::scope_chat_probe_session(
+                    probe_session.clone(),
+                    execute_execution_runtime_sync_with_retry_scope(
+                        self.state,
+                        self.parts.uri.path(),
+                        plan.clone(),
+                        self.trace_id,
+                        self.decision,
+                        self.plan_kind,
+                        attempt.report_kind(),
+                        report_context,
+                    ),
+                ),
+            )
+            .await?;
+        if let Some(session) = probe_session {
+            session.finish().await;
+        }
         observe_gateway_stage_ms(
             "upstream_execution_gate_held",
             upstream_execution_gate_held_started_at
@@ -527,6 +563,7 @@ struct ProviderTransferStateTracker {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ProviderTransferTracker {
     state: std::sync::Arc<tokio::sync::Mutex<ProviderTransferStateTracker>>,
+    retries: std::sync::Arc<crate::execution_runtime::chat_retry::ChatRetryTracker>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -824,6 +861,10 @@ where
             port.mark_unused_attempts(vec![attempt]).await?;
             continue;
         }
+        if !port.prepare_attempt(&attempt).await? {
+            port.mark_unused_attempts(vec![attempt]).await?;
+            continue;
+        }
         port.record_attempt_started(&attempt).await?;
         let execute_started_at = std::time::Instant::now();
         let execution = match port.execute_attempt(&attempt).await {
@@ -924,6 +965,9 @@ where
     if !failed_scopes.contains(&scope) {
         return false;
     }
+    if crate::orchestration::chat_health_policy_applies(&scope.1) {
+        return false;
+    }
 
     match try_claim_local_circuit_probe(state, &scope.0, &scope.1).await {
         Ok(LocalCircuitProbeClaim::NotRequired | LocalCircuitProbeClaim::Acquired) => false,
@@ -1015,6 +1059,13 @@ where
     type Exhaustion = crate::executor::LocalExecutionExhaustion;
     type Error = GatewayError;
 
+    async fn prepare_attempt(&self, attempt: &T) -> Result<bool, Self::Error> {
+        self.transfer_tracker
+            .retries
+            .prepare_attempt(self.state, attempt.execution_plan())
+            .await
+    }
+
     async fn should_skip_attempt(&self, attempt: &T) -> Result<bool, Self::Error> {
         Ok(should_skip_provider_transfer_attempt(
             self.transfer_tracker,
@@ -1047,7 +1098,7 @@ where
         attempt: &T,
     ) -> Result<AiAttemptExecutionOutcome<Self::Response>, Self::Error> {
         let plan = attempt.execution_plan();
-        let report_context = attempt.report_context();
+        let mut report_context = attempt.report_context();
         let candidate_index = parse_request_candidate_report_context(report_context.as_ref())
             .and_then(|context| context.candidate_index)
             .map(|value| value.to_string())
@@ -1078,17 +1129,9 @@ where
             return Ok(AiAttemptExecutionOutcome::Responded(response));
         }
         prewarm_direct_reqwest_candidate_client(plan);
-        // The attempt owns the canonical report context. Borrow it for the
-        // watchdog; only third-party/synthesized attempts using the default
-        // trait implementation need an owned fallback clone.
-        let watchdog_report_context_owned = if attempt.report_context_ref().is_none() {
-            report_context.clone()
-        } else {
-            None
-        };
-        let watchdog_report_context = attempt
-            .report_context_ref()
-            .or(watchdog_report_context_owned.as_ref());
+        // The watchdog and executor must settle the same captured attempt identity.
+        let watchdog_report_context_owned = report_context.clone();
+        let watchdog_report_context = watchdog_report_context_owned.as_ref();
         let execution_state = self.state.clone();
         let execution_trace_id = self.trace_id.to_string();
         let execution_plan_kind = self.plan_kind.to_string();
@@ -1106,28 +1149,38 @@ where
             LocalFailoverDecision::StopLocalFailover
         );
         let watchdog_started_at = std::time::Instant::now();
-        let execution = execute_stream_candidate_with_watchdog(
-            self.state,
-            self.trace_id,
-            self.plan_kind,
-            plan,
-            watchdog_report_context,
-            stop_on_transport_errors,
-            move || async move {
-                execute_execution_runtime_stream_with_retry_scope(
-                    &execution_state,
-                    execution_plan,
-                    execution_trace_id.as_str(),
-                    &execution_decision,
-                    execution_plan_kind.as_str(),
-                    execution_report_kind,
-                    report_context,
-                )
-                .await
-            },
-        )
-        .await?;
+        let execution = self
+            .transfer_tracker
+            .retries
+            .scope_attempt(
+                plan,
+                execute_stream_candidate_with_watchdog(
+                    self.state,
+                    Some(self.state),
+                    self.trace_id,
+                    self.plan_kind,
+                    plan,
+                    watchdog_report_context,
+                    stop_on_transport_errors,
+                    move |report_context| async move {
+                        execute_execution_runtime_stream_with_retry_scope(
+                            &execution_state,
+                            execution_plan,
+                            execution_trace_id.as_str(),
+                            &execution_decision,
+                            execution_plan_kind.as_str(),
+                            execution_report_kind,
+                            report_context,
+                        )
+                        .await
+                    },
+                ),
+            )
+            .await?;
         let mut execution = match execution {
+            StreamCandidateWatchdogOutcome::AttemptTimeout => {
+                AiAttemptExecutionOutcome::retry(AiAttemptRetryScope::Candidate)
+            }
             StreamCandidateWatchdogOutcome::TransportTimeout => {
                 AiAttemptExecutionOutcome::Responded(
                     build_transport_error_stop_response(
@@ -1412,16 +1465,18 @@ fn log_stream_candidate_admission_timeout(
 enum StreamCandidateWatchdogOutcome {
     Executed(AiAttemptExecutionOutcome<Response<Body>>),
     TransportTimeout,
+    AttemptTimeout,
 }
 
 async fn execute_stream_candidate_with_watchdog<Fut>(
     state: &(impl RequestCandidateRuntimeWriter + UpstreamExecutionGateProvider + ?Sized),
+    app_state: Option<&AppState>,
     trace_id: &str,
     plan_kind: &str,
     plan: &aether_contracts::ExecutionPlan,
     report_context: Option<&serde_json::Value>,
     stop_on_transport_errors: bool,
-    execute: impl FnOnce() -> Fut,
+    execute: impl FnOnce(Option<serde_json::Value>) -> Fut,
 ) -> Result<StreamCandidateWatchdogOutcome, GatewayError>
 where
     Fut: std::future::Future<
@@ -1450,9 +1505,72 @@ where
         Err(err) => return Err(err),
     };
     let permit_hold = permit.map(UpstreamExecutionPermitHold::new);
+    let target_permit = if let Some(app_state) = app_state
+        .filter(|_| crate::orchestration::chat_health_policy_applies(&plan.client_api_format))
+    {
+        match app_state
+            .upstream_target_admission
+            .acquire(plan, trace_id)
+            .await
+        {
+            Ok(permit) => permit,
+            Err(err) if is_candidate_level_admission_timeout(&err) => {
+                record_stream_candidate_admission_timeout(
+                    state,
+                    plan,
+                    report_context,
+                    candidate_started_unix_ms,
+                    &err,
+                )
+                .await;
+                log_stream_candidate_admission_timeout(
+                    trace_id,
+                    plan_kind,
+                    plan,
+                    report_context,
+                    &err,
+                );
+                return Ok(StreamCandidateWatchdogOutcome::Executed(
+                    AiAttemptExecutionOutcome::retry(AiAttemptRetryScope::Candidate),
+                ));
+            }
+            Err(err) => return Err(err),
+        }
+    } else {
+        None
+    };
+    let mut execution_report_context = report_context.cloned();
+    let probe_session = if let Some(app_state) = app_state {
+        let Some(session) = crate::execution_runtime::chat_retry::claim_chat_attempt_probes(
+            app_state,
+            plan,
+            &mut execution_report_context,
+        )
+        .await?
+        else {
+            return Ok(StreamCandidateWatchdogOutcome::Executed(
+                AiAttemptExecutionOutcome::retry(AiAttemptRetryScope::Candidate),
+            ));
+        };
+        crate::execution_runtime::chat_retry::capture_attempt_report_context(
+            app_state,
+            plan,
+            &mut execution_report_context,
+        )
+        .await?;
+        session
+    } else {
+        None
+    };
+    let report_context = execution_report_context.as_ref();
     let watchdog_started_at = std::time::Instant::now();
     let watchdog_progress = StreamCandidateWatchdogProgress::shared();
-    let execution = watchdog_progress.clone().scope(execute());
+    let execution = crate::execution_runtime::chat_retry::scope_chat_probe_session(
+        probe_session.clone(),
+        watchdog_progress
+            .clone()
+            .scope(execute(execution_report_context.clone())),
+    );
     tokio::pin!(execution);
     let deadline = tokio::time::sleep(timeout_duration);
     tokio::pin!(deadline);
@@ -1471,6 +1589,34 @@ where
         Some(result) => result.map(StreamCandidateWatchdogOutcome::Executed),
         None => {
             let finished_at_unix_ms = current_unix_ms();
+            let failure = crate::orchestration::classify_chat_failure_for_plan(
+                plan,
+                504,
+                None,
+                crate::orchestration::ChatFailureSource::UpstreamTimeout,
+            );
+            if let Some(app_state) = app_state {
+                crate::orchestration::apply_local_execution_effect(
+                    app_state,
+                    crate::orchestration::LocalExecutionEffectContext {
+                        plan,
+                        report_context,
+                    },
+                    crate::orchestration::LocalExecutionEffect::ClassifiedHealthFailure(
+                        crate::orchestration::LocalHealthFailureEffect {
+                            status_code: 504,
+                            classification:
+                                crate::orchestration::LocalFailoverClassification::UseDefault,
+                            retry_after_secs: None,
+                        },
+                        failure,
+                    ),
+                )
+                .await;
+            }
+            if let Some(session) = probe_session.as_ref() {
+                session.finish().await;
+            }
             let request_id = short_request_id(plan.request_id.as_str());
             let provider_name = plan.provider_name.as_deref().unwrap_or("-");
             let model_name = plan.model_name.as_deref().unwrap_or("-");
@@ -1512,9 +1658,7 @@ where
             if stop_on_transport_errors {
                 Ok(StreamCandidateWatchdogOutcome::TransportTimeout)
             } else {
-                Ok(StreamCandidateWatchdogOutcome::Executed(
-                    AiAttemptExecutionOutcome::retry(AiAttemptRetryScope::Candidate),
-                ))
+                Ok(StreamCandidateWatchdogOutcome::AttemptTimeout)
             }
         }
     };
@@ -1528,6 +1672,12 @@ where
         ))) => {
             let response = maybe_hold_upstream_execution_permit(Some(response), permit_hold)
                 .expect("responded stream attempt must retain its response");
+            // The target gate bounds active upstream responses, independently of the
+            // global execution gate's configurable headers/first-body hold mode.
+            let response = match target_permit {
+                Some(permit) => hold_response_permit(response, permit),
+                None => response,
+            };
             Ok(StreamCandidateWatchdogOutcome::Executed(
                 AiAttemptExecutionOutcome::Responded(response),
             ))
@@ -1547,6 +1697,10 @@ where
         Ok(StreamCandidateWatchdogOutcome::TransportTimeout) => {
             drop(permit_hold);
             Ok(StreamCandidateWatchdogOutcome::TransportTimeout)
+        }
+        Ok(StreamCandidateWatchdogOutcome::AttemptTimeout) => {
+            drop(permit_hold);
+            Ok(StreamCandidateWatchdogOutcome::AttemptTimeout)
         }
         Err(err) if is_candidate_level_admission_timeout(&err) => {
             drop(permit_hold);
@@ -1611,10 +1765,9 @@ fn maybe_hold_upstream_execution_permit(
             (response, _permit_hold) => response,
         },
         UpstreamExecutionStreamHoldMode::Response => match (response, permit_hold) {
-            (Some(response), Some(permit_hold)) => Some(hold_response_upstream_execution_permit(
-                response,
-                permit_hold,
-            )),
+            (Some(response), Some(permit_hold)) => {
+                Some(hold_response_permit(response, permit_hold))
+            }
             (response, _permit_hold) => response,
         },
     }
@@ -1674,9 +1827,9 @@ fn hold_response_upstream_execution_permit_until_first_body(
     Response::from_parts(parts, Body::from_stream(stream))
 }
 
-fn hold_response_upstream_execution_permit(
+fn hold_response_permit<P: Send + 'static>(
     response: Response<Body>,
-    permit_hold: UpstreamExecutionPermitHold,
+    permit_hold: P,
 ) -> Response<Body> {
     let (parts, body) = response.into_parts();
     let stream = async_stream::stream! {
@@ -1936,6 +2089,34 @@ mod tests {
             &self,
             attempt: &TransferTestAttempt,
         ) -> Result<AiAttemptExecutionOutcome<Self::Response>, Self::Error> {
+            let mut report_context = Some(attempt.report_context.clone());
+            let probe_session =
+                if self.project_health_failure && attempt.plan.provider_id == "provider-a" {
+                    // Model the same final admission boundary as the production
+                    // port; planning no longer reserves an anonymous probe.
+                    let Some(session) =
+                        crate::execution_runtime::chat_retry::claim_chat_attempt_probes(
+                            self.state,
+                            &attempt.plan,
+                            &mut report_context,
+                        )
+                        .await?
+                    else {
+                        self.unused.lock().unwrap().push(attempt.label);
+                        return Ok(AiAttemptExecutionOutcome::retry(
+                            AiAttemptRetryScope::Candidate,
+                        ));
+                    };
+                    crate::execution_runtime::chat_retry::capture_attempt_report_context(
+                        self.state,
+                        &attempt.plan,
+                        &mut report_context,
+                    )
+                    .await?;
+                    session
+                } else {
+                    None
+                };
             self.executed.lock().unwrap().push(attempt.label);
             if attempt.plan.provider_id == "provider-b" {
                 return Ok(AiAttemptExecutionOutcome::Responded(Response::new(
@@ -1947,7 +2128,7 @@ mod tests {
                     self.state,
                     crate::orchestration::LocalExecutionEffectContext {
                         plan: &attempt.plan,
-                        report_context: Some(&attempt.report_context),
+                        report_context: report_context.as_ref(),
                     },
                     crate::orchestration::LocalExecutionEffect::HealthFailure(
                         crate::orchestration::LocalHealthFailureEffect {
@@ -1959,6 +2140,9 @@ mod tests {
                     ),
                 )
                 .await;
+            }
+            if let Some(session) = probe_session {
+                session.finish().await;
             }
             Ok(AiAttemptExecutionOutcome::retry(self.retry_scope))
         }
@@ -2192,14 +2376,15 @@ mod tests {
         .with_health_fields(
             Some(json!({
                 "openai:chat": {
-                    "health_score": 0.2,
-                    "consecutive_failures": 7
+                    "health_score": 0.1,
+                    "health_policy_version": 2,
+                    "consecutive_failures": 0
                 }
             })),
             Some(json!({
                 "openai:chat": {
                     "open": false,
-                    "failure_count": 7
+                    "failure_count": 0
                 }
             })),
         );
@@ -2207,7 +2392,11 @@ mod tests {
             .expect("state should build")
             .with_data_state_for_tests(
                 GatewayDataState::with_provider_catalog_repository_for_tests(Arc::new(
-                    InMemoryProviderCatalogReadRepository::seed(vec![], vec![], vec![key]),
+                    InMemoryProviderCatalogReadRepository::seed(
+                        vec![aether_data_contracts::repository::provider_catalog::StoredProviderCatalogProvider::new(
+                            "provider-a".into(), "provider-a".into(), None, "custom".into(),
+                        ).unwrap()], vec![], vec![key],
+                    ),
                 )),
             );
         let port = TransferTestPort::with_health_failure_projection(&state);
@@ -2553,12 +2742,13 @@ mod tests {
         let task = tokio::spawn(async move {
             execute_stream_candidate_with_watchdog(
                 writer_for_task.as_ref(),
+                None,
                 "trace_watchdog",
                 "claude_cli_stream",
                 &plan,
                 Some(&report_context),
                 false,
-                || {
+                |_| {
                     std::future::pending::<
                         Result<AiAttemptExecutionOutcome<Response<Body>>, GatewayError>,
                     >()
@@ -2571,12 +2761,7 @@ mod tests {
         let result = task.await.expect("watchdog task should join");
         assert!(matches!(
             result,
-            Ok(StreamCandidateWatchdogOutcome::Executed(
-                AiAttemptExecutionOutcome::Retry {
-                    scope: AiAttemptRetryScope::Candidate,
-                    fallback_response: None,
-                }
-            ))
+            Ok(StreamCandidateWatchdogOutcome::AttemptTimeout)
         ));
 
         let records = writer.records.lock().await;
@@ -2606,12 +2791,13 @@ mod tests {
 
         let result = execute_stream_candidate_with_watchdog(
             writer.as_ref(),
+            None,
             "trace_watchdog_stop",
             "claude_cli_stream",
             &plan,
             Some(&report_context),
             true,
-            || {
+            |_| {
                 std::future::pending::<
                     Result<AiAttemptExecutionOutcome<Response<Body>>, GatewayError>,
                 >()
@@ -2643,12 +2829,13 @@ mod tests {
 
         let result = execute_stream_candidate_with_watchdog(
             writer.as_ref(),
+            None,
             "trace_terminalization",
             "claude_cli_stream",
             &plan,
             Some(&report_context),
             true,
-            || async {
+            |_| async {
                 mark_stream_candidate_watchdog_terminal_started();
                 tokio::time::sleep(Duration::from_millis(20)).await;
                 Ok(AiAttemptExecutionOutcome::Responded(Response::new(
@@ -2675,12 +2862,13 @@ mod tests {
 
         let result = execute_stream_candidate_with_watchdog(
             writer.as_ref(),
+            None,
             "trace_execution_error",
             "claude_cli_stream",
             &plan,
             Some(&report_context),
             true,
-            || async {
+            |_| async {
                 Err(GatewayError::UpstreamUnavailable {
                     trace_id: "trace_execution_error".to_string(),
                     message: "upstream connect failed".to_string(),
@@ -2714,12 +2902,13 @@ mod tests {
 
         let result = execute_stream_candidate_with_watchdog(
             writer.as_ref(),
+            None,
             "trace_admission",
             "claude_cli_stream",
             &plan,
             Some(&report_context),
             false,
-            || async {
+            |_| async {
                 panic!("execute future should not run while upstream execution gate is saturated")
             },
         )
@@ -2761,12 +2950,13 @@ mod tests {
 
         let result = execute_stream_candidate_with_watchdog(
             writer.as_ref(),
+            None,
             "trace_target_admission",
             "claude_cli_stream",
             &plan,
             Some(&report_context),
             false,
-            || async {
+            |_| async {
                 Err(GatewayError::AdmissionTimeout {
                     trace_id: "trace_target_admission".to_string(),
                     gate: UPSTREAM_TARGET_GATE_NAME,

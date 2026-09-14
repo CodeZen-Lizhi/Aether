@@ -347,6 +347,9 @@ function buildPreservedFailoverRules(
 ): Record<string, unknown> {
   if (!isJsonObject(rules)) return {}
   const preserved: Record<string, unknown> = { ...rules }
+  if (typeof preserved.max_attempts === 'number') {
+    delete preserved.max_retries
+  }
   for (const key of MANAGED_FAILOVER_RULE_KEYS) {
     delete preserved[key]
   }
@@ -366,6 +369,11 @@ function buildNextFailoverRules(
   }
   if (!continueOnTransportErrors.value) {
     nextRules.stop_on_transport_errors = true
+  }
+  for (const key of MANAGED_FAILOVER_RULE_KEYS) {
+    if (props.provider?.failover_rules?.[key] !== undefined && !(key in nextRules)) {
+      nextRules[key] = null
+    }
   }
 
   return Object.values(nextRules).some(hasPersistableFailoverValue)

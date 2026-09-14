@@ -32,6 +32,11 @@ pub fn resolve_transport_execution_timeouts(
     transport: &GatewayProviderTransportSnapshot,
 ) -> Option<ExecutionTimeouts> {
     Some(ExecutionTimeouts {
+        stream_failover_budget_ms: Some(
+            aether_contracts::chat_retry::resolve_stream_failover_budget_ms(
+                transport.provider.config.as_ref(),
+            ),
+        ),
         total_ms: transport
             .provider
             .request_timeout_secs
@@ -405,6 +410,19 @@ mod tests {
             .expect("default provider timeouts should resolve");
 
         assert_eq!(timeouts.total_ms, None);
+        assert_eq!(timeouts.first_byte_ms, Some(30_000));
+        assert_eq!(timeouts.stream_failover_budget_ms, Some(90_000));
+    }
+
+    #[test]
+    fn transport_execution_timeouts_project_failover_budget_independently() {
+        let mut transport = sample_transport();
+        transport.provider.config =
+            Some(json!({"failover_rules": {"stream_failover_budget_ms": 4321}}));
+        transport.provider.request_timeout_secs = Some(1200.0);
+        let timeouts = resolve_transport_execution_timeouts(&transport).unwrap();
+        assert_eq!(timeouts.stream_failover_budget_ms, Some(4321));
+        assert_eq!(timeouts.total_ms, Some(1_200_000));
         assert_eq!(timeouts.first_byte_ms, Some(30_000));
     }
 

@@ -88,12 +88,16 @@ where
 
 pub(super) async fn await_owned_responses_websocket_plan(
     handle: JoinHandle<Result<Option<OwnedResponsesWebSocketDecision>, GatewayError>>,
+    first_output_deadline: std::time::Instant,
 ) -> Result<Option<OwnedResponsesWebSocketDecision>, GatewayError> {
-    handle.await.map_err(|error| {
-        GatewayError::Internal(format!(
-            "Responses WebSocket planning task failed before ownership transfer: {error}"
-        ))
-    })?
+    tokio::time::timeout_at(first_output_deadline.into(), handle)
+        .await
+        .map_err(|_| GatewayError::Internal("stream_failover_budget_exhausted".to_string()))?
+        .map_err(|error| {
+            GatewayError::Internal(format!(
+                "Responses WebSocket planning task failed before ownership transfer: {error}"
+            ))
+        })?
 }
 
 impl PlannedPoolKeyLeaseGuard {
@@ -114,27 +118,37 @@ pub(super) async fn begin_responses_websocket_turn_with_planned_lease(
     decision: AiExecutionDecision,
     client_event: &Value,
     mut planned_lease: PlannedPoolKeyLeaseGuard,
+    first_output_deadline: std::time::Instant,
 ) -> Result<ActiveProviderAttempt, GatewayError> {
     let state = state.clone();
     let trace_id = trace_id.to_string();
     let control_decision = control_decision.clone();
     let client_event = client_event.clone();
-    tokio::spawn(async move {
-        let turn = begin_responses_websocket_turn(
-            &state,
-            &trace_id,
-            parts,
-            &control_decision,
-            decision,
-            &client_event,
-        )
-        .await?;
-        // ActiveProviderAttempt now owns the report context containing the
-        // lease. No await occurs between that handoff and disarming the guard.
-        planned_lease.disarm();
-        Ok(turn)
-    })
+    if std::time::Instant::now() >= first_output_deadline {
+        return Err(GatewayError::Internal(
+            "stream_failover_budget_exhausted".to_string(),
+        ));
+    }
+    tokio::time::timeout_at(
+        first_output_deadline.into(),
+        tokio::spawn(async move {
+            let turn = begin_responses_websocket_turn(
+                &state,
+                &trace_id,
+                parts,
+                &control_decision,
+                decision,
+                &client_event,
+            )
+            .await?;
+            // ActiveProviderAttempt now owns the report context containing the
+            // lease. No await occurs between that handoff and disarming the guard.
+            planned_lease.disarm();
+            Ok(turn)
+        }),
+    )
     .await
+    .map_err(|_| GatewayError::Internal("stream_failover_budget_exhausted".to_string()))?
     .map_err(|error| {
         GatewayError::Internal(format!(
             "Responses WebSocket guarded turn startup task failed: {error}"

@@ -44,6 +44,8 @@ impl ExecutionResponseBodyMode {
 #[serde(default)]
 pub struct ExecutionTimeouts {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_failover_budget_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub connect_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_ms: Option<u64>,

@@ -6,14 +6,17 @@ use crate::AppState;
 
 mod adaptive;
 mod attempt;
+mod chat_health;
 mod circuit_probe;
 mod classifier;
 pub(crate) mod codex_quota_breaker;
 pub(crate) use self::codex_quota_breaker::clear_codex_quota_breaker_for_key;
 mod effects;
 mod health;
+mod health_settlement;
 mod oauth_error;
 mod policy;
+mod probe_lease;
 mod rate_limit_probe;
 mod recovery;
 mod report_effects;
@@ -29,9 +32,10 @@ pub(crate) use self::attempt::{
     LocalExecutionCandidateMetadata, SCHEDULER_AFFINITY_EPOCH_REPORT_FIELD,
 };
 pub(crate) use self::classifier::{
-    classify_anthropic_failure_disposition, classify_failure_disposition, classify_local_failover,
-    classify_local_transport_error, failure_disposition_from_local_classification,
-    local_failover_error_message, FailureDisposition, FailureRetryAction, FailureScope,
+    chat_health_policy_applies, classify_anthropic_failure_disposition, classify_chat_failure,
+    classify_failure_disposition, classify_local_failover, classify_local_transport_error,
+    failure_disposition_from_local_classification, local_failover_error_message, ChatFailureFact,
+    ChatFailureSource, ChatHealthPenalty, FailureDisposition, FailureRetryAction, FailureScope,
     FailureTokenAction, LocalFailoverClassification, LocalFailoverInput,
     LocalTransportFailoverClassification,
 };
@@ -43,16 +47,20 @@ pub(crate) use self::codex_quota_breaker::{
 };
 pub(crate) use self::effects::{
     apply_local_execution_effect, apply_local_stream_failure_effects,
-    apply_local_stream_success_effects, LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect,
+    apply_local_stream_success_effects, capture_chat_health_attempt,
+    classify_chat_failure_for_plan, LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect,
     LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
     LocalHealthFailureEffect, LocalHealthSuccessEffect, LocalStreamFailureEffect,
+    CHAT_HEALTH_ATTEMPT_REPORT_FIELD,
 };
 pub(crate) const RATE_LIMIT_COOLDOWN_MAX_SECS: u64 = 600;
+pub(crate) use health_settlement::spawn_health_settlement_worker;
 
+pub(crate) use self::circuit_probe::try_claim_managed_local_circuit_probe;
 pub(crate) use self::circuit_probe::{try_claim_local_circuit_probe, LocalCircuitProbeClaim};
 pub(crate) use self::health::{
-    circuit_ramp_active, circuit_success_rate_breached, parse_retry_after_secs,
-    project_local_circuit_open_health, project_local_failure_health,
+    circuit_ramp_active, circuit_success_rate_breached, parse_chat_retry_after_secs,
+    parse_retry_after_secs, project_local_circuit_open_health, project_local_failure_health,
     project_local_key_circuit_closed, project_local_key_circuit_closed_with_ramp,
     project_local_key_circuit_failure, project_local_key_circuit_failure_with_success_rate,
     project_local_key_circuit_open, project_local_key_circuit_probe_reservation,
@@ -69,6 +77,11 @@ pub(crate) use self::policy::{
     responses_websocket_adapter, LocalFailoverPolicy, LocalFailoverRegexRule,
     ResponsesWebSocketAdapter, CYBER_CONTINUE_FAILOVER_CONFIG_KEY, RESPONSES_WEBSOCKET_CONFIG_KEY,
 };
+pub(crate) use self::probe_lease::{
+    probe_lease_report_is_current, LocalProbeLeaseClaim, LocalProbeLeaseGuard, ProbeLeaseLoss,
+    ProbeLeaseStatus, PROBE_LEASES_REPORT_FIELD,
+};
+pub(crate) use self::rate_limit_probe::try_claim_managed_local_rate_limit_probe;
 pub(crate) use self::rate_limit_probe::{
     try_claim_local_rate_limit_probe, LocalRateLimitProbeClaim,
 };

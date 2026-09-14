@@ -380,6 +380,29 @@ CREATE TABLE IF NOT EXISTS public.models (
 ALTER TABLE ONLY public.models ADD CONSTRAINT models_pkey PRIMARY KEY (id);
 CREATE INDEX IF NOT EXISTS models_provider_id_idx ON public.models USING btree (provider_id);
 
+CREATE TABLE IF NOT EXISTS public.provider_key_health_settlements (
+    id character varying(1024) NOT NULL,
+    key_id character varying(64) NOT NULL,
+    api_format character varying(64) NOT NULL,
+    policy_version integer NOT NULL,
+    attempt_started_at bigint NOT NULL,
+    settled_at bigint NOT NULL,
+    expires_at bigint NOT NULL
+);
+
+ALTER TABLE ONLY public.provider_key_health_settlements ADD CONSTRAINT provider_key_health_settlements_pkey PRIMARY KEY (id);
+CREATE INDEX IF NOT EXISTS provider_key_health_settlements_expiry_idx ON public.provider_key_health_settlements USING btree (expires_at);
+
+CREATE TABLE IF NOT EXISTS public.provider_key_health_pending_facts (
+    id character varying(1024) NOT NULL,
+    observed_at bigint NOT NULL,
+    expires_at bigint NOT NULL,
+    payload jsonb NOT NULL
+);
+
+ALTER TABLE ONLY public.provider_key_health_pending_facts ADD CONSTRAINT provider_key_health_pending_facts_pkey PRIMARY KEY (id);
+CREATE INDEX IF NOT EXISTS provider_key_health_pending_facts_order_idx ON public.provider_key_health_pending_facts USING btree (observed_at, id);
+
 CREATE TABLE IF NOT EXISTS public.global_models (
     id character varying(64) NOT NULL,
     name character varying(255) NOT NULL,

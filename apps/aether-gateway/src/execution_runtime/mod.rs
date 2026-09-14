@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 
 pub(crate) mod admission;
 pub(crate) mod attempt_lifecycle;
+pub(crate) mod chat_retry;
 mod constants;
 mod fallback;
 pub(crate) mod ndjson;
@@ -74,6 +75,9 @@ pub(crate) fn ai_attempt_retry_scope_from_failure_disposition(
     use crate::orchestration::{FailureRetryAction, FailureScope};
     use aether_ai_serving::AiAttemptRetryScope;
 
+    if disposition.retry_action == FailureRetryAction::SameCredential {
+        return AiAttemptRetryScope::Candidate;
+    }
     match disposition.failure_scope {
         FailureScope::Credential | FailureScope::CredentialModel => AiAttemptRetryScope::Credential,
         FailureScope::Endpoint => AiAttemptRetryScope::Endpoint,
@@ -96,7 +100,7 @@ mod retry_scope_tests {
     use crate::orchestration::{classify_failure_disposition, LocalFailoverClassification};
 
     #[test]
-    fn anthropic_failure_scope_survives_runtime_mapping() {
+    fn retryable_chat_failures_keep_same_key_attempt_slots() {
         let retry_scope = |status_code| {
             ai_attempt_retry_scope_from_failure_disposition(classify_failure_disposition(
                 "claude:messages",
@@ -105,9 +109,9 @@ mod retry_scope_tests {
             ))
         };
 
-        assert_eq!(retry_scope(429), AiAttemptRetryScope::Credential);
-        assert_eq!(retry_scope(500), AiAttemptRetryScope::Endpoint);
-        assert_eq!(retry_scope(529), AiAttemptRetryScope::Provider);
+        assert_eq!(retry_scope(429), AiAttemptRetryScope::Candidate);
+        assert_eq!(retry_scope(500), AiAttemptRetryScope::Candidate);
+        assert_eq!(retry_scope(529), AiAttemptRetryScope::Candidate);
         assert_eq!(retry_scope(400), AiAttemptRetryScope::Candidate);
     }
 

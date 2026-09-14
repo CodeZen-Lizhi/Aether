@@ -124,6 +124,7 @@ describe('FailoverRulesDialog transport errors', () => {
     expect(endpointMocks.updateProvider).toHaveBeenCalledWith('provider-1', {
       failover_rules: {
         max_retries: 2,
+        stop_on_transport_errors: null,
       },
     })
   })

@@ -38,6 +38,37 @@ pub(crate) async fn maybe_execute_via_stream_decision_path(
     trace_id: &str,
     decision: &GatewayControlDecision,
 ) -> Result<LocalExecutionRequestOutcome, GatewayError> {
+    let budget_applies =
+        resolve_execution_runtime_stream_plan_kind(parts, decision).is_some_and(|kind| {
+            matches!(
+                kind,
+                OPENAI_CHAT_STREAM_PLAN_KIND
+                    | OPENAI_RESPONSES_STREAM_PLAN_KIND
+                    | CLAUDE_CHAT_STREAM_PLAN_KIND
+                    | CLAUDE_CLI_STREAM_PLAN_KIND
+                    | GEMINI_CHAT_STREAM_PLAN_KIND
+                    | GEMINI_CLI_STREAM_PLAN_KIND
+            )
+        });
+    if !budget_applies {
+        return maybe_execute_via_stream_decision_path_inner(
+            state, parts, body_bytes, trace_id, decision,
+        )
+        .await;
+    }
+    crate::execution_runtime::chat_retry::with_stream_first_output_budget(
+        maybe_execute_via_stream_decision_path_inner(state, parts, body_bytes, trace_id, decision),
+    )
+    .await
+}
+
+async fn maybe_execute_via_stream_decision_path_inner(
+    state: &AppState,
+    parts: &http::request::Parts,
+    body_bytes: &Bytes,
+    trace_id: &str,
+    decision: &GatewayControlDecision,
+) -> Result<LocalExecutionRequestOutcome, GatewayError> {
     let plan_kind_started_at = std::time::Instant::now();
     let Some(plan_kind) = resolve_execution_runtime_stream_plan_kind(parts, decision) else {
         observe_gateway_stage_ms(

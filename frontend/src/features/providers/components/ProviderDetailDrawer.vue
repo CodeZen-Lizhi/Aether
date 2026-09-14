@@ -517,6 +517,8 @@ const hasFailoverRules = computed(() => {
   if (!rules) return false
   return FAILOVER_RULE_ARRAY_KEYS.some(key => (rules[key]?.length || 0) > 0)
     || typeof rules.max_retries === 'number'
+    || typeof rules.max_attempts === 'number'
+    || typeof rules.stream_failover_budget_ms === 'number'
     || rules.stop_on_transport_errors === true
 })
 

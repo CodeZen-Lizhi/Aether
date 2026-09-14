@@ -5,7 +5,10 @@
 //! 非法组合只能靠调用点的 if 和「记得同时改另外两个字段」来避免。这里把它收敛成
 //! 一个枚举：合法组合由类型保证，转换只能走受控 API。
 
+use aether_contracts::ExecutionTimeouts;
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant};
 
 use super::control::ResponsesWebSocketTurnControl;
 use super::lifecycle::ActiveProviderAttempt;
@@ -27,7 +30,10 @@ pub(super) struct LogicalTurn {
     pub(super) turn_index: u64,
     pub(super) logical_turn_id: String,
     pub(super) turn_attempt: u32,
-    pub(super) retry_attempted: bool,
+    pub(super) first_output_deadline: Option<Instant>,
+    pub(super) attempts_by_key: BTreeMap<String, u32>,
+    pub(super) retry_wait_by_key: BTreeMap<String, Duration>,
+    pub(super) excluded_keys: BTreeSet<String>,
     pub(super) retry_unsafe_reason: Option<&'static str>,
     /// Exact live control decision and strong auth snapshot used to authorize
     /// this logical turn. Quota retries reuse it instead of falling back to the
@@ -43,7 +49,10 @@ impl LogicalTurn {
             turn_index,
             logical_turn_id,
             turn_attempt: 1,
-            retry_attempted: false,
+            first_output_deadline: Some(first_output_deadline(Instant::now(), None)),
+            attempts_by_key: BTreeMap::new(),
+            retry_wait_by_key: BTreeMap::new(),
+            excluded_keys: BTreeSet::new(),
             retry_unsafe_reason: None,
             turn_control: None,
         }
@@ -59,21 +68,89 @@ impl LogicalTurn {
         self
     }
 
-    pub(super) fn quota_retry_block_reason(&self) -> Option<&'static str> {
-        if self.retry_attempted {
-            Some("quota_retry_already_attempted")
-        } else if let Some(reason) = self.retry_unsafe_reason {
+    pub(super) fn with_failover_budget(
+        mut self,
+        started_at: Instant,
+        timeouts: Option<&ExecutionTimeouts>,
+        key_id: Option<&str>,
+    ) -> Self {
+        self.first_output_deadline = Some(first_output_deadline(started_at, timeouts));
+        if let Some(key_id) = key_id {
+            self.attempts_by_key.insert(key_id.to_string(), 1);
+        }
+        self
+    }
+
+    pub(super) fn retry_block_reason(&self) -> Option<&'static str> {
+        if let Some(reason) = self.retry_unsafe_reason {
             Some(reason)
         } else if response_create_has_previous_response_id(&self.client_event) {
             Some("previous_response_id")
+        } else if self
+            .first_output_deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            Some("stream_failover_budget_exhausted")
         } else {
             None
         }
     }
 
+    pub(super) fn reserve_same_key_retry(
+        &mut self,
+        key: &str,
+        max_attempts: u32,
+        delay: Duration,
+    ) -> bool {
+        let attempts = *self.attempts_by_key.entry(key.to_string()).or_insert(1);
+        let waited = self.retry_wait_by_key.entry(key.to_string()).or_default();
+        if self.excluded_keys.contains(key)
+            || self.first_output_deadline.is_none()
+            || self.retry_unsafe_reason.is_some()
+            || response_create_has_previous_response_id(&self.client_event)
+            || attempts >= max_attempts
+            || delay > Duration::from_secs(2).saturating_sub(*waited)
+            || self
+                .first_output_deadline
+                .is_some_and(|deadline| Instant::now() + delay >= deadline)
+        {
+            self.excluded_keys.insert(key.to_string());
+            return false;
+        }
+        *waited += delay;
+        true
+    }
+
+    pub(super) fn record_attempt(&mut self, key: &str) {
+        *self.attempts_by_key.entry(key.to_string()).or_default() += 1;
+    }
+
+    pub(super) fn observe_effective_output(
+        &mut self,
+        frame: &super::frame::ParsedResponsesWebSocketFrame<'_>,
+    ) {
+        if super::frame::frame_has_effective_output(frame) {
+            self.first_output_deadline = None;
+        }
+    }
+
+    pub(super) fn quota_retry_block_reason(&self) -> Option<&'static str> {
+        self.retry_block_reason()
+    }
+
     pub(super) fn mark_retry_unsafe(&mut self, reason: &'static str) {
         self.retry_unsafe_reason.get_or_insert(reason);
     }
+}
+
+pub(super) fn first_output_deadline(
+    started_at: Instant,
+    timeouts: Option<&ExecutionTimeouts>,
+) -> Instant {
+    let budget = timeouts
+        .and_then(|t| t.stream_failover_budget_ms)
+        .unwrap_or(aether_contracts::chat_retry::DEFAULT_STREAM_FAILOVER_BUDGET_MS);
+    started_at + Duration::from_millis(budget.max(1))
 }
 
 /// 连接上「有没有正在进行的 logical turn」这一唯一事实。

@@ -368,6 +368,27 @@ CREATE TABLE IF NOT EXISTS models (
     KEY models_provider_id_idx (`provider_id`)
 );
 
+CREATE TABLE IF NOT EXISTS provider_key_health_settlements (
+    `id` VARCHAR(1024) NOT NULL,
+    `key_id` VARCHAR(64) NOT NULL,
+    `api_format` VARCHAR(64) NOT NULL,
+    `policy_version` INT NOT NULL,
+    `attempt_started_at` BIGINT NOT NULL,
+    `settled_at` BIGINT NOT NULL,
+    `expires_at` BIGINT NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY provider_key_health_settlements_expiry_idx (`expires_at`)
+);
+
+CREATE TABLE IF NOT EXISTS provider_key_health_pending_facts (
+    `id` VARCHAR(1024) NOT NULL,
+    `observed_at` BIGINT NOT NULL,
+    `expires_at` BIGINT NOT NULL,
+    `payload` JSON NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY provider_key_health_pending_facts_order_idx (`observed_at`, `id`)
+);
+
 CREATE TABLE IF NOT EXISTS global_models (
     `id` VARCHAR(64) NOT NULL,
     `name` VARCHAR(255) NOT NULL,

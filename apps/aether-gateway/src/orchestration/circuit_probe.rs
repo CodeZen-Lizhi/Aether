@@ -7,6 +7,20 @@ use crate::{AppState, GatewayError};
 
 const PROVIDER_KEY_CIRCUIT_PROBE_CAS_MAX_ATTEMPTS: usize = 4;
 
+pub(crate) async fn try_claim_managed_local_circuit_probe(
+    state: &AppState,
+    key_id: &str,
+    api_format: &str,
+) -> Result<super::probe_lease::LocalProbeLeaseClaim, GatewayError> {
+    super::probe_lease::claim_managed_probe(
+        state,
+        key_id,
+        api_format,
+        super::probe_lease::ProbeLeaseKind::Circuit,
+    )
+    .await
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LocalCircuitProbeClaim {
     /// This key does not need a half-open circuit probe.
@@ -18,6 +32,9 @@ pub(crate) enum LocalCircuitProbeClaim {
 }
 
 /// Claim the single half-open circuit probe after its backoff deadline.
+///
+/// Compatibility-only reservation. Chat execution must use the managed API to
+/// retain an owner token, renew during execution and release on cancellation.
 ///
 /// Candidate selection observes health in a batch, but the CAS below is the
 /// final ownership check immediately before the request reaches the upstream.

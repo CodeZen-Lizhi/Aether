@@ -287,7 +287,9 @@ async fn circuit_probe_unavailable(
     attempt: &LocalExecutionCandidateAttempt,
 ) -> bool {
     let candidate = &attempt.eligible.candidate;
-    if !candidate.circuit_probe_required {
+    if crate::orchestration::chat_health_policy_applies(&candidate.endpoint_api_format)
+        || !candidate.circuit_probe_required
+    {
         return false;
     }
     let probe_scope = rate_limit_probe_scope(attempt);
@@ -325,7 +327,9 @@ async fn rate_limit_probe_unavailable(
     attempt: &LocalExecutionCandidateAttempt,
 ) -> bool {
     let candidate = &attempt.eligible.candidate;
-    if !candidate.rate_limit_probe_required {
+    if crate::orchestration::chat_health_policy_applies(&candidate.endpoint_api_format)
+        || !candidate.rate_limit_probe_required
+    {
         return false;
     }
     let probe_scope = rate_limit_probe_scope(attempt);

@@ -1524,3 +1524,38 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Next Steps
 
 - 用户安装 0.1.20 后可在原生 APP 查看效果；本次未安装替换，原生 WebKit 视觉检查仍未覆盖。
+
+
+## Session 54: 实施聊天调度与故障转移
+<!-- trellis-session: v=2 fp=eb94f7ad4098d5ca -->
+
+**Date**: 2026-09-14
+**Task**: 实施聊天调度与故障转移
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+完成三模式调用链、有限重试、加权健康、熔断探测、原子终态结算、配置迁移和管理展示；代码留在工作树，未提交或部署。
+
+### Main Changes
+
+- 三种模式统一首次与备用顺序；同 K 有限重试，健康归零前可切换；完整成功才恢复健康和迁移亲和。
+- 新增健康结算去重与 pending 事实、凭据/熔断/探测代次保护；90 秒首有效输出总预算与流式不重放边界。
+- 使用与验收说明：.trellis/tasks/archive/2026-09/09-13-review-scheduler-failover/implementation-result.md；完整证据见同目录 research/verification-log.md。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 16 项真实 HTTP/SSE 回归、额外 83.18 秒长探测、183 项 WS、管理 API 7 项、配置/UI/SQLite/健康/ranking 定向测试通过。
+- [OK] Responses 同格式扩展兼容 2 项及修复后 HTTP failures 9 项通过；五包 scoped clippy 及最后 gateway clippy exit 0，既有警告保留；任务 manifest 和 whitespace 检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实际 Codex/中转与长时间 WS 尚未实测；需要运行更新后的网关才会应用新实现。提交、打包部署留待明确授权。
