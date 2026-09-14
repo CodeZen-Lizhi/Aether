@@ -44,6 +44,7 @@ pub(crate) async fn maybe_execute_via_stream_decision_path(
                 kind,
                 OPENAI_CHAT_STREAM_PLAN_KIND
                     | OPENAI_RESPONSES_STREAM_PLAN_KIND
+                    | OPENAI_RESPONSES_COMPACT_STREAM_PLAN_KIND
                     | CLAUDE_CHAT_STREAM_PLAN_KIND
                     | CLAUDE_CLI_STREAM_PLAN_KIND
                     | GEMINI_CHAT_STREAM_PLAN_KIND
