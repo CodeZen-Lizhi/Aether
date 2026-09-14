@@ -161,7 +161,7 @@ describe('RequestDetailDrawer settlement pricing', () => {
     })
 
     const totals = [...document.body.querySelectorAll<HTMLElement>('[data-request-detail-total-cost]')]
-    expect(totals.length).toBe(2)
+    expect(totals.length).toBe(1)
     expect(totals.every(total => total.textContent?.trim() === '不可用')).toBe(true)
   })
 
@@ -203,7 +203,10 @@ describe('RequestDetailDrawer settlement pricing', () => {
     await vi.waitFor(() => {
       expect(document.body.querySelector('[data-usage-transport="http"]')?.textContent?.trim())
         .toBe('HTTP 流式')
-      expect(document.body.textContent).toContain('10.12s / 10.63s')
+      const overview = document.querySelector('[data-request-detail-overview]')
+      expect(overview?.textContent).toContain('10.12s')
+      expect(overview?.textContent).toContain('10.63s')
+      expect(document.body.textContent).not.toContain('embedding-user')
       expect(document.body.textContent).toContain('95.1tps')
       expect(document.body.textContent).not.toContain('98.8tps')
     })
@@ -238,6 +241,12 @@ describe('RequestDetailDrawer settlement pricing', () => {
       expect(document.body.textContent).toContain('输入 $0.1/M')
       expect(document.body.textContent).toContain('输出 -')
     })
+    const billing = document.querySelector<HTMLDetailsElement>('[data-request-billing-details]')
+    expect(billing).not.toBeNull()
+    expect(billing?.open).toBe(false)
+    billing!.querySelector('summary')!.click()
+    expect(billing?.open).toBe(true)
+    expect(billing?.textContent).toContain('输入 $0.1/M')
     expect(document.body.textContent).not.toContain('输出 $0/M')
   })
 

@@ -47,6 +47,24 @@
               @add-endpoint="showAddEndpointDialog"
             />
 
+            <nav
+              class="border-b border-border/60 bg-background px-4 pt-2 sm:px-6"
+              aria-label="供应商管理分区"
+            >
+              <div class="flex gap-1 overflow-x-auto">
+                <button
+                  v-for="section in detailSections"
+                  :key="section.id"
+                  type="button"
+                  class="shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors"
+                  :class="activeDetailSection === section.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'"
+                  @click="activeDetailSection = section.id"
+                >
+                  {{ section.label }}<span class="ml-1 text-xs text-muted-foreground">{{ section.count }}</span>
+                </button>
+              </div>
+            </nav>
+
             <div class="space-y-6 p-4 sm:p-6">
               <!-- 配额使用情况 -->
               <ProviderMonthlyQuotaCard
@@ -57,7 +75,10 @@
               />
 
               <!-- 密钥管理 -->
-              <Card class="overflow-hidden">
+              <Card
+                v-show="activeDetailSection === 'keys'"
+                class="overflow-hidden"
+              >
                 <div class="p-4 border-b border-border/60">
                   <div class="flex items-center justify-between">
                     <h3 class="text-sm font-semibold">
@@ -251,6 +272,7 @@
 
               <!-- 模型查看 -->
               <ModelsTab
+                v-show="activeDetailSection === 'models'"
                 v-if="provider"
                 :key="`models-${provider.id}`"
                 :provider="provider"
@@ -265,6 +287,7 @@
 
               <!-- 模型映射 -->
               <ModelMappingTab
+                v-show="activeDetailSection === 'mapping'"
                 v-if="provider"
                 ref="modelMappingTabRef"
                 :key="`mapping-${provider.id}`"
@@ -497,6 +520,12 @@ const revealedKeys = ref<Map<string, string>>(new Map())
 const modelFormDialogOpen = ref(false)
 const editingModel = ref<Model | null>(null)
 const batchAssignDialogOpen = ref(false)
+const activeDetailSection = ref<'keys' | 'models' | 'mapping'>('keys')
+const detailSections = computed(() => [
+  { id: 'keys' as const, label: '密钥管理', count: allKeys.value.length },
+  { id: 'models' as const, label: '模型列表', count: providerModels.value.length },
+  { id: 'mapping' as const, label: '模型映射', count: providerModels.value.filter(model => (model.provider_model_mappings ?? []).length > 0).length },
+])
 const modelMappingTabRef = ref<InstanceType<typeof ModelMappingTab> | null>(null)
 
 const failoverRulesDialogOpen = ref(false)
@@ -631,6 +660,7 @@ watch(
   [() => props.providerId, () => props.open],
   async ([newId, newOpen], [_oldId, oldOpen]) => {
     if (newOpen && newId) {
+      activeDetailSection.value = 'keys'
       if (!oldOpen || provider.value?.id !== newId) {
         currentKeyPage.value = 1
         providerKeysTotal.value = 0

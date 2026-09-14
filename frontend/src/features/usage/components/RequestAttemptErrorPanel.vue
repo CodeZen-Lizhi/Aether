@@ -5,30 +5,25 @@
     role="alert"
   >
     <div class="error-summary">
-      <div
-        class="error-icon"
-        aria-hidden="true"
-      >
-        <TriangleAlert class="h-4 w-4" />
-      </div>
       <div class="error-content">
         <div class="error-heading">
           <div class="error-title-group">
-            <span class="error-type">错误信息</span>
+            <span class="error-type">原因说明</span>
             <h5 class="error-title">
               {{ presentation.title }}
             </h5>
           </div>
-          <span
-            v-if="error.statusCode != null"
-            class="error-status-badge"
-            :class="`is-${presentation.tone}`"
-          >
-            HTTP {{ error.statusCode }}
-          </span>
         </div>
+        <p
+          v-if="error.skipped && error.skipReasonLabel && error.skipReason !== 'key_circuit_open'"
+          class="error-description"
+        >
+          {{ error.skipReasonLabel }}
+        </p>
         <p class="error-description">
-          {{ presentation.description }}
+          <span>{{ presentation.description }}</span>
+          {{ ' ' }}
+          <span>{{ presentation.guidance }}</span>
         </p>
         <p
           v-if="error.technicalMessage && error.technicalMessage !== presentation.description"
@@ -36,9 +31,6 @@
           :title="error.technicalMessage"
         >
           {{ error.technicalMessage }}
-        </p>
-        <p class="error-guidance">
-          {{ presentation.guidance }}
         </p>
       </div>
     </div>
@@ -55,7 +47,9 @@
           />
           技术详情
         </span>
-        <span class="error-details-meta">原始错误与响应数据</span>
+        <span class="error-details-meta">
+          <span v-if="error.statusCode != null">HTTP {{ error.statusCode }} · </span>原始错误与响应数据
+        </span>
       </summary>
       <div class="error-details-content">
         <div
@@ -94,7 +88,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronRight, TriangleAlert } from 'lucide-vue-next'
+import { ChevronRight } from 'lucide-vue-next'
 import JsonContentPanel from './JsonContentPanel.vue'
 
 interface AttemptRequestError {
@@ -104,6 +98,9 @@ interface AttemptRequestError {
   statusCode?: number
   upstreamResponse: Record<string, unknown> | null
   diagnostic: Record<string, unknown> | null
+  skipReason?: string
+  skipReasonLabel?: string
+  skipped?: boolean
 }
 
 type AttemptErrorTone = 'warning' | 'danger'
@@ -136,6 +133,22 @@ const presentation = computed<AttemptErrorPresentation>(() => {
     || /timed?\s*out|timeout|超时/.test(source)
   const isConversionFailure = /格式转换失败|conversion|cannot be converted|unsupported provider stream/.test(source)
 
+  if (error.skipReason === 'key_circuit_open') {
+    return {
+      title: error.skipped ? '密钥熔断，未发送请求' : '密钥熔断保护生效',
+      description: '当前 Key 暂停接收请求。',
+      guidance: '可查看密钥健康度及熔断恢复状态。',
+      tone: 'warning',
+    }
+  }
+  if (error.skipped) {
+    return {
+      title: '当前候选未发送请求',
+      description: error.message || error.skipReason || '此候选被调度跳过。',
+      guidance: '请查看跳过原因与诊断信息。',
+      tone: 'warning',
+    }
+  }
   if (isFirstByteTimeout) {
     return {
       title: '上游服务响应超时',
@@ -203,261 +216,25 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 </script>
 
 <style scoped>
-.error-block {
-  --error-accent: #b7791f;
-  --error-icon-background: color-mix(in srgb, #b7791f 9%, var(--card));
-  --error-surface: var(--card);
-  --error-border: var(--border);
-
-  position: relative;
-  margin-top: 0.75rem;
-  overflow: hidden;
-  background: var(--error-surface);
-  border: 1px solid var(--error-border);
-  border-radius: 10px;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent);
-}
-
-.error-block::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--error-accent);
-  content: '';
-}
-
-.error-block.is-danger {
-  --error-accent: var(--destructive);
-  --error-icon-background: color-mix(in srgb, var(--destructive) 12%, var(--card));
-  --error-surface: var(--card);
-  --error-border: color-mix(in srgb, var(--destructive) 28%, var(--border));
-}
-
-.error-summary {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.875rem;
-  padding: 0.875rem 1rem 0.875rem 1.125rem;
-}
-
-.error-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  flex: 0 0 2.25rem;
-  border-radius: 8px;
-  background: var(--error-icon-background);
-  color: var(--error-accent);
-}
-
-.error-content {
-  min-width: 0;
-  flex: 1;
-}
-
-.error-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.error-title-group {
-  min-width: 0;
-}
-
-.error-title {
-  margin: 0.125rem 0 0;
-  color: var(--foreground);
-  font-size: 1rem;
-  font-weight: 650;
-  line-height: 1.35;
-}
-
-.error-type {
-  display: block;
-  color: var(--error-accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-.error-status-badge {
-  flex-shrink: 0;
-  padding: 0.2rem 0.5rem;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  font-family: ui-monospace, monospace;
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.35;
-}
-
-.error-status-badge.is-warning {
-  border-color: color-mix(in srgb, #b7791f 34%, var(--border));
-  background: color-mix(in srgb, #b7791f 7%, var(--card));
-  color: #8a631d;
-}
-
-.error-status-badge.is-danger {
-  border-color: color-mix(in srgb, var(--destructive) 22%, transparent);
-  background: color-mix(in srgb, var(--destructive) 10%, var(--card));
-  color: var(--destructive);
-}
-
-.error-description {
-  margin: 0.4rem 0 0;
-  color: var(--foreground);
-  font-size: 0.85rem;
-  line-height: 1.55;
-  word-break: break-word;
-}
-
-.error-guidance {
-  margin: 0.25rem 0 0;
-  color: var(--muted-foreground);
-  font-size: 0.8rem;
-  line-height: 1.55;
-  word-break: break-word;
-}
-
-.error-message-preview {
-  display: -webkit-box;
-  margin: 0.45rem 0 0;
-  overflow: hidden;
-  color: var(--foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.76rem;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.error-details {
-  border-top: 1px solid var(--error-border);
-}
-
-.error-details-toggle {
-  display: flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 1rem 0.6rem 1.125rem;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-}
-
-.error-details-toggle::-webkit-details-marker {
-  display: none;
-}
-
-.error-details-toggle:hover {
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
-  color: var(--foreground);
-}
-
-.error-details-toggle:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-
-.error-details-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--foreground);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.error-details-icon {
-  flex-shrink: 0;
-  transition: transform 180ms ease;
-}
-
-.error-details[open] .error-details-icon {
-  transform: rotate(90deg);
-}
-
-.error-details-meta {
-  font-size: 0.75rem;
-}
-
-.error-details-content {
-  padding: 0.75rem 1rem 1rem 1.125rem;
-  background: color-mix(in srgb, var(--background) 45%, transparent);
-}
-
-.error-technical-message {
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--card) 82%, var(--background));
-}
-
-.error-technical-label {
-  color: var(--muted-foreground);
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.error-technical-message code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--foreground);
-  font-size: 0.8rem;
-  line-height: 1.5;
-  /* The global inline-code rule forces nowrap; raw upstream errors must wrap. */
-  white-space: pre-wrap !important;
-}
-
-.error-json {
-  margin-top: 0.75rem;
-}
-
-.dark .error-block.is-warning {
-  --error-accent: #d6a84f;
-  --error-icon-background: color-mix(in srgb, #d6a84f 14%, var(--card));
-}
-
-.dark .error-status-badge.is-warning {
-  color: #fde68a;
-}
-
-@media (max-width: 640px) {
-  .error-summary {
-    gap: 0.625rem;
-    padding: 0.875rem;
-  }
-
-  .error-heading {
-    flex-wrap: wrap;
-  }
-
-  .error-details-toggle {
-    padding-inline: 0.875rem;
-  }
-
-  .error-details-meta {
-    display: none;
-  }
-
-  .error-details-content {
-    padding: 0 0.875rem 0.875rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .error-details-icon {
-    transition: none;
-  }
-}
+.error-block { min-width: 0; margin-top: 0.75rem; padding-top: 0.875rem; border-top: 1px solid var(--border); }
+.error-content, .error-title-group { min-width: 0; }
+.error-type { display: block; margin-bottom: 0.35rem; color: var(--muted-foreground); font-size: 0.7rem; }
+.error-title { margin: 0; font-size: 0.875rem; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.error-description { margin: 0.25rem 0 0; font-size: 0.75rem; color: var(--muted-foreground); line-height: 1.65; overflow-wrap: anywhere; }
+.error-message-preview { margin: 0.4rem 0 0; font-family: ui-monospace, monospace; color: var(--muted-foreground); font-size: 0.7rem; line-height: 1.6; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.error-details { margin-top: 0.25rem; }
+.error-details-toggle { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 36px; cursor: pointer; list-style: none; color: var(--muted-foreground); }
+.error-details-toggle::-webkit-details-marker { display: none; }
+.error-details-toggle:hover { color: var(--foreground); }
+.error-details-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+.error-details-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; }
+.error-details-meta { font-size: 0.7rem; }
+.error-details-icon { flex: none; transition: transform 150ms; }
+.error-details[open] .error-details-icon { transform: rotate(90deg); }
+.error-details-content { min-width: 0; padding: 0.5rem 0 0; }
+.error-technical-message { display: grid; gap: 0.35rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--muted); }
+.error-technical-label { color: var(--muted-foreground); font-size: 0.7rem; }
+.error-technical-message code { min-width: 0; overflow-wrap: anywhere; font-size: 0.75rem; line-height: 1.6; white-space: pre-wrap !important; }
+.error-json { margin-top: 0.75rem; }
+@media (prefers-reduced-motion: reduce) { .error-details-icon { transition: none; } }
 </style>

@@ -178,3 +178,13 @@ const leftPriority = providerPriorities[a.id] ?? UNCONFIGURED_PROVIDER_PRIORITY
 **Reuse**: 成功文案统一使用 `views/admin/system-settings/proxyTest.ts` 的 `formatProxyTestSuccessText`，避免列表与编辑弹窗在字段缺省时产生不同结果。
 
 **Verification**: 测试列表成功、字段缺省、服务端失败、请求拒绝、同节点去重和跨节点并发；编辑弹窗继续验证保存前测试与字段变更后的结果清理。
+
+## Convention: 请求详情首屏与尝试分页
+
+**Layout**: `RequestDetailDrawer.vue` 保留模型/等级、HTTP 标识、ID、时间及回放/刷新/关闭，头部不显示用户。四项概览分别为费用、端到端总耗时、输出速率、端到端首字耗时；速率仍按候选响应时长计算。计费明细默认折叠，保留全部定价/Token/缓存/媒体明细和不可用、未计价语义。
+
+**Trace**: `HorizontalRequestTimeline.vue` 以调度序号和重试序号排列实际返回记录；所有供应商和 Key 共用单条详情面板。两侧 44px 热区循环导航（末条下一页到首条，首条上一页到末条），页码位于底部；仅一条时隐藏箭头。桌面悬停和键盘聚焦显示箭头，触屏常显。方向键不得劫持输入、代码/JSON 内部操作。刷新按记录 ID 保留手动选择；新请求使旧取数结果失效。
+
+**Errors**: 整体结果与当前尝试状态分开。只有真实 skipped 记录称为“未发送”，不可根据 HTTP 503 或错误文本猜测未发送。原因位于当前记录信息下方，中性背景、轻量文字状态；技术详情保留原始错误、上游响应和诊断。
+
+**Verification**: `HorizontalRequestTimeline.spec.ts` 覆盖跨供应商/Key 循环、单记录、手选刷新、快速切换请求的过期响应及成功/流式/失败状态；`RequestDetailDrawer.pricing.spec.ts` 验证折叠仍可访问定价明细与原计算口径。浏览器 fixture `/scripts/fixtures/request-detail-layout.html` 支持 count、status、theme、locale、long 参数，使用真实组件与模拟接口；该证据不代表真实供应商调用测试。

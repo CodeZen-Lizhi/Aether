@@ -26,93 +26,39 @@
       class="space-y-0"
     >
       <Card>
-        <div class="p-6">
+        <div
+          class="trace-card"
+          @keydown="handlePagerKeydown"
+        >
           <!-- 概览信息 -->
           <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <div class="flex items-center gap-3">
-              <h4 class="text-sm font-semibold">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h4 class="text-sm font-semibold whitespace-nowrap">
                 请求链路追踪
               </h4>
-              <Badge :variant="getFinalStatusBadgeVariant(computedFinalStatus)">
+              <span
+                class="final-status"
+                :class="getStatusColorClass(computedFinalStatus)"
+              >
+                <span
+                  class="title-dot"
+                  :class="getStatusColorClass(computedFinalStatus)"
+                  aria-hidden="true"
+                />
                 {{ getFinalStatusLabel(computedFinalStatus) }}
-              </Badge>
+              </span>
             </div>
             <div class="text-sm text-muted-foreground">
               {{ formatLatency(totalTraceLatency) }}
             </div>
           </div>
 
-          <!-- 极简时间线轨道（按组显示） -->
-          <div class="minimal-track">
-            <div
-              v-for="(group, groupIndex) in groupedTimeline"
-              :key="group.id"
-              class="minimal-node-group"
-              :class="{
-                selected: isGroupSelected(group),
-                hovered: isGroupHovered(groupIndex) && !isGroupSelected(group)
-              }"
-              @mouseenter="hoveredGroupIndex = groupIndex"
-              @mouseleave="hoveredGroupIndex = null"
-              @click="selectGroup(group)"
-            >
-              <!-- 节点容器 -->
-              <div class="node-container">
-                <!-- 节点名称（在节点上方） -->
-                <div class="node-label">
-                  <span class="text-muted-foreground/60">{{ groupIndex + 1 }}.</span>
-                  {{ group.providerName }}
-                </div>
-
-                <!-- 主节点（代表首次请求） -->
-                <div
-                  class="node-dot"
-                  :class="[
-                    getStatusColorClass(group.primaryStatus),
-                    { 'is-first-selected': isGroupSelected(group) && selectedAttemptIndex === 0 }
-                  ]"
-                  @click.stop="selectFirstAttempt(group)"
-                />
-
-                <!-- 子节点（同提供商的其他尝试，不包含首次） -->
-                <div
-                  v-if="group.retryCount > 0"
-                  class="sub-dots"
-                >
-                  <button
-                    v-for="(attempt, idx) in group.allAttempts.slice(1)"
-                    :key="attempt.id"
-                    type="button"
-                    class="sub-dot"
-                    :class="[
-                      getStatusColorClass(getDisplayStatus(attempt)),
-                      { active: isAttemptSelected(group, idx + 1) }
-                    ]"
-                    :title="formatAttemptDotTitle(attempt)"
-                    :aria-label="formatAttemptDotTitle(attempt)"
-                    @click.stop="selectAttemptInGroup(group, idx + 1)"
-                  />
-                </div>
-              </div>
-
-              <!-- 连接线 -->
-              <div
-                v-if="groupIndex < groupedTimeline.length - 1"
-                class="node-line-wrapper"
-              >
-                <div
-                  class="node-line"
-                  :class="{ 'conversion-boundary': groupIndex + 1 === conversionBoundaryIndex }"
-                />
-              </div>
-            </div>
-          </div>
-
           <!-- 选中详情面板 -->
           <Transition name="slide-up">
             <div
-              v-if="selectedGroup && currentAttempt"
+              v-if="currentAttempt"
               class="detail-panel"
+              :data-attempt-id="currentAttempt.id"
             >
               <div class="panel-header">
                 <div class="panel-title">
@@ -120,7 +66,7 @@
                     class="title-dot"
                     :class="getStatusColorClass(currentAttemptDisplayStatus)"
                   />
-                  <span class="title-text">{{ currentGroupTitle }}</span>
+                  <span class="title-text">{{ getProviderDisplayName(currentAttempt) }}</span>
                   <a
                     v-if="currentAttempt.provider_website"
                     :href="currentAttempt.provider_website"
@@ -135,48 +81,14 @@
                     class="status-tag"
                     :class="getStatusColorClass(currentAttemptDisplayStatus)"
                   >
-                    {{ currentAttempt.status_code || getStatusLabel(currentAttemptDisplayStatus) }}
+                    {{ getStatusLabel(currentAttemptDisplayStatus) }}
+                    <span
+                      v-if="currentAttempt.status_code != null && currentAttemptDisplayStatus !== 'skipped'"
+                      class="attempt-http"
+                    >HTTP {{ currentAttempt.status_code }}</span>
                   </span>
-                  <!-- 多 Key 标识 -->
-                  <template v-if="selectedGroup.retryCount > 0">
-                    <div class="attempt-switcher">
-                      <button
-                        class="attempt-nav-btn"
-                        :disabled="selectedAttemptIndex === 0"
-                        @click.stop="navigateAttempt(-1)"
-                      >
-                        <ChevronLeft class="w-3 h-3" />
-                      </button>
-                      <span class="cache-hint">
-                        {{ selectedAttemptIndex + 1 }}/{{ selectedGroup.allAttempts.length }}
-                      </span>
-                      <button
-                        class="attempt-nav-btn"
-                        :disabled="selectedAttemptIndex === selectedGroup.allAttempts.length - 1"
-                        @click.stop="navigateAttempt(1)"
-                      >
-                        <ChevronRight class="w-3 h-3" />
-                      </button>
-                    </div>
-                  </template>
                 </div>
-                <div class="panel-nav">
-                  <button
-                    class="nav-btn"
-                    :disabled="selectedGroupIndex === 0"
-                    @click.stop="navigateGroup(-1)"
-                  >
-                    <ChevronLeft class="w-4 h-4" />
-                  </button>
-                  <span class="nav-info">{{ selectedGroupIndex + 1 }} / {{ groupedTimeline.length }}</span>
-                  <button
-                    class="nav-btn"
-                    :disabled="selectedGroupIndex === groupedTimeline.length - 1"
-                    @click.stop="navigateGroup(1)"
-                  >
-                    <ChevronRight class="w-4 h-4" />
-                  </button>
-                </div>
+                <span class="attempt-latency">{{ formatLatency(currentAttempt.latency_ms) }}</span>
               </div>
 
               <div class="panel-body">
@@ -187,15 +99,12 @@
                     class="info-item"
                   >
                     <span class="info-label">时间范围</span>
-                    <span class="info-value mono time-range-value">
+                    <span
+                      class="info-value mono time-range-value"
+                      :title="currentAttemptTimeRange.durationLabel"
+                    >
                       {{ formatTime(currentAttemptTimeRange.startIso) }}
-                      <span class="time-arrow-container">
-                        <span
-                          v-if="currentAttemptTimeRange.endIso"
-                          class="time-duration"
-                        >+{{ currentAttemptTimeRange.durationLabel }}</span>
-                        <span class="time-arrow">→</span>
-                      </span>
+                      <span class="time-arrow">→</span>
                       {{ currentAttemptTimeRange.endIso ? formatTime(currentAttemptTimeRange.endIso) : '进行中' }}
                     </span>
                   </div>
@@ -391,7 +300,7 @@
 
                 <!-- 跳过原因 -->
                 <div
-                  v-if="currentAttemptSkipReasonDisplay"
+                  v-if="currentAttemptSkipReasonDisplay && !currentAttemptRequestError"
                   class="skip-reason"
                 >
                   <span class="reason-label">跳过原因</span>
@@ -408,7 +317,8 @@
                 </div>
 
                 <RequestAttemptErrorPanel
-                  v-if="currentAttempt.status === 'failed' && currentAttemptRequestError"
+                  v-if="currentAttemptRequestError"
+                  :key="currentAttempt.id"
                   :error="currentAttemptRequestError"
                   :is-dark="isDark"
                 />
@@ -431,6 +341,32 @@
               </div>
             </div>
           </Transition>
+          <template v-if="timeline.length > 1">
+            <button
+              type="button"
+              class="trace-edge trace-edge-prev"
+              aria-label="上一条尝试"
+              @click="navigateAttempt(-1)"
+            >
+              <span><ChevronLeft class="h-6 w-6" /></span>
+            </button>
+            <button
+              type="button"
+              class="trace-edge trace-edge-next"
+              aria-label="下一条尝试"
+              @click="navigateAttempt(1)"
+            >
+              <span><ChevronRight class="h-6 w-6" /></span>
+            </button>
+          </template>
+          <div
+            v-if="timeline.length"
+            class="trace-pagination"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {{ selectedAttemptIndex + 1 }} / {{ timeline.length }}
+          </div>
         </div>
       </Card>
     </div>
@@ -453,7 +389,6 @@
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { isAxiosError } from 'axios'
 import Card from '@/components/ui/card.vue'
-import Badge from '@/components/ui/badge.vue'
 import Skeleton from '@/components/ui/skeleton.vue'
 import JsonContentPanel from './JsonContentPanel.vue'
 import RequestAttemptErrorPanel from './RequestAttemptErrorPanel.vue'
@@ -466,21 +401,6 @@ import { formatApiFormat } from '@/api/endpoints/types/api-format'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { resolveTimelineFinalStatus } from '../utils/status'
 import { TIMELINE_STATUS } from '../utils/timelineCandidates'
-
-// 节点组类型
-interface NodeGroup {
-  id: string
-  providerName: string
-  primary: CandidateRecord
-  primaryStatus: string
-  allAttempts: CandidateRecord[]  // 当前展示的尝试（含主节点）
-  retryCount: number
-  totalLatency: number  // 所有尝试的总延迟
-  startIndex: number
-  endIndex: number
-  hasConversion: boolean  // 组内是否有格式转换候选
-  providerApiFormat: string | null  // 提供商 API 格式（如 openai:responses）
-}
 
 interface AttemptTimeRange {
   startIso: string
@@ -554,8 +474,8 @@ const formatNumber = (num: number): string => {
 // 获取最终状态标签
 const getFinalStatusLabel = (status: string) => {
   const labels: Record<string, string> = {
-    success: '最终成功',
-    failed: '最终失败',
+    success: '请求成功',
+    failed: '请求失败',
     cancelled: '已取消',
     streaming: '流式传输中',
     pending: '进行中'
@@ -563,32 +483,17 @@ const getFinalStatusLabel = (status: string) => {
   return labels[status] || status
 }
 
-// 获取最终状态徽章样式
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'dark'
-
-const getFinalStatusBadgeVariant = (status: string): BadgeVariant => {
-  const variants: Record<string, BadgeVariant> = {
-    success: 'success',
-    failed: 'destructive',
-    cancelled: 'warning',
-    streaming: 'secondary',
-    pending: 'secondary'
-  }
-  return variants[status] || 'default'
-}
-
 const loading = ref(false)
 const error = ref<string | null>(null)
 const internalTrace = ref<RequestTrace | null>(null)
 const { isDark } = useDarkMode()
 const trace = computed(() => props.traceData ?? internalTrace.value)
-const selectedGroupIndex = ref(0)
 const selectedAttemptIndex = ref(0)
 const selectionPinnedByUser = ref(false)
-const hoveredGroupIndex = ref<number | null>(null)
 const traceLoadStarted = ref(false)
 let tracePollTimer: ReturnType<typeof setTimeout> | null = null
 let traceLoadInFlight: Promise<void> | null = null
+let traceLoadVersion = 0
 const TRACE_POLL_INTERVAL_MS = 1000
 
 // 格式化延迟（自动调整单位）
@@ -670,22 +575,6 @@ const proxyTimingBreakdown = (proxy: Record<string, unknown>): string => {
   return parts.join(' / ')
 }
 
-const STATUS_PRIORITY: Record<string, number> = {
-  available: 0,
-  unused: 0,
-  skipped: 1,
-  failed: 2,
-  cancelled: 2,
-  stream_interrupted: 2,
-  pending: 3,
-  streaming: 3,
-  success: 4,
-}
-
-const isParticipatedCandidate = (candidate: CandidateRecord): boolean => {
-  return TIMELINE_STATUS.includes(candidate.status)
-}
-
 const isLiveCandidate = (candidate: CandidateRecord): boolean => {
   if (candidate.status === 'streaming') return true
   return candidate.status === 'pending' && Boolean(candidate.started_at)
@@ -729,66 +618,6 @@ const getProviderDisplayName = (attempt: CandidateRecord | null | undefined): st
   if (providerName) return providerName
   return '未知'
 }
-
-const buildProviderGroups = (items: CandidateRecord[]): NodeGroup[] => {
-  const groups: NodeGroup[] = []
-  let currentGroup: NodeGroup | null = null
-
-  items.forEach((candidate) => {
-    const providerKey = candidate.provider_name || '未知'
-
-    if (currentGroup && currentGroup.id === providerKey) {
-      currentGroup.allAttempts.push(candidate)
-      currentGroup.retryCount++
-      currentGroup.endIndex = candidate.candidate_index
-      currentGroup.totalLatency += candidate.latency_ms || 0
-      if (candidate.extra_data?.needs_conversion) {
-        currentGroup.hasConversion = true
-      }
-      const currentPriority = STATUS_PRIORITY[currentGroup.primaryStatus] ?? 0
-      const newPriority = STATUS_PRIORITY[getDisplayStatus(candidate)] ?? 0
-      if (newPriority > currentPriority) {
-        currentGroup.primaryStatus = getDisplayStatus(candidate)
-      }
-      return
-    }
-
-    const newGroup: NodeGroup = {
-      id: providerKey,
-      providerName: getProviderDisplayName(candidate),
-      primary: candidate,
-      primaryStatus: getDisplayStatus(candidate),
-      allAttempts: [candidate],
-      retryCount: 0,
-      totalLatency: candidate.latency_ms || 0,
-      startIndex: candidate.candidate_index,
-      endIndex: candidate.candidate_index,
-      hasConversion: candidate.extra_data?.needs_conversion === true,
-      providerApiFormat: candidate.extra_data?.provider_api_format || null,
-    }
-    currentGroup = newGroup
-    groups.push(newGroup)
-  })
-
-  return groups
-}
-
-// 将相同 Provider 的所有请求合并为组（同提供商的 Key 放在子节点）
-const groupedTimeline = computed<NodeGroup[]>(() => {
-  const providerGroups = buildProviderGroups(timeline.value.filter(isParticipatedCandidate))
-  providerGroups.sort((a, b) => a.startIndex - b.startIndex)
-  return providerGroups
-})
-
-// 格式转换分界点索引（首个 hasConversion=true 的 group index）
-const conversionBoundaryIndex = computed(() => {
-  const groups = groupedTimeline.value
-  if (!groups || groups.length === 0) return -1
-  const idx = groups.findIndex(g => g.hasConversion)
-  // 只有当分界点不在最开头时才有意义（前面有 exact 候选）
-  if (idx <= 0) return -1
-  return idx
-})
 
 // The trace aggregate includes every attempted candidate, including failed
 // failover attempts. Per-candidate latency remains provider-scoped.
@@ -834,17 +663,8 @@ const totalTraceLatency = computed(() => {
   return 0
 })
 
-// 计算选中的组
-const selectedGroup = computed(() => {
-  if (!groupedTimeline.value || groupedTimeline.value.length === 0) return null
-  return groupedTimeline.value[selectedGroupIndex.value]
-})
-
-// 计算当前查看的尝试
-const currentAttempt = computed(() => {
-  if (!selectedGroup.value) return null
-  return selectedGroup.value.allAttempts[selectedAttemptIndex.value] || selectedGroup.value.primary
-})
+// One page per recorded candidate / Key attempt, in scheduling order.
+const currentAttempt = computed(() => timeline.value[selectedAttemptIndex.value] ?? null)
 
 const currentAttemptTimeRange = computed<AttemptTimeRange | null>(() => {
   return resolveAttemptTimeRange(currentAttempt.value)
@@ -855,11 +675,6 @@ const currentAttemptDisplayStatus = computed(() => getDisplayStatus(currentAttem
 watch(currentAttempt, (attempt) => {
   emit('selectAttempt', attempt ?? null)
 }, { immediate: true })
-
-const currentGroupTitle = computed(() => {
-  if (!selectedGroup.value || !currentAttempt.value) return ''
-  return selectedGroup.value.providerName
-})
 
 const normalizeFormatSignature = (value: string): string => {
   return value.trim().toLowerCase()
@@ -1406,9 +1221,12 @@ const currentAttemptRequestError = computed<{
   statusCode?: number
   upstreamResponse: Record<string, unknown> | null
   diagnostic: Record<string, unknown> | null
+  skipReason?: string
+  skipReasonLabel?: string
+  skipped?: boolean
 } | null>(() => {
   const attempt = currentAttempt.value
-  if (!attempt || attempt.status !== 'failed') return null
+  if (!attempt || !['failed', 'skipped', 'stream_interrupted'].includes(getDisplayStatus(attempt))) return null
 
   const extra = extractObject(attempt.extra_data)
   const upstreamResponse = extractObject(extra?.upstream_response)
@@ -1455,7 +1273,8 @@ const currentAttemptRequestError = computed<{
     ? upstreamResponseData
     : null
   if (
-    !message
+    !attempt.skip_reason
+    && !message
     && statusCode == null
     && !response
     && !diagnostic
@@ -1466,8 +1285,11 @@ const currentAttemptRequestError = computed<{
   )
 
   return {
-    message: showMessage ? (message || '未知错误') : '',
-    technicalMessage: showMessage ? (rawMessage || fallbackType) : '',
+    message: showMessage ? (message || (attempt.status === 'skipped' ? currentAttemptSkipReasonDisplay.value : '未知错误')) : '',
+    technicalMessage: showMessage ? (rawMessage || fallbackType || attempt.skip_reason || '') : '',
+    skipReason: attempt.skip_reason,
+    skipReasonLabel: currentAttemptSkipReasonDisplay.value,
+    skipped: attempt.status === 'skipped',
     presentationSource: rawMessage || fallbackType || message,
     statusCode,
     upstreamResponse: response,
@@ -1641,197 +1463,38 @@ const formatAuthTypeWithPlan = (authType: string): string => {
   return labels[authType] || authType
 }
 
-// 检查组是否被悬浮
-const isGroupHovered = (groupIndex: number) => {
-  return hoveredGroupIndex.value === groupIndex
-}
-
-// 检查组是否被选中
-const isGroupSelected = (group: NodeGroup) => {
-  return selectedGroupIndex.value === groupedTimeline.value.findIndex(g => g.id === group.id && g.startIndex === group.startIndex)
-}
-
-const findGroupIndex = (groups: NodeGroup[], group: NodeGroup): number => {
-  return groups.findIndex(g => g.id === group.id && g.startIndex === group.startIndex)
-}
-
-const selectedAttemptFromGroups = (groups: NodeGroup[]): CandidateRecord | null => {
-  const group = groups[selectedGroupIndex.value]
-  if (!group) return null
-  return group.allAttempts[selectedAttemptIndex.value] || null
-}
-
-const groupHasSuccess = (group: NodeGroup): boolean => {
-  return group.allAttempts.some(attempt => getDisplayStatus(attempt) === 'success')
-}
-
-const groupsHaveSuccess = (groups: NodeGroup[]): boolean => {
-  return groups.some(groupHasSuccess)
-}
-
-const groupsHaveLiveCandidate = (groups: NodeGroup[]): boolean => {
-  return groups.some(group => group.allAttempts.some(isLiveCandidate))
-}
-
 const TERMINAL_ATTEMPT_STATUSES = ['failed', 'cancelled', 'stream_interrupted', 'skipped']
 
-const isTerminalResultAttempt = (attempt: CandidateRecord): boolean => {
-  return TERMINAL_ATTEMPT_STATUSES.includes(getDisplayStatus(attempt))
-}
-
-const groupsHaveTerminalResult = (groups: NodeGroup[]): boolean => {
-  return groups.some(group => group.allAttempts.some(isTerminalResultAttempt))
-}
-
-const selectedAttemptMatchesBestSilentState = (groups: NodeGroup[]): boolean => {
-  const attempt = selectedAttemptFromGroups(groups)
-  if (!attempt) return false
-
-  if (groupsHaveSuccess(groups)) {
-    return getDisplayStatus(attempt) === 'success'
-  }
-
-  if (groupsHaveLiveCandidate(groups)) {
-    return isLiveCandidate(attempt)
-  }
-
-  if (groupsHaveTerminalResult(groups)) {
-    return isTerminalResultAttempt(attempt)
-  }
-
-  return true
-}
-
-const selectMostRelevantGroup = (newGroups: NodeGroup[]) => {
-  if (!newGroups || newGroups.length === 0) return
-
-  // 查找成功的组
-  const successIdx = newGroups.findIndex(groupHasSuccess)
-  if (successIdx >= 0) {
-    selectedGroupIndex.value = successIdx
-    // 选中成功的尝试
-    const group = newGroups[successIdx]
-    const attemptIdx = group.allAttempts.findIndex(a => getDisplayStatus(a) === 'success')
-    selectedAttemptIndex.value = attemptIdx >= 0 ? attemptIdx : 0
-    return
-  }
-
-  // 查找正在进行的组
-  const activeIdx = newGroups.findIndex(g => g.allAttempts.some(isLiveCandidate))
-  if (activeIdx >= 0) {
-    selectedGroupIndex.value = activeIdx
-    // 选中正在进行的尝试，而非最后一个
-    const group = newGroups[activeIdx]
-    const attemptIdx = group.allAttempts.findIndex(isLiveCandidate)
-    selectedAttemptIndex.value = attemptIdx >= 0 ? attemptIdx : group.allAttempts.length - 1
-    return
-  }
-
-  // 查找最后一个有效结果的组（有实际执行过的状态：failed/cancelled/stream_interrupted/skipped）
-  // 从后往前找第一个有效状态的组
-  for (let i = newGroups.length - 1; i >= 0; i--) {
-    const group = newGroups[i]
-    if (TERMINAL_ATTEMPT_STATUSES.includes(group.primaryStatus)) {
-      selectedGroupIndex.value = i
-      // 选中最后一个有效状态的尝试（从后往前遍历）
-      let targetIdx = -1
-      for (let j = group.allAttempts.length - 1; j >= 0; j--) {
-        if (isTerminalResultAttempt(group.allAttempts[j])) {
-          targetIdx = j
-          break
-        }
-      }
-      selectedAttemptIndex.value = targetIdx >= 0 ? targetIdx : group.allAttempts.length - 1
-      return
-    }
-  }
-
-  // 都没有有效状态，选择第一个组（避免选到末尾的未执行节点）
-  selectedGroupIndex.value = 0
-  selectedAttemptIndex.value = 0
-}
-
-// 选中一个组
-const selectGroup = (group: NodeGroup) => {
-  const index = findGroupIndex(groupedTimeline.value, group)
-  if (index >= 0) {
-    selectionPinnedByUser.value = true
-    selectedGroupIndex.value = index
-    // 默认选中成功的尝试，或最后一个尝试
-    const successIdx = group.allAttempts.findIndex(a => a.status === 'success')
-    selectedAttemptIndex.value = successIdx >= 0 ? successIdx : group.allAttempts.length - 1
-  }
-}
-
-// 选中一个组的首次请求
-const selectFirstAttempt = (group: NodeGroup) => {
-  const index = findGroupIndex(groupedTimeline.value, group)
-  if (index >= 0) {
-    selectionPinnedByUser.value = true
-    selectedGroupIndex.value = index
-    selectedAttemptIndex.value = 0
-  }
-}
-
-const selectAttemptInGroup = (group: NodeGroup, attemptIndex: number) => {
-  const groupIndex = findGroupIndex(groupedTimeline.value, group)
-  if (groupIndex < 0) return
-  selectionPinnedByUser.value = true
-  selectedGroupIndex.value = groupIndex
-  selectedAttemptIndex.value = attemptIndex
-}
-
-const isAttemptSelected = (group: NodeGroup, attemptIndex: number) => {
-  return isGroupSelected(group) && selectedAttemptIndex.value === attemptIndex
-}
-
-const formatCandidateAttemptIndex = (attempt: CandidateRecord): string => {
-  return attempt.retry_index > 0
-    ? `#${attempt.candidate_index}.${attempt.retry_index}`
-    : `#${attempt.candidate_index}`
-}
-
-const formatAttemptDotTitle = (attempt: CandidateRecord): string => {
-  const parts = [
-    formatCandidateAttemptIndex(attempt),
-    attempt.key_name || attempt.key_account_label || attempt.key_preview || '未知 Key',
-    getStatusLabel(getDisplayStatus(attempt)),
-  ]
-  return parts.filter(Boolean).join(' · ')
-}
-
-// 导航到上/下一组
-const navigateGroup = (direction: number) => {
-  const newIndex = selectedGroupIndex.value + direction
-  if (newIndex >= 0 && newIndex < groupedTimeline.value.length) {
-    selectionPinnedByUser.value = true
-    selectedGroupIndex.value = newIndex
-    const group = groupedTimeline.value[newIndex]
-    // 默认选中成功的尝试，或最后一个尝试
-    const successIdx = group.allAttempts.findIndex(a => a.status === 'success')
-    selectedAttemptIndex.value = successIdx >= 0 ? successIdx : group.allAttempts.length - 1
-  }
+const selectMostRelevantAttempt = (attempts: CandidateRecord[]) => {
+  const success = attempts.findIndex(attempt => getDisplayStatus(attempt) === 'success')
+  const active = attempts.findIndex(isLiveCandidate)
+  const terminal = attempts.map(attempt => TERMINAL_ATTEMPT_STATUSES.includes(getDisplayStatus(attempt))).lastIndexOf(true)
+  selectedAttemptIndex.value = success >= 0 ? success : active >= 0 ? active : Math.max(terminal, 0)
 }
 
 const navigateAttempt = (direction: number) => {
-  const group = selectedGroup.value
-  if (!group) return
-  const newIndex = selectedAttemptIndex.value + direction
-  if (newIndex >= 0 && newIndex < group.allAttempts.length) {
-    selectionPinnedByUser.value = true
-    selectedAttemptIndex.value = newIndex
-  }
+  const count = timeline.value.length
+  if (count < 2) return
+  selectionPinnedByUser.value = true
+  selectedAttemptIndex.value = (selectedAttemptIndex.value + direction + count) % count
+}
+
+const handlePagerKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  const target = event.target as HTMLElement | null
+  if (target?.closest('input, textarea, select, [contenteditable="true"], pre, code')) return
+  event.preventDefault()
+  navigateAttempt(event.key === 'ArrowLeft' ? -1 : 1)
 }
 
 // 加载请求追踪数据
-const isSilentRefresh = ref(false)
 const loadTrace = async (silent = false) => {
   if (!props.requestId || props.traceData) return
   const requestId = props.requestId
+  const version = traceLoadVersion
   if (traceLoadInFlight) return traceLoadInFlight
 
   traceLoadInFlight = (async () => {
-    isSilentRefresh.value = silent
     traceLoadStarted.value = true
 
     if (!silent) {
@@ -1840,8 +1503,11 @@ const loadTrace = async (silent = false) => {
     error.value = null
 
     try {
-      internalTrace.value = await requestTraceApi.getRequestTrace(requestId, { attemptedOnly: true })
+      const result = await requestTraceApi.getRequestTrace(requestId, { attemptedOnly: true })
+      if (version !== traceLoadVersion) return
+      internalTrace.value = result
     } catch (err: unknown) {
+      if (version !== traceLoadVersion) return
       if (isAxiosError(err) && err.response?.status === 404) {
         internalTrace.value = null
         error.value = null
@@ -1852,10 +1518,10 @@ const loadTrace = async (silent = false) => {
       }
       log.error('加载请求追踪失败:', err)
     } finally {
-      if (!silent) {
-        loading.value = false
+      if (version === traceLoadVersion) {
+        if (!silent) loading.value = false
+        traceLoadInFlight = null
       }
-      traceLoadInFlight = null
     }
   })()
 
@@ -1899,49 +1565,40 @@ const scheduleTracePolling = () => {
   }, TRACE_POLL_INTERVAL_MS)
 }
 
-// 监听 groupedTimeline 变化，自动选择最有意义的组
-watch(groupedTimeline, (newGroups) => {
-  if (!newGroups || newGroups.length === 0) return
-
-  // 静默刷新时保留用户手动选择；未手动选择时跟随成功/进行中的 Key。
-  if (isSilentRefresh.value) {
-    isSilentRefresh.value = false
-    if (selectionPinnedByUser.value && selectedAttemptFromGroups(newGroups)) {
+// Preserve manually selected identity across refresh/reordering, while automatic
+// selection continues to follow a live or successful attempt.
+watch(timeline, (attempts, previous) => {
+  const previousAttempt = previous?.[selectedAttemptIndex.value]
+  const sameRequest = previousAttempt?.request_id === attempts[0]?.request_id
+  if (selectionPinnedByUser.value && sameRequest && previousAttempt) {
+    const index = attempts.findIndex(attempt => attempt.id === previousAttempt.id)
+    if (index >= 0) {
+      selectedAttemptIndex.value = index
       return
     }
-    if (selectedAttemptMatchesBestSilentState(newGroups)) {
-      return
-    }
-    selectMostRelevantGroup(newGroups)
-    return
   }
-
-  selectMostRelevantGroup(newGroups)
+  if (!sameRequest) selectionPinnedByUser.value = false
+  selectMostRelevantAttempt(attempts)
 }, { immediate: true })
 
-// 监听 requestId / 外部 trace 变化
 watch(
   [() => props.requestId, () => props.traceData],
-  () => {
-    selectedGroupIndex.value = 0
-    selectedAttemptIndex.value = 0
-    selectionPinnedByUser.value = false
+  ([requestId], previous) => {
+    if (requestId !== previous?.[0] || props.traceData) {
+      traceLoadVersion += 1
+      traceLoadInFlight = null
+      if (requestId !== previous?.[0]) {
+        selectionPinnedByUser.value = false
+        internalTrace.value = null
+      }
+    }
     traceLoadStarted.value = false
-
-    if (props.traceData) {
+    if (props.traceData || !requestId) {
       internalTrace.value = null
       loading.value = false
       error.value = null
       return
     }
-
-    if (!props.requestId) {
-      internalTrace.value = null
-      loading.value = false
-      error.value = null
-      return
-    }
-
     void loadTrace()
   },
   { immediate: true },
@@ -1952,6 +1609,7 @@ watch(shouldPollTrace, () => {
 }, { immediate: true })
 
 onBeforeUnmount(() => {
+  traceLoadVersion += 1
   stopTracePolling()
 })
 
@@ -2050,7 +1708,7 @@ const getStatusLabel = (status: string) => {
     success: '成功',
     failed: '失败',
     cancelled: '已取消',
-    skipped: '跳过'
+    skipped: '未发送'
   }
   return labels[status] || status
 }
@@ -2113,227 +1771,13 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 <style scoped>
 .minimal-request-timeline {
   width: 100%;
+  container-type: inline-size;
 }
 /* Nodes and retries reflow together; sequence numbers preserve order across rows. */
-.minimal-track {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
-  align-items: start;
-  gap: 1rem;
-  padding: 0.75rem 0;
-}
-
-.minimal-node-group {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem 1rem;
-  position: relative;
-  cursor: pointer;
-}
-
-/* 节点容器 */
-.node-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 0;
-  width: 100%;
-  gap: 8px;
-  position: relative;
-}
-
-/* Names remain in flow so long provider names do not overlap adjacent nodes. */
-.node-label {
-  font-size: 0.65rem;
-  color: hsl(var(--muted-foreground));
-  max-width: 100%;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
-/* 主节点 - 同心圆（外圈轮廓 + 间隙 + 内部实心圆） */
-.node-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  transition: all 0.2s ease;
-  z-index: 2;
-  position: relative;
-  overflow: visible;
-  cursor: pointer;
-  /* 外圈轮廓 */
-  border: 2px solid currentColor;
-  background: transparent;
-}
-
-/* 内部实心圆 - 使用 ::before 伪元素 */
-.node-dot::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-  transform: translate(-50%, -50%);
-}
-
-/* 选中首次时的样式 */
-.node-dot.is-first-selected {
-  transform: scale(1.1);
-}
-
-/* Retry buttons take part in layout even when there are many attempts. */
-.sub-dots {
-  display: flex;
-  max-width: 100%;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  padding: 0;
-  background: transparent;
-  z-index: 3;
-}
-
-/* 子节点 - 增大点击区域 */
-.sub-dot {
-  width: 10px;
-  height: 10px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  opacity: 0.5;
-  position: relative;
-}
-
-/* 扩大点击热区 */
-.sub-dot::before {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: -4px;
-  right: -4px;
-  bottom: -4px;
-}
-
-.sub-dot:hover {
-  transform: scale(1.2);
-  opacity: 0.9;
-}
-
-.sub-dot.active {
-  opacity: 1;
-  transform: scale(1.15);
-  box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 3px currentColor;
-}
-
-/* 子节点状态颜色 */
-.sub-dot.status-success { background: #22c55e; color: #22c55e; }
-.sub-dot.status-failed { background: #ef4444; color: #ef4444; }
-.sub-dot.status-cancelled { background: #f59e0b; color: #f59e0b; }
-.sub-dot.status-pending { background: #3b82f6; color: #3b82f6; }
-.sub-dot.status-skipped { background: hsl(var(--foreground)); color: hsl(var(--foreground)); }
-.sub-dot.status-available { background: #d1d5db; color: #d1d5db; }
-
-/* 选中状态：呼吸动画 + 涟漪效果 */
-.minimal-node-group.selected .node-dot {
-  animation: breathe 2s ease-in-out infinite;
-}
-
-.minimal-node-group.selected .node-dot::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  background: transparent;
-  transform: translate(-50%, -50%);
-  animation: ripple 1.5s ease-out infinite;
-  z-index: -1;
-}
-
-/* 悬停状态：只有放大效果 */
-.minimal-node-group.hovered .node-dot {
-  transform: scale(1.3);
-}
-
-@keyframes breathe {
-  0%, 100% { transform: scale(1.3); }
-  50% { transform: scale(1.5); }
-}
-
-@keyframes ripple {
-  0% {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 0.4;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(2.5);
-    opacity: 0;
-  }
-}
-
-/* 状态颜色 - 同心圆使用 color */
-.node-dot.status-success { color: #22c55e; }
-.node-dot.status-failed { color: #ef4444; }
-.node-dot.status-cancelled { color: #f59e0b; }
-.node-dot.status-pending { color: #3b82f6; }
-.node-dot.status-skipped { color: hsl(var(--foreground)); }
-.node-dot.status-available { color: #d1d5db; }
-
-/* 连接线容器 */
-.node-line-wrapper {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.node-line {
-  width: 100%;
-  height: 2px;
-  background: hsl(var(--border));
-}
-
-.node-line::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: -2px;
-  width: 6px;
-  height: 6px;
-  border-top: 2px solid hsl(var(--border));
-  border-right: 2px solid hsl(var(--border));
-  transform: rotate(45deg);
-}
-
-/* 格式转换分界线 */
-.node-line.conversion-boundary {
-  background: none;
-  height: 0;
-  border-top: 2px dashed hsl(var(--muted-foreground) / 0.4);
-}
-
 /* 详情面板 */
 .detail-panel {
-  margin-top: 1rem;
-  background: hsl(var(--muted) / 0.3);
-  border: 1px solid hsl(var(--border));
-  border-radius: 14px;
-  overflow: hidden;
+  margin-top: 0.5rem;
+  min-width: 0;
 }
 
 .panel-header {
@@ -2344,8 +1788,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 0rem;
-  border-bottom: 1px solid hsl(var(--border));
-  background: hsl(var(--muted) / 0.4);
+
 }
 
 .panel-title {
@@ -2357,8 +1800,9 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 }
 
 .title-dot {
-  width: 10px;
-  height: 10px;
+  flex: none;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
 
@@ -2366,7 +1810,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .title-dot.status-failed { background: #ef4444; }
 .title-dot.status-cancelled { background: #f59e0b; }
 .title-dot.status-pending { background: #3b82f6; }
-.title-dot.status-skipped { background: hsl(var(--foreground)); }
+.title-dot.status-skipped { background: var(--muted-foreground); }
 .title-dot.status-available { background: #d1d5db; }
 
 .title-text {
@@ -2375,143 +1819,40 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   overflow-wrap: anywhere;
 }
 
-.panel-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.nav-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
-  border-radius: 6px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.nav-btn:hover:not(:disabled) {
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--muted-foreground) / 0.3);
-}
-
-.nav-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.nav-info {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-  padding: 0 0.5rem;
-  min-width: 50px;
-  text-align: center;
-}
-
 .panel-body {
   padding: 0.75rem 0rem;
 }
 
-/* 状态标签 */
-.status-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 52px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 6px;
-  margin-left: 0.5rem;
-}
+.status-tag { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.75rem; color: var(--muted-foreground); }
+.attempt-http { font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.final-status { white-space: nowrap; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--muted-foreground); }
+.final-status.status-failed { color: #dc414c; }
+.attempt-latency { margin-left: auto; color: var(--muted-foreground); font-size: 0.75rem; }
+.trace-card { position: relative; padding: 1.125rem 2.75rem 0.75rem; }
+.trace-pagination { text-align: center; color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; padding-top: 0.75rem; }
+.trace-edge { position: absolute; top: 3.25rem; bottom: 2.5rem; width: 44px; display: flex; align-items: center; justify-content: center; background: transparent; border: 0; cursor: pointer; }
+.trace-edge-prev { left: 0; }
+.trace-edge-next { right: 0; }
+.trace-edge span { display: grid; place-items: center; width: 32px; height: 62px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--muted-foreground); box-shadow: 0 4px 14px #26395410; opacity: 0; transition: opacity 150ms, color 150ms; }
+.trace-edge:hover span, .trace-edge:focus-visible span { opacity: 1; color: var(--primary); }
+.trace-edge:focus-visible { outline: none; }
+.trace-edge:focus-visible span { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (hover: none), (pointer: coarse) { .trace-edge span { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .trace-edge span { transition: none; } }
+@media (max-width: 640px) { .trace-card { padding-inline: 2.75rem; } }
 
-.status-tag.status-success {
-  background: #22c55e20;
-  color: #22c55e;
-}
-
-.status-tag.status-failed {
-  background: #ef444420;
-  color: #ef4444;
-}
-
-.status-tag.status-cancelled {
-  background: #f59e0b20;
-  color: #f59e0b;
-}
-
-.status-tag.status-pending {
-  background: #3b82f620;
-  color: #3b82f6;
-}
-
-.status-tag.status-skipped {
-  background: hsl(var(--foreground) / 0.08);
-  color: hsl(var(--foreground));
-}
-
-.status-tag.status-available {
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-}
-
-/* 缓存亲和提示 */
-.cache-hint {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.5);
-  border-radius: 4px;
-}
-
-.attempt-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-left: 0.5rem;
-}
-
-.attempt-nav-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
-  border-radius: 9999px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.attempt-nav-btn:hover:not(:disabled) {
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
-}
-
-.attempt-nav-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+@container (max-width: 560px) {
+  .info-grid { grid-template-columns: minmax(0, 1fr) !important; }
 }
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.625rem 1.25rem;
 }
 
 .info-item {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -2519,13 +1860,15 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 .info-label {
   font-size: 0.7rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 500;
 }
 
 .info-value {
+  overflow-wrap: anywhere;
+  flex-wrap: wrap;
   font-size: 0.9rem;
   font-weight: 500;
   display: flex;
@@ -2545,7 +1888,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   padding: 0.15rem 0.375rem;
   background: hsl(var(--muted));
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-family: ui-monospace, monospace;
 }
 
@@ -2562,7 +1905,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   padding: 0.1rem 0.3rem;
   background: hsl(var(--muted));
   border-radius: 3px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-family: ui-monospace, monospace;
 }
 
@@ -2576,7 +1919,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   padding: 0.1rem 0.3rem;
   background: hsl(var(--muted));
   border-radius: 3px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-family: ui-monospace, monospace;
 }
 
@@ -2675,7 +2018,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 .image-progress-label {
   font-size: 0.68rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   white-space: nowrap;
 }
 
@@ -2696,7 +2039,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   padding: 0.12rem 0.35rem;
   border-radius: 4px;
   background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-size: 0.72rem;
   font-family: ui-monospace, monospace;
 }
@@ -2718,7 +2061,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   justify-content: center;
   padding: 0.25rem;
   margin-left: 0.25rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   border-radius: 4px;
   transition: all 0.15s ease;
 }
@@ -2740,7 +2083,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 .time-label {
   font-size: 0.7rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 500;
@@ -2755,31 +2098,12 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 }
 
 .time-arrow {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 /* 时间范围值 - 紧凑布局 */
 .time-range-value {
   gap: 0.25rem !important;
-}
-
-/* 箭头容器 - 用于定位持续时间 */
-.time-arrow-container {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 持续时间 - 显示在箭头上方 */
-.time-duration {
-  position: absolute;
-  top: -1.1rem;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.65rem;
-  color: hsl(var(--muted-foreground));
-  white-space: nowrap;
 }
 
 /* 用量区域 */
@@ -2812,7 +2136,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 .usage-label {
   font-size: 0.75rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   width: 56px;
   flex-shrink: 0;
 }
@@ -2854,7 +2178,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 }
 
 .reason-label {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   flex-shrink: 0;
 }
 
@@ -2870,7 +2194,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 }
 
 .reason-detail {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   line-height: 1.45;
   word-break: break-word;
 }
@@ -2886,12 +2210,12 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 /* 额外信息 */
 .extra-block {
-  margin-top: 1rem;
+  margin-top: 0.25rem;
 }
 
 .extra-toggle {
   font-size: 0.8rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   cursor: pointer;
   padding: 0.5rem 0;
   user-select: none;
@@ -2908,12 +2232,15 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 /* 动画 */
 .slide-up-enter-active,
 .slide-up-leave-active {
-  transition: all 0.25s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 .slide-up-enter-from,
 .slide-up-leave-to {
   opacity: 0;
   transform: translateY(10px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-up-enter-active, .slide-up-leave-active { transition: none; }
 }
 </style>

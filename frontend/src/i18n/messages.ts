@@ -392,6 +392,31 @@ export const messages = {
 } as const
 
 const legacyExactEnglishMessages: Record<string, string> = {
+  '请求链路追踪': 'Request trace',
+  '请求详情': 'Request details',
+  '时间范围': 'Time range',
+  '额外信息': 'Additional details',
+  '历史定价': 'Historical pricing',
+  '总费用 · 历史定价': 'Total cost · Historical pricing',
+
+  '费用与性能概览': 'Cost and performance overview',
+  '请求成功': 'Request succeeded',
+  '请求失败': 'Request failed',
+  '上一条尝试': 'Previous attempt',
+  '下一条尝试': 'Next attempt',
+  '未发送': 'Not sent',
+  '原因说明': 'Reason',
+  '密钥熔断，未发送请求': 'Key circuit open; request not sent',
+  '密钥熔断保护生效': 'Key circuit protection is active',
+  '当前 Key 暂停接收请求。': 'This key is temporarily unavailable for requests.',
+  '可查看密钥健康度及熔断恢复状态。': 'Check key health and circuit recovery status.',
+  '当前候选未发送请求': 'Request not sent to this candidate',
+  '此候选被调度跳过。': 'The scheduler skipped this candidate.',
+  '请查看跳过原因与诊断信息。': 'Review the skip reason and diagnostic details.',
+
+  '总耗时': 'Total duration',
+  '首字耗时': 'Time to first byte',
+  '计费明细': 'Billing details',
   '网关': 'Gateway',
   '高级设置': 'Advanced settings',
   '返回系统设置': 'Back to system settings',

@@ -136,8 +136,6 @@
               <span>{{ formatDateTime(detail.created_at) }}</span>
               <span class="hidden opacity-40 sm:inline">|</span>
               <span>{{ formatApiFormat(detail.api_format) }}</span>
-              <span class="hidden opacity-40 sm:inline">|</span>
-              <span>用户: {{ detail.user?.username || 'Unknown' }}</span>
             </div>
           </div>
 
@@ -171,426 +169,421 @@
               class="space-y-4"
             >
               <!-- 费用与性能概览 -->
-              <Card>
-                <div class="p-3 sm:p-4">
-                  <div class="mb-4 text-sm">
-                    <div class="sm:hidden">
-                      <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground/70">{{ detailPricingLabel }}</span>
-                    </div>
-                    <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:hidden">
-                      <span>
-                        <span class="text-muted-foreground">总费用</span>
-                        <span
-                          class="ml-1 font-bold"
-                          :class="detailPricingAvailable ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'"
-                          data-request-detail-total-cost
-                        >
-                          {{ detailPricingAvailable ? `$${detailTotalCostForDisplay.toFixed(6)}` : (detailUsageAvailable ? '未计价' : '不可用') }}
-                        </span>
-                      </span>
-                      <span class="text-muted-foreground">|</span>
-                      <span>
-                        <span class="text-muted-foreground">耗时</span>
-                        <span class="ml-1 font-bold">
-                          {{ formatDurationMs(detail.end_to_end_first_byte_time_ms ?? detail.first_byte_time_ms) }} / {{ formatDurationMs(detail.end_to_end_time_ms ?? detail.response_time_ms) }}
-                        </span>
-                      </span>
-                      <span class="text-muted-foreground">|</span>
-                      <span>
-                        <span class="text-muted-foreground">输出速度</span>
-                        <span class="ml-1 font-bold text-primary">{{ formatOutputRateValue(detailOutputRate) }}tps</span>
-                      </span>
-                    </div>
-                    <div class="hidden flex-wrap items-center gap-x-2 gap-y-1 sm:flex">
-                      <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground/70">{{ detailPricingLabel }}</span>
-                      <span class="text-muted-foreground">|</span>
-                      <span class="whitespace-nowrap">
-                        <span class="text-muted-foreground">总费用</span>
-                        <span
-                          class="ml-1 font-bold"
-                          :class="detailPricingAvailable ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'"
-                          data-request-detail-total-cost
-                        >
-                          {{ detailPricingAvailable ? `$${detailTotalCostForDisplay.toFixed(6)}` : (detailUsageAvailable ? '未计价' : '不可用') }}
-                        </span>
-                      </span>
-                      <span class="text-muted-foreground">|</span>
-                      <span class="whitespace-nowrap">
-                        <span class="text-muted-foreground">耗时</span>
-                        <span class="ml-1 font-bold">
-                          {{ formatDurationMs(detail.end_to_end_first_byte_time_ms ?? detail.first_byte_time_ms) }} / {{ formatDurationMs(detail.end_to_end_time_ms ?? detail.response_time_ms) }}
-                        </span>
-                      </span>
-                      <span class="text-muted-foreground">|</span>
-                      <span class="whitespace-nowrap">
-                        <span class="text-muted-foreground">输出速度</span>
-                        <span class="ml-1 font-bold text-primary">{{ formatOutputRateValue(detailOutputRate) }}tps</span>
-                      </span>
-                    </div>
-                    <ServiceTierFacts
-                      v-if="hasServiceTierFacts && processingTierPriceMultiplier === null"
-                      class="mt-3"
-                      :requested="serviceTierFacts.requested"
-                      :price-multiplier="processingTierPriceMultiplier"
-                    />
-                  </div>
-
-                  <!-- 分隔线 -->
-                  <Separator class="mb-4" />
-
-                  <div
-                    v-if="!detailUsageAvailable"
-                    data-request-detail-usage-unavailable
-                    class="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-3 text-xs text-muted-foreground"
-                  >
-                    上游未提供可验证的 token/费用用量，本会话不显示伪造的 0 token 或 0 费用。
-                  </div>
-                  <div
-                    v-else-if="!detailPricingAvailable"
-                    data-request-detail-usage-unpriced
-                    class="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-3 text-xs text-muted-foreground"
-                  >
-                    上游提供了权威 token 用量，但包含 Aether 当前计价规则无法安全拆分的音频 token；保留 token 统计并将本会话标记为未计价。
-                    <span v-if="(detail.input_audio_tokens || 0) > 0 || (detail.output_audio_tokens || 0) > 0">
-                      音频输入/输出：{{ detail.input_audio_tokens || 0 }} / {{ detail.output_audio_tokens || 0 }}。
-                    </span>
-                  </div>
-
-                  <!-- ========== 1. Token分阶段成本 ========== -->
-                  <div
-                    v-if="detailPricingAvailable && hasTokenCost"
-                    class="space-y-2 mb-3"
-                  >
-                    <!-- 阶梯标题 -->
-                    <div class="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-                      <span class="font-medium text-foreground">Token 计费</span>
-                      <span class="font-mono font-medium text-foreground">
-                        <template v-if="processingTierPriceMultiplier !== null">
-                          ${{ tokenCostBaseTotal.toFixed(6) }} × {{ processingTierPriceMultiplier }} ({{ processingTierLabel }} 层级)
-                        </template>
-                        <template v-else>
-                          ${{ tokenCostTotal.toFixed(6) }}
-                        </template>
-                      </span>
-                      <span class="text-muted-foreground/60">(输入 {{ formatNumber(displayInputTokens) }} + 缓存创建 {{ cacheCreationSummaryText }} + 缓存读取 {{ formatNumber(detail.cache_read_input_tokens || 0) }})</span>
-                      <Badge
-                        v-if="displayTiers.length > 1"
-                        variant="outline"
-                        class="text-[10px] px-1.5 py-0 h-4"
-                      >
-                        命中第 {{ currentTierIndex + 1 }} 阶
-                      </Badge>
-                    </div>
-
-                    <!-- 阶梯展示 -->
+              <section aria-label="费用与性能概览">
+                <div
+                  class="grid grid-cols-2 gap-3 sm:grid-cols-4"
+                  data-request-detail-overview
+                >
+                  <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
                     <div
-                      v-for="(tier, index) in displayTiers"
-                      :key="index"
-                      class="rounded-lg p-3 space-y-2"
-                      :class="index === currentTierIndex
-                        ? 'bg-primary/5 border border-primary/30'
-                        : 'bg-muted/20 border border-border/50 opacity-60'"
+                      class="text-base font-semibold tabular-nums"
+                      data-request-detail-total-cost
                     >
-                      <!-- 阶梯标题行 -->
-                      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs">
-                        <div class="flex items-center gap-2">
-                          <span
-                            class="font-medium"
-                            :class="index === currentTierIndex ? 'text-primary' : 'text-muted-foreground'"
-                          >
-                            第 {{ index + 1 }} 阶
-                          </span>
-                          <span class="text-muted-foreground">
-                            {{ getTierRangeText(tier, index, displayTiers) }}
-                          </span>
-                          <Badge
-                            v-if="index === currentTierIndex"
-                            variant="default"
-                            class="text-[10px] px-1.5 py-0 h-4"
-                          >
-                            当前
-                          </Badge>
-                        </div>
-                        <!-- 单价信息 -->
-                        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground sm:hidden">
-                          <div class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1">
-                            <span>输入</span>
-                            <span class="text-right">{{ formatPricePerMillion(tier.input_price_per_1m) }}</span>
-                          </div>
-                          <div
-                            class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1"
-                          >
-                            <span>输出</span>
-                            <span class="text-right">{{ formatPricePerMillion(tier.output_price_per_1m) }}</span>
-                          </div>
-                          <template v-if="getTierActiveCacheCreationDisplay(tier) || shouldShowCacheReadPrice(tier)">
-                            <div
-                              v-if="getTierActiveCacheCreationDisplay(tier)"
-                              class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1"
-                            >
-                              <span>{{ getTierActiveCacheCreationDisplay(tier)?.label }}</span>
-                              <span class="text-right">${{ formatPrice(getTierActiveCacheCreationDisplay(tier)?.price || 0) }}/M</span>
-                            </div>
-                            <div v-else />
-                            <div
-                              v-if="shouldShowCacheReadPrice(tier)"
-                              class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1"
-                            >
-                              <span>缓存读取</span>
-                              <span class="text-right">${{ formatPrice(getTierActiveCacheReadPrice(tier) ?? 0) }}/M</span>
-                            </div>
-                            <div v-else />
-                          </template>
-                        </div>
-                        <div class="text-muted-foreground hidden items-center gap-2 flex-wrap sm:flex">
-                          <span>输入 {{ formatPricePerMillion(tier.input_price_per_1m) }}</span>
-                          <span>输出 {{ formatPricePerMillion(tier.output_price_per_1m) }}</span>
-                          <span v-if="getTierActiveCacheCreationDisplay(tier)">
-                            {{ getTierActiveCacheCreationDisplay(tier)?.label }}
-                            ${{ formatPrice(getTierActiveCacheCreationDisplay(tier)?.price || 0) }}/M
-                          </span>
-                          <span v-if="shouldShowCacheReadPrice(tier)">
-                            缓存读取 ${{ formatPrice(getTierActiveCacheReadPrice(tier) ?? 0) }}/M
-                          </span>
-                        </div>
-                      </div>
-
-                      <!-- 当前阶梯的详细计算 -->
-                      <template v-if="index === currentTierIndex">
-                        <div class="grid gap-y-2 sm:hidden">
-                          <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
-                            <span class="text-xs text-muted-foreground">输入</span>
-                            <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ displayInputTokens }}</span>
-                            <span class="text-xs font-mono text-right tabular-nums">${{ displayInputCost.toFixed(6) }}</span>
-                          </div>
-                          <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
-                            <span class="text-xs text-muted-foreground">输出</span>
-                            <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ detail.tokens?.output || detail.output_tokens || 0 }}</span>
-                            <span class="text-xs font-mono text-right tabular-nums">${{ displayOutputCost.toFixed(6) }}</span>
-                          </div>
-                          <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
-                            <span class="text-xs text-muted-foreground">缓存创建</span>
-                            <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ totalCacheCreationTokens }}</span>
-                            <span class="text-xs font-mono text-right tabular-nums">${{ displayCacheCreationCost.toFixed(6) }}</span>
-                          </div>
-                          <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
-                            <span class="text-xs text-muted-foreground">缓存读取</span>
-                            <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ detail.cache_read_input_tokens || 0 }}</span>
-                            <span class="text-xs font-mono text-right tabular-nums">${{ displayCacheReadCost.toFixed(6) }}</span>
-                          </div>
-                        </div>
-                        <!-- 输入 输出 -->
-                        <div class="hidden items-center sm:flex">
-                          <div class="flex items-center flex-1">
-                            <span class="text-xs text-muted-foreground w-[56px]">输入</span>
-                            <span class="text-sm font-semibold font-mono flex-1 text-center">{{ displayInputTokens }}</span>
-                            <span class="text-xs font-mono">${{ displayInputCost.toFixed(6) }}</span>
-                          </div>
-                          <Separator
-                            orientation="vertical"
-                            class="h-4 mx-4"
-                          />
-                          <div class="flex items-center flex-1">
-                            <span class="text-xs text-muted-foreground w-[56px]">输出</span>
-                            <span class="text-sm font-semibold font-mono flex-1 text-center">{{ detail.tokens?.output || detail.output_tokens || 0 }}</span>
-                            <span class="text-xs font-mono">${{ displayOutputCost.toFixed(6) }}</span>
-                          </div>
-                        </div>
-                        <!-- 缓存创建 缓存读取 -->
-                        <div class="hidden items-center sm:flex">
-                          <div class="flex items-center flex-1">
-                            <span class="text-xs text-muted-foreground w-[56px]">{{ cacheCreationSplitRows.length > 0 ? '创建合计' : '缓存创建' }}</span>
-                            <span class="text-sm font-semibold font-mono flex-1 text-center">{{ totalCacheCreationTokens }}</span>
-                            <span class="text-xs font-mono">${{ displayCacheCreationCost.toFixed(6) }}</span>
-                          </div>
-                          <Separator
-                            orientation="vertical"
-                            class="h-4 mx-4"
-                          />
-                          <div class="flex items-center flex-1">
-                            <span class="text-xs text-muted-foreground w-[56px]">缓存读取</span>
-                            <span class="text-sm font-semibold font-mono flex-1 text-center">{{ detail.cache_read_input_tokens || 0 }}</span>
-                            <span class="text-xs font-mono">${{ displayCacheReadCost.toFixed(6) }}</span>
-                          </div>
-                        </div>
-                        <!-- 缓存创建 5m/1h 细分 -->
-                        <div
-                          v-if="cacheCreationSplitRows.length > 0"
-                          class="grid gap-y-1 sm:hidden"
-                        >
-                          <div
-                            v-for="row in cacheCreationSplitRows"
-                            :key="row.key"
-                            class="grid grid-cols-[64px_minmax(0,1fr)_68px_92px] items-center gap-x-2 text-xs text-muted-foreground/70"
-                          >
-                            <span>{{ row.label }}</span>
-                            <span class="font-mono text-right tabular-nums text-foreground/90">{{ formatNumber(row.tokens) }}</span>
-                            <span
-                              class="text-right"
-                              :class="row.pricePer1M === null ? 'invisible' : ''"
-                            >
-                              {{ row.pricePer1M !== null ? `$${formatPrice(row.pricePer1M)}/M` : '-' }}
-                            </span>
-                            <span
-                              class="font-mono text-right tabular-nums"
-                              :class="row.cost === null ? 'invisible' : ''"
-                            >
-                              {{ row.cost !== null ? `$${row.cost.toFixed(6)}` : '-' }}
-                            </span>
-                          </div>
-                        </div>
-                        <div
-                          v-if="cacheCreationSplitRows.length > 0"
-                          class="hidden space-y-1 pl-[56px] sm:block"
-                        >
-                          <div
-                            v-for="row in cacheCreationSplitRows"
-                            :key="row.key"
-                            class="flex items-center gap-4 text-xs text-muted-foreground/70"
-                          >
-                            <span class="w-[72px]">{{ row.label }}</span>
-                            <span class="font-mono text-foreground/90">{{ formatNumber(row.tokens) }}</span>
-                            <span v-if="row.pricePer1M !== null">${{ formatPrice(row.pricePer1M) }}/M</span>
-                            <span
-                              v-if="row.cost !== null"
-                              class="font-mono"
-                            >${{ row.cost.toFixed(6) }}</span>
-                          </div>
-                        </div>
-                      </template>
+                      {{ detailPricingAvailable ? `$${detailTotalCostForDisplay.toFixed(6)}` : (detailUsageAvailable ? '未计价' : '不可用') }}
+                    </div>
+                    <div class="mt-1 text-xs text-muted-foreground">
+                      总费用 · {{ detailPricingLabel }}
                     </div>
                   </div>
-
-                  <!-- ========== 3. 按次计费 ========== -->
-                  <div
-                    v-if="detailPricingAvailable && perRequestCost > 0 && !detail.video_billing"
-                    class="space-y-2 mb-3"
-                  >
-                    <div class="flex items-center gap-2 text-xs">
-                      <span class="font-medium text-foreground">按次计费</span>
-                      <span class="font-mono font-medium text-foreground">${{ perRequestCost.toFixed(6) }}</span>
+                  <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                    <div class="text-base font-semibold tabular-nums">
+                      {{ formatDurationMs(detail.end_to_end_time_ms ?? detail.response_time_ms) }}
                     </div>
-                    <div class="rounded-lg p-3 bg-primary/5 border border-primary/30 space-y-2">
-                      <div
-                        v-if="effectivePricePerRequest > 0"
-                        class="flex items-center justify-end text-xs"
-                      >
-                        <span class="text-muted-foreground">${{ effectivePricePerRequest.toFixed(6) }}/次</span>
-                      </div>
-                      <div class="flex items-center">
-                        <div class="flex items-center flex-1">
-                          <span class="text-xs text-muted-foreground w-[56px]">请求次数</span>
-                          <span class="text-sm font-semibold font-mono flex-1 text-center">1</span>
-                          <span class="text-xs font-mono font-medium">${{ perRequestCost.toFixed(6) }}</span>
-                        </div>
-                      </div>
+                    <div class="mt-1 text-xs text-muted-foreground">
+                      总耗时
                     </div>
                   </div>
-
-                  <!-- ========== 4. 图片输出计费 ========== -->
-                  <div
-                    v-if="detailPricingAvailable && hasImageBillingDetail"
-                    class="rounded-lg p-3 space-y-2 bg-primary/5 border border-primary/30 mb-3"
-                  >
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs">
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <span class="font-medium text-primary">图片输出</span>
-                        <Badge
-                          variant="outline"
-                          class="text-[10px] px-1.5 py-0 h-4"
-                        >
-                          {{ imageOutputBillingLabel }}
-                        </Badge>
-                        <span
-                          v-if="imageOutputPricingDescriptor"
-                          class="text-muted-foreground font-mono"
-                        >{{ imageOutputPricingDescriptor }}</span>
-                      </div>
-                      <div class="text-muted-foreground flex items-center gap-2 flex-wrap">
-                        <span
-                          v-if="imageOutputPricePerImage !== null"
-                          class="font-mono"
-                        >{{ formatNumber(imageOutputCount) }} 张 × ${{ imageOutputPricePerImage.toFixed(6) }}/张 = ${{ imageOutputCostTotal.toFixed(6) }}</span>
-                      </div>
+                  <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                    <div class="text-base font-semibold tabular-nums">
+                      {{ formatOutputRateValue(detailOutputRate) }}<span
+                        v-if="detailOutputRate != null"
+                        class="ml-1 text-xs font-normal text-muted-foreground"
+                      >tps</span>
                     </div>
-
-                    <div class="flex items-center">
-                      <div class="flex items-center flex-1">
-                        <span class="text-xs text-muted-foreground w-[56px]">数量</span>
-                        <span class="text-sm font-semibold font-mono flex-1 text-center">{{ formatNumber(imageOutputCount) }}</span>
-                        <span class="text-xs font-mono">${{ imageOutputCostTotal.toFixed(6) }}</span>
-                      </div>
-                      <Separator
-                        orientation="vertical"
-                        class="h-4 mx-4"
-                      />
-                      <div class="flex items-center flex-1">
-                        <span class="text-xs text-muted-foreground w-[56px]">格式</span>
-                        <span class="text-sm font-semibold font-mono flex-1 text-center">{{ imageOutputFormat || '-' }}</span>
-                        <span class="text-xs font-mono text-muted-foreground">{{ imageOutputBillingLabel }}</span>
-                      </div>
+                    <div class="mt-1 text-xs text-muted-foreground">
+                      输出速度
                     </div>
                   </div>
-
-                  <!-- ========== 5. 视频/图像/音频计费（独立隔离，与Token计费风格一致） ========== -->
-                  <div
-                    v-if="detailPricingAvailable && detail.video_billing"
-                    class="rounded-lg p-3 space-y-2 bg-primary/5 border border-primary/30"
-                  >
-                    <!-- 标题行（与阶梯标题行风格一致） -->
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs">
-                      <div class="flex items-center gap-2">
-                        <span class="font-medium text-primary">
-                          {{ getTaskTypeLabel(detail.video_billing.task_type) }}
-                        </span>
-                        <span
-                          v-if="detail.video_billing.resolution"
-                          class="text-muted-foreground"
-                        >
-                          {{ detail.video_billing.resolution }}
-                        </span>
-                      </div>
-                      <!-- 费用计算公式 -->
-                      <div class="text-muted-foreground flex items-center gap-2 flex-wrap">
-                        <span
-                          v-if="detail.video_billing.duration_seconds && detail.video_billing.video_price_per_second"
-                          class="font-mono"
-                        >
-                          {{ detail.video_billing.duration_seconds.toFixed(1) }}s × ${{ detail.video_billing.video_price_per_second.toFixed(4) }}/s = ${{ videoCostTotal.toFixed(6) }}
-                        </span>
-                        <span
-                          v-else-if="detail.video_billing.video_price_per_second"
-                          class="font-mono"
-                        >
-                          ${{ detail.video_billing.video_price_per_second.toFixed(4) }}/秒
-                        </span>
-                      </div>
+                  <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                    <div class="text-base font-semibold tabular-nums">
+                      {{ formatDurationMs(detail.end_to_end_first_byte_time_ms ?? detail.first_byte_time_ms) }}
                     </div>
-
-                    <!-- 费用详情（与Token详情行风格一致） -->
-                    <div class="flex items-center">
-                      <div class="flex items-center flex-1">
-                        <span class="text-xs text-muted-foreground w-[56px]">
-                          {{ detail.video_billing.task_type === 'video' ? '时长' : detail.video_billing.task_type === 'audio' ? '时长' : '数量' }}
-                        </span>
-                        <span class="text-sm font-semibold font-mono flex-1 text-center">
-                          {{ detail.video_billing.duration_seconds ? formatDuration(detail.video_billing.duration_seconds) : '1' }}
-                        </span>
-                        <span class="text-xs font-mono">${{ videoCostTotal.toFixed(6) }}</span>
-                      </div>
-                      <Separator
-                        orientation="vertical"
-                        class="h-4 mx-4 invisible"
-                      />
-                      <div class="flex items-center flex-1 invisible">
-                        <span class="text-xs text-muted-foreground w-[56px]">占位</span>
-                        <span class="text-sm font-semibold font-mono flex-1 text-center">0</span>
-                        <span class="text-xs font-mono">$0.000000</span>
-                      </div>
+                    <div class="mt-1 text-xs text-muted-foreground">
+                      首字耗时
                     </div>
                   </div>
                 </div>
-              </Card>
+                <ServiceTierFacts
+                  v-if="hasServiceTierFacts && processingTierPriceMultiplier === null"
+                  class="mt-3"
+                  :requested="serviceTierFacts.requested"
+                  :price-multiplier="processingTierPriceMultiplier"
+                />
+
+                <div
+                  v-if="!detailUsageAvailable"
+                  data-request-detail-usage-unavailable
+                  class="mt-3 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-3 text-xs text-muted-foreground"
+                >
+                  上游未提供可验证的 token/费用用量，本会话不显示伪造的 0 token 或 0 费用。
+                </div>
+                <div
+                  v-else-if="!detailPricingAvailable"
+                  data-request-detail-usage-unpriced
+                  class="mt-3 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-3 text-xs text-muted-foreground"
+                >
+                  上游提供了权威 token 用量，但包含 Aether 当前计价规则无法安全拆分的音频 token；保留 token 统计并将本会话标记为未计价。
+                  <span v-if="(detail.input_audio_tokens || 0) > 0 || (detail.output_audio_tokens || 0) > 0">
+                    音频输入/输出：{{ detail.input_audio_tokens || 0 }} / {{ detail.output_audio_tokens || 0 }}。
+                  </span>
+                </div>
+
+                <details
+                  v-if="detailPricingAvailable && (hasTokenCost || perRequestCost > 0 || hasImageBillingDetail || detail.video_billing)"
+                  :key="fullRequestId"
+                  class="mt-3 border-t border-border/60 pt-2"
+                  data-request-billing-details
+                >
+                  <summary class="cursor-pointer rounded py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    计费明细
+                  </summary>
+                  <div class="pt-3">
+                    <!-- ========== 1. Token分阶段成本 ========== -->
+                    <div
+                      v-if="detailPricingAvailable && hasTokenCost"
+                      class="space-y-2 mb-3"
+                    >
+                      <!-- 阶梯标题 -->
+                      <div class="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+                        <span class="font-medium text-foreground">Token 计费</span>
+                        <span class="font-mono font-medium text-foreground">
+                          <template v-if="processingTierPriceMultiplier !== null">
+                            ${{ tokenCostBaseTotal.toFixed(6) }} × {{ processingTierPriceMultiplier }} ({{ processingTierLabel }} 层级)
+                          </template>
+                          <template v-else>
+                            ${{ tokenCostTotal.toFixed(6) }}
+                          </template>
+                        </span>
+                        <span class="text-muted-foreground/60">(输入 {{ formatNumber(displayInputTokens) }} + 缓存创建 {{ cacheCreationSummaryText }} + 缓存读取 {{ formatNumber(detail.cache_read_input_tokens || 0) }})</span>
+                        <Badge
+                          v-if="displayTiers.length > 1"
+                          variant="outline"
+                          class="text-[10px] px-1.5 py-0 h-4"
+                        >
+                          命中第 {{ currentTierIndex + 1 }} 阶
+                        </Badge>
+                      </div>
+
+                      <!-- 阶梯展示 -->
+                      <div
+                        v-for="(tier, index) in displayTiers"
+                        :key="index"
+                        class="rounded-lg p-3 space-y-2"
+                        :class="index === currentTierIndex
+                          ? 'bg-primary/5 border border-primary/30'
+                          : 'bg-muted/20 border border-border/50 opacity-60'"
+                      >
+                        <!-- 阶梯标题行 -->
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs">
+                          <div class="flex items-center gap-2">
+                            <span
+                              class="font-medium"
+                              :class="index === currentTierIndex ? 'text-primary' : 'text-muted-foreground'"
+                            >
+                              第 {{ index + 1 }} 阶
+                            </span>
+                            <span class="text-muted-foreground">
+                              {{ getTierRangeText(tier, index, displayTiers) }}
+                            </span>
+                            <Badge
+                              v-if="index === currentTierIndex"
+                              variant="default"
+                              class="text-[10px] px-1.5 py-0 h-4"
+                            >
+                              当前
+                            </Badge>
+                          </div>
+                          <!-- 单价信息 -->
+                          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground sm:hidden">
+                            <div class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1">
+                              <span>输入</span>
+                              <span class="text-right">{{ formatPricePerMillion(tier.input_price_per_1m) }}</span>
+                            </div>
+                            <div
+                              class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1"
+                            >
+                              <span>输出</span>
+                              <span class="text-right">{{ formatPricePerMillion(tier.output_price_per_1m) }}</span>
+                            </div>
+                            <template v-if="getTierActiveCacheCreationDisplay(tier) || shouldShowCacheReadPrice(tier)">
+                              <div
+                                v-if="getTierActiveCacheCreationDisplay(tier)"
+                                class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1"
+                              >
+                                <span>{{ getTierActiveCacheCreationDisplay(tier)?.label }}</span>
+                                <span class="text-right">${{ formatPrice(getTierActiveCacheCreationDisplay(tier)?.price || 0) }}/M</span>
+                              </div>
+                              <div v-else />
+                              <div
+                                v-if="shouldShowCacheReadPrice(tier)"
+                                class="grid grid-cols-[max-content_1fr] items-baseline gap-x-1"
+                              >
+                                <span>缓存读取</span>
+                                <span class="text-right">${{ formatPrice(getTierActiveCacheReadPrice(tier) ?? 0) }}/M</span>
+                              </div>
+                              <div v-else />
+                            </template>
+                          </div>
+                          <div class="text-muted-foreground hidden items-center gap-2 flex-wrap sm:flex">
+                            <span>输入 {{ formatPricePerMillion(tier.input_price_per_1m) }}</span>
+                            <span>输出 {{ formatPricePerMillion(tier.output_price_per_1m) }}</span>
+                            <span v-if="getTierActiveCacheCreationDisplay(tier)">
+                              {{ getTierActiveCacheCreationDisplay(tier)?.label }}
+                              ${{ formatPrice(getTierActiveCacheCreationDisplay(tier)?.price || 0) }}/M
+                            </span>
+                            <span v-if="shouldShowCacheReadPrice(tier)">
+                              缓存读取 ${{ formatPrice(getTierActiveCacheReadPrice(tier) ?? 0) }}/M
+                            </span>
+                          </div>
+                        </div>
+
+                        <!-- 当前阶梯的详细计算 -->
+                        <template v-if="index === currentTierIndex">
+                          <div class="grid gap-y-2 sm:hidden">
+                            <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
+                              <span class="text-xs text-muted-foreground">输入</span>
+                              <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ displayInputTokens }}</span>
+                              <span class="text-xs font-mono text-right tabular-nums">${{ displayInputCost.toFixed(6) }}</span>
+                            </div>
+                            <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
+                              <span class="text-xs text-muted-foreground">输出</span>
+                              <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ detail.tokens?.output || detail.output_tokens || 0 }}</span>
+                              <span class="text-xs font-mono text-right tabular-nums">${{ displayOutputCost.toFixed(6) }}</span>
+                            </div>
+                            <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
+                              <span class="text-xs text-muted-foreground">缓存创建</span>
+                              <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ totalCacheCreationTokens }}</span>
+                              <span class="text-xs font-mono text-right tabular-nums">${{ displayCacheCreationCost.toFixed(6) }}</span>
+                            </div>
+                            <div class="grid grid-cols-[64px_minmax(0,1fr)_92px] items-center gap-x-2">
+                              <span class="text-xs text-muted-foreground">缓存读取</span>
+                              <span class="text-sm font-semibold font-mono text-right tabular-nums">{{ detail.cache_read_input_tokens || 0 }}</span>
+                              <span class="text-xs font-mono text-right tabular-nums">${{ displayCacheReadCost.toFixed(6) }}</span>
+                            </div>
+                          </div>
+                          <!-- 输入 输出 -->
+                          <div class="hidden items-center sm:flex">
+                            <div class="flex items-center flex-1">
+                              <span class="text-xs text-muted-foreground w-[56px]">输入</span>
+                              <span class="text-sm font-semibold font-mono flex-1 text-center">{{ displayInputTokens }}</span>
+                              <span class="text-xs font-mono">${{ displayInputCost.toFixed(6) }}</span>
+                            </div>
+                            <Separator
+                              orientation="vertical"
+                              class="h-4 mx-4"
+                            />
+                            <div class="flex items-center flex-1">
+                              <span class="text-xs text-muted-foreground w-[56px]">输出</span>
+                              <span class="text-sm font-semibold font-mono flex-1 text-center">{{ detail.tokens?.output || detail.output_tokens || 0 }}</span>
+                              <span class="text-xs font-mono">${{ displayOutputCost.toFixed(6) }}</span>
+                            </div>
+                          </div>
+                          <!-- 缓存创建 缓存读取 -->
+                          <div class="hidden items-center sm:flex">
+                            <div class="flex items-center flex-1">
+                              <span class="text-xs text-muted-foreground w-[56px]">{{ cacheCreationSplitRows.length > 0 ? '创建合计' : '缓存创建' }}</span>
+                              <span class="text-sm font-semibold font-mono flex-1 text-center">{{ totalCacheCreationTokens }}</span>
+                              <span class="text-xs font-mono">${{ displayCacheCreationCost.toFixed(6) }}</span>
+                            </div>
+                            <Separator
+                              orientation="vertical"
+                              class="h-4 mx-4"
+                            />
+                            <div class="flex items-center flex-1">
+                              <span class="text-xs text-muted-foreground w-[56px]">缓存读取</span>
+                              <span class="text-sm font-semibold font-mono flex-1 text-center">{{ detail.cache_read_input_tokens || 0 }}</span>
+                              <span class="text-xs font-mono">${{ displayCacheReadCost.toFixed(6) }}</span>
+                            </div>
+                          </div>
+                          <!-- 缓存创建 5m/1h 细分 -->
+                          <div
+                            v-if="cacheCreationSplitRows.length > 0"
+                            class="grid gap-y-1 sm:hidden"
+                          >
+                            <div
+                              v-for="row in cacheCreationSplitRows"
+                              :key="row.key"
+                              class="grid grid-cols-[64px_minmax(0,1fr)_68px_92px] items-center gap-x-2 text-xs text-muted-foreground/70"
+                            >
+                              <span>{{ row.label }}</span>
+                              <span class="font-mono text-right tabular-nums text-foreground/90">{{ formatNumber(row.tokens) }}</span>
+                              <span
+                                class="text-right"
+                                :class="row.pricePer1M === null ? 'invisible' : ''"
+                              >
+                                {{ row.pricePer1M !== null ? `$${formatPrice(row.pricePer1M)}/M` : '-' }}
+                              </span>
+                              <span
+                                class="font-mono text-right tabular-nums"
+                                :class="row.cost === null ? 'invisible' : ''"
+                              >
+                                {{ row.cost !== null ? `$${row.cost.toFixed(6)}` : '-' }}
+                              </span>
+                            </div>
+                          </div>
+                          <div
+                            v-if="cacheCreationSplitRows.length > 0"
+                            class="hidden space-y-1 pl-[56px] sm:block"
+                          >
+                            <div
+                              v-for="row in cacheCreationSplitRows"
+                              :key="row.key"
+                              class="flex items-center gap-4 text-xs text-muted-foreground/70"
+                            >
+                              <span class="w-[72px]">{{ row.label }}</span>
+                              <span class="font-mono text-foreground/90">{{ formatNumber(row.tokens) }}</span>
+                              <span v-if="row.pricePer1M !== null">${{ formatPrice(row.pricePer1M) }}/M</span>
+                              <span
+                                v-if="row.cost !== null"
+                                class="font-mono"
+                              >${{ row.cost.toFixed(6) }}</span>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+
+                    <!-- ========== 3. 按次计费 ========== -->
+                    <div
+                      v-if="detailPricingAvailable && perRequestCost > 0 && !detail.video_billing"
+                      class="space-y-2 mb-3"
+                    >
+                      <div class="flex items-center gap-2 text-xs">
+                        <span class="font-medium text-foreground">按次计费</span>
+                        <span class="font-mono font-medium text-foreground">${{ perRequestCost.toFixed(6) }}</span>
+                      </div>
+                      <div class="rounded-lg p-3 bg-primary/5 border border-primary/30 space-y-2">
+                        <div
+                          v-if="effectivePricePerRequest > 0"
+                          class="flex items-center justify-end text-xs"
+                        >
+                          <span class="text-muted-foreground">${{ effectivePricePerRequest.toFixed(6) }}/次</span>
+                        </div>
+                        <div class="flex items-center">
+                          <div class="flex items-center flex-1">
+                            <span class="text-xs text-muted-foreground w-[56px]">请求次数</span>
+                            <span class="text-sm font-semibold font-mono flex-1 text-center">1</span>
+                            <span class="text-xs font-mono font-medium">${{ perRequestCost.toFixed(6) }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- ========== 4. 图片输出计费 ========== -->
+                    <div
+                      v-if="detailPricingAvailable && hasImageBillingDetail"
+                      class="rounded-lg p-3 space-y-2 bg-primary/5 border border-primary/30 mb-3"
+                    >
+                      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="font-medium text-primary">图片输出</span>
+                          <Badge
+                            variant="outline"
+                            class="text-[10px] px-1.5 py-0 h-4"
+                          >
+                            {{ imageOutputBillingLabel }}
+                          </Badge>
+                          <span
+                            v-if="imageOutputPricingDescriptor"
+                            class="text-muted-foreground font-mono"
+                          >{{ imageOutputPricingDescriptor }}</span>
+                        </div>
+                        <div class="text-muted-foreground flex items-center gap-2 flex-wrap">
+                          <span
+                            v-if="imageOutputPricePerImage !== null"
+                            class="font-mono"
+                          >{{ formatNumber(imageOutputCount) }} 张 × ${{ imageOutputPricePerImage.toFixed(6) }}/张 = ${{ imageOutputCostTotal.toFixed(6) }}</span>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center">
+                        <div class="flex items-center flex-1">
+                          <span class="text-xs text-muted-foreground w-[56px]">数量</span>
+                          <span class="text-sm font-semibold font-mono flex-1 text-center">{{ formatNumber(imageOutputCount) }}</span>
+                          <span class="text-xs font-mono">${{ imageOutputCostTotal.toFixed(6) }}</span>
+                        </div>
+                        <Separator
+                          orientation="vertical"
+                          class="h-4 mx-4"
+                        />
+                        <div class="flex items-center flex-1">
+                          <span class="text-xs text-muted-foreground w-[56px]">格式</span>
+                          <span class="text-sm font-semibold font-mono flex-1 text-center">{{ imageOutputFormat || '-' }}</span>
+                          <span class="text-xs font-mono text-muted-foreground">{{ imageOutputBillingLabel }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- ========== 5. 视频/图像/音频计费（独立隔离，与Token计费风格一致） ========== -->
+                    <div
+                      v-if="detailPricingAvailable && detail.video_billing"
+                      class="rounded-lg p-3 space-y-2 bg-primary/5 border border-primary/30"
+                    >
+                      <!-- 标题行（与阶梯标题行风格一致） -->
+                      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs">
+                        <div class="flex items-center gap-2">
+                          <span class="font-medium text-primary">
+                            {{ getTaskTypeLabel(detail.video_billing.task_type) }}
+                          </span>
+                          <span
+                            v-if="detail.video_billing.resolution"
+                            class="text-muted-foreground"
+                          >
+                            {{ detail.video_billing.resolution }}
+                          </span>
+                        </div>
+                        <!-- 费用计算公式 -->
+                        <div class="text-muted-foreground flex items-center gap-2 flex-wrap">
+                          <span
+                            v-if="detail.video_billing.duration_seconds && detail.video_billing.video_price_per_second"
+                            class="font-mono"
+                          >
+                            {{ detail.video_billing.duration_seconds.toFixed(1) }}s × ${{ detail.video_billing.video_price_per_second.toFixed(4) }}/s = ${{ videoCostTotal.toFixed(6) }}
+                          </span>
+                          <span
+                            v-else-if="detail.video_billing.video_price_per_second"
+                            class="font-mono"
+                          >
+                            ${{ detail.video_billing.video_price_per_second.toFixed(4) }}/秒
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- 费用详情（与Token详情行风格一致） -->
+                      <div class="flex items-center">
+                        <div class="flex items-center flex-1">
+                          <span class="text-xs text-muted-foreground w-[56px]">
+                            {{ detail.video_billing.task_type === 'video' ? '时长' : detail.video_billing.task_type === 'audio' ? '时长' : '数量' }}
+                          </span>
+                          <span class="text-sm font-semibold font-mono flex-1 text-center">
+                            {{ detail.video_billing.duration_seconds ? formatDuration(detail.video_billing.duration_seconds) : '1' }}
+                          </span>
+                          <span class="text-xs font-mono">${{ videoCostTotal.toFixed(6) }}</span>
+                        </div>
+                        <Separator
+                          orientation="vertical"
+                          class="h-4 mx-4 invisible"
+                        />
+                        <div class="flex items-center flex-1 invisible">
+                          <span class="text-xs text-muted-foreground w-[56px]">占位</span>
+                          <span class="text-sm font-semibold font-mono flex-1 text-center">0</span>
+                          <span class="text-xs font-mono">$0.000000</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              </section>
 
               <!-- 请求链路追踪卡片 -->
               <div>
