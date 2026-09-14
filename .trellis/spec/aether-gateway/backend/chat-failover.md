@@ -45,6 +45,23 @@ Headers, keepalives and empty/protocol startup frames are not effective output.
 Effective output ends this budget; it does not cap the complete answer. Existing
 nonstream/compact/WS turn and connection limits remain separate.
 
+Responses streams include ordinary chat and V2 `compaction_trigger` requests.
+Nonempty `response.output_text.done`, reasoning/refusal/tool argument snapshots,
+supported content parts, and `response.output_item.done` with message, reasoning
+or compaction content release both first-output waits, just like deltas.
+Compaction requires nonempty `encrypted_content`; empty/unknown items do not
+qualify. Item completion never substitutes for the response's protocol terminal.
+Log the first effective event type and timings, never its text/encrypted payload.
+
+First-output budget cancellation must hand off a failed usage terminal with 504,
+the original request identity/type, and actual logical elapsed time. Retain only
+identity/routing/body references for this handoff, without copying conversations
+or credentials. Terminal persistence ends first-output waiting so it cannot be
+cancelled by that same deadline. Candidate watchdog exhaustion also returns 504;
+retain its outcome in the request loop, since candidate audit writes are queued
+and an immediate SQLite read can still show the previous status. Do not replace
+that known timeout with `no_local_stream_plans` or wait for stale-request cleanup.
+
 For one logical request and K+format, additional retry waiting totals at most
 2 seconds. Preserve the full valid Retry-After deadline across later requests,
 including non-429 failures. A long deadline skips this K for the current request.
@@ -143,6 +160,14 @@ read authoritative health/bindings afterward. Keep these suites meaningful:
 
 Module tests and compile success do not replace real route evidence. Keep live
 Codex/relay verification separate from these isolated fixture results.
+
+For first-output changes, cover early text/compaction snapshots followed by a
+delayed valid completion beyond both deadlines, empty startup frames that still
+time out, total-budget cancellation, and output followed by premature EOF.
+Read back usage/candidate state using SQLite as well as memory: queued candidate
+writes must not change the immediate timeout response; later reads must retain
+failed/504 and the original compact/chat type. EOF after output stays failed and
+must not replay the generation.
 
 ## 7. Incorrect and correct patterns
 

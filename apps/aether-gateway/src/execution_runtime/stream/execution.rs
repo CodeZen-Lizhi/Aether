@@ -4671,7 +4671,55 @@ fn prefetched_openai_responses_body_has_output_boundary(body: &[u8]) -> bool {
     false
 }
 
+fn nonempty_stream_string(value: Option<&Value>) -> bool {
+    value
+        .and_then(Value::as_str)
+        .is_some_and(|text| !text.is_empty())
+}
+
+// Only supported content counts: an item being "done" is not by itself output,
+// and it never means the whole response has reached its protocol terminal.
+fn responses_part_has_useful_output(part: &Value) -> bool {
+    match part.get("type").and_then(Value::as_str) {
+        Some("output_text" | "reasoning_text" | "summary_text") => {
+            nonempty_stream_string(part.get("text"))
+        }
+        Some("refusal") => nonempty_stream_string(part.get("refusal")),
+        _ => false,
+    }
+}
+
+fn responses_item_has_useful_output(item: &Value) -> bool {
+    let has_parts = |field| {
+        item.get(field)
+            .and_then(Value::as_array)
+            .is_some_and(|parts| parts.iter().any(responses_part_has_useful_output))
+    };
+    match item.get("type").and_then(Value::as_str) {
+        Some("message") => has_parts("content"),
+        Some("reasoning") => {
+            has_parts("summary")
+                || has_parts("content")
+                || nonempty_stream_string(item.get("encrypted_content"))
+        }
+        Some("compaction") => nonempty_stream_string(item.get("encrypted_content")),
+        Some("function_call") => {
+            nonempty_stream_string(item.get("name"))
+                && nonempty_stream_string(item.get("arguments"))
+        }
+        Some("custom_tool_call") => {
+            nonempty_stream_string(item.get("name")) && nonempty_stream_string(item.get("input"))
+        }
+        Some("image_generation_call") => nonempty_stream_string(item.get("result")),
+        _ => false,
+    }
+}
+
 fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
+    prefetched_chat_body_useful_output_kind(body).is_some()
+}
+
+fn prefetched_chat_body_useful_output_kind(body: &[u8]) -> Option<String> {
     let mut remaining = body;
     while let Some((end, separator)) = find_sse_record_boundary(remaining) {
         let record = &remaining[..end];
@@ -4688,18 +4736,73 @@ fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
         let Ok(event) = serde_json::from_str::<Value>(&data) else {
             continue;
         };
-        let nonempty = |value: Option<&Value>| {
-            value
-                .and_then(Value::as_str)
-                .is_some_and(|text| !text.is_empty())
-        };
+        let nonempty = nonempty_stream_string;
         match event.get("type").and_then(Value::as_str) {
             Some(
                 "response.output_text.delta"
                 | "response.reasoning_text.delta"
                 | "response.reasoning_summary_text.delta"
-                | "response.function_call_arguments.delta",
-            ) if nonempty(event.get("delta")) => return true,
+                | "response.function_call_arguments.delta"
+                | "response.custom_tool_call_input.delta"
+                | "response.refusal.delta",
+            ) if nonempty(event.get("delta")) => {
+                return Some(event["type"].as_str().unwrap_or_default().to_owned())
+            }
+            Some(
+                "response.output_text.done"
+                | "response.reasoning_text.done"
+                | "response.reasoning_summary_text.done",
+            ) if event
+                .get("text")
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    event
+                        .get("part")
+                        .and_then(|part| part.get("text"))
+                        .and_then(Value::as_str)
+                })
+                .is_some_and(|text| !text.is_empty()) =>
+            {
+                return Some(event["type"].as_str().unwrap_or_default().to_owned());
+            }
+            Some("response.refusal.done")
+                if event
+                    .get("refusal")
+                    .and_then(Value::as_str)
+                    .or_else(|| {
+                        event
+                            .get("part")
+                            .and_then(|part| part.get("refusal"))
+                            .and_then(Value::as_str)
+                    })
+                    .is_some_and(|text| !text.is_empty()) =>
+            {
+                return Some("response.refusal.done".to_owned());
+            }
+            Some("response.function_call_arguments.done") if nonempty(event.get("arguments")) => {
+                return Some("response.function_call_arguments.done".to_owned());
+            }
+            Some("response.custom_tool_call_input.done") if nonempty(event.get("input")) => {
+                return Some("response.custom_tool_call_input.done".to_owned());
+            }
+            Some(
+                "response.content_part.added"
+                | "response.content_part.done"
+                | "response.reasoning_summary_part.added"
+                | "response.reasoning_summary_part.done",
+            ) if event
+                .get("part")
+                .is_some_and(responses_part_has_useful_output) =>
+            {
+                return Some(event["type"].as_str().unwrap_or_default().to_owned());
+            }
+            Some("response.output_item.done")
+                if event
+                    .get("item")
+                    .is_some_and(responses_item_has_useful_output) =>
+            {
+                return Some("response.output_item.done".to_owned());
+            }
             Some("response.output_item.added")
                 if event
                     .get("item")
@@ -4707,7 +4810,7 @@ fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
                     .and_then(Value::as_str)
                     == Some("function_call") =>
             {
-                return true
+                return Some(event["type"].as_str().unwrap_or_default().to_owned())
             }
             Some("response.completed")
                 if event
@@ -4716,7 +4819,7 @@ fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
                     .and_then(Value::as_str)
                     == Some("completed") =>
             {
-                return true
+                return Some(event["type"].as_str().unwrap_or_default().to_owned())
             }
             Some("content_block_delta")
                 if event.get("delta").is_some_and(|delta| {
@@ -4725,7 +4828,7 @@ fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
                         .any(|field| nonempty(delta.get(*field)))
                 }) =>
             {
-                return true
+                return Some(event["type"].as_str().unwrap_or_default().to_owned())
             }
             Some("content_block_start")
                 if event.get("content_block").is_some_and(|block| {
@@ -4734,9 +4837,11 @@ fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
                             && nonempty(block.get("name")))
                 }) =>
             {
-                return true
+                return Some(event["type"].as_str().unwrap_or_default().to_owned())
             }
-            Some("message_stop") => return true,
+            Some("message_stop") => {
+                return Some(event["type"].as_str().unwrap_or_default().to_owned())
+            }
             _ => {}
         }
         if event
@@ -4763,7 +4868,7 @@ fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
                 })
             })
         {
-            return true;
+            return Some("chat.completion.chunk".to_owned());
         }
         if event
             .get("candidates")
@@ -4784,10 +4889,10 @@ fn prefetched_chat_body_has_useful_output(body: &[u8]) -> bool {
                 })
             })
         {
-            return true;
+            return Some("generateContent.candidate".to_owned());
         }
     }
-    false
+    None
 }
 
 fn should_probe_success_failover_before_stream(headers: &BTreeMap<String, String>) -> bool {
@@ -5861,8 +5966,12 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                         prefetched_chunks.push(Bytes::from(rewritten_chunk));
                     }
 
-                    if (wait_for_useful_chat_output
-                        && prefetched_chat_body_has_useful_output(&prefetched_inspection_body))
+                    let useful_output_kind = wait_for_useful_chat_output
+                        .then(|| {
+                            prefetched_chat_body_useful_output_kind(&prefetched_inspection_body)
+                        })
+                        .flatten();
+                    if useful_output_kind.is_some()
                         || (!wait_for_useful_chat_output
                             && (anthropic_commit_ready
                                 || (matches!(inspection, StreamPrefetchInspection::NonError)
@@ -5871,7 +5980,19 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                                             &prefetched_inspection_body,
                                         )))))
                     {
-                        if wait_for_useful_chat_output {
+                        if let Some(event_type) = useful_output_kind {
+                            tracing::info!(
+                                event_name = "stream_first_effective_output",
+                                log_type = "ops",
+                                trace_id,
+                                request_id = %request_id_for_log,
+                                candidate_id = ?candidate_id,
+                                upstream_event_type = event_type,
+                                elapsed_ms = stream_elapsed_ms_at(stream_started_at, frame_observed_at),
+                                first_data_ms = ?prefetched_usage_telemetry.as_ref().and_then(|telemetry| telemetry.ttfb_ms),
+                                first_output_timeout_ms = ?plan.timeouts.as_ref().and_then(|timeouts| timeouts.first_byte_ms),
+                                "gateway received effective output; first-output deadlines released"
+                            );
                             crate::execution_runtime::chat_retry::mark_useful_stream_output();
                         }
                         break;
@@ -9940,6 +10061,184 @@ mod tests {
         assert!(prefetched_openai_responses_body_has_output_boundary(
             b"event: response.created\ndata: {\"type\":\"response.created\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n"
         ));
+    }
+
+    #[tokio::test]
+    async fn useful_output_snapshots_release_deadline_until_real_upstream_terminal() {
+        for (event, item) in [
+            (
+                json!({"type":"response.output_text.done", "text":"local answer"}),
+                json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+            ),
+            (
+                json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":"local opaque"}}),
+                json!({"type":"compaction", "encrypted_content":"local opaque"}),
+            ),
+            (
+                json!({"type":"response.output_text.delta", "delta":"local answer"}),
+                json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+            ),
+            (
+                json!({"type":"response.output_text.done", "text":""}),
+                Value::Null,
+            ),
+            (
+                json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":""}}),
+                Value::Null,
+            ),
+            (
+                json!({"type":"response.created", "response":{"status":"in_progress"}}),
+                Value::Null,
+            ),
+        ] {
+            let expects_output = !item.is_null();
+            let listener = crate::test_support::bind_loopback_listener().await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let expected_event = event["type"].as_str().unwrap().to_owned();
+            let server = tokio::spawn(async move {
+                axum::serve(listener, Router::new().route("/v1/execute/stream", any(move || {
+                    let event = event.clone();
+                    let item = item.clone();
+                    async move {
+                        let frames = stream! {
+                            yield Ok::<Bytes, Infallible>(Bytes::from(json!({"type":"headers", "payload":{"kind":"headers", "status_code":200, "headers":{"content-type":"text/event-stream"}}}).to_string()+"\n"));
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                            yield Ok(Bytes::from(json!({"type":"data", "payload":{"kind":"data", "text":format!("data: {event}\n\n")}}).to_string()+"\n"));
+                            tokio::time::sleep(Duration::from_millis(800)).await;
+                            let terminal = json!({"type":"response.completed", "response":{"id":"resp-local", "object":"response", "model":"gpt-5", "status":"completed", "output":[item], "usage":{"input_tokens":7, "output_tokens":11, "total_tokens":18}}});
+                            yield Ok(Bytes::from(json!({"type":"data", "payload":{"kind":"data", "text":format!("data: {terminal}\n\n")}}).to_string()+"\n"));
+                            yield Ok(Bytes::from_static(b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n"));
+                        };
+                        ([(header::CONTENT_TYPE, "application/x-ndjson")], Body::from_stream(frames))
+                    }
+                }))).await.unwrap();
+            });
+            let usage = Arc::new(InMemoryUsageReadRepository::default());
+            let state = AppState::new().unwrap()
+                .with_data_state_for_tests(crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
+                    Arc::new(InMemoryRequestCandidateRepository::default()), Arc::clone(&usage)))
+                .with_usage_runtime_for_tests(UsageRuntimeConfig { enabled:true, ..UsageRuntimeConfig::default() })
+                .with_execution_runtime_override_base_url(format!("http://{addr}"));
+            let plan = ExecutionPlan {
+                request_id: "req-useful-snapshot".into(),
+                candidate_id: Some("cand-useful-snapshot".into()),
+                provider_name: Some("openai".into()),
+                provider_id: "provider-local".into(),
+                endpoint_id: "endpoint-local".into(),
+                key_id: "key-local".into(),
+                method: "POST".into(),
+                url: "https://example.com/v1/responses".into(),
+                headers: BTreeMap::new(),
+                content_type: Some("application/json".into()),
+                content_encoding: None,
+                body: RequestBody::from_json(
+                    json!({"model":"gpt-5", "input":"local fixture", "stream":true}),
+                ),
+                stream: true,
+                client_api_format: "openai:responses".into(),
+                provider_api_format: "openai:responses".into(),
+                model_name: Some("gpt-5".into()),
+                proxy: None,
+                transport_profile: None,
+                timeouts: Some(ExecutionTimeouts {
+                    first_byte_ms: Some(300),
+                    ..ExecutionTimeouts::default()
+                }),
+            };
+            let started = tokio::time::Instant::now();
+            let outcome = crate::execution_runtime::chat_retry::with_first_output_deadline(started + Duration::from_millis(500), async {
+                let response = execute_execution_runtime_stream(&state, plan, "trace-useful-snapshot", &test_decision(), "openai_responses_stream", None,
+                    Some(json!({"provider_api_format":"openai:responses", "client_api_format":"openai:responses"}))).await?.unwrap();
+                assert!(started.elapsed() < Duration::from_millis(500), "must commit on snapshot before terminal");
+                let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                Ok(String::from_utf8(bytes.to_vec()).unwrap())
+            }).await;
+            if !expects_output {
+                assert!(
+                    matches!(
+                        outcome,
+                        Err(crate::GatewayError::Client {
+                            status: StatusCode::GATEWAY_TIMEOUT,
+                            ..
+                        })
+                    ),
+                    "empty/control event must not release deadline: {expected_event}"
+                );
+                server.abort();
+                continue;
+            }
+            let text = outcome.expect("effective output must release the deadline");
+            assert!(started.elapsed() >= Duration::from_millis(800));
+            assert!(text.contains(&expected_event));
+            assert!(text.contains("response.completed"));
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if let Some(record) = usage
+                        .find_by_request_id("req-useful-snapshot")
+                        .await
+                        .unwrap()
+                    {
+                        if record.status == "completed" {
+                            assert_eq!(record.total_tokens, 18);
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("only real terminal may complete persisted usage");
+            server.abort();
+        }
+    }
+
+    #[test]
+    fn useful_output_gate_accepts_nonempty_responses_snapshots() {
+        for event in [
+            json!({"type":"response.output_text.done", "text":"answer"}),
+            json!({"type":"response.reasoning_text.done", "text":"thinking"}),
+            json!({"type":"response.reasoning_summary_text.done", "part":{"text":"summary"}}),
+            json!({"type":"response.content_part.done", "part":{"type":"output_text", "text":"answer"}}),
+            json!({"type":"response.reasoning_summary_part.done", "part":{"type":"summary_text", "text":"summary"}}),
+            json!({"type":"response.output_item.done", "item":{"type":"message", "content":[{"type":"output_text", "text":"answer"}]}}),
+            json!({"type":"response.output_item.done", "item":{"type":"reasoning", "encrypted_content":"opaque-reasoning"}}),
+            json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":"opaque-compaction"}}),
+            json!({"type":"response.output_item.done", "item":{"type":"function_call", "name":"lookup", "arguments":"{}"}}),
+            json!({"type":"response.custom_tool_call_input.done", "input":"tool input"}),
+            json!({"type":"response.refusal.done", "refusal":"cannot answer"}),
+        ] {
+            let body = format!("data: {event}\n\n");
+            assert!(
+                super::prefetched_chat_body_has_useful_output(body.as_bytes()),
+                "{}",
+                event["type"]
+            );
+            assert!(!super::prefetched_chat_body_has_useful_output(
+                &body.as_bytes()[..body.len() - 2]
+            ));
+        }
+    }
+
+    #[test]
+    fn useful_output_gate_rejects_empty_or_unknown_responses_snapshots() {
+        for event in [
+            json!({"type":"response.output_text.done", "text":""}),
+            json!({"type":"response.reasoning_text.done"}),
+            json!({"type":"response.content_part.done", "part":{"type":"output_text", "text":""}}),
+            json!({"type":"response.content_part.done", "part":{"type":"unknown", "text":"not supported"}}),
+            json!({"type":"response.output_item.done", "item":{"type":"message", "content":[]}}),
+            json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":""}}),
+            json!({"type":"response.output_item.done", "item":{"type":"function_call"}}),
+            json!({"type":"response.output_item.done", "item":{"type":"unknown", "encrypted_content":"opaque"}}),
+            json!({"type":"response.unknown.done", "text":"not supported"}),
+        ] {
+            let body = format!("data: {event}\n\n");
+            assert!(
+                !super::prefetched_chat_body_has_useful_output(body.as_bytes()),
+                "{}",
+                event["type"]
+            );
+        }
     }
 
     #[test]

@@ -3,6 +3,9 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use aether_contracts::ExecutionPlan;
+use aether_usage_runtime::{
+    build_terminal_usage_context_seed, SyncTerminalUsagePayloadSeed, TerminalUsageContextSeed,
+};
 use tokio::time::{Duration, Instant};
 
 use crate::orchestration::chat_health_policy_applies;
@@ -286,13 +289,161 @@ struct FirstOutputBudget {
     started: Instant,
     state: Mutex<(Instant, bool, bool)>,
     changed: tokio::sync::Notify,
-    active_attempt: Mutex<
-        Option<(
-            AppState,
-            crate::request_candidate_runtime::LocalRequestCandidateStatusSnapshot,
-            u64,
-        )>,
-    >,
+    active_attempt: Mutex<Option<FirstOutputAttempt>>,
+}
+
+struct FirstOutputAttempt {
+    state: AppState,
+    snapshot: Option<crate::request_candidate_runtime::LocalRequestCandidateStatusSnapshot>,
+    started_at_unix_ms: u64,
+    usage_context: TerminalUsageContextSeed,
+}
+
+// Retain only identity/routing fields for cancellation. In particular, do not clone
+// or keep the conversation, upstream credentials, or encrypted compact output.
+fn timeout_usage_context(
+    plan: &ExecutionPlan,
+    report_context: Option<&serde_json::Value>,
+) -> TerminalUsageContextSeed {
+    let identity_plan = ExecutionPlan {
+        request_id: plan.request_id.clone(),
+        candidate_id: plan.candidate_id.clone(),
+        provider_name: plan.provider_name.clone(),
+        provider_id: plan.provider_id.clone(),
+        endpoint_id: plan.endpoint_id.clone(),
+        key_id: plan.key_id.clone(),
+        method: String::new(),
+        url: String::new(),
+        headers: BTreeMap::new(),
+        content_type: None,
+        content_encoding: None,
+        body: aether_contracts::RequestBody {
+            json_body: None,
+            body_bytes_b64: None,
+            body_ref: plan.body.body_ref.clone(),
+        },
+        stream: plan.stream,
+        client_api_format: plan.client_api_format.clone(),
+        provider_api_format: plan.provider_api_format.clone(),
+        model_name: plan.model_name.clone(),
+        proxy: None,
+        transport_profile: None,
+        timeouts: None,
+    };
+    let identity_context = serde_json::Value::Object(
+        [
+            "user_id",
+            "api_key_id",
+            "username",
+            "api_key_name",
+            "provider_name",
+            "model",
+            "mapped_model",
+            "model_id",
+            "global_model_id",
+            "candidate_index",
+            "key_name",
+            "planner_kind",
+            "route_family",
+            "route_kind",
+            "execution_path",
+            "needs_conversion",
+            "api_key_is_standalone",
+            "request_body_ref",
+            "provider_request_body_ref",
+            "client_api_format",
+            "provider_api_format",
+        ]
+        .into_iter()
+        .filter_map(|key| {
+            let value = report_context?.get(key)?;
+            (value.is_string() || value.is_boolean() || value.is_number())
+                .then(|| (key.to_string(), value.clone()))
+        })
+        .collect(),
+    );
+    let mut seed = build_terminal_usage_context_seed(&identity_plan, Some(&identity_context));
+    if let Some(body) = report_context
+        .and_then(|context| context.get("provider_request_body"))
+        .filter(|body| !body.is_null())
+        .or(plan.body.json_body.as_ref())
+    {
+        if let Some(operation) =
+            aether_ai_formats::openai_responses_request_operation(&plan.provider_api_format, body)
+        {
+            seed.request_type = operation.to_string();
+        }
+    }
+    seed
+}
+
+pub(crate) fn finish_first_output_wait() {
+    let _ = FIRST_OUTPUT_DEADLINE.try_with(|budget| {
+        budget.state.lock().expect("first output budget lock").2 = true;
+        budget.changed.notify_one();
+    });
+}
+
+pub(crate) async fn record_first_output_timeout(
+    state: &AppState,
+    plan: &ExecutionPlan,
+    report_context: Option<&serde_json::Value>,
+    error_type: &str,
+    message: &str,
+    fallback_elapsed_ms: u64,
+) {
+    let elapsed_ms = FIRST_OUTPUT_DEADLINE
+        .try_with(|budget| budget.started.elapsed().as_millis() as u64)
+        .unwrap_or(fallback_elapsed_ms);
+    persist_first_output_timeout(
+        state.clone(),
+        timeout_usage_context(plan, report_context),
+        error_type.to_string(),
+        message.to_string(),
+        elapsed_ms,
+    )
+    .await;
+}
+
+async fn persist_first_output_timeout(
+    state: AppState,
+    context_seed: TerminalUsageContextSeed,
+    error_type: String,
+    message: String,
+    elapsed_ms: u64,
+) {
+    finish_first_output_wait();
+    let payload = serde_json::json!({"error": {"type": error_type, "message": message}});
+    let payload_seed = SyncTerminalUsagePayloadSeed {
+        report_kind: "local_stream_first_output_timeout".to_string(),
+        status_code: 504,
+        response_time_ms: Some(elapsed_ms),
+        first_byte_time_ms: None,
+        provider_response_headers: None,
+        client_response_headers: Some(serde_json::json!({"content-type": "application/json"})),
+        provider_response_full: Some(payload.clone()),
+        provider_response_body_state: None,
+        client_response: Some(payload),
+        client_response_body_state: None,
+        standardized_usage: None,
+        capture_metadata: Some(serde_json::json!({"timeout_trigger": error_type})),
+    };
+    let handoff = state.usage_runtime.track_persistence_handoff();
+    let task = tokio::spawn(async move {
+        let _handoff = handoff;
+        state
+            .usage_runtime
+            .record_sync_terminal(
+                state.usage_lifecycle_data_state().as_ref(),
+                context_seed,
+                payload_seed,
+            )
+            .await;
+    });
+    if let Err(error) = task.await {
+        tracing::warn!(event_name = "first_output_timeout_usage_handoff_failed", %error,
+            "failed to settle first-output timeout usage");
+    }
 }
 
 pub(crate) fn current_first_output_deadline() -> Option<Instant> {
@@ -362,17 +513,17 @@ pub(crate) async fn capture_attempt_report_context(
             );
         }
     }
-    if let Some(snapshot) =
-        crate::request_candidate_runtime::snapshot_local_request_candidate_status(
-            plan,
-            report_context.as_ref(),
-        )
-    {
-        let _ = FIRST_OUTPUT_DEADLINE.try_with(|budget| {
-            *budget.active_attempt.lock().expect("active attempt lock") =
-                Some((state.clone(), snapshot, crate::clock::current_unix_ms()));
+    let _ = FIRST_OUTPUT_DEADLINE.try_with(|budget| {
+        *budget.active_attempt.lock().expect("active attempt lock") = Some(FirstOutputAttempt {
+            state: state.clone(),
+            snapshot: crate::request_candidate_runtime::snapshot_local_request_candidate_status(
+                plan,
+                report_context.as_ref(),
+            ),
+            started_at_unix_ms: crate::clock::current_unix_ms(),
+            usage_context: timeout_usage_context(plan, report_context.as_ref()),
         });
-    }
+    });
     Ok(())
 }
 
@@ -422,35 +573,78 @@ where
     .await
 }
 
+async fn settle_exhausted_first_output_budget(budget: &FirstOutputBudget) {
+    let active = budget
+        .active_attempt
+        .lock()
+        .expect("active attempt lock")
+        .take();
+    let deadline = budget.state.lock().expect("first output budget lock").0;
+    let elapsed_ms = budget.started.elapsed().as_millis() as u64;
+    tracing::warn!(
+        event_name = "stream_failover_budget_exhausted",
+        request_id = active
+            .as_ref()
+            .map(|attempt| attempt.usage_context.request_id.as_str()),
+        timeout_trigger = "first_effective_output_total_budget",
+        budget_ms = deadline
+            .saturating_duration_since(budget.started)
+            .as_millis() as u64,
+        elapsed_ms,
+        "stream stopped before its first effective output"
+    );
+    if let Some(active) = active {
+        let finished = crate::clock::current_unix_ms();
+        if let Some(snapshot) = active.snapshot {
+            let _ = tokio::time::timeout(Duration::from_secs(1),
+                crate::request_candidate_runtime::record_local_request_candidate_status_snapshot(
+                    &active.state, &snapshot, aether_scheduler_core::SchedulerRequestCandidateStatusUpdate {
+                        status: aether_data_contracts::repository::candidates::RequestCandidateStatus::Cancelled,
+                        status_code: Some(504), error_type: Some("stream_failover_budget_exhausted".to_string()),
+                        error_message: Some("Request first-output budget exhausted".to_string()),
+                        latency_ms: Some(finished.saturating_sub(active.started_at_unix_ms)),
+                        started_at_unix_ms: Some(active.started_at_unix_ms), finished_at_unix_ms: Some(finished),
+                    },
+                )).await;
+        }
+        persist_first_output_timeout(
+            active.state,
+            active.usage_context,
+            "stream_failover_budget_exhausted".to_string(),
+            "Streaming failover budget exhausted before useful model output".to_string(),
+            elapsed_ms,
+        )
+        .await;
+    }
+}
+
 async fn run_budget<F, T>(budget: Arc<FirstOutputBudget>, future: F) -> Result<T, GatewayError>
 where
     F: Future<Output = Result<T, GatewayError>>,
 {
     FIRST_OUTPUT_DEADLINE.scope(budget.clone(), async move {
-            let mut future = Box::pin(future);
+        let mut future = Box::pin(future);
         loop {
             let (deadline, _, observed_output) = *budget.state.lock().expect("first output budget lock");
             if observed_output { return future.await; }
             tokio::select! {
                 biased;
-                result = &mut future => return result,
+                result = &mut future => {
+                    // prepare_attempt can observe the same deadline before the
+                    // timer is polled. It has the same cancellation owner.
+                    if matches!(&result, Err(GatewayError::Client { status, message })
+                        if *status == http::StatusCode::GATEWAY_TIMEOUT
+                        && message == "Streaming failover budget exhausted before useful model output") {
+                        settle_exhausted_first_output_budget(&budget).await;
+                    }
+                    return result;
+                },
                 () = budget.changed.notified() => {},
-                    () = tokio::time::sleep_until(deadline) => {
-                        drop(future);
-                        let active = budget.active_attempt.lock().expect("active attempt lock").take();
-                        if let Some((state, snapshot, started)) = active {
-                            let finished = crate::clock::current_unix_ms();
-                            let _ = tokio::time::timeout(Duration::from_secs(1), crate::request_candidate_runtime::record_local_request_candidate_status_snapshot(
-                                &state, &snapshot, aether_scheduler_core::SchedulerRequestCandidateStatusUpdate {
-                                    status: aether_data_contracts::repository::candidates::RequestCandidateStatus::Cancelled,
-                                    status_code: Some(504), error_type: Some("stream_failover_budget_exhausted".to_string()),
-                                    error_message: Some("Request first-output budget exhausted".to_string()),
-                                    latency_ms: Some(finished.saturating_sub(started)), started_at_unix_ms: Some(started), finished_at_unix_ms: Some(finished),
-                                },
-                            )).await;
-                        }
-                        return Err(first_output_budget_exhausted());
-                    },
+                () = tokio::time::sleep_until(deadline) => {
+                    drop(future);
+                    settle_exhausted_first_output_budget(&budget).await;
+                    return Err(first_output_budget_exhausted());
+                },
             }
         }
     }).await
@@ -491,11 +685,16 @@ impl ChatRetryTracker {
             .scope(observation.clone(), future)
             .await;
         let _ = FIRST_OUTPUT_DEADLINE.try_with(|budget| {
-            budget
+            if let Some(active) = budget
                 .active_attempt
                 .lock()
                 .expect("active attempt lock")
-                .take();
+                .as_mut()
+            {
+                // Keep the last request identity across retry backoff/planning, but
+                // never overwrite a completed candidate when the budget expires there.
+                active.snapshot = None;
+            }
         });
         let deadline = *observation.lock().expect("retry observation lock");
         if let Some(deadline) = deadline {
@@ -650,6 +849,83 @@ mod tests {
         assert_eq!(retry_backoff(1, 500), Duration::from_secs(1));
         assert_eq!(retry_backoff(2, 0), Duration::from_secs(1));
         assert_eq!(retry_backoff(99, 500), Duration::from_secs(2));
+    }
+
+    #[test]
+    fn first_output_timeout_seed_preserves_compact_identity_and_body_refs_without_contents() {
+        let plan: ExecutionPlan = serde_json::from_value(serde_json::json!({
+            "request_id":"timeout-compact", "candidate_id":"candidate-compact",
+            "provider_id":"provider", "endpoint_id":"endpoint", "key_id":"key",
+            "method":"POST", "url":"https://example.invalid/v1/responses",
+            "headers":{"authorization":"Bearer private-key"}, "stream":true,
+            "client_api_format":"openai:responses", "provider_api_format":"openai:responses",
+            "body":{"json_body":{"input":[{"type":"compaction_trigger"},
+                {"role":"user", "content":"private conversation"}]},
+                "body_ref":"provider-body-ref"}, "model_name":"fixture-model"
+        }))
+        .unwrap();
+        let context = serde_json::json!({
+            "user_id":"fixture-user", "api_key_id":"fixture-key", "candidate_index":2,
+            "route_kind":"standard", "request_body_ref":"client-body-ref",
+            "provider_request_body_ref":"provider-body-ref",
+            "original_headers":{"authorization":"Bearer private-client"},
+            "original_request_body":{"input":"private conversation"},
+        });
+        let seed = timeout_usage_context(&plan, Some(&context));
+        assert_eq!(seed.request_type, "compact");
+        assert_eq!(seed.user_id.as_deref(), Some("fixture-user"));
+        assert!(seed.request_body.is_none());
+        assert!(seed.provider_request.is_none());
+        let payload = aether_usage_runtime::build_sync_terminal_usage_payload_seed(
+            &aether_usage_runtime::GatewaySyncReportRequest {
+                trace_id: "timeout-compact".into(),
+                report_kind: "local_stream_first_output_timeout".into(),
+                report_context: None,
+                status_code: 504,
+                headers: BTreeMap::new(),
+                body_json: Some(
+                    serde_json::json!({"error":{"type":"stream_failover_budget_exhausted",
+                    "message":"first output timeout"}}),
+                ),
+                client_body_json: None,
+                body_base64: None,
+                telemetry: None,
+            },
+        );
+        let event = aether_usage_runtime::build_terminal_usage_event_from_seed(
+            aether_usage_runtime::build_sync_terminal_usage_seed(seed, payload),
+        )
+        .unwrap();
+        assert_eq!(
+            event.data.request_body_ref.as_deref(),
+            Some("client-body-ref")
+        );
+        assert_eq!(
+            event.data.provider_request_body_ref.as_deref(),
+            Some("provider-body-ref")
+        );
+        assert_eq!(
+            event.data.candidate_id.as_deref(),
+            Some("candidate-compact")
+        );
+        let record = aether_usage_runtime::build_upsert_usage_record_from_event(&event).unwrap();
+        assert_eq!(record.candidate_index, Some(2));
+        assert_eq!(event.data.route_kind.as_deref(), Some("standard"));
+        let encoded = serde_json::to_string(&event).unwrap();
+        assert!(!encoded.contains("private-"));
+        assert!(!encoded.contains("private conversation"));
+    }
+
+    #[tokio::test]
+    async fn first_output_budget_does_not_cancel_terminal_persistence_handoff() {
+        let outcome =
+            with_first_output_deadline(Instant::now() + Duration::from_millis(10), async {
+                crate::execution_runtime::mark_stream_candidate_watchdog_terminal_started();
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                Ok(())
+            })
+            .await;
+        assert!(outcome.is_ok());
     }
 
     #[tokio::test]

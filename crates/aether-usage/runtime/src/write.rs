@@ -760,6 +760,7 @@ fn build_terminal_usage_event_from_seed_impl(
         client_response_body_ref: body_refs.client_response_body_ref,
         client_response_body_state: body_states.client_response_body_state,
         candidate_id: routing.candidate_id,
+        candidate_index: routing.candidate_index,
         key_name: routing.key_name,
         planner_kind: routing.planner_kind,
         route_family: routing.route_family,

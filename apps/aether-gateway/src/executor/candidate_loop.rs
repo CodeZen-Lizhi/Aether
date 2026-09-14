@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use aether_ai_serving::{
     run_ai_attempt_loop, AiAttemptExecutionOutcome, AiAttemptLoopOutcome, AiAttemptLoopPort,
@@ -444,6 +445,7 @@ where
             decision,
             plan_kind,
             transfer_tracker,
+            last_attempt_output_timeout: AtomicBool::new(false),
         };
         match run_ai_attempt_loop(&port, plan_and_reports).await? {
             AiAttemptLoopOutcome::Responded(response) => {
@@ -514,6 +516,7 @@ where
             decision,
             plan_kind,
             transfer_tracker,
+            last_attempt_output_timeout: AtomicBool::new(false),
         };
         run_dynamic_attempt_loop(
             state,
@@ -1048,6 +1051,9 @@ struct StreamAttemptLoopPort<'a> {
     decision: &'a GatewayControlDecision,
     plan_kind: &'a str,
     transfer_tracker: &'a ProviderTransferTracker,
+    // Candidate audit writes are queued: keep the execution outcome locally so
+    // exhaustion does not race a read of the pending SQLite projection.
+    last_attempt_output_timeout: AtomicBool,
 }
 
 #[async_trait]
@@ -1097,6 +1103,8 @@ where
         &self,
         attempt: &T,
     ) -> Result<AiAttemptExecutionOutcome<Self::Response>, Self::Error> {
+        self.last_attempt_output_timeout
+            .store(false, Ordering::Relaxed);
         let plan = attempt.execution_plan();
         let mut report_context = attempt.report_context();
         let candidate_index = parse_request_candidate_report_context(report_context.as_ref())
@@ -1179,6 +1187,8 @@ where
             .await?;
         let mut execution = match execution {
             StreamCandidateWatchdogOutcome::AttemptTimeout => {
+                self.last_attempt_output_timeout
+                    .store(true, Ordering::Relaxed);
                 AiAttemptExecutionOutcome::retry(AiAttemptRetryScope::Candidate)
             }
             StreamCandidateWatchdogOutcome::TransportTimeout => {
@@ -1236,6 +1246,23 @@ where
             model_name = last_plan.model_name.as_deref().unwrap_or("-"),
             "candidate loop exhausted local stream candidates"
         );
+        if self.last_attempt_output_timeout.load(Ordering::Relaxed) {
+            let error_type = "local_stream_candidate_watchdog_timeout";
+            let message = stream_candidate_watchdog_timeout_message();
+            crate::execution_runtime::chat_retry::record_first_output_timeout(
+                self.state,
+                &last_plan,
+                last_report_context.as_ref(),
+                error_type,
+                message,
+                0,
+            )
+            .await;
+            return Err(GatewayError::Client {
+                status: http::StatusCode::GATEWAY_TIMEOUT,
+                message: message.to_string(),
+            });
+        }
         Ok(
             build_local_execution_exhaustion(self.state, &last_plan, last_report_context.as_ref())
                 .await,
@@ -1360,7 +1387,7 @@ fn resolve_stream_candidate_watchdog_timeout(
 }
 
 fn stream_candidate_watchdog_timeout_message() -> &'static str {
-    "Stream first byte timeout"
+    "Stream first effective output timeout"
 }
 
 fn admission_timeout_gate(error: &GatewayError) -> Option<&'static str> {
@@ -1631,7 +1658,7 @@ where
                 report_context,
                 SchedulerRequestCandidateStatusUpdate {
                     status: RequestCandidateStatus::Failed,
-                    status_code: None,
+                    status_code: Some(504),
                     error_type: Some("local_stream_candidate_watchdog_timeout".to_string()),
                     error_message: Some(stream_candidate_watchdog_timeout_message().to_string()),
                     latency_ms: Some(candidate_started_at.elapsed().as_millis() as u64),
@@ -1653,6 +1680,7 @@ where
                 model_name,
                 candidate_index = candidate_index.as_str(),
                 timeout_ms,
+                timeout_trigger = "first_effective_output_candidate",
                 "gateway local stream candidate watchdog timed out"
             );
             if stop_on_transport_errors {
@@ -2768,7 +2796,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         let record = &records[0];
         assert_eq!(record.status, RequestCandidateStatus::Failed);
-        assert_eq!(record.status_code, None);
+        assert_eq!(record.status_code, Some(504));
         assert_eq!(
             record.error_type.as_deref(),
             Some("local_stream_candidate_watchdog_timeout")
@@ -2776,7 +2804,7 @@ mod tests {
         assert!(record
             .error_message
             .as_deref()
-            .is_some_and(|message| message == "Stream first byte timeout"));
+            .is_some_and(|message| message == "Stream first effective output timeout"));
         assert_eq!(record.candidate_index, 2);
     }
 
@@ -2811,7 +2839,7 @@ mod tests {
         ));
         let records = writer.records.lock().await;
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].status_code, None);
+        assert_eq!(records[0].status_code, Some(504));
         assert_eq!(
             records[0].error_type.as_deref(),
             Some("local_stream_candidate_watchdog_timeout")

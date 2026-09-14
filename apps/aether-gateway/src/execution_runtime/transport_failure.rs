@@ -46,6 +46,7 @@ impl StreamCandidateWatchdogProgress {
 }
 
 pub(crate) fn mark_stream_candidate_watchdog_terminal_started() {
+    crate::execution_runtime::chat_retry::finish_first_output_wait();
     let _ = STREAM_CANDIDATE_WATCHDOG_PROGRESS.try_with(|progress| {
         progress.terminal_started.store(true, Ordering::Release);
     });
@@ -64,18 +65,27 @@ pub(crate) async fn build_transport_error_stop_response(
     elapsed_ms: u64,
 ) -> Result<Response<Body>, GatewayError> {
     mark_stream_candidate_watchdog_terminal_started();
+    let (client_message, client_error_code) =
+        if error_type == "local_stream_candidate_watchdog_timeout" {
+            (
+                "Stream first effective output timeout",
+                "stream_first_output_timeout",
+            )
+        } else {
+            (TRANSPORT_ERROR_CLIENT_MESSAGE, "upstream_transport_error")
+        };
     let client_body = build_core_error_body_for_client_format(
         &plan.client_api_format,
-        TRANSPORT_ERROR_CLIENT_MESSAGE,
-        Some("upstream_transport_error"),
+        client_message,
+        Some(client_error_code),
         LocalCoreSyncErrorKind::ServerError,
     )
     .unwrap_or_else(|| {
         json!({
             "error": {
                 "type": "server_error",
-                "message": TRANSPORT_ERROR_CLIENT_MESSAGE,
-                "code": "upstream_transport_error",
+                "message": client_message,
+                "code": client_error_code,
             }
         })
     });

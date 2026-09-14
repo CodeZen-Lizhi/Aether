@@ -6,6 +6,10 @@ mod target_admission;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use aether_data_contracts::repository::candidates::{
+    RequestCandidateReadRepository, RequestCandidateStatus,
+};
+use aether_data_contracts::repository::usage::UsageReadRepository;
 use http::StatusCode;
 use tokio::sync::Notify;
 
@@ -27,6 +31,25 @@ fn run(name: &'static str, future: impl std::future::Future<Output = ()> + Send 
     if let Err(panic) = thread.join() {
         std::panic::resume_unwind(panic);
     }
+}
+
+async fn failed_usage(
+    fixture: &Fixture,
+    request_id: &str,
+) -> aether_data_contracts::repository::usage::StoredRequestUsageAudit {
+    // Terminal seeds use the existing ordered background persistence dispatcher.
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(usage) = fixture.usage.find_by_request_id(request_id).await.unwrap() {
+                if usage.status == "failed" {
+                    return usage;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("timeout usage must promptly leave pending, without maintenance cleanup")
 }
 
 fn server_error() -> Reply {
@@ -208,15 +231,20 @@ fn configured_first_output_budget_is_shared_across_real_candidates() {
             1,
             false,
             [1.0, 1.0],
-            1100,
+            3000,
             [
-                vec![Reply::DelayedError(Duration::from_millis(700))],
-                vec![Reply::DelayedSse(Duration::from_millis(900))],
+                vec![Reply::DelayedError(Duration::from_millis(1400))],
+                vec![Reply::DelayedSse(Duration::from_millis(2000))],
             ],
         )
         .await;
         let started = Instant::now();
         let response = fixture.request(true).await;
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let request_id = response.headers()[crate::constants::TRACE_ID_HEADER]
+            .to_str()
+            .unwrap()
+            .to_string();
         let body = response.text().await.unwrap_or_default();
         let elapsed = started.elapsed();
         assert_eq!(
@@ -229,12 +257,101 @@ fn configured_first_output_budget_is_shared_across_real_candidates() {
             "K2 output arrived beyond the original shared deadline: {body}"
         );
         assert!(
-            elapsed < Duration::from_millis(1450),
+            elapsed < Duration::from_millis(3800),
             "budget reset or was ignored: {elapsed:?}"
         );
+        assert!(body.contains("failover budget exhausted"), "{body}");
+        let usage = failed_usage(&fixture, &request_id).await;
+        assert_eq!(usage.status, "failed");
+        assert_eq!(usage.status_code, Some(504));
+        assert!(usage
+            .error_message
+            .as_deref()
+            .unwrap()
+            .contains("failover budget exhausted"));
+        assert!(usage
+            .response_time_ms
+            .is_some_and(|ms| (2900..3800).contains(&ms)));
+        let candidates = fixture
+            .request_candidates
+            .list_by_request_id(&request_id)
+            .await
+            .unwrap();
+        let cancelled = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.error_type.as_deref() == Some("stream_failover_budget_exhausted")
+            })
+            .unwrap();
+        assert_eq!(cancelled.status, RequestCandidateStatus::Cancelled);
+        assert_eq!(cancelled.status_code, Some(504));
+        assert_eq!(fixture.target_in_flight(1).await, 0);
         fixture.assert_health(0, 0.8).await;
         tokio::time::sleep(Duration::from_millis(600)).await;
         fixture.assert_health(1, 1.0).await;
+        let later = fixture
+            .usage
+            .find_by_request_id(&request_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(later.status, "failed");
+        assert_eq!(later.response_time_ms, usage.response_time_ms);
+    });
+}
+
+#[test]
+fn exhausted_candidate_first_output_timeouts_keep_the_timeout_and_release_admission() {
+    run("exhausted-output-timeout", async {
+        use aether_data_contracts::repository::provider_catalog::{
+            ProviderCatalogReadRepository, ProviderCatalogWriteRepository,
+        };
+        let fixture = Fixture::new(
+            "fixed_order",
+            1,
+            false,
+            [1.0, 1.0],
+            10_000,
+            [
+                vec![Reply::DelayedSse(Duration::from_secs(2)), Reply::Success],
+                vec![Reply::DelayedSse(Duration::from_secs(2)), Reply::Success],
+            ],
+        )
+        .await;
+        for target in 0..2 {
+            let mut provider = fixture
+                .catalog
+                .list_providers_by_ids(&[format!("provider-{target}")])
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
+            provider.stream_first_byte_timeout_secs = Some(0.15);
+            fixture.catalog.update_provider(&provider).await.unwrap();
+        }
+        let response = fixture.request(true).await;
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let request_id = response.headers()[crate::constants::TRACE_ID_HEADER]
+            .to_str()
+            .unwrap()
+            .to_string();
+        let body = response.text().await.unwrap();
+        assert!(body.contains("first effective output timeout"), "{body}");
+        assert!(!body.contains("no_local_stream_plans"), "{body}");
+        assert_eq!(fixture.targets(), [0, 1]);
+        let usage = failed_usage(&fixture, &request_id).await;
+        assert_eq!(usage.status, "failed");
+        assert_eq!(usage.status_code, Some(504));
+        assert!(usage
+            .error_message
+            .as_deref()
+            .unwrap()
+            .contains("first effective output timeout"));
+        fixture.assert_health(0, 0.9).await;
+        fixture.assert_health(1, 0.9).await;
+        assert_eq!(fixture.target_in_flight(0).await, 0);
+        assert_eq!(fixture.target_in_flight(1).await, 0);
+        assert_success(fixture.request(false).await).await;
     });
 }
 

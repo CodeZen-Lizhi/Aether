@@ -10,6 +10,7 @@ use aether_data::repository::candidate_selection::InMemoryMinimalCandidateSelect
 use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
 use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
 use aether_data::repository::routing_profiles::InMemoryRoutingGroupRepository;
+use aether_data::repository::usage::InMemoryUsageReadRepository;
 use aether_data_contracts::repository::candidate_selection::StoredMinimalCandidateSelectionRow;
 use aether_data_contracts::repository::candidates::RequestCandidateReadRepository;
 use aether_data_contracts::repository::provider_catalog::{
@@ -165,7 +166,8 @@ pub(super) struct Fixture {
     pub receipts: Arc<Mutex<Vec<Receipt>>>,
     pub url: String,
     client: reqwest::Client,
-    request_candidates: Arc<InMemoryRequestCandidateRepository>,
+    pub request_candidates: Arc<InMemoryRequestCandidateRepository>,
+    pub usage: Arc<InMemoryUsageReadRepository>,
     target_admission: Arc<crate::upstream_admission::UpstreamTargetAdmission>,
     _servers: Servers,
 }
@@ -387,12 +389,19 @@ impl Fixture {
             vec![],
         ));
         let request_candidates = Arc::new(InMemoryRequestCandidateRepository::default());
-        let data = GatewayDataState::with_auth_candidate_selection_provider_catalog_and_request_candidate_repository_for_tests(
+        let usage = Arc::new(InMemoryUsageReadRepository::default());
+        let data = GatewayDataState::with_auth_candidate_selection_provider_catalog_request_candidates_and_usage_for_tests(
             Arc::new(InMemoryAuthApiKeySnapshotRepository::seed(vec![(Some(format!("{:x}", Sha256::digest(CLIENT_KEY))), auth)])),
             Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(candidates)),
-            Arc::clone(&catalog), Arc::clone(&request_candidates), DEVELOPMENT_ENCRYPTION_KEY,
+            Arc::clone(&catalog), Arc::clone(&request_candidates), Arc::clone(&usage), DEVELOPMENT_ENCRYPTION_KEY,
         ).with_routing_group_repository_for_tests(routing);
-        let mut state = AppState::new().unwrap().with_data_state_for_tests(data);
+        let mut state = AppState::new()
+            .unwrap()
+            .with_data_state_for_tests(data)
+            .with_usage_runtime_for_tests(aether_usage_runtime::UsageRuntimeConfig {
+                enabled: true,
+                ..Default::default()
+            });
         if let Some(limit) = target_limit {
             state.upstream_target_admission =
                 Arc::new(crate::upstream_admission::UpstreamTargetAdmission::new(
@@ -407,6 +416,7 @@ impl Fixture {
             catalog,
             receipts,
             request_candidates,
+            usage,
             target_admission,
             url,
             client: reqwest::Client::builder()
