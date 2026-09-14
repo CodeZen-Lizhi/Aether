@@ -63,17 +63,24 @@
             </p>
           </div>
           <div class="space-y-1.5">
-            <Label for="stream-failover-budget">{{ legacyT('流式首输出总预算') }} <span class="text-xs text-muted-foreground">{{ legacyT('(毫秒)') }}</span></Label>
+            <Label for="stream-failover-budget">{{ legacyT('流式首输出总预算') }} <span class="text-xs text-muted-foreground">{{ legacyT('(秒)') }}</span></Label>
             <Input
               id="stream-failover-budget"
-              :model-value="form.stream_failover_budget_ms ?? ''"
+              :model-value="form.stream_failover_budget_seconds ?? ''"
               type="number"
-              min="1"
-              max="1200000"
-              step="1"
-              placeholder="90000"
-              @update:model-value="(v) => form.stream_failover_budget_ms = v === '' ? undefined : Number(v)"
+              min="0.001"
+              max="1200"
+              step="0.001"
+              placeholder="90"
+              aria-describedby="stream-failover-budget-help"
+              @update:model-value="(v) => form.stream_failover_budget_seconds = v === '' ? undefined : Number(v)"
             />
+            <p
+              id="stream-failover-budget-help"
+              class="text-xs text-muted-foreground"
+            >
+              {{ legacyT('从请求开始到首次有效输出的总等待上限，包含重试和切换；不限制完整回答时长。') }}
+            </p>
           </div>
         </div>
 
@@ -267,7 +274,7 @@ const form = ref({
   concurrent_limit: undefined as number | undefined,
   // 请求配置
   max_attempts: undefined as number | undefined,
-  stream_failover_budget_ms: undefined as number | undefined,
+  stream_failover_budget_seconds: undefined as number | undefined,
   max_transfer_count: 0,
   max_transfer_timeout_seconds: 0,
   // 超时配置（秒）
@@ -288,7 +295,7 @@ function resetForm() {
     concurrent_limit: undefined,
     // 请求配置
     max_attempts: undefined,
-    stream_failover_budget_ms: undefined,
+    stream_failover_budget_seconds: undefined,
     max_transfer_count: 0,
     max_transfer_timeout_seconds: 0,
     // 超时配置
@@ -311,7 +318,9 @@ function loadProviderData() {
     concurrent_limit: undefined,
     // 请求配置
     max_attempts: props.provider.effective_max_attempts,
-    stream_failover_budget_ms: props.provider.stream_failover_budget_ms,
+    stream_failover_budget_seconds: props.provider.stream_failover_budget_ms === undefined
+      ? undefined
+      : props.provider.stream_failover_budget_ms / 1000,
     max_transfer_count: props.provider.max_transfer_count ?? 0,
     max_transfer_timeout_seconds: props.provider.max_transfer_timeout_seconds ?? 0,
     // 超时配置
@@ -346,18 +355,27 @@ const handleSubmit = async () => {
   try {
     for (const [value, max, message] of [
       [form.value.max_attempts, 99, '总尝试次数必须是 1 到 99 之间的整数'],
-      [form.value.stream_failover_budget_ms, 1200000, '首输出总预算必须是 1 到 1200000 之间的整数'],
     ] as const) {
       if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > max)) {
         throw new Error(legacyT(message))
       }
     }
+    const budgetSeconds = form.value.stream_failover_budget_seconds
+    if (budgetSeconds !== undefined && (
+      !Number.isFinite(budgetSeconds)
+      || budgetSeconds < 0.001
+      || budgetSeconds > 1200
+      || Number(budgetSeconds.toFixed(3)) !== budgetSeconds
+    )) {
+      throw new Error(legacyT('首输出总预算必须在 0.001 到 1200 秒之间，最多保留三位小数'))
+    }
+    const budgetMs = budgetSeconds === undefined ? undefined : Math.round(budgetSeconds * 1000)
     const retryPatch: Record<string, number | null> = {}
     if (form.value.max_attempts !== props.provider?.effective_max_attempts) {
       retryPatch.max_attempts = form.value.max_attempts ?? null
     }
-    if (form.value.stream_failover_budget_ms !== props.provider?.stream_failover_budget_ms) {
-      retryPatch.stream_failover_budget_ms = form.value.stream_failover_budget_ms ?? null
+    if (budgetMs !== props.provider?.stream_failover_budget_ms) {
+      retryPatch.stream_failover_budget_ms = budgetMs ?? null
     }
     const basePayload = {
       name: form.value.name,

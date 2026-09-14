@@ -15,6 +15,7 @@ const params = new URLSearchParams(location.search)
 setI18nLocale(params.get('locale') === 'en-US' ? 'en-US' : 'zh-CN')
 const count = Number(params.get('count') || 4)
 const success = params.get('status') === 'success'
+const pending = params.get('status') === 'pending'
 const long = params.has('long')
 localStorage.setItem('theme', params.get('theme') === 'dark' ? 'dark' : 'light')
 const detail = {
@@ -22,8 +23,8 @@ const detail = {
   model: 'gpt-6-astra', reasoning_effort: 'high', api_format: 'openai:responses',
   user: { id: 'fixture-user', username: 'must-not-appear' },
   api_key: { id: 'fixture-key', name: 'local', display: 'local' },
-  provider: 'Input', status: success ? 'completed' : 'failed', status_code: success ? 200 : 503,
-  request_type: 'chat', is_stream: false,
+  provider: 'Input', status: pending ? 'pending' : success ? 'completed' : 'failed', status_code: pending ? null : success ? 200 : 503,
+  request_type: 'chat', is_stream: pending,
   created_at: '2026-09-14T04:36:51.000Z', response_time_ms: 21,
   end_to_end_time_ms: 21, first_byte_time_ms: success ? 10 : null,
   tokens: { input: success ? 100 : 0, output: success ? 50 : 0, total: success ? 150 : 0 },
@@ -38,15 +39,15 @@ const candidates = Array.from({ length: count }, (_, index) => ({
   provider_id: `provider-${Math.floor(index / 2)}`, provider_name: index < 2 ? 'Input · 国际线路' : 'Input · 备用线路',
   key_id: `key-${index}`, key_name: `Key ${String.fromCharCode(65 + index)} · 余额`,
   endpoint_id: `endpoint-${Math.floor(index / 2)}`, endpoint_name: 'openai:responses',
-  status: success && index === count - 1 ? 'success' : 'skipped',
+  status: pending ? 'pending' : success && index === count - 1 ? 'success' : 'skipped',
   status_code: success && index === count - 1 ? 200 : undefined,
-  skip_reason: success && index === count - 1 ? undefined : 'key_circuit_open',
+  skip_reason: pending || success && index === count - 1 ? undefined : 'key_circuit_open',
   is_cached: false, latency_ms: 4,
-  created_at: detail.created_at, started_at: `2026-09-14T04:36:51.00${index}Z`, finished_at: `2026-09-14T04:36:51.00${index + 4}Z`,
+  created_at: detail.created_at, started_at: `2026-09-14T04:36:51.00${index}Z`, finished_at: pending ? null : `2026-09-14T04:36:51.00${index + 4}Z`,
   extra_data: { ...(long ? { note: 'diagnostic-'.repeat(100) } : {}), provider_api_format: 'openai:responses' },
 }))
 dashboardApi.getRequestDetail = async () => structuredClone(detail)
-requestTraceApi.getRequestTrace = async () => ({ request_id: detail.request_id, candidates: structuredClone(candidates), total_candidates: count, final_status: success ? 'success' : 'failed', total_latency_ms: 21 })
+requestTraceApi.getRequestTrace = async () => ({ request_id: detail.request_id, candidates: structuredClone(candidates), total_candidates: count, final_status: pending ? 'pending' : success ? 'success' : 'failed', total_latency_ms: 21 })
 const open = ref(false)
 createApp({ render: () => h(RequestDetailDrawer, { isOpen: open.value, requestId: detail.id, onClose: () => { open.value = false } }) }).use(createI18n()).mount('#fixture')
 open.value = true

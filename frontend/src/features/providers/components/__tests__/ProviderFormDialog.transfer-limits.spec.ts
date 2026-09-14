@@ -171,7 +171,7 @@ describe('ProviderFormDialog transfer limits', () => {
     }))
     await settle()
     await setInput('#chat-max-attempts', '3')
-    await setInput('#stream-failover-budget', '45000')
+    await setInput('#stream-failover-budget', '45')
     clickButton('保存')
     await settle()
     expect(dialog.open.value).toBe(false)
@@ -179,7 +179,7 @@ describe('ProviderFormDialog transfer limits', () => {
     dialog.open.value = true
     await settle()
     expect(document.body.querySelector<HTMLInputElement>('#chat-max-attempts')?.value).toBe('3')
-    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.value).toBe('45000')
+    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.value).toBe('45')
     expect(document.body.textContent).toContain('故障转移规则')
     clickButton('保存')
     await settle()
@@ -197,12 +197,54 @@ describe('ProviderFormDialog transfer limits', () => {
     expect(document.body.querySelector<HTMLInputElement>('#chat-max-attempts')?.value).toBe('2')
     expect(document.body.textContent).toContain('当前生效次数')
     await setInput('#chat-max-attempts', '3')
-    await setInput('#stream-failover-budget', '45000')
+    await setInput('#stream-failover-budget', '45')
     clickButton('保存')
     await settle()
     expect(endpointMocks.updateProvider).toHaveBeenCalledWith('provider-1', expect.objectContaining({
       failover_rules: { max_attempts: 3, stream_failover_budget_ms: 45000 },
     }))
+  })
+
+  it('preserves millisecond precision when reopening and saving seconds', async () => {
+    mountDialog(makeProvider({ stream_failover_budget_ms: 1001 }))
+    await settle()
+    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.value).toBe('1.001')
+    await setInput('#stream-failover-budget', '1.001')
+    clickButton('保存')
+    await settle()
+    expect(endpointMocks.updateProvider.mock.calls[0]?.[1]).not.toHaveProperty('failover_rules')
+  })
+
+  it('clears an explicit budget to inherit the default', async () => {
+    mountDialog(makeProvider({ stream_failover_budget_ms: 300000 }))
+    await settle()
+    await setInput('#stream-failover-budget', '')
+    clickButton('保存')
+    await settle()
+    expect(endpointMocks.updateProvider.mock.calls[0]?.[1]).toHaveProperty(
+      'failover_rules.stream_failover_budget_ms', null,
+    )
+  })
+
+  it('validates seconds against the supported millisecond range and precision', async () => {
+    const dialog = mountDialog(makeProvider())
+    await settle()
+    for (const value of ['0', '-1', '1200.001', '0.0001', '1.0001']) {
+      await setInput('#stream-failover-budget', value)
+      clickButton('保存')
+      await settle()
+    }
+    expect(endpointMocks.updateProvider).not.toHaveBeenCalled()
+    for (const [seconds, milliseconds] of [['0.001', 1], ['1.001', 1001], ['1200', 1200000]] as const) {
+      dialog.open.value = true
+      await settle()
+      await setInput('#stream-failover-budget', seconds)
+      clickButton('保存')
+      await settle()
+      expect(endpointMocks.updateProvider).toHaveBeenLastCalledWith('provider-1', expect.objectContaining({
+        failover_rules: { stream_failover_budget_ms: milliseconds },
+      }))
+    }
   })
 
   it('keeps inherited attempts absent when saving another field', async () => {
@@ -283,6 +325,8 @@ describe('ProviderFormDialog transfer limits', () => {
     expect(document.body.querySelector<HTMLInputElement>('#max-transfer-count')?.value).toBe('')
     expect(document.body.querySelector<HTMLInputElement>('#max-transfer-timeout-seconds')?.value).toBe('')
 
+    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.placeholder).toBe('90')
+    await setInput('#stream-failover-budget', '300')
     await setInput('#name', 'New Provider')
     await setInput('#max-transfer-count', '8')
     await setInput('#max-transfer-timeout-seconds', '30')
@@ -291,6 +335,7 @@ describe('ProviderFormDialog transfer limits', () => {
 
     expect(endpointMocks.createProvider).toHaveBeenCalledWith(
       expect.objectContaining({
+        failover_rules: { stream_failover_budget_ms: 300000 },
         max_transfer_count: 8,
         max_transfer_timeout_seconds: 30,
       }),

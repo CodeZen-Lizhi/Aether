@@ -8,6 +8,12 @@ const apiMocks = vi.hoisted(() => ({
   getRequestDetail: vi.fn(),
 }))
 
+vi.mock('@/api/requestTrace', () => ({
+  requestTraceApi: {
+    getRequestTrace: vi.fn().mockResolvedValue({ candidates: [], total_candidates: 0 }),
+  },
+}))
+
 vi.mock('@/api/dashboard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/dashboard')>()
   return {
@@ -113,6 +119,51 @@ function buildFastTierDetail(): RequestDetail {
 }
 
 describe('RequestDetailDrawer settlement pricing', () => {
+  it.each([
+    { status: 'pending', statusCode: null, finalCode: 200 },
+    { status: 'streaming', statusCode: undefined, finalCode: 503 },
+  ])('omits an empty HTTP badge while $status and shows the result after refresh', async ({ status, statusCode, finalCode }) => {
+    apiMocks.getRequestDetail.mockResolvedValue({
+      ...buildEmbeddingDetail(),
+      status,
+      status_code: statusCode,
+      is_stream: true,
+    })
+    const isOpen = ref(false)
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp({
+      render: () => h(RequestDetailDrawer, {
+        isOpen: isOpen.value,
+        requestId: 'usage-embedding-1',
+      }),
+    })
+    app.mount(root)
+    mountedApps.push({ app, root })
+    isOpen.value = true
+    await nextTick()
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-usage-transport="http"]')?.textContent).toContain('HTTP 流式')
+      expect(document.body.querySelector('[data-request-lifecycle-status]')).toBeNull()
+    })
+
+    apiMocks.getRequestDetail.mockResolvedValue({
+      ...buildEmbeddingDetail(),
+      status: finalCode === 200 ? 'completed' : 'failed',
+      status_code: finalCode,
+    })
+    const refresh = document.body.querySelector<HTMLButtonElement>('button[title="停止自动刷新"]')
+    expect(refresh).not.toBeNull()
+    refresh?.click()
+    await nextTick()
+    refresh?.click()
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-request-lifecycle-status]')?.textContent?.trim())
+        .toBe(String(finalCode))
+    })
+  })
+
   it('labels an unmetered OpenAI Live WebSocket detail without rendering zero usage as billing', async () => {
     apiMocks.getRequestDetail.mockResolvedValue({
       ...buildEmbeddingDetail(),

@@ -47,7 +47,7 @@
                   {{ detail.status_code }}
                 </Badge>
                 <Badge
-                  v-else-if="detail"
+                  v-else-if="detail?.status_code != null"
                   variant="destructive"
                   data-request-lifecycle-status
                 >
