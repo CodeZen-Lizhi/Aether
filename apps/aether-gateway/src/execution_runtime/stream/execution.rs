@@ -5949,9 +5949,20 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             }
         }
     }
+    // The inspection buffer is bounded.  If it filled before a useful event,
+    // commit the response and continue relaying frames.  The upstream stream
+    // is still live; the buffer limit is not evidence of a missing output.
+    if (prefetched_inspection_body_truncated
+        || (prefetch_openai_responses_stream
+            && prefetched_chunks.len() >= MAX_STREAM_PREFETCH_FRAMES))
+        && stream_commit_gate.is_uncommitted()
+    {
+        stream_commit_gate.commit();
+    }
     if wait_for_useful_chat_output
         && !sync_json_stream_bridge_active
         && !prefetched_chat_body_has_useful_output(&prefetched_inspection_body)
+        && !prefetched_inspection_body_truncated
     {
         return handle_prefetch_stream_failure(
             state,
