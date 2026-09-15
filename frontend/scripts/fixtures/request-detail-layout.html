@@ -5,6 +5,8 @@
 <script type="module">
 import { createApp, h, ref } from 'vue'
 import RequestDetailDrawer from '/src/features/usage/components/RequestDetailDrawer.vue'
+import UsageRecordsTable from '/src/features/usage/components/UsageRecordsTable.vue'
+import { mergeUsageRecordLifecycleSnapshot } from '/src/features/usage/utils/recordSync'
 import { dashboardApi } from '/src/api/dashboard'
 import { requestTraceApi } from '/src/api/requestTrace'
 import '/src/style.css'
@@ -13,9 +15,19 @@ import { createI18n, setI18nLocale } from '/src/i18n'
 // Local visual fixture: real components, in-memory API data, no live requests.
 const params = new URLSearchParams(location.search)
 setI18nLocale(params.get('locale') === 'en-US' ? 'en-US' : 'zh-CN')
-const count = Number(params.get('count') || 4)
-const success = params.get('status') === 'success'
-const pending = params.get('status') === 'pending'
+const scenario = params.get('status')
+const retryGap = scenario === 'retry-gap'
+const retryStarted = scenario === 'retry-started'
+const finalFailed = scenario === 'final-failed'
+const finalSuccess = scenario === 'final-success'
+const lifecycleFixture = retryGap || retryStarted || finalFailed || finalSuccess
+const count = retryGap ? 1 : lifecycleFixture ? 2 : Number(params.get('count') || 4)
+const success = scenario === 'success' || finalSuccess
+const pending = scenario === 'pending' || retryGap || retryStarted
+const activeStatus = params.get('lifecycle') === 'streaming' ? 'streaming' : 'pending'
+const totalMs = lifecycleFixture ? pending ? 181000 : 300008 : 21
+const start = lifecycleFixture ? Date.now() - totalMs : Date.parse('2026-09-14T04:36:51.000Z')
+const iso = (elapsed) => new Date(start + elapsed).toISOString()
 const long = params.has('long')
 localStorage.setItem('theme', params.get('theme') === 'dark' ? 'dark' : 'light')
 const detail = {
@@ -23,10 +35,11 @@ const detail = {
   model: 'gpt-6-astra', reasoning_effort: 'high', api_format: 'openai:responses',
   user: { id: 'fixture-user', username: 'must-not-appear' },
   api_key: { id: 'fixture-key', name: 'local', display: 'local' },
-  provider: 'Input', status: pending ? 'pending' : success ? 'completed' : 'failed', status_code: pending ? null : success ? 200 : 503,
-  request_type: 'chat', is_stream: pending,
-  created_at: '2026-09-14T04:36:51.000Z', response_time_ms: 21,
-  end_to_end_time_ms: 21, first_byte_time_ms: success ? 10 : null,
+  provider: 'Input', status: pending ? activeStatus : success ? 'completed' : 'failed', status_code: retryGap || finalFailed ? 504 : pending ? null : success ? 200 : 503,
+  request_type: lifecycleFixture ? 'compact' : 'chat', is_stream: pending || lifecycleFixture,
+  created_at: iso(0), updated_at: iso(totalMs), response_time_updated_at: iso(totalMs), response_time_ms: totalMs,
+  end_to_end_time_ms: pending ? null : totalMs, first_byte_time_ms: success || pending && activeStatus === 'streaming' ? 10 : null,
+  error_message: retryGap ? 'First response timeout' : finalFailed ? 'Streaming request total timeout' : undefined,
   tokens: { input: success ? 100 : 0, output: success ? 50 : 0, total: success ? 150 : 0 },
   cost: { input: 0, output: 0, total: 0 },
   request_headers: { 'Content-Type': 'application/json' },
@@ -35,20 +48,41 @@ const detail = {
   response_body: success ? { output: 'hello' } : { error: { code: 'all_candidates_skipped' } },
 }
 const candidates = Array.from({ length: count }, (_, index) => ({
-  id: `attempt-${index}`, request_id: detail.request_id, candidate_index: index, retry_index: 0,
+  id: `attempt-${index}`, request_id: detail.request_id, candidate_index: lifecycleFixture ? 0 : index, retry_index: lifecycleFixture ? index : 0,
   provider_id: `provider-${Math.floor(index / 2)}`, provider_name: index < 2 ? 'Input · 国际线路' : 'Input · 备用线路',
   key_id: `key-${index}`, key_name: `Key ${String.fromCharCode(65 + index)} · 余额`,
   endpoint_id: `endpoint-${Math.floor(index / 2)}`, endpoint_name: 'openai:responses',
-  status: pending ? 'pending' : success && index === count - 1 ? 'success' : 'skipped',
-  status_code: success && index === count - 1 ? 200 : undefined,
-  skip_reason: pending || success && index === count - 1 ? undefined : 'key_circuit_open',
-  is_cached: false, latency_ms: 4,
-  created_at: detail.created_at, started_at: `2026-09-14T04:36:51.00${index}Z`, finished_at: pending ? null : `2026-09-14T04:36:51.00${index + 4}Z`,
+  status: lifecycleFixture ? index === 0 ? 'failed' : retryStarted ? 'pending' : finalSuccess ? 'success' : 'failed' : pending ? 'pending' : success && index === count - 1 ? 'success' : 'skipped',
+  status_code: lifecycleFixture ? index === 0 || finalFailed ? 504 : finalSuccess ? 200 : undefined : success && index === count - 1 ? 200 : undefined,
+  error_message: lifecycleFixture && index === 0 ? 'First response timeout' : finalFailed ? 'Streaming request total timeout' : undefined,
+  skip_reason: lifecycleFixture || pending || success && index === count - 1 ? undefined : 'key_circuit_open',
+  is_cached: false, latency_ms: lifecycleFixture ? index === 0 ? 180003 : retryStarted ? null : 119008 : 4,
+  created_at: iso(lifecycleFixture && index > 0 ? 181000 : index), started_at: iso(lifecycleFixture && index > 0 ? 181000 : index),
+  finished_at: lifecycleFixture ? index === 0 ? iso(180003) : pending ? null : iso(totalMs) : pending ? null : iso(index + 4),
   extra_data: { ...(long ? { note: 'diagnostic-'.repeat(100) } : {}), provider_api_format: 'openai:responses' },
 }))
 dashboardApi.getRequestDetail = async () => structuredClone(detail)
-requestTraceApi.getRequestTrace = async () => ({ request_id: detail.request_id, candidates: structuredClone(candidates), total_candidates: count, final_status: pending ? 'pending' : success ? 'success' : 'failed', total_latency_ms: 21 })
+requestTraceApi.getRequestTrace = async () => ({ request_id: detail.request_id, candidates: structuredClone(candidates), total_candidates: count, final_status: pending ? activeStatus : success ? 'success' : 'failed', total_latency_ms: totalMs })
 const open = ref(false)
-createApp({ render: () => h(RequestDetailDrawer, { isOpen: open.value, requestId: detail.id, onClose: () => { open.value = false } }) }).use(createI18n()).mount('#fixture')
+const row = ref({ ...detail, cost: 0, input_tokens: detail.tokens.input, output_tokens: detail.tokens.output, total_tokens: detail.tokens.total })
+createApp({ render: () => [
+  h('button', { 'data-fixture-reopen': '', onClick: () => { open.value = true } }, '打开请求详情'),
+  lifecycleFixture ? h(UsageRecordsTable, {
+    records: [row.value], loading: false, showActualCost: false,
+    timeRange: { preset: 'today', tz_offset_minutes: 0 }, filterModel: '__all__', filterProvider: '__all__',
+    filterApiFormat: '__all__', filterStatus: '__all__', filterClientFamily: '__all__',
+    availableModels: [], availableProviders: [], availableClientFamilies: [],
+    currentPage: 1, pageSize: 20, totalRecords: 1, pageSizeOptions: [20], autoRefresh: false, hideUnknownRecords: false,
+    onShowDetail: () => { open.value = true },
+  }) : null,
+  h(RequestDetailDrawer, {
+    isOpen: open.value, requestId: detail.id, summaryRecord: lifecycleFixture ? row.value : null,
+    onClose: () => { open.value = false },
+    onRequestState: (state) => {
+      const merged = mergeUsageRecordLifecycleSnapshot(row.value, state)
+      if (merged.accepted) row.value = { ...row.value, ...merged }
+    },
+  }),
+] }).use(createI18n()).mount('#fixture')
 open.value = true
 </script></body></html>

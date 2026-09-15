@@ -39,6 +39,7 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 import { useUsageData } from '../useUsageData'
+import { isUsageRecordFailed, resolveDisplayRequestStatus, resolveTimelineFinalStatus } from '../../utils/status'
 import type { UsageRecord } from '../../types'
 
 function buildUsageRecord(overrides: Partial<UsageRecord> = {}): UsageRecord {
@@ -89,6 +90,54 @@ describe('useUsageData', () => {
     getUsageByModelMock.mockResolvedValue([])
     getUsageByProviderMock.mockResolvedValue([])
     getUsageByApiFormatMock.mockResolvedValue([])
+  })
+
+  it.each(['completed', 'failed'] as const)('keeps retry polls active until the logical request is %s', async (finalStatus) => {
+    const { loadRecords, currentRecords } = useUsageData()
+    const dateRange = { preset: 'today', tz_offset_minutes: 0 }
+    const poll = async (snapshot: Partial<UsageRecord>) => {
+      getAllUsageRecordsMock.mockResolvedValueOnce({
+        records: [buildUsageRecord({ is_stream: true, first_byte_time_ms: null, ...snapshot })],
+        total: 1, limit: 20, offset: 0,
+      })
+      await loadRecords({ page: 1, pageSize: 20 }, undefined, dateRange)
+      return currentRecords.value[0]!
+    }
+
+    await poll({ status: 'pending', response_time_ms: 0, updated_at: '2026-09-15T10:49:56Z' })
+    // The first attempt failed and the next attempt does not exist yet. Its
+    // diagnostics may arrive with the active request, but cannot finalize it.
+    const gap = await poll({
+      status: 'pending', status_code: 504, error_message: 'First response timeout',
+      response_time_ms: 181_000, updated_at: '2026-09-15T10:52:57Z',
+    })
+    expect(resolveDisplayRequestStatus(gap)).toBe('pending')
+    expect(isUsageRecordFailed(gap)).toBe(false)
+    expect(resolveTimelineFinalStatus({ requestStatus: gap.status, traceFinalStatus: 'failed', statusCode: 504 })).toBe('pending')
+
+    const retry = await poll({
+      status: 'pending', status_code: undefined, error_message: undefined,
+      response_time_ms: 188_000, updated_at: '2026-09-15T10:53:04Z',
+    })
+    expect(retry.status).toBe('pending')
+    expect(retry.error_message).toBeUndefined()
+
+    const final = await poll({
+      status: finalStatus, status_code: finalStatus === 'completed' ? 200 : 504,
+      error_message: finalStatus === 'failed' ? 'Streaming request total timeout' : undefined,
+      response_time_ms: 300_008, updated_at: '2026-09-15T10:54:56Z',
+    })
+    expect(resolveDisplayRequestStatus(final)).toBe(finalStatus)
+    expect(final.response_time_ms).toBe(300_008)
+    expect(resolveTimelineFinalStatus({ requestStatus: final.status, traceFinalStatus: 'failed', statusCode: final.status_code })).toBe(finalStatus === 'completed' ? 'success' : 'failed')
+
+    const stale = await poll({
+      status: 'pending', status_code: 504, error_message: 'First response timeout',
+      response_time_ms: 180_003, updated_at: '2026-09-15T10:52:56Z',
+    })
+    expect(stale.status).toBe(finalStatus)
+    expect(stale.response_time_ms).toBe(300_008)
+    expect(stale.error_message).toBe(final.error_message)
   })
 
   it('keeps admin records when stats refresh fails', async () => {

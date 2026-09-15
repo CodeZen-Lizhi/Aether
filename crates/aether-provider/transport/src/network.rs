@@ -32,6 +32,11 @@ pub fn resolve_transport_execution_timeouts(
     transport: &GatewayProviderTransportSnapshot,
 ) -> Option<ExecutionTimeouts> {
     Some(ExecutionTimeouts {
+        stream_total_ms: Some(
+            aether_contracts::chat_retry::resolve_stream_total_timeout_ms(
+                transport.provider.config.as_ref(),
+            ),
+        ),
         stream_failover_budget_ms: Some(
             aether_contracts::chat_retry::resolve_stream_failover_budget_ms(
                 transport.provider.config.as_ref(),
@@ -412,6 +417,7 @@ mod tests {
         assert_eq!(timeouts.total_ms, None);
         assert_eq!(timeouts.first_byte_ms, Some(30_000));
         assert_eq!(timeouts.stream_failover_budget_ms, Some(90_000));
+        assert_eq!(timeouts.stream_total_ms, Some(900_000));
     }
 
     #[test]
@@ -422,8 +428,24 @@ mod tests {
         transport.provider.request_timeout_secs = Some(1200.0);
         let timeouts = resolve_transport_execution_timeouts(&transport).unwrap();
         assert_eq!(timeouts.stream_failover_budget_ms, Some(4321));
+        assert_eq!(timeouts.stream_total_ms, Some(900_000));
         assert_eq!(timeouts.total_ms, Some(1_200_000));
         assert_eq!(timeouts.first_byte_ms, Some(30_000));
+    }
+
+    #[test]
+    fn transport_execution_timeouts_project_stream_total_independently() {
+        let mut transport = sample_transport();
+        transport.provider.config = Some(json!({
+            "stream_total_timeout_ms": 5001,
+            "failover_rules": {"stream_failover_budget_ms": 1800}
+        }));
+        transport.provider.request_timeout_secs = Some(15.0);
+        let timeouts = resolve_transport_execution_timeouts(&transport).unwrap();
+        assert_eq!(timeouts.stream_total_ms, Some(5001));
+        assert_eq!(timeouts.total_ms, Some(15000));
+        assert_eq!(timeouts.stream_failover_budget_ms, Some(1800));
+        assert_eq!(timeouts.first_byte_ms, Some(30000));
     }
 
     #[test]

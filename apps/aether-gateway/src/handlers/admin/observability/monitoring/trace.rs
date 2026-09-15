@@ -1,3 +1,4 @@
+use super::super::has_explicit_image_failure;
 use super::route_filters::parse_admin_monitoring_limit;
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::log_ids::short_request_id;
@@ -66,7 +67,7 @@ pub(super) async fn build_admin_monitoring_trace_request_response(
         Err(detail) => return Ok(admin_monitoring_bad_request_response(detail)),
     };
 
-    let Some(resolved) =
+    let Some(mut resolved) =
         resolve_admin_monitoring_trace(admin_state, &request_id, attempted_only).await?
     else {
         debug!(
@@ -82,6 +83,38 @@ pub(super) async fn build_admin_monitoring_trace_request_response(
             attempted_only,
         ));
     };
+    if let Some(usage) = resolved.usage.as_ref() {
+        let explicit_image_failure = matches!(usage.status.as_str(), "pending" | "streaming")
+            && resolved.trace.final_status == RequestCandidateFinalStatus::Failed
+            && resolved
+                .trace
+                .candidates
+                .iter()
+                .filter(|item| {
+                    !matches!(
+                        item.candidate.status,
+                        RequestCandidateStatus::Available
+                            | RequestCandidateStatus::Unused
+                            | RequestCandidateStatus::Skipped
+                    )
+                })
+                .max_by_key(|item| (item.candidate.candidate_index, item.candidate.retry_index))
+                .is_some_and(|item| has_explicit_image_failure(item.candidate.extra_data.as_ref()));
+        // Attempts retain their own outcomes and latency. The trace summary
+        // follows the logical request, including gaps between retry attempts.
+        if let Some(status) =
+            admin_monitoring_usage_final_status(usage).filter(|_| !explicit_image_failure)
+        {
+            resolved.trace.final_status = status;
+            resolved.trace.total_latency_ms = usage
+                .request_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("end_to_end_time_ms"))
+                .and_then(Value::as_u64)
+                .or(usage.response_time_ms)
+                .unwrap_or(resolved.trace.total_latency_ms);
+        }
+    }
     let key_accounts =
         build_admin_monitoring_key_account_display_map(admin_state, &resolved.trace).await?;
 
@@ -265,12 +298,15 @@ fn admin_monitoring_usage_has_routing_snapshot_trace_data(usage: &StoredRequestU
 fn admin_monitoring_usage_candidate_status(
     usage: &StoredRequestUsageAudit,
 ) -> RequestCandidateStatus {
-    if usage.status.trim().eq_ignore_ascii_case("cancelled")
-        || usage.status.trim().eq_ignore_ascii_case("canceled")
-    {
-        return RequestCandidateStatus::Cancelled;
+    if let Some(status) = admin_monitoring_usage_final_status(usage) {
+        return match status {
+            RequestCandidateFinalStatus::Success => RequestCandidateStatus::Success,
+            RequestCandidateFinalStatus::Failed => RequestCandidateStatus::Failed,
+            RequestCandidateFinalStatus::Cancelled => RequestCandidateStatus::Cancelled,
+            RequestCandidateFinalStatus::Streaming => RequestCandidateStatus::Streaming,
+            RequestCandidateFinalStatus::Pending => RequestCandidateStatus::Pending,
+        };
     }
-
     match usage.status_code {
         Some(status_code) if (200..300).contains(&status_code) => RequestCandidateStatus::Success,
         Some(_) => RequestCandidateStatus::Failed,
@@ -280,6 +316,19 @@ fn admin_monitoring_usage_candidate_status(
             RequestCandidateStatus::Success
         }
         None => RequestCandidateStatus::Failed,
+    }
+}
+
+fn admin_monitoring_usage_final_status(
+    usage: &StoredRequestUsageAudit,
+) -> Option<RequestCandidateFinalStatus> {
+    match usage.status.trim().to_ascii_lowercase().as_str() {
+        "pending" => Some(RequestCandidateFinalStatus::Pending),
+        "streaming" => Some(RequestCandidateFinalStatus::Streaming),
+        "completed" => Some(RequestCandidateFinalStatus::Success),
+        "failed" => Some(RequestCandidateFinalStatus::Failed),
+        "cancelled" | "canceled" => Some(RequestCandidateFinalStatus::Cancelled),
+        _ => None,
     }
 }
 

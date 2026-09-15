@@ -57,7 +57,7 @@ pub(crate) async fn maybe_execute_via_stream_decision_path(
         )
         .await;
     }
-    crate::execution_runtime::chat_retry::with_stream_first_output_budget(
+    crate::execution_runtime::chat_retry::with_stream_request_timeout(
         maybe_execute_via_stream_decision_path_inner(state, parts, body_bytes, trace_id, decision),
     )
     .await

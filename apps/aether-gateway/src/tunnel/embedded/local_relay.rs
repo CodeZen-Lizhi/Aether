@@ -90,6 +90,12 @@ pub(crate) async fn open_direct_relay_stream(
         .open_local_stream(node_id, &meta)
         .await
         .map_err(|error| format!("connect: {error}"))?;
+    // Install cancellation before any await that can outlive the caller.
+    let request_guard = StreamGuard {
+        hub: state.hub.clone(),
+        stream_id: stream.id,
+        finished: false,
+    };
     if let Err(error) = state
         .hub
         .push_local_request_body(stream.id, body, true)
@@ -107,6 +113,7 @@ pub(crate) async fn open_direct_relay_stream(
             return Err(format!("timeout: {error}"));
         }
     };
+    crate::execution_runtime::mark_stream_candidate_response_received(response_head.status);
     if let Err(error) = record_proxy_upgrade_traffic_success(state.data.as_ref(), node_id).await {
         warn!(
             node_id = %node_id,
@@ -126,11 +133,7 @@ pub(crate) async fn open_direct_relay_stream(
         status: response_head.status,
         headers: response_head.headers,
         body_rx,
-        request_guard: StreamGuard {
-            hub: state.hub.clone(),
-            stream_id: stream.id,
-            finished: false,
-        },
+        request_guard,
         _request_permit: request_permit,
     })
 }

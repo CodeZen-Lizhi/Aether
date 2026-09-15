@@ -1169,8 +1169,12 @@ async fn gateway_handles_admin_usage_active_ids_for_terminal_updates() {
     upstream_handle.abort();
 }
 
-#[tokio::test]
-async fn gateway_derives_admin_usage_records_and_detail_status_from_terminal_candidate() {
+async fn assert_admin_usage_candidate_fallback(
+    usage_status: &str,
+    candidate_status: RequestCandidateStatus,
+    expected_status: &str,
+    image_failure: bool,
+) {
     let (_records_upstream_url, records_upstream_hits, records_upstream_handle) =
         start_usage_upstream("/api/admin/usage/records").await;
 
@@ -1182,22 +1186,25 @@ async fn gateway_derives_admin_usage_records_and_detail_status_from_terminal_can
         Some("primary"),
         "OpenAI",
         "gpt-5",
-        "streaming",
+        usage_status,
         20,
         5,
         0.2,
         0.24,
         DAY_1_UNIX_SECS,
     )]));
-    let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::seed(vec![
-        sample_request_candidate(
-            "cand-stale-stream-success",
-            "req-stale-stream",
-            0,
-            0,
-            RequestCandidateStatus::Success,
-        ),
-    ]));
+    let mut candidate = sample_request_candidate(
+        "cand-stale-stream",
+        "req-stale-stream",
+        0,
+        0,
+        candidate_status,
+    );
+    if image_failure {
+        candidate.extra_data = Some(json!({ "image_progress": { "phase": "failed" } }));
+    }
+    let request_candidate_repository =
+        Arc::new(InMemoryRequestCandidateRepository::seed(vec![candidate]));
     let gateway = build_router_with_state(
         AppState::new()
             .expect("gateway should build")
@@ -1223,7 +1230,7 @@ async fn gateway_derives_admin_usage_records_and_detail_status_from_terminal_can
         .await
         .expect("records json should parse");
     assert_eq!(records_payload["records"][0]["id"], "usage-stale-stream");
-    assert_eq!(records_payload["records"][0]["status"], "completed");
+    assert_eq!(records_payload["records"][0]["status"], expected_status);
 
     let detail_response = admin_request(
         reqwest::Client::new().get(format!("{gateway_url}/api/admin/usage/usage-stale-stream")),
@@ -1238,11 +1245,298 @@ async fn gateway_derives_admin_usage_records_and_detail_status_from_terminal_can
         .await
         .expect("detail json should parse");
     assert_eq!(detail_payload["id"], "usage-stale-stream");
-    assert_eq!(detail_payload["status"], "completed");
+    assert_eq!(detail_payload["status"], expected_status);
+    let trace: serde_json::Value = admin_request(reqwest::Client::new().get(format!(
+        "{gateway_url}/api/admin/monitoring/trace/req-stale-stream",
+    )))
+    .send()
+    .await
+    .expect("trace response")
+    .json()
+    .await
+    .expect("trace JSON");
+    assert_eq!(
+        trace["final_status"],
+        if expected_status == "completed" {
+            "success"
+        } else {
+            expected_status
+        }
+    );
     assert_eq!(*records_upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
     records_upstream_handle.abort();
+}
+
+#[tokio::test]
+async fn gateway_derives_legacy_admin_usage_records_and_detail_status_from_terminal_candidate() {
+    assert_admin_usage_candidate_fallback(
+        "unknown",
+        RequestCandidateStatus::Success,
+        "completed",
+        false,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn gateway_preserves_admin_usage_explicit_image_failure() {
+    assert_admin_usage_candidate_fallback(
+        "streaming",
+        RequestCandidateStatus::Failed,
+        "failed",
+        true,
+    )
+    .await;
+}
+
+async fn read_usage_lifecycle_api_snapshot(
+    client: &reqwest::Client,
+    gateway_url: &str,
+    usage: &StoredRequestUsageAudit,
+) -> serde_json::Value {
+    let paths = [
+        format!("/api/admin/usage/records?ids={}", usage.id),
+        format!("/api/admin/usage/active?ids={}", usage.id),
+        format!("/api/admin/usage/{}?include_bodies=false", usage.id),
+        format!("/api/admin/monitoring/trace/{}", usage.request_id),
+    ];
+    let mut payloads = Vec::new();
+    for path in paths {
+        let response = admin_request(client.get(format!("{gateway_url}{path}")))
+            .send()
+            .await
+            .expect("admin API should respond");
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        payloads.push(
+            response
+                .json::<serde_json::Value>()
+                .await
+                .expect("admin JSON"),
+        );
+    }
+    let rows = [
+        &payloads[0]["records"][0],
+        &payloads[1]["requests"][0],
+        &payloads[2],
+    ];
+    for row in rows {
+        assert_eq!(row["id"], usage.id);
+        assert_eq!(row["status"], usage.status);
+        assert_eq!(row["response_time_ms"], json!(usage.response_time_ms));
+        if let Some(elapsed) = usage
+            .request_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("end_to_end_time_ms"))
+        {
+            assert_eq!(&row["end_to_end_time_ms"], elapsed);
+        }
+        assert_eq!(row["status_code"], json!(usage.status_code));
+        assert_eq!(row["error_message"], json!(usage.error_message));
+    }
+    let trace = payloads.pop().expect("trace payload");
+    assert_eq!(
+        trace["final_status"],
+        if usage.status == "completed" {
+            "success"
+        } else {
+            &usage.status
+        }
+    );
+    assert_eq!(
+        trace["total_latency_ms"],
+        json!(usage
+            .request_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("end_to_end_time_ms"))
+            .and_then(serde_json::Value::as_u64)
+            .or(usage.response_time_ms)
+            .unwrap_or_default())
+    );
+    trace
+}
+
+async fn assert_admin_usage_retry_lifecycle_with_sqlite(final_status: &str) {
+    use aether_data_contracts::repository::candidates::UpsertRequestCandidateRecord;
+    use aether_data_contracts::repository::usage::UpsertUsageRecord;
+
+    let database = aether_data::SqlDatabaseConfig::new(
+        aether_data::DatabaseDriver::Sqlite,
+        "sqlite::memory:",
+        aether_data::SqlPoolConfig {
+            min_connections: 0,
+            max_connections: 1,
+            ..Default::default()
+        },
+    )
+    .expect("isolated SQLite config");
+    let state = AppState::new()
+        .expect("gateway state")
+        .with_data_config(crate::data::GatewayDataConfig::from_database_config(
+            database,
+        ))
+        .expect("SQLite state");
+    state
+        .run_database_migrations()
+        .await
+        .expect("SQLite migrations");
+    let client = reqwest::Client::new();
+    let (gateway_url, gateway_handle) = start_server(build_router_with_state(state.clone())).await;
+    let started_at = recent_unix_secs(10) as u64;
+    let request_id = format!("req-lifecycle-{final_status}");
+    let mut usage = sample_usage_row(
+        "unused-generated-id",
+        &request_id,
+        None,
+        None,
+        None,
+        "OpenAI",
+        "gpt-5",
+        "pending",
+        0,
+        0,
+        0.0,
+        0.0,
+        started_at as i64,
+    );
+    usage.request_type = Some("compact".to_string());
+    usage.is_stream = true;
+    usage.billing_status = "pending".to_string();
+    usage.status_code = None;
+    usage.error_message = None;
+    usage.first_byte_time_ms = None;
+    usage.response_time_ms = Some(0);
+    usage.finalized_at_unix_secs = None;
+    usage.updated_at_unix_secs = started_at;
+    let mut usage_write: UpsertUsageRecord =
+        serde_json::from_value(json!(usage)).expect("usage write");
+    usage = state
+        .data
+        .upsert_usage(usage_write.clone())
+        .await
+        .expect("pending write")
+        .expect("usage row");
+
+    let mut attempt: UpsertRequestCandidateRecord =
+        serde_json::from_value(json!(sample_request_candidate(
+            "candidate-lifecycle-0",
+            &request_id,
+            0,
+            0,
+            RequestCandidateStatus::Pending,
+        )))
+        .expect("candidate write");
+    attempt.created_at_unix_ms = Some(started_at * 1000);
+    attempt.started_at_unix_ms = attempt.created_at_unix_ms;
+    attempt.finished_at_unix_ms = None;
+    attempt.latency_ms = None;
+    state
+        .data
+        .upsert_request_candidate(attempt.clone())
+        .await
+        .expect("first attempt");
+    read_usage_lifecycle_api_snapshot(&client, &gateway_url, &usage).await;
+
+    // The failure is durable before a retry row exists. No error_flow/retryable
+    // metadata is present, just as with the original first-response watchdog.
+    attempt.status = RequestCandidateStatus::Failed;
+    attempt.status_code = Some(504);
+    attempt.error_message = Some("First response timeout".to_string());
+    attempt.error_type = Some("stream_first_response_timeout".to_string());
+    attempt.latency_ms = Some(180_003);
+    attempt.finished_at_unix_ms = Some(started_at * 1000 + 180_003);
+    assert!(attempt.extra_data.is_none());
+    state
+        .data
+        .upsert_request_candidate(attempt.clone())
+        .await
+        .expect("failed first attempt");
+    usage_write.response_time_ms = Some(181_000);
+    usage_write.updated_at_unix_secs = started_at + 181;
+    usage = state
+        .data
+        .upsert_usage(usage_write.clone())
+        .await
+        .expect("retry gap usage")
+        .expect("usage");
+    let gap = read_usage_lifecycle_api_snapshot(&client, &gateway_url, &usage).await;
+    assert_eq!(gap["candidates"].as_array().expect("attempts").len(), 1);
+    assert_eq!(gap["candidates"][0]["status"], "failed");
+    assert_eq!(gap["candidates"][0]["latency_ms"], 180_003);
+    assert_eq!(gap["candidates"][0]["status_code"], 504);
+
+    attempt.id = "candidate-lifecycle-1".to_string();
+    attempt.retry_index = 1;
+    attempt.status = RequestCandidateStatus::Pending;
+    attempt.status_code = None;
+    attempt.error_type = None;
+    attempt.error_message = None;
+    attempt.created_at_unix_ms = Some(started_at * 1000 + 181_000);
+    attempt.started_at_unix_ms = attempt.created_at_unix_ms;
+    attempt.finished_at_unix_ms = None;
+    attempt.latency_ms = None;
+    state
+        .data
+        .upsert_request_candidate(attempt.clone())
+        .await
+        .expect("second attempt");
+    let retry = read_usage_lifecycle_api_snapshot(&client, &gateway_url, &usage).await;
+    assert_eq!(retry["candidates"].as_array().expect("attempts").len(), 2);
+    assert_eq!(retry["candidates"][0]["status"], "failed");
+    assert_eq!(retry["candidates"][1]["status"], "pending");
+
+    attempt.status = if final_status == "completed" {
+        RequestCandidateStatus::Success
+    } else {
+        RequestCandidateStatus::Failed
+    };
+    attempt.status_code = Some(if final_status == "completed" {
+        200
+    } else {
+        504
+    });
+    attempt.latency_ms = Some(119_008);
+    attempt.finished_at_unix_ms = Some(started_at * 1000 + 300_008);
+    state
+        .data
+        .upsert_request_candidate(attempt.clone())
+        .await
+        .expect("second attempt terminal");
+    // Candidate completion alone does not finalize the logical request either.
+    read_usage_lifecycle_api_snapshot(&client, &gateway_url, &usage).await;
+
+    usage_write.status = final_status.to_string();
+    usage_write.status_code = attempt.status_code;
+    usage_write.error_message =
+        (final_status == "failed").then(|| "Streaming request total timeout".to_string());
+    usage_write.response_time_ms = Some(119_008);
+    usage_write.request_metadata = Some(json!({"end_to_end_time_ms": 300_008}));
+    usage_write.updated_at_unix_secs = started_at + 300;
+    usage_write.finalized_at_unix_secs = Some(started_at + 300);
+    usage = state
+        .data
+        .upsert_usage(usage_write)
+        .await
+        .expect("request terminal")
+        .expect("usage");
+    let terminal = read_usage_lifecycle_api_snapshot(&client, &gateway_url, &usage).await;
+    assert_eq!(terminal["candidates"][0]["latency_ms"], 180_003);
+    assert_eq!(terminal["candidates"][1]["latency_ms"], 119_008);
+    assert_eq!(terminal["total_latency_ms"], 300_008);
+    // Fresh public reads model drawer reopen and list refresh after finalization.
+    read_usage_lifecycle_api_snapshot(&reqwest::Client::new(), &gateway_url, &usage).await;
+    gateway_handle.abort();
+}
+
+#[tokio::test]
+async fn gateway_admin_usage_retry_lifecycle_sqlite_final_failure() {
+    assert_admin_usage_retry_lifecycle_with_sqlite("failed").await;
+}
+
+#[tokio::test]
+async fn gateway_admin_usage_retry_lifecycle_sqlite_final_success() {
+    assert_admin_usage_retry_lifecycle_with_sqlite("completed").await;
 }
 
 #[tokio::test]

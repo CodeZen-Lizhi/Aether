@@ -43,6 +43,9 @@ impl ExecutionResponseBodyMode {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ExecutionTimeouts {
+    /// Full logical HTTP chat stream duration, including retries and response body.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_total_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_failover_budget_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -181,6 +184,22 @@ mod tests {
         assert_eq!(
             ExecutionResponseBodyMode::from_header_value(None),
             ExecutionResponseBodyMode::StructuredJson
+        );
+    }
+
+    #[test]
+    fn stream_total_timeout_round_trips_without_changing_legacy_timeouts() {
+        let old = serde_json::json!({"total_ms": 120000, "stream_failover_budget_ms": 1800});
+        let mut timeouts: ExecutionTimeouts = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(timeouts.stream_total_ms, None);
+        assert_eq!(serde_json::to_value(&timeouts).unwrap(), old);
+        timeouts.stream_total_ms = Some(900_000);
+        let encoded = serde_json::to_value(&timeouts).unwrap();
+        assert_eq!(encoded["total_ms"], 120000);
+        assert_eq!(encoded["stream_failover_budget_ms"], 1800);
+        assert_eq!(
+            serde_json::from_value::<ExecutionTimeouts>(encoded).unwrap(),
+            timeouts
         );
     }
 

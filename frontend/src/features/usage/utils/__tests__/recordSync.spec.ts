@@ -175,6 +175,27 @@ describe('mergeUsageRecordErrorMessage', () => {
 describe('mergeUsageRecordLifecycleSnapshot', () => {
   const cyberMessage = 'This content was flagged for possible cybersecurity risk. https://chatgpt.com/cyber'
 
+  it('merges a retry gap and final detail while rejecting even a newer active snapshot after termination', () => {
+    const initial = buildUsageRecord({ status: 'pending', updated_at: '2026-09-15T10:49:56Z' })
+    const gap = mergeUsageRecordLifecycleSnapshot(initial, {
+      status: 'pending', statusCode: 504, errorMessage: 'First response timeout',
+      updatedAt: '2026-09-15T10:52:56Z',
+    })
+    expect(gap.accepted).toBe(true)
+    expect(gap.status).toBe('pending')
+    const final = mergeUsageRecordLifecycleSnapshot(gap, {
+      status: 'failed', statusCode: 504, errorMessage: 'Streaming request total timeout',
+      updatedAt: '2026-09-15T10:54:56Z',
+    })
+    expect(final.accepted).toBe(true)
+    expect(final.status).toBe('failed')
+    expect(final.error_message).toBe('Streaming request total timeout')
+    expect(mergeUsageRecordLifecycleSnapshot(final, {
+      status: 'pending', statusCode: null, errorMessage: null,
+      updatedAt: '2026-09-15T10:55:00Z',
+    })).toEqual({ ...final, accepted: false })
+  })
+
   it('rejects an older failed detail without changing status, code, or error', () => {
     expect(mergeUsageRecordLifecycleSnapshot({
       status: 'completed',

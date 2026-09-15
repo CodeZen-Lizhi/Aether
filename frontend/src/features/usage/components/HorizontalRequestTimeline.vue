@@ -807,7 +807,7 @@ watch(
       hasTrace: Boolean(value?.candidates?.length),
       finalStatus: finalStatus ?? value?.final_status ?? null,
       statusCode: attempt?.status_code ?? null,
-      latencyMs: attempt?.latency_ms ?? value?.total_latency_ms ?? null,
+      latencyMs: value?.total_latency_ms ?? attempt?.latency_ms ?? null,
       imageProgress,
       errorMessage: attempt?.error_message ?? null,
     })

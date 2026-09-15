@@ -1387,7 +1387,7 @@ fn resolve_stream_candidate_watchdog_timeout(
 }
 
 fn stream_candidate_watchdog_timeout_message() -> &'static str {
-    "Stream first effective output timeout"
+    "Stream first response timeout"
 }
 
 fn admission_timeout_gate(error: &GatewayError) -> Option<&'static str> {
@@ -1566,6 +1566,8 @@ where
     } else {
         None
     };
+    let target_permit =
+        target_permit.map(crate::execution_runtime::chat_retry::hold_stream_deadline_permit);
     let mut execution_report_context = report_context.cloned();
     let probe_session = if let Some(app_state) = app_state {
         let Some(session) = crate::execution_runtime::chat_retry::claim_chat_attempt_probes(
@@ -1680,7 +1682,7 @@ where
                 model_name,
                 candidate_index = candidate_index.as_str(),
                 timeout_ms,
-                timeout_trigger = "first_effective_output_candidate",
+                timeout_trigger = "first_response_candidate",
                 "gateway local stream candidate watchdog timed out"
             );
             if stop_on_transport_errors {
@@ -1755,14 +1757,14 @@ where
 }
 
 struct UpstreamExecutionPermitHold {
-    _permit: ConcurrencyPermit,
+    _permit: crate::execution_runtime::chat_retry::StreamDeadlinePermit<ConcurrencyPermit>,
     started_at: std::time::Instant,
 }
 
 impl UpstreamExecutionPermitHold {
     fn new(permit: ConcurrencyPermit) -> Self {
         Self {
-            _permit: permit,
+            _permit: crate::execution_runtime::chat_retry::hold_stream_deadline_permit(permit),
             started_at: std::time::Instant::now(),
         }
     }
@@ -2804,7 +2806,7 @@ mod tests {
         assert!(record
             .error_message
             .as_deref()
-            .is_some_and(|message| message == "Stream first effective output timeout"));
+            .is_some_and(|message| message == "Stream first response timeout"));
         assert_eq!(record.candidate_index, 2);
     }
 

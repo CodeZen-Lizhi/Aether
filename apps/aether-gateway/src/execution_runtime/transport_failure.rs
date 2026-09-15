@@ -22,6 +22,7 @@ const TRANSPORT_ERROR_CLIENT_MESSAGE: &str =
 #[derive(Debug, Default)]
 pub(crate) struct StreamCandidateWatchdogProgress {
     terminal_started: AtomicBool,
+    response_received: AtomicBool,
 }
 
 tokio::task_local! {
@@ -35,6 +36,7 @@ impl StreamCandidateWatchdogProgress {
 
     pub(crate) fn terminal_started(&self) -> bool {
         self.terminal_started.load(Ordering::Acquire)
+            || self.response_received.load(Ordering::Acquire)
     }
 
     pub(crate) async fn scope<F>(self: Arc<Self>, future: F) -> F::Output
@@ -45,7 +47,19 @@ impl StreamCandidateWatchdogProgress {
     }
 }
 
+pub(crate) fn mark_stream_candidate_response_received(status_code: u16) {
+    if (200..300).contains(&status_code)
+        && crate::execution_runtime::chat_retry::http_chat_stream_deadline_active()
+    {
+        crate::execution_runtime::chat_retry::observe_stream_response_headers();
+        let _ = STREAM_CANDIDATE_WATCHDOG_PROGRESS.try_with(|progress| {
+            progress.response_received.store(true, Ordering::Release);
+        });
+    }
+}
+
 pub(crate) fn mark_stream_candidate_watchdog_terminal_started() {
+    crate::execution_runtime::chat_retry::finish_stream_request_deadline();
     crate::execution_runtime::chat_retry::finish_first_output_wait();
     let _ = STREAM_CANDIDATE_WATCHDOG_PROGRESS.try_with(|progress| {
         progress.terminal_started.store(true, Ordering::Release);
@@ -68,8 +82,8 @@ pub(crate) async fn build_transport_error_stop_response(
     let (client_message, client_error_code) =
         if error_type == "local_stream_candidate_watchdog_timeout" {
             (
-                "Stream first effective output timeout",
-                "stream_first_output_timeout",
+                "Stream first response timeout",
+                "stream_first_response_timeout",
             )
         } else {
             (TRANSPORT_ERROR_CLIENT_MESSAGE, "upstream_transport_error")

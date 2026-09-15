@@ -42,11 +42,32 @@ pub(super) enum Reply {
     DelayedSse(Duration),
     BrokenSse(Arc<Notify>),
     HeldSse(Arc<Notify>),
+    TimedSse {
+        header_delay: Duration,
+        chunks: Vec<(Duration, String)>,
+    },
 }
 
 impl Reply {
     async fn response(self) -> Response {
         match self {
+            Self::TimedSse {
+                header_delay,
+                chunks,
+            } => {
+                tokio::time::sleep(header_delay).await;
+                let stream = async_stream::stream! {
+                    for (delay, chunk) in chunks {
+                        tokio::time::sleep(delay).await;
+                        yield Ok::<_, std::io::Error>(Bytes::from(chunk));
+                    }
+                };
+                (
+                    [(http::header::CONTENT_TYPE, "text/event-stream")],
+                    Body::from_stream(stream),
+                )
+                    .into_response()
+            }
             Self::RawSuccess(content_type, body) => {
                 ([(http::header::CONTENT_TYPE, content_type)], body).into_response()
             }
@@ -136,7 +157,7 @@ impl Reply {
     }
 }
 
-fn first_sse_frame() -> String {
+pub(super) fn first_sse_frame() -> String {
     let delta = json!({"id":"chatcmpl-local","object":"chat.completion.chunk",
         "created":1,"model":"gpt-5","choices":[{"index":0,
         "delta":{"role":"assistant","content":FIRST_TEXT},"finish_reason":null}]});
@@ -426,6 +447,20 @@ impl Fixture {
                 .unwrap(),
             _servers: servers,
         }
+    }
+
+    pub async fn configure_stream_timeouts(&self, target: usize, first_secs: f64, total_ms: u64) {
+        use aether_data_contracts::repository::provider_catalog::ProviderCatalogWriteRepository;
+        let mut provider = self
+            .catalog
+            .list_providers_by_ids(&[format!("provider-{target}")])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        provider.stream_first_byte_timeout_secs = Some(first_secs);
+        provider.config.as_mut().unwrap()["stream_total_timeout_ms"] = json!(total_ms);
+        self.catalog.update_provider(&provider).await.unwrap();
     }
 
     pub async fn request(&self, stream: bool) -> reqwest::Response {

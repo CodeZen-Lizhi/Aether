@@ -1,5 +1,6 @@
 mod http_failures;
 mod probe_lifetime;
+mod stream_response_timeout;
 mod support;
 mod target_admission;
 
@@ -224,7 +225,7 @@ fn short_retry_after_retries_same_key_and_long_cooldown_survives_next_request() 
 }
 
 #[test]
-fn configured_first_output_budget_is_shared_across_real_candidates() {
+fn stream_response_timeout_total_deadline_is_shared_across_real_candidates() {
     run("shared-output-budget", async {
         let fixture = Fixture::new(
             "fixed_order",
@@ -238,6 +239,8 @@ fn configured_first_output_budget_is_shared_across_real_candidates() {
             ],
         )
         .await;
+        fixture.configure_stream_timeouts(0, 5.0, 3_000).await;
+        fixture.configure_stream_timeouts(1, 5.0, 5_000).await;
         let started = Instant::now();
         let response = fixture.request(true).await;
         assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
@@ -260,7 +263,7 @@ fn configured_first_output_budget_is_shared_across_real_candidates() {
             elapsed < Duration::from_millis(3800),
             "budget reset or was ignored: {elapsed:?}"
         );
-        assert!(body.contains("failover budget exhausted"), "{body}");
+        assert!(body.contains("request total timeout exceeded"), "{body}");
         let usage = failed_usage(&fixture, &request_id).await;
         assert_eq!(usage.status, "failed");
         assert_eq!(usage.status_code, Some(504));
@@ -268,7 +271,7 @@ fn configured_first_output_budget_is_shared_across_real_candidates() {
             .error_message
             .as_deref()
             .unwrap()
-            .contains("failover budget exhausted"));
+            .contains("request total timeout exceeded"));
         assert!(usage
             .response_time_ms
             .is_some_and(|ms| (2900..3800).contains(&ms)));
@@ -279,11 +282,9 @@ fn configured_first_output_budget_is_shared_across_real_candidates() {
             .unwrap();
         let cancelled = candidates
             .iter()
-            .find(|candidate| {
-                candidate.error_type.as_deref() == Some("stream_failover_budget_exhausted")
-            })
+            .find(|candidate| candidate.error_type.as_deref() == Some("stream_total_timeout"))
             .unwrap();
-        assert_eq!(cancelled.status, RequestCandidateStatus::Cancelled);
+        assert_eq!(cancelled.status, RequestCandidateStatus::Failed);
         assert_eq!(cancelled.status_code, Some(504));
         assert_eq!(fixture.target_in_flight(1).await, 0);
         fixture.assert_health(0, 0.8).await;
@@ -301,7 +302,7 @@ fn configured_first_output_budget_is_shared_across_real_candidates() {
 }
 
 #[test]
-fn exhausted_candidate_first_output_timeouts_keep_the_timeout_and_release_admission() {
+fn stream_response_timeout_without_headers_keeps_timeout_and_releases_admission() {
     run("exhausted-output-timeout", async {
         use aether_data_contracts::repository::provider_catalog::{
             ProviderCatalogReadRepository, ProviderCatalogWriteRepository,
@@ -336,7 +337,7 @@ fn exhausted_candidate_first_output_timeouts_keep_the_timeout_and_release_admiss
             .unwrap()
             .to_string();
         let body = response.text().await.unwrap();
-        assert!(body.contains("first effective output timeout"), "{body}");
+        assert!(body.contains("first response timeout"), "{body}");
         assert!(!body.contains("no_local_stream_plans"), "{body}");
         assert_eq!(fixture.targets(), [0, 1]);
         let usage = failed_usage(&fixture, &request_id).await;
@@ -346,7 +347,7 @@ fn exhausted_candidate_first_output_timeouts_keep_the_timeout_and_release_admiss
             .error_message
             .as_deref()
             .unwrap()
-            .contains("first effective output timeout"));
+            .contains("first response timeout"));
         fixture.assert_health(0, 0.9).await;
         fixture.assert_health(1, 0.9).await;
         assert_eq!(fixture.target_in_flight(0).await, 0);

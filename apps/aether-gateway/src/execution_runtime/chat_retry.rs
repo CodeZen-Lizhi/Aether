@@ -15,6 +15,7 @@ pub(crate) use aether_contracts::chat_retry::DEFAULT_STREAM_FAILOVER_BUDGET_MS;
 const KEY_RETRY_WAIT_BUDGET: Duration = Duration::from_secs(2);
 
 tokio::task_local! {
+    static STREAM_REQUEST_DEADLINE: Arc<StreamRequestDeadline>;
     static FIRST_OUTPUT_DEADLINE: Arc<FirstOutputBudget>;
     static RETRY_AFTER_OBSERVATION: Arc<Mutex<Option<Instant>>>;
     static CHAT_PROBE_SESSION: Option<Arc<ChatProbeSession>>;
@@ -101,6 +102,7 @@ pub(crate) fn chat_attempt_admission_held() -> bool {
 }
 
 pub(crate) fn mark_chat_attempt_terminal() {
+    suspend_stream_deadline_for_attempt_terminal();
     if let Some(session) = current_chat_probe_session() {
         session
             .terminal
@@ -143,30 +145,65 @@ where
     }).await
 }
 
+type StreamBodySender = tokio::sync::mpsc::Sender<Result<axum::body::Bytes, std::io::Error>>;
+
 pub(crate) fn spawn_chat_stream_pump<F>(
-    failure_tx: tokio::sync::mpsc::Sender<Result<axum::body::Bytes, std::io::Error>>,
+    failure_tx: StreamBodySender,
+    timeout_event: Option<axum::body::Bytes>,
     future: F,
 ) -> tokio::task::JoinHandle<()>
 where
     F: Future<Output = ()> + Send + 'static,
 {
     let session = current_chat_probe_session();
+    let budget = STREAM_REQUEST_DEADLINE.try_with(Clone::clone).ok();
+    let mut failure_tx = Some(failure_tx);
+    if let Some(budget) = budget.as_ref() {
+        let mut state = budget.state.lock().expect("stream deadline lock");
+        state.pump_owned = true;
+        if !state.finished {
+            *budget.failure_sender.lock().expect("stream sender lock") = failure_tx.take();
+        } else {
+            failure_tx.take();
+        }
+        budget.changed.notify_one();
+    }
     tokio::spawn(async move {
-        if let Err(error) = scope_chat_probe_session(session.clone(), async move {
+        let generation = scope_chat_probe_session(session.clone(), async move {
             future.await;
             Ok(())
-        })
-        .await
-        {
-            tracing::warn!(event_name = "chat_probe_lease_lost", error = ?error,
-                "stream stopped after recovery probe ownership was lost");
-            let _ = tokio::time::timeout(
-                Duration::from_secs(1),
-                failure_tx.send(Err(std::io::Error::other(
-                    "Recovery probe ownership was lost",
-                ))),
-            )
-            .await;
+        });
+        let result = if let Some(budget) = budget.as_ref() {
+            run_stream_request_deadline(budget.clone(), true, generation).await
+        } else {
+            generation.await
+        };
+        if let Err(error) = result {
+            tracing::warn!(event_name = "chat_stream_cancelled", error = ?error,
+                "stream stopped after request deadline or recovery probe ownership loss");
+            let total_timeout = matches!(&error, GatewayError::Client { message, .. }
+                if message == STREAM_TOTAL_TIMEOUT_MESSAGE);
+            let failure = if total_timeout {
+                timeout_event
+                    .map(Ok)
+                    .unwrap_or_else(|| Err(std::io::Error::other(STREAM_TOTAL_TIMEOUT_MESSAGE)))
+            } else {
+                Err(std::io::Error::other("Recovery probe ownership was lost"))
+            };
+            let failure_tx = budget
+                .as_ref()
+                .and_then(|budget| {
+                    budget
+                        .failure_sender
+                        .lock()
+                        .expect("stream sender lock")
+                        .take()
+                })
+                .or(failure_tx);
+            if let Some(failure_tx) = failure_tx {
+                let _ =
+                    tokio::time::timeout(Duration::from_secs(1), failure_tx.send(failure)).await;
+            }
         }
         if let Some(session) = session {
             session.finish().await;
@@ -285,6 +322,291 @@ pub(crate) fn observe_chat_retry_after(plan: &ExecutionPlan, value: Option<&str>
     seconds
 }
 
+// HTTP chat streams own a deadline through response-body delivery. The request
+// future transfers ownership to the pump before returning a Response; the two
+// futures must never independently settle the same timeout.
+struct StreamRequestDeadline {
+    started: Instant,
+    state: Mutex<StreamRequestDeadlineState>,
+    changed: tokio::sync::Notify,
+    active_attempt: Mutex<Option<FirstOutputAttempt>>,
+    release_resources: Mutex<Vec<Box<dyn FnOnce() + Send>>>,
+    failure_sender: Mutex<Option<StreamBodySender>>,
+}
+
+struct StreamRequestDeadlineState {
+    deadline: Instant,
+    configured: bool,
+    pump_owned: bool,
+    terminal_persistence: bool,
+    finished: bool,
+    timing: StreamResponseTiming,
+}
+
+#[derive(Default, serde::Serialize)]
+struct StreamResponseTiming {
+    response_headers_elapsed_ms: Option<u64>,
+    first_body_elapsed_ms: Option<u64>,
+    first_effective_output_elapsed_ms: Option<u64>,
+    first_byte_ms: Option<u64>,
+}
+
+pub(crate) fn observe_stream_response_headers() {
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        budget
+            .state
+            .lock()
+            .expect("stream deadline lock")
+            .timing
+            .response_headers_elapsed_ms
+            .get_or_insert(budget.started.elapsed().as_millis() as u64);
+    });
+}
+
+pub(crate) fn observe_stream_first_body(first_byte_ms: Option<u64>) {
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        let mut state = budget.state.lock().expect("stream deadline lock");
+        state
+            .timing
+            .first_body_elapsed_ms
+            .get_or_insert(budget.started.elapsed().as_millis() as u64);
+        state.timing.first_byte_ms = state.timing.first_byte_ms.or(first_byte_ms);
+    });
+}
+
+// Body drop and request timeout race to take the same permit. A weak release
+// hook lets the deadline free capacity even if the client stops reading its body.
+pub(crate) struct StreamDeadlinePermit<T>(Arc<Mutex<Option<T>>>);
+
+impl<T> Drop for StreamDeadlinePermit<T> {
+    fn drop(&mut self) {
+        self.0.lock().expect("stream permit lock").take();
+    }
+}
+
+pub(crate) fn hold_stream_deadline_permit<T: Send + 'static>(permit: T) -> StreamDeadlinePermit<T> {
+    let guard = StreamDeadlinePermit(Arc::new(Mutex::new(Some(permit))));
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        let state = budget.state.lock().expect("stream deadline lock");
+        if state.finished {
+            guard.0.lock().expect("stream permit lock").take();
+        } else {
+            let permit = Arc::downgrade(&guard.0);
+            budget
+                .release_resources
+                .lock()
+                .expect("stream resources lock")
+                .push(Box::new(move || {
+                    if let Some(permit) = permit.upgrade() {
+                        permit.lock().expect("stream permit lock").take();
+                    }
+                }));
+        }
+    });
+    guard
+}
+
+fn release_stream_deadline_resources(budget: &StreamRequestDeadline) {
+    let releases = std::mem::take(
+        &mut *budget
+            .release_resources
+            .lock()
+            .expect("stream resources lock"),
+    );
+    for release in releases {
+        release();
+    }
+}
+
+pub(crate) const STREAM_TOTAL_TIMEOUT_MESSAGE: &str = "Streaming request total timeout exceeded";
+
+pub(crate) fn http_chat_stream_deadline_active() -> bool {
+    STREAM_REQUEST_DEADLINE.try_with(|_| ()).is_ok()
+}
+
+pub(crate) fn wait_for_useful_chat_output() -> bool {
+    http_chat_stream_deadline_active() || current_first_output_deadline().is_some()
+}
+
+fn stream_total_timeout_error() -> GatewayError {
+    GatewayError::Client {
+        status: http::StatusCode::GATEWAY_TIMEOUT,
+        message: STREAM_TOTAL_TIMEOUT_MESSAGE.to_string(),
+    }
+}
+
+// This is called only after generation and downstream sends finish. Persistence
+// itself must remain runnable after the generation deadline expires.
+pub(crate) fn finish_stream_request_deadline() {
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        budget.state.lock().expect("stream deadline lock").finished = true;
+        release_stream_deadline_resources(budget);
+        // Closing the response must not await slow terminal KV/usage writes.
+        budget
+            .failure_sender
+            .lock()
+            .expect("stream sender lock")
+            .take();
+        budget.changed.notify_one();
+    });
+}
+
+pub(super) fn suspend_stream_deadline_for_attempt_terminal() {
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        let mut state = budget.state.lock().expect("stream deadline lock");
+        if !state.pump_owned {
+            state.terminal_persistence = true;
+            budget.changed.notify_one();
+        }
+    });
+}
+
+fn configure_stream_request_deadline(state: &AppState, plan: &ExecutionPlan) {
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        let mut deadline = budget.state.lock().expect("stream deadline lock");
+        deadline.terminal_persistence = false;
+        if !deadline.configured {
+            let milliseconds = plan
+                .timeouts
+                .as_ref()
+                .and_then(|timeouts| timeouts.stream_total_ms)
+                .unwrap_or(aether_contracts::chat_retry::DEFAULT_STREAM_TOTAL_TIMEOUT_MS);
+            deadline.deadline = budget.started + Duration::from_millis(milliseconds.max(1));
+            deadline.configured = true;
+            *budget.active_attempt.lock().expect("active attempt lock") =
+                Some(FirstOutputAttempt {
+                    state: state.clone(),
+                    snapshot: None,
+                    started_at_unix_ms: crate::clock::current_unix_ms(),
+                    usage_context: timeout_usage_context(plan, None),
+                });
+        }
+        budget.changed.notify_one();
+    });
+}
+
+pub(crate) async fn with_stream_request_timeout<F, T>(future: F) -> Result<T, GatewayError>
+where
+    F: Future<Output = Result<T, GatewayError>>,
+{
+    if http_chat_stream_deadline_active() {
+        return future.await;
+    }
+    let started = crate::request_diagnostics::current_request_diagnostics()
+        .and_then(|diagnostics| diagnostics.request_accepted_at())
+        .map(Instant::from_std)
+        .unwrap_or_else(Instant::now);
+    let budget = Arc::new(StreamRequestDeadline {
+        started,
+        state: Mutex::new(StreamRequestDeadlineState {
+            deadline: started
+                + Duration::from_millis(
+                    aether_contracts::chat_retry::DEFAULT_STREAM_TOTAL_TIMEOUT_MS,
+                ),
+            configured: false,
+            pump_owned: false,
+            terminal_persistence: false,
+            finished: false,
+            timing: StreamResponseTiming::default(),
+        }),
+        changed: tokio::sync::Notify::new(),
+        active_attempt: Mutex::new(None),
+        release_resources: Mutex::new(Vec::new()),
+        failure_sender: Mutex::new(None),
+    });
+    run_stream_request_deadline(budget, false, future).await
+}
+
+async fn run_stream_request_deadline<F, T>(
+    budget: Arc<StreamRequestDeadline>,
+    pump: bool,
+    future: F,
+) -> Result<T, GatewayError>
+where
+    F: Future<Output = Result<T, GatewayError>>,
+{
+    STREAM_REQUEST_DEADLINE
+        .scope(budget.clone(), async move {
+            let mut future = Box::pin(future);
+            loop {
+                let (deadline, monitor, finished, transferred) = {
+                    let state = budget.state.lock().expect("stream deadline lock");
+                    (
+                        state.deadline,
+                        state.pump_owned == pump && !state.terminal_persistence,
+                        state.finished,
+                        !pump && state.pump_owned,
+                    )
+                };
+                if finished || transferred {
+                    return future.await;
+                }
+                tokio::select! {
+                    biased;
+                    result = &mut future => return result,
+                    () = budget.changed.notified() => {},
+                    () = tokio::time::sleep_until(deadline), if monitor => {
+                        // Generation may have transferred ownership or started
+                        // persistence during this select poll. Only the current
+                        // owner may claim cancellation under the shared lock.
+                        {
+                            let mut state = budget.state.lock().expect("stream deadline lock");
+                            if state.finished || state.pump_owned != pump || state.terminal_persistence
+                                || Instant::now() < state.deadline {
+                                continue;
+                            }
+                            state.finished = true;
+                        }
+                        release_stream_deadline_resources(&budget);
+                        drop(future);
+                        settle_stream_request_timeout(&budget).await;
+                        return Err(stream_total_timeout_error());
+                    },
+                }
+            }
+        })
+        .await
+}
+
+async fn settle_stream_request_timeout(budget: &StreamRequestDeadline) {
+    let active = budget
+        .active_attempt
+        .lock()
+        .expect("active attempt lock")
+        .take();
+    let elapsed_ms = budget.started.elapsed().as_millis() as u64;
+    tracing::warn!(
+        event_name = "stream_total_timeout",
+        elapsed_ms,
+        request_id = active
+            .as_ref()
+            .map(|attempt| attempt.usage_context.request_id.as_str()),
+        "stream exceeded its logical request deadline"
+    );
+    if let Some(active) = active {
+        let finished = crate::clock::current_unix_ms();
+        if let Some(snapshot) = active.snapshot {
+            crate::request_candidate_runtime::record_local_request_candidate_status_snapshot(
+                &active.state, &snapshot, aether_scheduler_core::SchedulerRequestCandidateStatusUpdate {
+                    status: aether_data_contracts::repository::candidates::RequestCandidateStatus::Failed,
+                    status_code: Some(504), error_type: Some("stream_total_timeout".to_string()),
+                    error_message: Some(STREAM_TOTAL_TIMEOUT_MESSAGE.to_string()),
+                    latency_ms: Some(finished.saturating_sub(active.started_at_unix_ms)),
+                    started_at_unix_ms: Some(active.started_at_unix_ms), finished_at_unix_ms: Some(finished),
+                },
+            ).await;
+        }
+        persist_first_output_timeout(
+            active.state,
+            active.usage_context,
+            "stream_total_timeout".to_string(),
+            STREAM_TOTAL_TIMEOUT_MESSAGE.to_string(),
+            elapsed_ms,
+        )
+        .await;
+    }
+}
+
 struct FirstOutputBudget {
     started: Instant,
     state: Mutex<(Instant, bool, bool)>,
@@ -392,8 +714,12 @@ pub(crate) async fn record_first_output_timeout(
     message: &str,
     fallback_elapsed_ms: u64,
 ) {
-    let elapsed_ms = FIRST_OUTPUT_DEADLINE
+    finish_stream_request_deadline();
+    let elapsed_ms = STREAM_REQUEST_DEADLINE
         .try_with(|budget| budget.started.elapsed().as_millis() as u64)
+        .or_else(|_| {
+            FIRST_OUTPUT_DEADLINE.try_with(|budget| budget.started.elapsed().as_millis() as u64)
+        })
         .unwrap_or(fallback_elapsed_ms);
     persist_first_output_timeout(
         state.clone(),
@@ -413,12 +739,26 @@ async fn persist_first_output_timeout(
     elapsed_ms: u64,
 ) {
     finish_first_output_wait();
+    let timing = STREAM_REQUEST_DEADLINE
+        .try_with(|budget| {
+            let state = budget.state.lock().expect("stream deadline lock");
+            (
+                state.timing.first_byte_ms,
+                serde_json::to_value(&state.timing).ok(),
+            )
+        })
+        .unwrap_or_default();
     let payload = serde_json::json!({"error": {"type": error_type, "message": message}});
     let payload_seed = SyncTerminalUsagePayloadSeed {
-        report_kind: "local_stream_first_output_timeout".to_string(),
+        report_kind: if error_type == "stream_total_timeout" {
+            "local_stream_total_timeout"
+        } else {
+            "local_stream_first_response_timeout"
+        }
+        .to_string(),
         status_code: 504,
         response_time_ms: Some(elapsed_ms),
-        first_byte_time_ms: None,
+        first_byte_time_ms: timing.0,
         provider_response_headers: None,
         client_response_headers: Some(serde_json::json!({"content-type": "application/json"})),
         provider_response_full: Some(payload.clone()),
@@ -426,7 +766,13 @@ async fn persist_first_output_timeout(
         client_response: Some(payload),
         client_response_body_state: None,
         standardized_usage: None,
-        capture_metadata: Some(serde_json::json!({"timeout_trigger": error_type})),
+        capture_metadata: Some(serde_json::json!({
+            "timeout_trigger": error_type,
+            "end_to_end_time_ms": elapsed_ms,
+            "end_to_end_first_byte_time_ms": timing.1.as_ref()
+                .and_then(|timing| timing.get("first_body_elapsed_ms")),
+            "stream_timing": timing.1,
+        })),
     };
     let handoff = state.usage_runtime.track_persistence_handoff();
     let task = tokio::spawn(async move {
@@ -453,7 +799,18 @@ pub(crate) fn current_first_output_deadline() -> Option<Instant> {
 }
 
 pub(crate) fn mark_useful_stream_output() {
-    crate::execution_runtime::mark_stream_candidate_watchdog_terminal_started();
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        budget
+            .state
+            .lock()
+            .expect("stream deadline lock")
+            .timing
+            .first_effective_output_elapsed_ms
+            .get_or_insert(budget.started.elapsed().as_millis() as u64);
+    });
+    if !http_chat_stream_deadline_active() {
+        crate::execution_runtime::mark_stream_candidate_watchdog_terminal_started();
+    }
     let _ = FIRST_OUTPUT_DEADLINE.try_with(|budget| {
         budget.state.lock().expect("first output budget lock").2 = true;
         budget.changed.notify_one();
@@ -513,6 +870,18 @@ pub(crate) async fn capture_attempt_report_context(
             );
         }
     }
+    let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+        budget.state.lock().expect("stream deadline lock").timing = StreamResponseTiming::default();
+        *budget.active_attempt.lock().expect("active attempt lock") = Some(FirstOutputAttempt {
+            state: state.clone(),
+            snapshot: crate::request_candidate_runtime::snapshot_local_request_candidate_status(
+                plan,
+                report_context.as_ref(),
+            ),
+            started_at_unix_ms: crate::clock::current_unix_ms(),
+            usage_context: timeout_usage_context(plan, report_context.as_ref()),
+        });
+    });
     let _ = FIRST_OUTPUT_DEADLINE.try_with(|budget| {
         *budget.active_attempt.lock().expect("active attempt lock") = Some(FirstOutputAttempt {
             state: state.clone(),
@@ -541,30 +910,6 @@ where
         Arc::new(FirstOutputBudget {
             started: Instant::now(),
             state: Mutex::new((deadline, true, false)),
-            changed: tokio::sync::Notify::new(),
-            active_attempt: Mutex::new(None),
-        }),
-        future,
-    )
-    .await
-}
-
-pub(crate) async fn with_stream_first_output_budget<F, T>(future: F) -> Result<T, GatewayError>
-where
-    F: Future<Output = Result<T, GatewayError>>,
-{
-    if current_first_output_deadline().is_some() {
-        return future.await;
-    }
-    let started = Instant::now();
-    run_budget(
-        Arc::new(FirstOutputBudget {
-            started,
-            state: Mutex::new((
-                started + Duration::from_millis(DEFAULT_STREAM_FAILOVER_BUDGET_MS),
-                false,
-                false,
-            )),
             changed: tokio::sync::Notify::new(),
             active_attempt: Mutex::new(None),
         }),
@@ -696,6 +1041,21 @@ impl ChatRetryTracker {
                 active.snapshot = None;
             }
         });
+        let _ = STREAM_REQUEST_DEADLINE.try_with(|budget| {
+            let mut state = budget.state.lock().expect("stream deadline lock");
+            if !state.pump_owned {
+                state.terminal_persistence = false;
+                if let Some(active) = budget
+                    .active_attempt
+                    .lock()
+                    .expect("active attempt lock")
+                    .as_mut()
+                {
+                    active.snapshot = None;
+                }
+                budget.changed.notify_one();
+            }
+        });
         let deadline = *observation.lock().expect("retry observation lock");
         if let Some(deadline) = deadline {
             self.keys
@@ -716,6 +1076,7 @@ impl ChatRetryTracker {
         if !chat_health_policy_applies(&plan.provider_api_format) {
             return Ok(true);
         }
+        configure_stream_request_deadline(state, plan);
         configure_first_output_budget(plan);
         if plan
             .body
@@ -947,5 +1308,129 @@ mod tests {
             })
         ));
         assert!(started.elapsed() < Duration::from_millis(500));
+    }
+    #[tokio::test]
+    async fn stream_response_timeout_rechecks_owner_after_polling_generation() {
+        for transition in ["handoff", "finished", "persistence"] {
+            let started = Instant::now() - Duration::from_secs(1);
+            let budget = Arc::new(StreamRequestDeadline {
+                started,
+                state: Mutex::new(StreamRequestDeadlineState {
+                    deadline: started,
+                    configured: true,
+                    pump_owned: false,
+                    terminal_persistence: false,
+                    finished: false,
+                    timing: StreamResponseTiming::default(),
+                }),
+                changed: tokio::sync::Notify::new(),
+                active_attempt: Mutex::new(None),
+                release_resources: Mutex::new(Vec::new()),
+                failure_sender: Mutex::new(None),
+            });
+            let generation_budget = Arc::clone(&budget);
+            let mut polls = 0;
+            let generation = std::future::poll_fn(move |_| {
+                polls += 1;
+                if polls == 1 {
+                    // select already captured monitor=true. Its first branch
+                    // then changes ownership/protection while remaining pending.
+                    // No notification is needed for correctness: another owner
+                    // may have consumed it before the expired timer is polled.
+                    let mut state = generation_budget.state.lock().unwrap();
+                    match transition {
+                        "handoff" => state.pump_owned = true,
+                        "finished" => state.finished = true,
+                        "persistence" => state.terminal_persistence = true,
+                        _ => unreachable!(),
+                    }
+                    std::task::Poll::Pending
+                } else {
+                    std::task::Poll::Ready(Ok(()))
+                }
+            });
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                run_stream_request_deadline(Arc::clone(&budget), false, generation),
+            )
+            .await
+            .expect("the expired timer must repoll the protected future")
+            .unwrap_or_else(|error| panic!("stale owner cancelled {transition}: {error:?}"));
+            assert_eq!(
+                budget.state.lock().unwrap().finished,
+                transition == "finished",
+                "the old owner must not claim cancellation for {transition}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_response_timeout_request_hands_off_to_pump_before_return() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let pump_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = pump_finished.clone();
+        let gate = Arc::new(aether_runtime::ConcurrencyGate::new(
+            "stream-timeout-test",
+            1,
+        ));
+        let gate_for_request = gate.clone();
+        let (pump, held_body_permit) = with_stream_request_timeout(async move {
+            STREAM_REQUEST_DEADLINE.with(|budget| {
+                budget.state.lock().unwrap().deadline = Instant::now() + Duration::from_millis(10);
+            });
+            let held_body_permit =
+                hold_stream_deadline_permit(gate_for_request.acquire().await.unwrap());
+            let pump = spawn_chat_stream_pump(tx, None, async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                observed.store(true, std::sync::atomic::Ordering::Release);
+            });
+            // The request future is still alive when the pump deadline expires.
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            Ok((pump, held_body_permit))
+        })
+        .await
+        .expect("the request owner must not cancel after handoff");
+        pump.await.unwrap();
+        assert!(rx
+            .recv()
+            .await
+            .unwrap()
+            .unwrap_err()
+            .to_string()
+            .contains(STREAM_TOTAL_TIMEOUT_MESSAGE));
+        assert!(!pump_finished.load(std::sync::atomic::Ordering::Acquire));
+        assert_eq!(
+            gate.snapshot().in_flight,
+            0,
+            "deadline releases capacity even while the response body still owns its guard"
+        );
+        drop(held_body_permit);
+        assert!(gate.acquire().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn stream_response_timeout_terminal_persistence_survives_generation_deadline() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let pump = with_stream_request_timeout(async move {
+            STREAM_REQUEST_DEADLINE.with(|budget| {
+                budget.state.lock().unwrap().deadline = Instant::now() + Duration::from_millis(10);
+            });
+            Ok(spawn_chat_stream_pump(tx, None, async move {
+                finish_stream_request_deadline();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }))
+        })
+        .await
+        .unwrap();
+        assert!(tokio::time::timeout(Duration::from_millis(50), rx.recv())
+            .await
+            .expect("Body EOF must not wait for terminal persistence")
+            .is_none());
+        assert!(
+            !pump.is_finished(),
+            "terminal persistence should still be running after Body EOF"
+        );
+        pump.await
+            .expect("terminal persistence survives the same deadline");
     }
 }

@@ -1119,6 +1119,7 @@ impl DirectSyncExecutionRuntime {
             let ttfb_ms = started_at.elapsed().as_millis() as u64;
             let response_headers_observed_at_unix_ms = crate::clock::current_unix_ms();
             let status_code = response.status_code();
+            super::transport_failure::mark_stream_candidate_response_received(status_code);
             let headers = response.headers();
             let response_observation = ExecutionResponseObservation {
                 request_started_at_unix_ms,
@@ -1187,6 +1188,7 @@ impl DirectSyncExecutionRuntime {
             started_at.elapsed().as_millis() as u64,
         );
         let status_code = response.status_code();
+        super::transport_failure::mark_stream_candidate_response_received(status_code);
         let headers = response.headers();
         let response_headers_observed_at_unix_ms = crate::clock::current_unix_ms();
 
@@ -1208,7 +1210,7 @@ impl DirectSyncExecutionRuntime {
                 response_headers_observed_at_unix_ms,
                 request_order_id,
             },
-            stream_first_byte_timeout: resolve_stream_first_byte_timeout(plan),
+            stream_first_byte_timeout: resolve_stream_body_first_byte_timeout(plan, status_code),
             upstream_target_permit: None,
         })
     }
@@ -1299,6 +1301,7 @@ pub(crate) async fn execute_stream_plan_via_local_tunnel(
         .await
         .map_err(ExecutionRuntimeTransportError::RelayError)?;
     let status_code = response.status();
+    super::transport_failure::mark_stream_candidate_response_received(status_code);
     let headers = collect_tunnel_response_headers(response.headers());
     let response_headers_observed_at_unix_ms = crate::clock::current_unix_ms();
 
@@ -1318,7 +1321,7 @@ pub(crate) async fn execute_stream_plan_via_local_tunnel(
             response_headers_observed_at_unix_ms,
             request_order_id,
         },
-        stream_first_byte_timeout: resolve_stream_first_byte_timeout(plan),
+        stream_first_byte_timeout: resolve_stream_body_first_byte_timeout(plan, status_code),
         upstream_target_permit: None,
     }))
 }
@@ -1457,6 +1460,7 @@ async fn execute_sync_plan_via_local_tunnel_inner(
     let ttfb_ms = started_at.elapsed().as_millis() as u64;
     let response_headers_observed_at_unix_ms = crate::clock::current_unix_ms();
     let status_code = response.status();
+    super::transport_failure::mark_stream_candidate_response_received(status_code);
     let headers = collect_tunnel_response_headers(response.headers());
     let response_observation = ExecutionResponseObservation {
         request_started_at_unix_ms,
@@ -1537,10 +1541,7 @@ async fn collect_local_tunnel_response_body(
 ) -> Result<(Vec<u8>, Option<u64>), ExecutionRuntimeTransportError> {
     let mut body_bytes = Vec::new();
     let mut first_byte_ms = None;
-    let first_byte_timeout = plan
-        .stream
-        .then(|| resolve_stream_first_byte_timeout(plan))
-        .flatten();
+    let first_byte_timeout = resolve_stream_body_first_byte_timeout(plan, response.status());
 
     loop {
         let item = if first_byte_ms.is_none() && plan.stream {
@@ -1762,7 +1763,7 @@ impl DirectHttpResponse {
                 .map(|bytes| (bytes, None));
         }
 
-        let first_byte_timeout = resolve_stream_first_byte_timeout(plan);
+        let first_byte_timeout = resolve_stream_body_first_byte_timeout(plan, self.status_code());
         match self {
             DirectHttpResponse::Reqwest(response) => {
                 collect_reqwest_stream_body(
@@ -2975,6 +2976,19 @@ pub(crate) fn resolve_stream_first_byte_timeout_for_request(
         .and_then(|timeouts| timeouts.first_byte_ms)
         .unwrap_or(DEFAULT_STREAM_FIRST_BYTE_TIMEOUT_MS);
     Some(Duration::from_millis(timeout_ms.max(1)))
+}
+
+// A final successful upstream head completes the HTTP chat first-response
+// phase. Framed and buffered body readers receive no first-body deadline.
+fn resolve_stream_body_first_byte_timeout(
+    plan: &ExecutionPlan,
+    status_code: u16,
+) -> Option<Duration> {
+    if (200..300).contains(&status_code) && super::chat_retry::http_chat_stream_deadline_active() {
+        None
+    } else {
+        resolve_stream_first_byte_timeout(plan)
+    }
 }
 
 pub(crate) fn resolve_stream_first_byte_timeout(plan: &ExecutionPlan) -> Option<Duration> {

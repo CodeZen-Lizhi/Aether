@@ -119,6 +119,10 @@ pub(crate) fn build_admin_create_provider_record_from_existing(
     let mut config_map = normalize_json_object(payload.config, "config")?
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
+    aether_admin::provider::timeouts::normalize_stream_total_timeout(
+        &mut config_map,
+        payload.stream_total_timeout,
+    )?;
     for (field_name, payload_value) in [
         (
             PROVIDER_MAX_TRANSFER_COUNT_CONFIG_KEY,

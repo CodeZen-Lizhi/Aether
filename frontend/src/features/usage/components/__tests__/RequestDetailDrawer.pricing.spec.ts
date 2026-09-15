@@ -6,11 +6,12 @@ import RequestDetailDrawer from '../RequestDetailDrawer.vue'
 
 const apiMocks = vi.hoisted(() => ({
   getRequestDetail: vi.fn(),
+  getRequestTrace: vi.fn().mockResolvedValue({ candidates: [], total_candidates: 0 }),
 }))
 
 vi.mock('@/api/requestTrace', () => ({
   requestTraceApi: {
-    getRequestTrace: vi.fn().mockResolvedValue({ candidates: [], total_candidates: 0 }),
+    getRequestTrace: apiMocks.getRequestTrace,
   },
 }))
 
@@ -33,6 +34,7 @@ afterEach(() => {
     root.remove()
   }
   apiMocks.getRequestDetail.mockReset()
+  apiMocks.getRequestTrace.mockReset().mockResolvedValue({ candidates: [], total_candidates: 0 })
 })
 
 function buildEmbeddingDetail(): RequestDetail {
@@ -117,6 +119,53 @@ function buildFastTierDetail(): RequestDetail {
     },
   }
 }
+
+describe('RequestDetailDrawer request lifecycle', () => {
+  it.each(['pending', 'failed'] as const)('keeps %s request state and total duration independent of the selected failed attempt', async (status) => {
+    const total = status === 'pending' ? 181_000 : 300_008
+    const message = status === 'pending' ? 'First response timeout' : 'Streaming request total timeout'
+    apiMocks.getRequestDetail.mockResolvedValue({
+      ...buildEmbeddingDetail(),
+      request_type: 'compact', api_format: 'openai:responses', is_stream: true,
+      status, status_code: 504, error_message: message,
+      response_time_ms: total, first_byte_time_ms: null,
+    })
+    apiMocks.getRequestTrace.mockResolvedValue({
+      request_id: 'req-embedding-1', total_candidates: 1,
+      final_status: 'failed', total_latency_ms: total,
+      candidates: [{
+        id: 'failed-attempt', request_id: 'req-embedding-1', candidate_index: 0, retry_index: 0,
+        provider_id: 'provider-1', provider_name: 'Test Provider', key_id: 'key-1', key_name: 'Test Key',
+        status: 'failed', status_code: 504, error_message: 'First response timeout',
+        latency_ms: 180_003, is_cached: false, created_at: '2026-09-15T10:49:56Z',
+        started_at: '2026-09-15T10:49:56Z', finished_at: '2026-09-15T10:52:56Z',
+      }],
+    })
+    const onRequestState = vi.fn()
+    const isOpen = ref(false)
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp({ render: () => h(RequestDetailDrawer, {
+      isOpen: isOpen.value, requestId: 'usage-embedding-1', onRequestState,
+    }) })
+    app.mount(root)
+    mountedApps.push({ app, root })
+    isOpen.value = true
+    await nextTick()
+    await vi.waitFor(() => {
+      expect(apiMocks.getRequestTrace).toHaveBeenCalled()
+      expect(document.body.querySelector('.panel-title .title-dot')?.classList.contains('status-failed')).toBe(true)
+    })
+    const states = onRequestState.mock.calls.map(([state]) => state)
+    expect(states.length).toBeGreaterThan(0)
+    expect(states.every(state => state.status === status)).toBe(true)
+    expect(states.every(state => state.responseTimeMs === total)).toBe(true)
+    expect(states.every(state => state.errorMessage === message)).toBe(true)
+    if (status === 'pending') {
+      expect(document.body.querySelector('button[title="停止自动刷新"]')).not.toBeNull()
+    }
+  })
+})
 
 describe('RequestDetailDrawer settlement pricing', () => {
   it.each([

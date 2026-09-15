@@ -375,7 +375,7 @@ describe('UsageRecordsTable', () => {
     expect(root.textContent).not.toContain('等待中')
   })
 
-  it('shows failed instead of waiting when an active row has an HTTP error code', () => {
+  it('keeps a retrying request waiting when an earlier attempt has an HTTP error code', () => {
     const root = mountUsageRecordsTable([buildRecord({
       status: 'pending',
       status_code: 524,
@@ -384,8 +384,10 @@ describe('UsageRecordsTable', () => {
       first_byte_time_ms: null,
     })])
 
-    expect(root.textContent).toContain('失败')
-    expect(root.textContent).not.toContain('等待中')
+    expect(root.querySelector('tbody')?.textContent).not.toContain('失败')
+    expect(root.querySelector('tbody')?.textContent).toContain('等待中')
+    expect(root.querySelector('.responsive-list-cards')?.textContent).not.toContain('失败')
+    expect(root.querySelector('.responsive-list-cards')?.textContent).toContain('等待')
   })
 
   it('renders output TPS in the usage table', () => {

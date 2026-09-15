@@ -257,6 +257,11 @@ pub(crate) fn build_admin_update_provider_record_from_existing(
         }
     }
 
+    aether_admin::provider::timeouts::normalize_stream_total_timeout(
+        &mut config_map,
+        payload.stream_total_timeout,
+    )?;
+
     for (field_name, payload_value) in [
         (
             PROVIDER_MAX_TRANSFER_COUNT_CONFIG_KEY,

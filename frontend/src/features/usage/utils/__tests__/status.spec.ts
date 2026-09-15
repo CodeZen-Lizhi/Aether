@@ -86,15 +86,22 @@ describe('usage status helpers', () => {
     }))).toBe('streaming')
   })
 
-  it('treats active lifecycle records with failure signals as failed for display', () => {
+  it.each(['pending', 'streaming'] as const)('keeps %s authoritative over failed attempt diagnostics', (status) => {
     const record = buildUsageRecord({
-      status: 'pending',
-      status_code: 503,
-      error_message: 'upstream failed',
+      status,
+      status_code: 504,
+      error_message: 'first attempt timed out',
+      first_byte_time_ms: 320,
     })
 
-    expect(resolveDisplayRequestStatus(record)).toBe('failed')
-    expect(isUsageRecordFailed(record)).toBe(true)
+    expect(resolveDisplayRequestStatus(record)).toBe(status)
+    expect(isUsageRecordFailed(record)).toBe(false)
+    expect(isUsageRecordSuccessful(record)).toBe(false)
+    expect(resolveTimelineFinalStatus({
+      requestStatus: status,
+      statusCode: 504,
+      traceFinalStatus: 'failed',
+    })).toBe(status)
   })
 
   it('treats failed image progress as failed before the usage record finalizes', () => {
@@ -126,12 +133,12 @@ describe('usage status helpers', () => {
     })).toBe('failed')
   })
 
-  it('downgrades terminal success to failed when status code is 3xx', () => {
+  it('keeps completed request status authoritative over stale status code', () => {
     expect(resolveTimelineFinalStatus({
       traceFinalStatus: 'success',
       requestStatus: 'completed',
       statusCode: 302,
-    })).toBe('failed')
+    })).toBe('success')
   })
 
   it('falls back to request lifecycle status when status code and trace are missing', () => {

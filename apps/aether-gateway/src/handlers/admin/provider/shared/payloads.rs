@@ -3,6 +3,15 @@ use crate::handlers::admin::shared::{
 };
 use serde::Deserialize;
 
+fn deserialize_stream_total_timeout<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<f64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<f64>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct AdminProviderKeyCreateRequest {
     #[serde(default)]
@@ -162,6 +171,8 @@ pub(crate) struct AdminProviderCreateRequest {
         deserialize_with = "deserialize_optional_f64_from_number_or_string"
     )]
     pub(crate) stream_first_byte_timeout: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_stream_total_timeout")]
+    pub(crate) stream_total_timeout: Option<Option<f64>>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_f64_from_number_or_string"
@@ -215,6 +226,8 @@ pub(crate) struct AdminProviderUpdateRequest {
         deserialize_with = "deserialize_optional_f64_from_number_or_string"
     )]
     pub(crate) stream_first_byte_timeout: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_stream_total_timeout")]
+    pub(crate) stream_total_timeout: Option<Option<f64>>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_f64_from_number_or_string"

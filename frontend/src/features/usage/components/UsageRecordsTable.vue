@@ -553,6 +553,7 @@
           <TableHead
             v-if="isColumnVisible('performance')"
             class="h-12 font-semibold text-right"
+            :title="firstByteTimingDescription"
           >
             <div class="flex flex-col items-end text-[11px] leading-3">
               <span class="whitespace-normal">端到端</span>
@@ -878,6 +879,7 @@
             <div
               v-if="getDisplayStatus(record) === 'pending' || getDisplayStatus(record) === 'streaming'"
               class="flex flex-col items-end text-xs gap-0.5"
+              :title="getRecordPerformanceTitle(record)"
             >
               <span class="tabular-nums whitespace-normal">
                 <span>{{ formatRecordDurationSeconds(record.first_byte_time_ms) }}</span>
@@ -1005,6 +1007,7 @@ import type { MultiSelectOption } from '@/components/common/MultiSelect.vue'
 import ElapsedTimeText from './ElapsedTimeText.vue'
 import UsageModelDisplay from './UsageModelDisplay.vue'
 
+
 export interface UserOption {
   id: string
   username: string
@@ -1082,6 +1085,8 @@ const emit = defineEmits<{
 
 // 单用户化阶段4：使用记录表仅剩 admin 视角，isAdmin 由 prop 内化为常量 true。
 const isAdmin = true
+
+const firstByteTimingDescription = 'HTTP 流式首字：从本次执行开始到网关观察到首批响应体数据或流事件，可能包含启动或心跳事件；成功响应头到达和有效正文生成是不同时间点。端到端指标包含此前调度与重试等待，缺失时回退到单轮指标。'
 
 const USAGE_RECORD_COLUMN_OPTIONS: UsageRecordColumnOption[] = [
   { id: 'time', label: '时间', width: 10 },
@@ -1373,6 +1378,7 @@ function getRecordDisplayOutputRate(record: UsageRecord): number | null {
 function getRecordPerformanceTitle(record: UsageRecord): string {
   const outputRate = getRecordDisplayOutputRate(record)
   return [
+    firstByteTimingDescription,
     `端到端首字: ${formatRecordDurationSeconds(record.end_to_end_first_byte_time_ms ?? record.first_byte_time_ms)}`,
     `端到端总耗时: ${formatRecordDurationSeconds(record.end_to_end_time_ms ?? record.response_time_ms)}`,
     `成功候选首字: ${formatRecordDurationSeconds(record.first_byte_time_ms)}`,

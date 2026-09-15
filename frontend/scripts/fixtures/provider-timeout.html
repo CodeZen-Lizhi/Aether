@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Provider timeout fixture</title><body><div id="fixture"></div><script type="module">
+import { createApp, h, ref } from 'vue'
+import ProviderFormDialog from '/src/features/providers/components/ProviderFormDialog.vue'
+import client from '/src/api/client'
+import { createI18n, setI18nLocale } from '/src/i18n'
+import '/src/style.css'
+setI18nLocale('zh-CN')
+// Isolated browser fixture; all writes stay in memory.
+let saved = { id:'fixture-provider', name:'Local provider', provider_type:'custom', is_active:true, enable_format_conversion:true, effective_max_attempts:2, stream_first_byte_timeout:180, request_timeout:300, stream_total_timeout:null, effective_stream_total_timeout:900, effective_stream_total_timeout_source:'default', stream_failover_budget_ms:180000, config:{future:{enabled:true}, failover_rules:{stream_failover_budget_ms:180000}}, total_endpoints:0, total_keys:0, total_models:0, api_formats:[], endpoint_health_details:[] }
+client.patch = async (url, payload) => {
+ if (url !== '/api/admin/providers/fixture-provider') throw new Error('Unexpected fixture request')
+ saved = {...saved, ...payload}
+ if (Object.hasOwn(payload, 'stream_total_timeout')) {
+  saved.effective_stream_total_timeout = payload.stream_total_timeout ?? 900
+  saved.effective_stream_total_timeout_source = payload.stream_total_timeout == null ? 'default' : 'config.stream_total_timeout_ms'
+ }
+ return {data:structuredClone(saved)}
+}
+const open=ref(true), entity=ref(saved)
+createApp({render:()=>h('main', [h('button',{onClick:()=>{open.value=true}},'重新打开配置'), h('pre',{'data-testid':'saved-values'}, JSON.stringify({first:entity.value.stream_first_byte_timeout,total:entity.value.stream_total_timeout,effective:entity.value.effective_stream_total_timeout,legacy:entity.value.stream_failover_budget_ms})),h(ProviderFormDialog,{modelValue:open.value,provider:entity.value,'onUpdate:modelValue':v=>{open.value=v},onProviderUpdated:v=>{entity.value=v}})])}).use(createI18n()).mount('#fixture')
+</script></body></html>

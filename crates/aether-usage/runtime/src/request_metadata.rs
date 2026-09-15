@@ -378,6 +378,8 @@ fn copy_allowed_metadata_fields(source: &Map<String, Value>, target: &mut Map<St
     copy_number(source, target, "client_response_status_code");
     copy_number(source, target, "end_to_end_time_ms");
     copy_number(source, target, "end_to_end_first_byte_time_ms");
+    copy_non_null_value(source, target, "stream_timing");
+    copy_non_empty_string(source, target, "timeout_trigger");
     copy_bool(source, target, "transport_error");
     copy_non_empty_string(source, target, "transport_error_type");
     copy_non_null_value(source, target, "billing_snapshot");
@@ -442,6 +444,8 @@ fn move_allowed_metadata_fields(mut source: Map<String, Value>, target: &mut Map
     remove_number(&mut source, target, "client_response_status_code");
     remove_number(&mut source, target, "end_to_end_time_ms");
     remove_number(&mut source, target, "end_to_end_first_byte_time_ms");
+    remove_non_null_value(&mut source, target, "stream_timing");
+    remove_non_empty_string(&mut source, target, "timeout_trigger");
     remove_bool(&mut source, target, "transport_error");
     remove_non_empty_string(&mut source, target, "transport_error_type");
     remove_non_null_value(&mut source, target, "billing_snapshot");
@@ -793,6 +797,30 @@ mod tests {
                 "max_usage_rate": 100.0
             }
         })
+    }
+
+    #[test]
+    fn stream_timeout_metadata_survives_both_terminal_merge_paths() {
+        let expected = json!({
+            "timeout_trigger": "stream_total_timeout",
+            "end_to_end_time_ms": 1500,
+            "end_to_end_first_byte_time_ms": 110,
+            "stream_timing": {
+                "response_headers_elapsed_ms": 100,
+                "first_body_elapsed_ms": 110,
+                "first_effective_output_elapsed_ms": null,
+                "first_byte_ms": 105
+            }
+        });
+        let mut payload = expected.clone();
+        payload["unrecognized_payload"] = json!("must not persist");
+        for actual in [
+            super::merge_usage_request_metadata(None, Some(payload.clone())),
+            super::merge_usage_request_metadata_owned(None, Some(payload.clone())),
+            super::sanitize_usage_request_metadata(Some(payload)),
+        ] {
+            assert_eq!(actual, Some(expected.clone()));
+        }
     }
 
     #[test]

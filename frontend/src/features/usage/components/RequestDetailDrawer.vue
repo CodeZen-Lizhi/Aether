@@ -204,7 +204,10 @@
                       输出速度
                     </div>
                   </div>
-                  <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                  <div
+                    class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5"
+                    title="HTTP 流式首字：从本次执行开始到网关观察到首批响应体数据或流事件，可能包含启动或心跳事件；成功响应头到达和有效正文生成是不同时间点。端到端指标包含此前调度与重试等待，缺失时回退到单轮指标。"
+                  >
                     <div class="text-base font-semibold tabular-nums">
                       {{ formatDurationMs(detail.end_to_end_first_byte_time_ms ?? detail.first_byte_time_ms) }}
                     </div>
@@ -1110,7 +1113,7 @@ function resolveRequestStateStatus(
   errorMessage?: string | null
 ): RequestStateStatus | undefined {
   const normalized = normalizeRequestStateStatus(status)
-  if ((normalized == null || normalized === 'pending' || normalized === 'streaming') &&
+  if (normalized == null &&
     hasRequestFailureSignal(statusCode, errorMessage)) {
     return 'failed'
   }
@@ -1319,6 +1322,25 @@ function handleTraceState(state: {
   timelineHasTrace.value = state.hasTrace
   const id = props.requestId
   if (!id) return
+
+  // Detail owns the logical request snapshot. Trace diagnostics describe one
+  // attempt and must not replace its status, error or end-to-end duration.
+  const requestStatus = normalizeRequestStateStatus(detail.value?.status)
+    ?? normalizeRequestStateStatus(props.summaryRecord?.status)
+  if (requestStatus) {
+    if (state.imageProgress) {
+      emit('requestState', {
+        id,
+        requestId: detail.value?.request_id || detail.value?.id || null,
+        imageProgress: state.imageProgress,
+        ...(state.imageProgress.phase === 'failed' &&
+          (requestStatus === 'pending' || requestStatus === 'streaming')
+          ? { status: 'failed' as const }
+          : {}),
+      })
+    }
+    return
+  }
 
   const status = resolveRequestStateStatus(
     mapTraceFinalStatusToRequestStatus(state.finalStatus),

@@ -187,7 +187,9 @@ export function isUsageRecordFailed(record: UsageFailureSignal & Pick<UsageRecor
   const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : ''
   if (status) {
     if (status === 'pending' || status === 'streaming') {
-      return !hasTerminalSuccessStatusCode(record) && hasAnyFailureSignal(record)
+      // HTTP/error fields can describe an earlier attempt during retry.
+      // Image progress has a separate explicit terminal signal.
+      return hasImageProgressFailureSignal(record)
     }
     if (status === 'cancelled') {
       return false
@@ -242,8 +244,7 @@ export function normalizeRequestStatus(status: RequestStatusLike): RequestStatus
 export function resolveDisplayRequestStatus(record: UsageDisplayStatusRecord): RequestStatus | undefined {
   const status = normalizeRequestStatus(record.status)
   if ((status === 'pending' || status === 'streaming') &&
-    !hasTerminalSuccessStatusCode(record) &&
-    hasAnyFailureSignal(record)) {
+    hasImageProgressFailureSignal(record)) {
     return 'failed'
   }
   if (status === 'streaming' && record.first_byte_time_ms == null) {
@@ -297,9 +298,6 @@ export function resolveTimelineFinalStatus(params: {
 
   const requestStatus = mapRequestStatusToTimelineStatus(params.requestStatus)
   if (requestStatus === 'success' || requestStatus === 'failed' || requestStatus === 'cancelled') {
-    if (requestStatus === 'success' && hasTerminalSuccessStatusCode === false) {
-      return 'failed'
-    }
     return requestStatus
   }
   if (requestStatus === 'pending' || requestStatus === 'streaming') {

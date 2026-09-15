@@ -8,7 +8,8 @@ use super::replay::{
     build_admin_usage_detail_payload, build_admin_usage_replay_response,
 };
 use super::summary_routes::{
-    admin_usage_terminal_candidate_state_override, apply_admin_usage_state_override,
+    admin_usage_has_request_lifecycle, admin_usage_terminal_candidate_state_override,
+    apply_admin_usage_state_override,
 };
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::handlers::admin::shared::{attach_admin_audit_response, query_param_bool};
@@ -236,7 +237,8 @@ pub(super) async fn maybe_build_local_admin_usage_detail_response(
             let provider_key_name = admin_usage_provider_key_name(&item, &provider_key_names);
 
             let mut detail_item = item.clone();
-            if matches!(detail_item.status.as_str(), "pending" | "streaming")
+            if (!admin_usage_has_request_lifecycle(&detail_item.status)
+                || matches!(detail_item.status.as_str(), "pending" | "streaming"))
                 && state.has_request_candidate_data_reader()
             {
                 let candidates = state
@@ -244,7 +246,7 @@ pub(super) async fn maybe_build_local_admin_usage_detail_response(
                     .read_request_candidates_by_request_id(&detail_item.request_id)
                     .await?;
                 if let Some(override_payload) =
-                    admin_usage_terminal_candidate_state_override(&candidates)
+                    admin_usage_terminal_candidate_state_override(&detail_item.status, &candidates)
                 {
                     apply_admin_usage_state_override(&mut detail_item, &override_payload);
                 }

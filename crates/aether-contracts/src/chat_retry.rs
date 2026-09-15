@@ -3,6 +3,20 @@ use serde_json::Value;
 
 pub const CHAT_POLICY_VERSION: u32 = 1;
 pub const DEFAULT_STREAM_FAILOVER_BUDGET_MS: u64 = 90_000;
+pub const DEFAULT_STREAM_TOTAL_TIMEOUT_MS: u64 = 900_000;
+pub const STREAM_TOTAL_TIMEOUT_CONFIG_KEY: &str = "stream_total_timeout_ms";
+
+/// The full HTTP chat stream limit is independent of the legacy first-output budget.
+pub fn configured_stream_total_timeout_ms(config: Option<&Value>) -> Option<u64> {
+    config?
+        .get(STREAM_TOTAL_TIMEOUT_CONFIG_KEY)?
+        .as_u64()
+        .filter(|value| (1_000..=crate::MAX_EXECUTION_REQUEST_TIMEOUT_MS).contains(value))
+}
+
+pub fn resolve_stream_total_timeout_ms(config: Option<&Value>) -> u64 {
+    configured_stream_total_timeout_ms(config).unwrap_or(DEFAULT_STREAM_TOTAL_TIMEOUT_MS)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct EffectiveChatAttempts {
@@ -112,6 +126,29 @@ pub fn resolve_stream_failover_budget_ms(config: Option<&Value>) -> u64 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn stream_total_timeout_is_independent_of_legacy_limits() {
+        for config in [
+            json!({}),
+            json!({"failover_rules": {"stream_failover_budget_ms": 300000}}),
+            json!({"stream_total_timeout_ms": null}),
+            json!({"stream_total_timeout_ms": 999}),
+            json!({"stream_total_timeout_ms": 1200001}),
+            json!({"stream_total_timeout_ms": "5000"}),
+        ] {
+            assert_eq!(resolve_stream_total_timeout_ms(Some(&config)), 900_000);
+            assert_eq!(configured_stream_total_timeout_ms(Some(&config)), None);
+        }
+        for timeout in [1_000, 1_001, 900_000, 1_200_000] {
+            let config = json!({"stream_total_timeout_ms": timeout});
+            assert_eq!(resolve_stream_total_timeout_ms(Some(&config)), timeout);
+            assert_eq!(
+                configured_stream_total_timeout_ms(Some(&config)),
+                Some(timeout)
+            );
+        }
+    }
 
     #[test]
     fn legacy_defaults_do_not_shadow_overrides_or_create_missing_values() {

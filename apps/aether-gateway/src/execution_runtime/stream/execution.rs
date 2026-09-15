@@ -76,6 +76,7 @@ use crate::clock::current_unix_ms as current_request_candidate_unix_ms;
 use crate::constants::{CONTROL_CANDIDATE_ID_HEADER, CONTROL_REQUEST_ID_HEADER};
 use crate::control::GatewayControlDecision;
 use crate::execution_runtime::build_direct_execution_frame_stream;
+use crate::execution_runtime::chat_retry::spawn_chat_stream_pump;
 #[cfg(test)]
 use crate::execution_runtime::remote_compat::post_stream_plan_to_remote_execution_runtime;
 use crate::execution_runtime::submission::{
@@ -981,7 +982,7 @@ fn should_use_direct_sse_passthrough(
     report_context: Option<&Value>,
     execution: &DirectUpstreamStreamExecution,
 ) -> bool {
-    if crate::execution_runtime::chat_retry::current_first_output_deadline().is_some() {
+    if crate::execution_runtime::chat_retry::wait_for_useful_chat_output() {
         // The shared precommit path owns the first useful-output gate.
         return false;
     }
@@ -2401,7 +2402,7 @@ async fn execute_stream_from_direct_passthrough(
     let provider_pool_in_flight_guard_for_report = in_flight_guard;
     record_stream_pre_first_byte_spawn();
     let usage_handoff = state_for_report.usage_runtime.track_persistence_handoff();
-    crate::execution_runtime::chat_retry::spawn_chat_stream_pump(tx.clone(), async move {
+    spawn_chat_stream_pump(tx.clone(), None, async move {
         let _usage_handoff = usage_handoff;
         let mut stage_trace_for_report = stage_trace_for_report;
         let _stream_total_guard =
@@ -4124,6 +4125,8 @@ fn sse_buffer_has_data_line(buffer: &[u8]) -> bool {
 enum SseTerminalPolicy {
     AnyKnown,
     AnthropicMessageStop,
+    OpenAIChatDone,
+    OpenAIResponses,
 }
 
 #[derive(Default)]
@@ -4147,6 +4150,16 @@ impl ClientVisibleStreamCompletionTracker {
 
     fn observe_chunk_terminal_end(&mut self, chunk: &[u8]) -> Option<usize> {
         self.observe_chunk_terminal_end_with_policy(chunk, SseTerminalPolicy::AnyKnown)
+    }
+
+    fn observe_provider_terminal(&mut self, chunk: &[u8], provider_api_format: &str) -> bool {
+        let policy = if is_openai_responses_family_format(provider_api_format) {
+            SseTerminalPolicy::OpenAIResponses
+        } else {
+            SseTerminalPolicy::OpenAIChatDone
+        };
+        self.observe_chunk_terminal_end_with_policy(chunk, policy);
+        self.completed
     }
 
     fn observe_anthropic_message_stop(&mut self, chunk: &[u8]) -> bool {
@@ -4265,6 +4278,33 @@ impl ClientVisibleStreamCompletionTracker {
 
     fn current_event_is_terminal(&self, policy: SseTerminalPolicy) -> bool {
         match policy {
+            SseTerminalPolicy::OpenAIChatDone => {
+                self.has_data_payload && self.data_payload == "[DONE]"
+            }
+            SseTerminalPolicy::OpenAIResponses => {
+                self.has_data_payload
+                    && serde_json::from_str::<Value>(&self.data_payload).is_ok_and(|event| {
+                        let Some(event) = event.as_object() else {
+                            return false;
+                        };
+                        // Match the provider parser's SSE normalization: the
+                        // event field supplies type only when the JSON omits it.
+                        let event_type = if event.get("type").is_some() {
+                            event.get("type").and_then(Value::as_str)
+                        } else {
+                            self.event_type.as_deref()
+                        };
+                        matches!(
+                            event_type,
+                            Some(
+                                "response.completed"
+                                    | "response.done"
+                                    | "response.failed"
+                                    | "response.incomplete"
+                            )
+                        )
+                    })
+            }
             SseTerminalPolicy::AnyKnown => {
                 self.event_type
                     .as_deref()
@@ -4556,6 +4596,11 @@ fn maybe_capture_first_stream_event_telemetry(
         event_observed_at,
         upstream_telemetry,
     ));
+    crate::execution_runtime::chat_retry::observe_stream_first_body(
+        usage_stream_telemetry
+            .as_ref()
+            .and_then(|telemetry| telemetry.ttfb_ms),
+    );
     true
 }
 
@@ -4895,6 +4940,14 @@ fn prefetched_chat_body_useful_output_kind(body: &[u8]) -> Option<String> {
     None
 }
 
+struct StreamIdleMonitor(tokio::task::JoinHandle<()>);
+
+impl Drop for StreamIdleMonitor {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 fn should_probe_success_failover_before_stream(headers: &BTreeMap<String, String>) -> bool {
     let content_type = headers
         .get("content-type")
@@ -5031,6 +5084,9 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             "execution runtime stream must start with headers frame".to_string(),
         ));
     };
+    crate::execution_runtime::transport_failure::mark_stream_candidate_response_received(
+        status_code,
+    );
     let response_observation = response_observation
         .or(fallback_response_observation)
         .unwrap_or(ExecutionResponseObservation {
@@ -5471,7 +5527,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     // `response.failed` event. Keep the stream uncommitted until the first
     // business event so that this failure can still advance the candidate loop.
     let wait_for_useful_chat_output =
-        crate::execution_runtime::chat_retry::current_first_output_deadline().is_some();
+        crate::execution_runtime::chat_retry::wait_for_useful_chat_output();
     let prefetch_openai_responses_stream =
         is_openai_responses_family_format(plan.provider_api_format.as_str());
     let stream_commit_policy = StreamCommitPolicy::for_response(
@@ -5508,6 +5564,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     let mut prefetched_usage_telemetry: Option<ExecutionTelemetry> = None;
     let mut reached_eof = false;
     let mut sync_json_stream_bridge_active = false;
+    let mut response_history_record = None;
     let precommit_started_at = Instant::now();
     if skip_direct_finalize_prefetch {
         debug!(
@@ -5873,13 +5930,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                                 report_context.as_ref(),
                             ) {
                                 Ok(Some(outcome)) => {
-                                    if let Some(record) = outcome.response_history_record {
-                                        crate::ai_serving::persist_response_history_record(
-                                            state.runtime_state(),
-                                            record,
-                                        )
-                                        .await;
-                                    }
+                                    response_history_record = outcome.response_history_record;
                                     headers.remove("content-encoding");
                                     headers.remove("content-length");
                                     headers.insert(
@@ -5990,8 +6041,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                                 upstream_event_type = event_type,
                                 elapsed_ms = stream_elapsed_ms_at(stream_started_at, frame_observed_at),
                                 first_data_ms = ?prefetched_usage_telemetry.as_ref().and_then(|telemetry| telemetry.ttfb_ms),
-                                first_output_timeout_ms = ?plan.timeouts.as_ref().and_then(|timeouts| timeouts.first_byte_ms),
-                                "gateway received effective output; first-output deadlines released"
+                                "gateway received first effective output"
                             );
                             crate::execution_runtime::chat_retry::mark_useful_stream_output();
                         }
@@ -6110,15 +6160,13 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     if stream_commit_gate.is_uncommitted() {
         stream_commit_gate.commit();
     }
-    let prefetched_response_history_persisted = if let Some(record) = local_stream_rewriter
+    if let Some(record) = local_stream_rewriter
         .as_mut()
         .and_then(|rewriter| rewriter.take_response_history_record())
     {
-        crate::ai_serving::persist_response_history_record(state.runtime_state(), record).await;
-        true
-    } else {
-        false
-    };
+        response_history_record = Some(record);
+    }
+    let prefetched_response_history_taken = response_history_record.is_some();
     drop(local_stream_rewriter);
 
     let initial_usage_telemetry = prefetched_usage_telemetry.clone().or_else(|| {
@@ -6183,6 +6231,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     let native_anthropic_stream_for_report = stream_commit_policy.is_native_anthropic();
     let plan_for_report = plan;
     let emit_passthrough_sse_terminal_error = (skip_direct_finalize_prefetch
+        || crate::execution_runtime::chat_retry::http_chat_stream_deadline_active()
         || stream_commit_policy.is_native_anthropic()
         || normalized_declared_stream_headers)
         && (response_headers_indicate_sse(&upstream_headers) || normalized_declared_stream_headers)
@@ -6198,7 +6247,16 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
     let request_diagnostics_for_report = current_request_diagnostics();
     let provider_pool_in_flight_guard_for_report = in_flight_guard;
     let usage_handoff = state_for_report.usage_runtime.track_persistence_handoff();
-    crate::execution_runtime::chat_retry::spawn_chat_stream_pump(tx.clone(), async move {
+    let total_timeout_event = encode_terminal_sse_error_event_for_plan(
+        &plan_for_report,
+        &build_stream_transport_failure_report(
+            "stream_total_timeout",
+            crate::execution_runtime::chat_retry::STREAM_TOTAL_TIMEOUT_MESSAGE.to_string(),
+            504,
+        ),
+    )
+    .ok();
+    spawn_chat_stream_pump(tx.clone(), total_timeout_event, async move {
         let _usage_handoff = usage_handoff;
         let mut stage_trace_for_report = stage_trace_for_report;
         let _stream_total_guard =
@@ -6238,6 +6296,19 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             max_stream_body_buffer_bytes,
             &mut client_body_truncated,
         );
+        let provider_event_format = [
+            "provider_stream_event_api_format",
+            "provider_stream_api_format",
+            "provider_api_format",
+        ]
+        .into_iter()
+        .find_map(|field| {
+            stream_report_context_format_field(stream_usage_report_context.as_ref(), field)
+        })
+        .unwrap_or(plan_for_report.provider_api_format.as_str());
+        let mut provider_done_tracker = ClientVisibleStreamCompletionTracker::default();
+        provider_done_tracker
+            .observe_provider_terminal(&provider_prefetched_body_for_report, provider_event_format);
         let mut client_stream_completion_tracker = ClientVisibleStreamCompletionTracker::default();
         let mut client_visible_stream_completed = if native_anthropic_stream_for_report {
             client_stream_completion_tracker
@@ -6282,7 +6353,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             u64::try_from(prefetched_body_for_report.len()).unwrap_or(u64::MAX),
         ));
         let idle_monitor_done = Arc::new(AtomicBool::new(false));
-        let idle_monitor_handle = {
+        let idle_monitor_handle = StreamIdleMonitor({
             let done = Arc::clone(&idle_monitor_done);
             let last_upstream = Arc::clone(&last_upstream_frame_elapsed_ms);
             let last_client = Arc::clone(&last_client_chunk_elapsed_ms);
@@ -6372,7 +6443,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                     }
                 }
             })
-        };
+        });
         if !provider_prefetched_body_for_report.is_empty() {
             let replay_chunk = provider_prefetched_body_for_report.as_slice();
             if let Some(error_body_json) = provider_error_inspection.observe(replay_chunk) {
@@ -6420,7 +6491,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                     }
                 }
             }
-            if prefetched_response_history_persisted {
+            if prefetched_response_history_taken {
                 if let Some(rewriter) = local_stream_rewriter.as_mut() {
                     let _ = rewriter.take_response_history_record();
                 }
@@ -6613,6 +6684,8 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                             max_stream_body_buffer_bytes,
                             &mut provider_body_truncated,
                         );
+                        provider_done_tracker
+                            .observe_provider_terminal(&chunk, provider_event_format);
                         let normalized_chunk = chunk;
                         let provider_private_error_body_json =
                             provider_error_inspection.observe(&normalized_chunk);
@@ -6658,11 +6731,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                                 .as_mut()
                                 .and_then(|rewriter| rewriter.take_response_history_record())
                             {
-                                crate::ai_serving::persist_response_history_record(
-                                    state_for_report.runtime_state(),
-                                    record,
-                                )
-                                .await;
+                                response_history_record = Some(record);
                             }
                         }
 
@@ -6796,6 +6865,37 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         }
         drop(lines);
         drop(buffered_frames);
+        // The shared OpenAI parser can synthesize Finish on clean EOF for
+        // conversion. A wire terminal is still required for this HTTP stream:
+        // a real Chat finish_reason/DONE or a Responses response terminal.
+        // Item completion cannot replace the response terminal. Check before
+        // flushing a rewriter that could synthesize a successful client finish.
+        stream_terminal_summary = merge_stream_terminal_summary(
+            stream_terminal_summary,
+            finalize_stream_usage_observer(
+                &mut stream_usage_observer,
+                stream_usage_report_context.as_ref(),
+                &mut stream_usage_observer_buffered,
+            ),
+        );
+        if crate::execution_runtime::chat_retry::http_chat_stream_deadline_active()
+            && !sync_json_stream_bridge_active_for_report
+            && (provider_event_format.eq_ignore_ascii_case("openai:chat")
+                || is_openai_responses_family_format(provider_event_format))
+            && !downstream_dropped
+            && terminal_failure.is_none()
+            && !provider_done_tracker.completed
+            && !(provider_event_format.eq_ignore_ascii_case("openai:chat")
+                && stream_terminal_summary
+                    .as_ref()
+                    .is_some_and(|summary| summary.finish_reason.is_some()))
+        {
+            terminal_failure = Some(build_stream_failure_report(
+                "stream_missing_terminal_event",
+                "Upstream stream ended before a terminal event".to_string(),
+                502,
+            ));
+        }
         crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
         drop(_provider_pool_in_flight_guard);
 
@@ -6816,11 +6916,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             if let Some(rewriter) = local_stream_rewriter.as_mut() {
                 let finish_result = rewriter.finish();
                 if let Some(record) = rewriter.take_response_history_record() {
-                    crate::ai_serving::persist_response_history_record(
-                        state_for_report.runtime_state(),
-                        record,
-                    )
-                    .await;
+                    response_history_record = Some(record);
                 }
                 match finish_result {
                     Ok(flushed_chunk) if !flushed_chunk.is_empty() => {
@@ -6885,11 +6981,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 .as_mut()
                 .and_then(|rewriter| rewriter.take_response_history_record())
             {
-                crate::ai_serving::persist_response_history_record(
-                    state_for_report.runtime_state(),
-                    record,
-                )
-                .await;
+                response_history_record = Some(record);
             }
         }
 
@@ -6958,18 +7050,22 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             }
         }
 
+        crate::execution_runtime::chat_retry::finish_stream_request_deadline();
         drop(tx);
         idle_monitor_done.store(true, Ordering::Relaxed);
-        idle_monitor_handle.abort();
+        idle_monitor_handle.0.abort();
 
-        stream_terminal_summary = merge_stream_terminal_summary(
-            stream_terminal_summary,
-            finalize_stream_usage_observer(
-                &mut stream_usage_observer,
-                stream_usage_report_context.as_ref(),
-                &mut stream_usage_observer_buffered,
-            ),
-        );
+        // History persistence follows generation and client delivery. A valid
+        // terminal cannot be cancelled by the generation deadline while KV is slow.
+        if terminal_failure.is_none() {
+            if let Some(record) = response_history_record {
+                crate::ai_serving::persist_response_history_record(
+                    state_for_report.runtime_state(),
+                    record,
+                )
+                .await;
+            }
+        }
 
         if downstream_dropped && client_visible_stream_completed && terminal_failure.is_none() {
             debug!(
@@ -8793,6 +8889,22 @@ mod tests {
     }
 
     #[test]
+    fn stream_response_timeout_responses_terminal_requires_object_payload() {
+        for payload in ["null", "[]", "\"response.completed\"", "{\"type\":null}"] {
+            let mut tracker = ClientVisibleStreamCompletionTracker::default();
+            let frame = format!("event: response.completed\ndata: {payload}\n\n");
+            assert!(
+                !tracker.observe_provider_terminal(frame.as_bytes(), "openai:responses"),
+                "non-event payload must not supply a terminal: {payload}"
+            );
+            assert!(tracker.observe_provider_terminal(
+                b"event: response.completed\ndata: {}\n\n",
+                "openai:responses"
+            ));
+        }
+    }
+
+    #[test]
     fn terminal_tracker_caps_multiline_record_and_resumes_after_boundary() {
         let line = b"data: short-payload\r\n";
         let repeated = super::SSE_TERMINAL_DETECTOR_MAX_RECORD_BYTES / line.len() + 2;
@@ -10064,37 +10176,69 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn useful_output_snapshots_release_deadline_until_real_upstream_terminal() {
-        for (event, item) in [
+    async fn stream_response_timeout_snapshot_gate_is_independent_of_deadline() {
+        for (event, item, terminal_state) in [
             (
                 json!({"type":"response.output_text.done", "text":"local answer"}),
                 json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+                "completed",
             ),
             (
                 json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":"local opaque"}}),
                 json!({"type":"compaction", "encrypted_content":"local opaque"}),
+                "completed",
             ),
             (
                 json!({"type":"response.output_text.delta", "delta":"local answer"}),
                 json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+                "completed",
             ),
             (
                 json!({"type":"response.output_text.done", "text":""}),
                 Value::Null,
+                "completed",
             ),
             (
                 json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":""}}),
                 Value::Null,
+                "completed",
             ),
             (
                 json!({"type":"response.created", "response":{"status":"in_progress"}}),
                 Value::Null,
+                "completed",
+            ),
+            (
+                json!({"type":"response.output_text.delta", "delta":"local answer"}),
+                json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+                "eof",
+            ),
+            (
+                json!({"type":"response.output_item.done", "item":{"type":"compaction", "encrypted_content":"local opaque"}}),
+                json!({"type":"compaction", "encrypted_content":"local opaque"}),
+                "eof",
+            ),
+            (
+                json!({"type":"response.output_text.delta", "delta":"local answer"}),
+                json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+                "incomplete",
+            ),
+            (
+                json!({"type":"response.output_text.delta", "delta":"local answer"}),
+                json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+                "event_only",
+            ),
+            (
+                json!({"type":"response.output_text.delta", "delta":"local answer"}),
+                json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"local answer"}]}),
+                "done",
             ),
         ] {
             let expects_output = !item.is_null();
             let listener = crate::test_support::bind_loopback_listener().await.unwrap();
             let addr = listener.local_addr().unwrap();
             let expected_event = event["type"].as_str().unwrap().to_owned();
+            let case_name = format!("{expected_event}/{terminal_state}/output={expects_output}");
             let server = tokio::spawn(async move {
                 axum::serve(listener, Router::new().route("/v1/execute/stream", any(move || {
                     let event = event.clone();
@@ -10105,8 +10249,23 @@ mod tests {
                             tokio::time::sleep(Duration::from_millis(10)).await;
                             yield Ok(Bytes::from(json!({"type":"data", "payload":{"kind":"data", "text":format!("data: {event}\n\n")}}).to_string()+"\n"));
                             tokio::time::sleep(Duration::from_millis(800)).await;
-                            let terminal = json!({"type":"response.completed", "response":{"id":"resp-local", "object":"response", "model":"gpt-5", "status":"completed", "output":[item], "usage":{"input_tokens":7, "output_tokens":11, "total_tokens":18}}});
-                            yield Ok(Bytes::from(json!({"type":"data", "payload":{"kind":"data", "text":format!("data: {terminal}\n\n")}}).to_string()+"\n"));
+                            let final_item = if item.is_null() {
+                                json!({"type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"delayed local answer"}]})
+                            } else { item };
+                            if terminal_state != "eof" {
+                                let response_status = if terminal_state == "incomplete" { "incomplete" } else { "completed" };
+                                let mut terminal = json!({"type":format!("response.{terminal_state}"), "response":{"id":"resp-local", "object":"response", "model":"gpt-5", "status":response_status, "output":[final_item], "usage":{"input_tokens":7, "output_tokens":11, "total_tokens":18}}});
+                                if terminal_state == "incomplete" {
+                                    terminal["response"]["incomplete_details"] = json!({"reason":"max_output_tokens"});
+                                }
+                                let terminal_sse = if terminal_state == "event_only" {
+                                    terminal.as_object_mut().unwrap().remove("type");
+                                    format!("event: response.completed\ndata: {terminal}\n\n")
+                                } else {
+                                    format!("data: {terminal}\n\n")
+                                };
+                                yield Ok(Bytes::from(json!({"type":"data", "payload":{"kind":"data", "text":terminal_sse}}).to_string()+"\n"));
+                            }
                             yield Ok(Bytes::from_static(b"{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}}\n"));
                         };
                         ([(header::CONTENT_TYPE, "application/x-ndjson")], Body::from_stream(frames))
@@ -10146,48 +10305,73 @@ mod tests {
                 }),
             };
             let started = tokio::time::Instant::now();
-            let outcome = crate::execution_runtime::chat_retry::with_first_output_deadline(started + Duration::from_millis(500), async {
+            let outcome = crate::execution_runtime::chat_retry::with_stream_request_timeout(async {
                 let response = execute_execution_runtime_stream(&state, plan, "trace-useful-snapshot", &test_decision(), "openai_responses_stream", None,
                     Some(json!({"provider_api_format":"openai:responses", "client_api_format":"openai:responses"}))).await?.unwrap();
-                assert!(started.elapsed() < Duration::from_millis(500), "must commit on snapshot before terminal");
+                if expects_output {
+                    assert!(started.elapsed() < Duration::from_millis(500), "must commit on snapshot before terminal");
+                } else {
+                    assert!(started.elapsed() >= Duration::from_millis(800), "startup frames alone must not commit the stream");
+                }
                 let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
                 Ok(String::from_utf8(bytes.to_vec()).unwrap())
             }).await;
-            if !expects_output {
-                assert!(
-                    matches!(
-                        outcome,
-                        Err(crate::GatewayError::Client {
-                            status: StatusCode::GATEWAY_TIMEOUT,
-                            ..
-                        })
-                    ),
-                    "empty/control event must not release deadline: {expected_event}"
-                );
-                server.abort();
-                continue;
-            }
-            let text = outcome.expect("effective output must release the deadline");
+            let text = outcome.expect("successful headers release the first-response deadline, including empty startup frames");
             assert!(started.elapsed() >= Duration::from_millis(800));
             assert!(text.contains(&expected_event));
-            assert!(text.contains("response.completed"));
-            tokio::time::timeout(Duration::from_secs(2), async {
+            if terminal_state == "eof" {
+                assert!(text.contains("stream_missing_terminal_event"), "{text}");
+                assert!(
+                    !text.contains("response.completed"),
+                    "EOF must not synthesize response success"
+                );
+            } else {
+                let expected_terminal = if terminal_state == "event_only" {
+                    "completed"
+                } else {
+                    terminal_state
+                };
+                assert!(
+                    text.contains(&format!("response.{expected_terminal}")),
+                    "{case_name}: {text}"
+                );
+            }
+            let mut last_record = None;
+            let settled = tokio::time::timeout(Duration::from_secs(2), async {
                 loop {
                     if let Some(record) = usage
                         .find_by_request_id("req-useful-snapshot")
                         .await
                         .unwrap()
                     {
-                        if record.status == "completed" {
-                            assert_eq!(record.total_tokens, 18);
+                        let expected_status = if matches!(terminal_state, "eof" | "incomplete") {
+                            "failed"
+                        } else {
+                            "completed"
+                        };
+                        if record.status == expected_status {
+                            if terminal_state != "eof" {
+                                assert_eq!(record.total_tokens, 18);
+                            }
+                            if terminal_state == "incomplete" {
+                                // Preserve the existing usage presentation for
+                                // incomplete; it remains a valid protocol end.
+                                assert_eq!(record.status_code, Some(200));
+                                assert!(record
+                                    .error_message
+                                    .as_deref()
+                                    .is_some_and(|message| message.contains("max_output_tokens")));
+                                assert!(!text.contains("stream_missing_terminal_event"));
+                            }
                             break;
                         }
+                        last_record = Some(record);
                     }
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             })
-            .await
-            .expect("only real terminal may complete persisted usage");
+            .await;
+            assert!(settled.is_ok(), "{case_name}: only real terminal may complete persisted usage; last={last_record:?}");
             server.abort();
         }
     }
@@ -11611,7 +11795,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_execution_runtime_stream_bridges_sync_json_body_from_remote_runtime_to_sse() {
+    async fn stream_response_timeout_bridges_sync_json_body_from_remote_runtime_to_sse() {
         let listener = crate::test_support::bind_loopback_listener()
             .await
             .expect("listener should bind");
@@ -11620,12 +11804,19 @@ mod tests {
             let app = Router::new().route(
                 "/v1/execute/stream",
                 any(|_request: Request| async move {
-                    let frames = concat!(
-                        "{\"type\":\"headers\",\"payload\":{\"kind\":\"headers\",\"status_code\":200,\"headers\":{\"content-type\":\"application/json\"}}\n",
-                        "{\"type\":\"data\",\"payload\":{\"kind\":\"data\",\"text\":\"{\\\"id\\\":\\\"resp-remote-runtime-sync-json-123\\\",\\\"object\\\":\\\"response\\\",\\\"model\\\":\\\"gpt-5.4\\\",\\\"status\\\":\\\"completed\\\",\\\"output\\\":[{\\\"type\\\":\\\"message\\\",\\\"id\\\":\\\"msg-remote-runtime-sync-json-123\\\",\\\"role\\\":\\\"assistant\\\",\\\"content\\\":[{\\\"type\\\":\\\"output_text\\\",\\\"text\\\":\\\"Hello from remote runtime sync json\\\",\\\"annotations\\\":[]}]}],\\\"usage\\\":{\\\"input_tokens\\\":1,\\\"output_tokens\\\":2,\\\"total_tokens\\\":3}\"}\n",
-                        "{\"type\":\"telemetry\",\"payload\":{\"kind\":\"telemetry\",\"telemetry\":{\"elapsed_ms\":41}}\n",
-                        "{\"type\":\"eof\",\"payload\":{\"kind\":\"eof\"}\n"
-                    );
+                    let body = json!({
+                        "id":"resp-remote-runtime-sync-json-123", "object":"response",
+                        "model":"gpt-5.4", "status":"completed",
+                        "output":[{"type":"message", "id":"msg-remote-runtime-sync-json-123", "role":"assistant",
+                            "content":[{"type":"output_text", "text":"Hello from remote runtime sync json", "annotations":[]}]}],
+                        "usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}
+                    });
+                    let frames = [
+                        json!({"type":"headers","payload":{"kind":"headers","status_code":200,"headers":{"content-type":"application/json"}}}),
+                        json!({"type":"data","payload":{"kind":"data","text":body.to_string()}}),
+                        json!({"type":"telemetry","payload":{"kind":"telemetry","telemetry":{"elapsed_ms":41}}}),
+                        json!({"type":"eof","payload":{"kind":"eof"}}),
+                    ].into_iter().map(|frame| format!("{frame}\n")).collect::<String>();
                     let mut response = axum::http::Response::new(Body::from(frames));
                     response.headers_mut().insert(
                         header::CONTENT_TYPE,
@@ -11683,18 +11874,20 @@ mod tests {
         )
         .with_execution_runtime_candidate(true);
 
-        let response = execute_execution_runtime_stream(
-            &state,
-            plan,
-            "trace-remote-runtime-sync-json-stream",
-            &decision,
-            "openai_responses_stream",
-            None,
-            Some(json!({
-                "provider_api_format": "openai:responses",
-                "client_api_format": "openai:responses",
-                "upstream_is_stream": true,
-            })),
+        let response = crate::execution_runtime::chat_retry::with_stream_request_timeout(
+            execute_execution_runtime_stream(
+                &state,
+                plan,
+                "trace-remote-runtime-sync-json-stream",
+                &decision,
+                "openai_responses_stream",
+                None,
+                Some(json!({
+                    "provider_api_format": "openai:responses",
+                    "client_api_format": "openai:responses",
+                    "upstream_is_stream": true,
+                })),
+            ),
         )
         .await
         .expect("execution should succeed")
@@ -11714,6 +11907,7 @@ mod tests {
         assert!(text.contains("event: response.output_text.delta"));
         assert!(text.contains("Hello from remote runtime sync json"));
         assert!(text.contains("event: response.completed"));
+        assert!(!text.contains("stream_missing_terminal_event"), "{text}");
 
         server.abort();
     }

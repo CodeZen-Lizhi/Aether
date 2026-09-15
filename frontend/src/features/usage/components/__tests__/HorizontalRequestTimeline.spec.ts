@@ -488,7 +488,7 @@ describe('HorizontalRequestTimeline', () => {
     expect(nodeDot?.classList.contains('status-success')).toBe(false)
   })
 
-  it('keeps emitted trace state active while the request lifecycle is still streaming', async () => {
+  it.each(['pending', 'streaming'] as const)('keeps the %s request active with only a failed attempt during a retry gap', async (status) => {
     const onTraceState = vi.fn()
     const trace = buildTrace([
       buildCandidate({
@@ -499,21 +499,25 @@ describe('HorizontalRequestTimeline', () => {
         key_name: 'Stale Key',
         candidate_index: 0,
         status: 'failed',
-        status_code: 503,
+        status_code: 504,
+        latency_ms: 180_003,
       }),
     ])
     trace.final_status = 'failed'
+    trace.total_latency_ms = 181_000
 
-    mountTimeline(trace, {
-      requestStatus: 'streaming',
-      overrideStatusCode: 200,
+    const root = mountTimeline(trace, {
+      requestStatus: status,
+      overrideStatusCode: 504,
       onTraceState,
     })
     await nextTick()
 
+    expect(root.querySelector('.panel-title .title-dot')?.classList.contains('status-failed')).toBe(true)
     const lastCall = onTraceState.mock.calls[onTraceState.mock.calls.length - 1]?.[0]
     expect(lastCall).toMatchObject({
-      finalStatus: 'streaming',
+      finalStatus: status,
+      latencyMs: 181_000,
     })
   })
 

@@ -182,6 +182,8 @@ pub(crate) fn build_admin_provider_summary_value(
         .or(provider.quota_expires_at_unix_secs)
         .and_then(unix_secs_to_rfc3339);
 
+    let configured_stream_total =
+        aether_contracts::chat_retry::configured_stream_total_timeout_ms(provider.config.as_ref());
     let effective_attempts = aether_contracts::chat_retry::resolve_chat_max_attempts(
         provider.config.as_ref(),
         None,
@@ -212,6 +214,9 @@ pub(crate) fn build_admin_provider_summary_value(
         "max_transfer_timeout_seconds": max_transfer_timeout_seconds,
         "proxy": provider.proxy.clone(),
         "stream_first_byte_timeout": provider.stream_first_byte_timeout_secs,
+        "stream_total_timeout": configured_stream_total.map(|value| value as f64 / 1000.0),
+        "effective_stream_total_timeout": aether_contracts::chat_retry::resolve_stream_total_timeout_ms(provider.config.as_ref()) as f64 / 1000.0,
+        "effective_stream_total_timeout_source": if configured_stream_total.is_some() { "config.stream_total_timeout_ms" } else { "default" },
         "request_timeout": provider.request_timeout_secs,
         "claude_code_advanced": config.and_then(|cfg| cfg.get("claude_code_advanced")).cloned(),
         "pool_advanced": config.and_then(|cfg| cfg.get("pool_advanced")).cloned(),

@@ -156,11 +156,13 @@ afterEach(() => {
 })
 
 describe('ProviderFormDialog transfer limits', () => {
-  it('reopens with authoritative attempts, source and budget returned after saving', async () => {
+  it('reopens with authoritative attempts and total timeout returned after saving', async () => {
     const saved = makeProvider({
       effective_max_attempts: 3,
       effective_max_attempts_source: 'failover_rules.max_attempts',
-      stream_failover_budget_ms: 45000,
+      stream_total_timeout: 45,
+      effective_stream_total_timeout: 45,
+      effective_stream_total_timeout_source: 'config.stream_total_timeout_ms',
       failover_rules: { max_attempts: 3, stream_failover_budget_ms: 45000 },
     })
     endpointMocks.updateProvider.mockResolvedValue(saved)
@@ -168,10 +170,11 @@ describe('ProviderFormDialog transfer limits', () => {
       effective_max_attempts: 2,
       effective_max_attempts_source: 'provider.max_retries',
       stream_failover_budget_ms: 90000,
+      effective_stream_total_timeout: 900,
     }))
     await settle()
     await setInput('#chat-max-attempts', '3')
-    await setInput('#stream-failover-budget', '45')
+    await setInput('#stream-total-timeout', '45')
     clickButton('保存')
     await settle()
     expect(dialog.open.value).toBe(false)
@@ -179,14 +182,15 @@ describe('ProviderFormDialog transfer limits', () => {
     dialog.open.value = true
     await settle()
     expect(document.body.querySelector<HTMLInputElement>('#chat-max-attempts')?.value).toBe('3')
-    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.value).toBe('45')
+    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.value).toBe('45')
     expect(document.body.textContent).toContain('故障转移规则')
     clickButton('保存')
     await settle()
     expect(endpointMocks.updateProvider.mock.calls[1]?.[1]).not.toHaveProperty('failover_rules')
+    expect(endpointMocks.updateProvider.mock.calls[1]?.[1]).not.toHaveProperty('stream_total_timeout')
   })
 
-  it('edits attempts and budget without replacing unrelated failover rules', async () => {
+  it('edits attempts and total timeout without replacing unrelated failover rules', async () => {
     mountDialog(makeProvider({
       effective_max_attempts: 2,
       effective_max_attempts_source: 'provider.max_retries',
@@ -197,52 +201,79 @@ describe('ProviderFormDialog transfer limits', () => {
     expect(document.body.querySelector<HTMLInputElement>('#chat-max-attempts')?.value).toBe('2')
     expect(document.body.textContent).toContain('当前生效次数')
     await setInput('#chat-max-attempts', '3')
-    await setInput('#stream-failover-budget', '45')
+    await setInput('#stream-total-timeout', '45')
     clickButton('保存')
     await settle()
     expect(endpointMocks.updateProvider).toHaveBeenCalledWith('provider-1', expect.objectContaining({
-      failover_rules: { max_attempts: 3, stream_failover_budget_ms: 45000 },
+      failover_rules: { max_attempts: 3 },
+      stream_total_timeout: 45,
     }))
   })
 
   it('preserves millisecond precision when reopening and saving seconds', async () => {
-    mountDialog(makeProvider({ stream_failover_budget_ms: 1001 }))
+    mountDialog(makeProvider({ stream_total_timeout: 1.001 }))
     await settle()
-    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.value).toBe('1.001')
-    await setInput('#stream-failover-budget', '1.001')
+    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.value).toBe('1.001')
+    await setInput('#stream-total-timeout', '1.001')
     clickButton('保存')
     await settle()
     expect(endpointMocks.updateProvider.mock.calls[0]?.[1]).not.toHaveProperty('failover_rules')
   })
 
-  it('clears an explicit budget to inherit the default', async () => {
-    mountDialog(makeProvider({ stream_failover_budget_ms: 300000 }))
+  it('clears an explicit total timeout to inherit the default', async () => {
+    endpointMocks.updateProvider.mockResolvedValue(makeProvider({
+      stream_total_timeout: null,
+      effective_stream_total_timeout: 900,
+      effective_stream_total_timeout_source: 'default',
+    }))
+    const dialog = mountDialog(makeProvider({ stream_total_timeout: 300 }))
     await settle()
-    await setInput('#stream-failover-budget', '')
+    await setInput('#stream-total-timeout', '')
     clickButton('保存')
     await settle()
     expect(endpointMocks.updateProvider.mock.calls[0]?.[1]).toHaveProperty(
-      'failover_rules.stream_failover_budget_ms', null,
+      'stream_total_timeout', null,
     )
+    dialog.open.value = true
+    await settle()
+    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.value).toBe('')
+    expect(document.body.querySelector('#stream-total-timeout-effective')?.textContent).toContain('900')
+    expect(document.body.querySelector('#stream-total-timeout-effective')?.textContent).toContain('默认配置')
+  })
+
+  it('keeps a legacy budget out of the new total timeout and preserves unsaved input after failure', async () => {
+    mountDialog(makeProvider({ stream_failover_budget_ms: 1800 }))
+    await settle()
+    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.value).toBe('')
+    expect(document.body.querySelector('#stream-failover-budget')).toBeNull()
+    endpointMocks.updateProvider.mockRejectedValueOnce(new Error('fixture save failure'))
+    await setInput('#stream-total-timeout', '5')
+    clickButton('保存')
+    await settle()
+    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.value).toBe('5')
+    expect(endpointMocks.updateProvider.mock.calls[0]?.[1]).not.toHaveProperty('failover_rules')
+    clickButton('保存')
+    await settle()
+    expect(endpointMocks.updateProvider.mock.calls[1]?.[1]).toHaveProperty('stream_total_timeout', 5)
   })
 
   it('validates seconds against the supported millisecond range and precision', async () => {
     const dialog = mountDialog(makeProvider())
     await settle()
-    for (const value of ['0', '-1', '1200.001', '0.0001', '1.0001']) {
-      await setInput('#stream-failover-budget', value)
+    for (const value of ['0', '-1', '0.999', '1200.001', '0.0001', '1.0001']) {
+      await setInput('#stream-total-timeout', value)
       clickButton('保存')
       await settle()
     }
     expect(endpointMocks.updateProvider).not.toHaveBeenCalled()
-    for (const [seconds, milliseconds] of [['0.001', 1], ['1.001', 1001], ['1200', 1200000]] as const) {
+    for (const seconds of ['1', '1.001', '1200']) {
       dialog.open.value = true
       await settle()
-      await setInput('#stream-failover-budget', seconds)
+      await setInput('#stream-total-timeout', seconds)
       clickButton('保存')
       await settle()
       expect(endpointMocks.updateProvider).toHaveBeenLastCalledWith('provider-1', expect.objectContaining({
-        failover_rules: { stream_failover_budget_ms: milliseconds },
+        stream_total_timeout: Number(seconds),
       }))
     }
   })
@@ -325,8 +356,8 @@ describe('ProviderFormDialog transfer limits', () => {
     expect(document.body.querySelector<HTMLInputElement>('#max-transfer-count')?.value).toBe('')
     expect(document.body.querySelector<HTMLInputElement>('#max-transfer-timeout-seconds')?.value).toBe('')
 
-    expect(document.body.querySelector<HTMLInputElement>('#stream-failover-budget')?.placeholder).toBe('90')
-    await setInput('#stream-failover-budget', '300')
+    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.placeholder).toBe('900')
+    await setInput('#stream-total-timeout', '300')
     await setInput('#name', 'New Provider')
     await setInput('#max-transfer-count', '8')
     await setInput('#max-transfer-timeout-seconds', '30')
@@ -335,7 +366,7 @@ describe('ProviderFormDialog transfer limits', () => {
 
     expect(endpointMocks.createProvider).toHaveBeenCalledWith(
       expect.objectContaining({
-        failover_rules: { stream_failover_budget_ms: 300000 },
+        stream_total_timeout: 300,
         max_transfer_count: 8,
         max_transfer_timeout_seconds: 30,
       }),

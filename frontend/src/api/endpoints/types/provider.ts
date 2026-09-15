@@ -178,6 +178,7 @@ export interface ResponsesWebSocketProviderConfig {
 }
 
 export interface ProviderConfig {
+  stream_total_timeout_ms?: number | null
   chat_pii_redaction?: ChatPiiRedactionProviderConfig
   responses_websocket?: ResponsesWebSocketProviderConfig
   failover_rules?: FailoverRulesConfig
@@ -573,6 +574,9 @@ export interface ProviderWithEndpointsSummary {
   effective_max_attempts?: number
   effective_max_attempts_source?: string
   stream_failover_budget_ms?: number
+  stream_total_timeout?: number | null
+  effective_stream_total_timeout?: number
+  effective_stream_total_timeout_source?: 'config.stream_total_timeout_ms' | 'default'
   id: string
   name: string
   provider_type?: ProviderType
@@ -591,7 +595,7 @@ export interface ProviderWithEndpointsSummary {
   max_transfer_timeout_seconds?: number  // 提供商内最大转移时长，0 表示不限制
   proxy?: ProxyConfig | null  // 代理配置
   // 超时配置（秒），为空时使用全局配置
-  stream_first_byte_timeout?: number  // 流式请求首字节超时
+  stream_first_byte_timeout?: number | null  // 流式请求首次响应超时
   request_timeout?: number  // 非流式请求整体超时
   is_active: boolean
   total_endpoints: number

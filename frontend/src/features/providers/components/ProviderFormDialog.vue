@@ -63,23 +63,30 @@
             </p>
           </div>
           <div class="space-y-1.5">
-            <Label for="stream-failover-budget">{{ legacyT('流式首输出总预算') }} <span class="text-xs text-muted-foreground">{{ legacyT('(秒)') }}</span></Label>
+            <Label for="stream-total-timeout">{{ legacyT('流式请求总超时') }} <span class="text-xs text-muted-foreground">{{ legacyT('(秒)') }}</span></Label>
             <Input
-              id="stream-failover-budget"
-              :model-value="form.stream_failover_budget_seconds ?? ''"
+              id="stream-total-timeout"
+              :model-value="form.stream_total_timeout ?? ''"
               type="number"
-              min="0.001"
+              min="1"
               max="1200"
               step="0.001"
-              placeholder="90"
-              aria-describedby="stream-failover-budget-help"
-              @update:model-value="(v) => form.stream_failover_budget_seconds = v === '' ? undefined : Number(v)"
+              placeholder="900"
+              aria-describedby="stream-total-timeout-help stream-total-timeout-effective"
+              @update:model-value="(v) => form.stream_total_timeout = v === '' ? undefined : Number(v)"
             />
             <p
-              id="stream-failover-budget-help"
+              id="stream-total-timeout-help"
               class="text-xs text-muted-foreground"
             >
-              {{ legacyT('从请求开始到首次有效输出的总等待上限，包含重试和切换；不限制完整回答时长。') }}
+              {{ legacyT('从请求开始到完整回答结束，包含重试、切换和输出；普通流式与压缩共用。清空恢复默认 900 秒。') }}
+            </p>
+            <p
+              id="stream-total-timeout-effective"
+              class="text-xs text-muted-foreground"
+            >
+              {{ legacyT('当前生效总超时') }}: {{ provider?.effective_stream_total_timeout ?? 900 }} {{ legacyT('秒') }}
+              <span>{{ legacyT(provider?.effective_stream_total_timeout_source === 'config.stream_total_timeout_ms' ? '提供商配置' : '默认配置') }}</span>
             </p>
           </div>
         </div>
@@ -87,19 +94,27 @@
         <!-- 超时配置 -->
         <div class="dialog-grid-2 gap-4">
           <div class="space-y-1.5">
-            <Label>
-              {{ legacyT('流式首字节超时') }}
+            <Label for="stream-first-response-timeout">
+              {{ legacyT('首次响应超时') }}
               <span class="text-xs text-muted-foreground">{{ legacyT('(秒)') }}</span>
             </Label>
             <Input
+              id="stream-first-response-timeout"
               :model-value="form.stream_first_byte_timeout ?? ''"
               type="number"
               min="1"
               max="300"
               step="1"
               placeholder="30"
+              aria-describedby="stream-first-response-timeout-help"
               @update:model-value="(v) => form.stream_first_byte_timeout = parseNumberInput(v)"
             />
+            <p
+              id="stream-first-response-timeout-help"
+              class="text-xs text-muted-foreground"
+            >
+              {{ legacyT('每次尝试等待上游成功响应头的上限；收到响应头后，继续等待结果由流式请求总超时限制。') }}
+            </p>
           </div>
           <div class="space-y-1.5">
             <Label>
@@ -274,7 +289,7 @@ const form = ref({
   concurrent_limit: undefined as number | undefined,
   // 请求配置
   max_attempts: undefined as number | undefined,
-  stream_failover_budget_seconds: undefined as number | undefined,
+  stream_total_timeout: undefined as number | undefined,
   max_transfer_count: 0,
   max_transfer_timeout_seconds: 0,
   // 超时配置（秒）
@@ -295,7 +310,7 @@ function resetForm() {
     concurrent_limit: undefined,
     // 请求配置
     max_attempts: undefined,
-    stream_failover_budget_seconds: undefined,
+    stream_total_timeout: undefined,
     max_transfer_count: 0,
     max_transfer_timeout_seconds: 0,
     // 超时配置
@@ -318,9 +333,7 @@ function loadProviderData() {
     concurrent_limit: undefined,
     // 请求配置
     max_attempts: props.provider.effective_max_attempts,
-    stream_failover_budget_seconds: props.provider.stream_failover_budget_ms === undefined
-      ? undefined
-      : props.provider.stream_failover_budget_ms / 1000,
+    stream_total_timeout: props.provider.stream_total_timeout ?? undefined,
     max_transfer_count: props.provider.max_transfer_count ?? 0,
     max_transfer_timeout_seconds: props.provider.max_transfer_timeout_seconds ?? 0,
     // 超时配置
@@ -360,22 +373,18 @@ const handleSubmit = async () => {
         throw new Error(legacyT(message))
       }
     }
-    const budgetSeconds = form.value.stream_failover_budget_seconds
-    if (budgetSeconds !== undefined && (
-      !Number.isFinite(budgetSeconds)
-      || budgetSeconds < 0.001
-      || budgetSeconds > 1200
-      || Number(budgetSeconds.toFixed(3)) !== budgetSeconds
+    const totalSeconds = form.value.stream_total_timeout
+    if (totalSeconds !== undefined && (
+      !Number.isFinite(totalSeconds)
+      || totalSeconds < 1
+      || totalSeconds > 1200
+      || Number(totalSeconds.toFixed(3)) !== totalSeconds
     )) {
-      throw new Error(legacyT('首输出总预算必须在 0.001 到 1200 秒之间，最多保留三位小数'))
+      throw new Error(legacyT('流式请求总超时必须在 1 到 1200 秒之间，最多保留三位小数'))
     }
-    const budgetMs = budgetSeconds === undefined ? undefined : Math.round(budgetSeconds * 1000)
     const retryPatch: Record<string, number | null> = {}
     if (form.value.max_attempts !== props.provider?.effective_max_attempts) {
       retryPatch.max_attempts = form.value.max_attempts ?? null
-    }
-    if (budgetMs !== props.provider?.stream_failover_budget_ms) {
-      retryPatch.stream_failover_budget_ms = budgetMs ?? null
     }
     const basePayload = {
       name: form.value.name,
@@ -389,6 +398,9 @@ const handleSubmit = async () => {
       max_transfer_timeout_seconds: form.value.max_transfer_timeout_seconds,
       // 超时配置（null 表示清除，使用全局配置）
       stream_first_byte_timeout: form.value.stream_first_byte_timeout ?? null,
+      ...(totalSeconds !== (props.provider?.stream_total_timeout ?? undefined)
+        ? { stream_total_timeout: totalSeconds ?? null }
+        : {}),
       request_timeout: form.value.request_timeout ?? null,
     }
 

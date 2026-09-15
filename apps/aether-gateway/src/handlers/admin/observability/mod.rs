@@ -3,6 +3,13 @@ mod routes;
 mod stats;
 mod usage;
 
+fn has_explicit_image_failure(extra_data: Option<&serde_json::Value>) -> bool {
+    extra_data
+        .and_then(|value| value.pointer("/image_progress/phase"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|phase| phase.trim().eq_ignore_ascii_case("failed"))
+}
+
 pub(super) use self::monitoring::maybe_build_local_admin_monitoring_response;
 pub(super) use self::routes::maybe_build_local_admin_observability_response;
 pub(crate) use self::stats::{

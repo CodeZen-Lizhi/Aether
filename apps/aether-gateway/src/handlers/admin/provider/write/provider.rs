@@ -1,4 +1,6 @@
 mod create;
+#[cfg(test)]
+mod stream_total_tests;
 mod update;
 
 fn normalize_provider_request_timeout(value: Option<f64>) -> Result<Option<f64>, String> {

@@ -117,6 +117,9 @@ export async function updateProvider(
     max_retries: number
     max_transfer_count: number
     max_transfer_timeout_seconds: number
+    stream_first_byte_timeout: number | null
+    stream_total_timeout: number | null
+    request_timeout: number | null
     proxy: ProxyConfig | null
     cache_ttl_minutes: number  // 0表示不支持缓存，>0表示支持缓存并设置TTL(分钟)
     max_probe_interval_minutes: number
@@ -151,6 +154,7 @@ export async function createProvider(
     max_transfer_count?: number
     max_transfer_timeout_seconds?: number
     stream_first_byte_timeout?: number | null
+    stream_total_timeout?: number | null
     request_timeout?: number | null
     proxy?: ProxyConfig | null
     failover_rules?: FailoverRulesConfig | null

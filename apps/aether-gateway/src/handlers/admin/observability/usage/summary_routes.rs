@@ -1,3 +1,4 @@
+use super::super::has_explicit_image_failure;
 use super::super::stats::resolve_admin_usage_time_range;
 use super::analytics::admin_usage_api_key_names;
 use super::analytics::admin_usage_provider_key_names;
@@ -220,9 +221,8 @@ async fn resolve_admin_usage_active_candidate_state(
         .iter()
         .map(|item| item.request_id.clone())
         .collect::<BTreeSet<_>>();
-    let active_usage_by_request_id = items
+    let usage_by_request_id = items
         .iter()
-        .filter(|item| matches!(item.status.as_str(), "pending" | "streaming"))
         .map(|item| (item.request_id.clone(), item))
         .collect::<BTreeMap<_, _>>();
     let mut candidate_state = AdminUsageActiveCandidateState::default();
@@ -236,9 +236,9 @@ async fn resolve_admin_usage_active_candidate_state(
                 .image_progress_by_request_id
                 .insert(request_id.clone(), progress);
         }
-        if active_usage_by_request_id.contains_key(&request_id) {
+        if let Some(item) = usage_by_request_id.get(&request_id) {
             if let Some(override_payload) =
-                admin_usage_terminal_candidate_state_override(&candidates)
+                admin_usage_terminal_candidate_state_override(&item.status, &candidates)
             {
                 candidate_state
                     .state_overrides_by_request_id
@@ -310,9 +310,17 @@ fn admin_usage_unix_millis_to_rfc3339(unix_ms: u64) -> Option<String> {
 }
 
 pub(super) fn admin_usage_terminal_candidate_state_override(
+    usage_status: &str,
     candidates: &[StoredRequestCandidate],
 ) -> Option<serde_json::Value> {
+    // A candidate is one attempt, including the only visible row in a retry gap.
+    // Historical rows without a recognized lifecycle retain their fallback,
+    // as does the image pipeline's explicit failure signal. Missing retry
+    // metadata alone is never proof the logical request ended.
     let candidate = admin_usage_current_candidate(candidates)?;
+    if !admin_usage_allows_candidate_override(usage_status, candidate.extra_data.as_ref()) {
+        return None;
+    }
     if admin_usage_candidate_failure_is_retryable_transition(candidate) {
         return None;
     }
@@ -331,6 +339,9 @@ pub(super) fn admin_usage_terminal_candidate_state_override(
         )
     });
     let mut payload = json!({ "status": status });
+    if has_explicit_image_failure(candidate.extra_data.as_ref()) {
+        payload["image_progress"] = candidate.extra_data.as_ref()?["image_progress"].clone();
+    }
     if let Some(latency_ms) = latency_ms {
         payload["response_time_ms"] = json!(latency_ms);
         if let Some(response_time_updated_at) = candidate
@@ -352,6 +363,21 @@ pub(super) fn admin_usage_terminal_candidate_state_override(
         payload["error_message"] = json!(error_message);
     }
     Some(payload)
+}
+
+pub(super) fn admin_usage_has_request_lifecycle(status: &str) -> bool {
+    matches!(
+        status.trim().to_ascii_lowercase().as_str(),
+        "pending" | "streaming" | "completed" | "success" | "failed" | "cancelled" | "canceled"
+    )
+}
+
+fn admin_usage_allows_candidate_override(
+    status: &str,
+    extra_data: Option<&serde_json::Value>,
+) -> bool {
+    !admin_usage_has_request_lifecycle(status)
+        || (matches!(status, "pending" | "streaming") && has_explicit_image_failure(extra_data))
 }
 
 fn admin_usage_candidate_failure_is_retryable_transition(
@@ -382,7 +408,7 @@ pub(super) fn apply_admin_usage_state_override(
     item: &mut StoredRequestUsageAudit,
     override_payload: &serde_json::Value,
 ) {
-    if !matches!(item.status.as_str(), "pending" | "streaming") {
+    if !admin_usage_allows_candidate_override(&item.status, Some(override_payload)) {
         return;
     }
 
@@ -1078,7 +1104,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_usage_active_override_uses_current_terminal_candidate_latency() {
+    fn admin_usage_legacy_override_uses_current_terminal_candidate_latency() {
         let candidate = sample_candidate(
             0,
             RequestCandidateStatus::Success,
@@ -1087,8 +1113,8 @@ mod tests {
             None,
         );
 
-        let payload =
-            admin_usage_terminal_candidate_state_override(&[candidate]).expect("override");
+        let payload = admin_usage_terminal_candidate_state_override("unknown", &[candidate])
+            .expect("override");
 
         assert_eq!(payload["status"], "completed");
         assert_eq!(payload["response_time_ms"], 9_210);
@@ -1096,6 +1122,36 @@ mod tests {
             payload["response_time_updated_at"],
             "1970-01-01T00:00:10.210+00:00"
         );
+    }
+
+    #[test]
+    fn admin_usage_lifecycle_ignores_terminal_candidate_during_retry_gap() {
+        let failed = sample_candidate(
+            0,
+            RequestCandidateStatus::Failed,
+            Some(504),
+            Some(180_003),
+            Some("first response timeout"),
+        );
+        assert!(failed.extra_data.is_none());
+        for status in [
+            "pending",
+            "streaming",
+            "completed",
+            "success",
+            "failed",
+            "cancelled",
+            "canceled",
+        ] {
+            assert!(
+                admin_usage_terminal_candidate_state_override(
+                    status,
+                    std::slice::from_ref(&failed),
+                )
+                .is_none(),
+                "request lifecycle {status} must remain authoritative"
+            );
+        }
     }
 
     #[test]
@@ -1112,7 +1168,8 @@ mod tests {
         streaming.started_at_unix_ms = Some(10_500);
         streaming.finished_at_unix_ms = None;
 
-        let payload = admin_usage_terminal_candidate_state_override(&[failed, streaming]);
+        let payload =
+            admin_usage_terminal_candidate_state_override("unknown", &[failed, streaming]);
 
         assert!(payload.is_none());
     }
@@ -1135,7 +1192,7 @@ mod tests {
             }
         }));
 
-        let payload = admin_usage_terminal_candidate_state_override(&[failed]);
+        let payload = admin_usage_terminal_candidate_state_override("unknown", &[failed]);
 
         assert!(payload.is_none());
     }

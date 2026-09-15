@@ -11,8 +11,9 @@ terminal effects or the provider retry settings.
 
 - `aether_contracts::chat_retry::resolve_chat_max_attempts(...)` is the shared
   resolver for actual attempts and management effective-value readback.
-- `ExecutionTimeouts.stream_failover_budget_ms` carries provider configuration
-  to `execution_runtime::chat_retry`; the deadline is logical-request scoped.
+- `ExecutionTimeouts.stream_total_ms` carries the independent HTTP chat-stream
+  total deadline to `execution_runtime::chat_retry`. The legacy
+  `stream_failover_budget_ms` field remains compatible for other paths.
 - `capture_chat_health_attempt(state, plan)` captures a new identity before
   each actual model attempt. Reports carry `chat_health_attempt` and the planned
   credential fingerprint. Never create a replacement identity at settlement.
@@ -38,29 +39,62 @@ saved 2 must not be discarded as an inherited default. Preserve explicit
 overrides, unknown failover rules and request/response transformation rules.
 Management must show the effective value and its source, not just a raw field.
 
-The default streaming first-effective-output budget is 90000 ms, configurable
-on provider `failover_rules.stream_failover_budget_ms`. Selection, admission,
-connection, refresh, backoff, retries and fallback share the original deadline.
-Headers, keepalives and empty/protocol startup frames are not effective output.
-Effective output ends this budget; it does not cap the complete answer. Existing
-nonstream/compact/WS turn and connection limits remain separate.
+For HTTP chat streams (including Responses V2 `compaction_trigger`), successful
+final upstream response headers end the candidate first-response wait. Do not
+wait for a body byte or useful model output; informational 1xx and the tunnel
+relay's outer HTTP 200 are not successful upstream headers. Preserve the saved
+`stream_first_byte_timeout` field and default while labeling it first-response
+timeout in management (default 30 seconds). Nonstream requests, including
+nonstream compact, plus WS, image and video retain their existing limits.
 
-Responses streams include ordinary chat and V2 `compaction_trigger` requests.
-Nonempty `response.output_text.done`, reasoning/refusal/tool argument snapshots,
-supported content parts, and `response.output_item.done` with message, reasoning
-or compaction content release both first-output waits, just like deltas.
-Compaction requires nonempty `encrypted_content`; empty/unknown items do not
-qualify. Item completion never substitutes for the response's protocol terminal.
-Log the first effective event type and timings, never its text/encrypted payload.
+An independent logical-request deadline caps the full HTTP stream, including
+selection, admission, retries, generation and body forwarding. Its default is
+900000 ms. Store the override at provider `config.stream_total_timeout_ms`;
+management `stream_total_timeout` uses seconds (1–1200, at most 3 decimals).
+Omission preserves the current override; explicit null clears it. Readback
+includes raw/effective values and `effective_stream_total_timeout_source`
+(`config.stream_total_timeout_ms` or `default`). Preserve unknown config keys and
+legacy failover rules, and never reinterpret an old failover budget as this
+new total limit. The first selected provider fixes the total deadline relative
+to the original accepted time; later headers, output and retries do not reset it.
+Do not add a post-headers idle or semantic-output timeout.
 
-First-output budget cancellation must hand off a failed usage terminal with 504,
-the original request identity/type, and actual logical elapsed time. Retain only
-identity/routing/body references for this handoff, without copying conversations
-or credentials. Terminal persistence ends first-output waiting so it cannot be
-cancelled by that same deadline. Candidate watchdog exhaustion also returns 504;
-retain its outcome in the request loop, since candidate audit writes are queued
-and an immediate SQLite read can still show the previous status. Do not replace
-that known timeout with `no_local_stream_plans` or wait for stale-request cleanup.
+Semantic pre-read/commit decisions remain independent of timeout. Responses
+text, reasoning, refusal, tool and compaction snapshots still participate in
+useful-output detection; compaction requires nonempty `encrypted_content`.
+Headers do not prove success, item completion is not response completion, and
+empty/unknown items do not qualify. Record headers, first body, first effective
+output and logical end as distinct milestones; timeout preserves already
+observed milestones. Keep `stream_timing` and `timeout_trigger` in both usage
+metadata merge allowlists; use existing `end_to_end_time_ms` and
+`end_to_end_first_byte_time_ms` for request-wide display. UI explanations must
+distinguish these clocks. Log event
+types and timings, never output text or encrypted payloads. Early errors may retry only before the existing
+protocol/tool/model commitment boundary; errors or premature EOF afterward
+remain failed and must not replay the generation.
+
+Transfer the same deadline owner explicitly from the request task to the body
+pump before returning Response. Recheck ownership under lock before claiming
+cancellation. Total expiry cancels upstream/body work, releases execution permits
+and probes, and records the still-active candidate failed/504 plus usage
+failed/504 with `stream_total_timeout`, original identity/type and logical
+elapsed time. During retry gaps, settle the request without overwriting a
+previously finished attempt.
+Terminal persistence must survive that same deadline. Do not retain copied
+conversation bodies or credentials just to persist a timeout. Candidate first
+response watchdog exhaustion likewise stays 504; queued candidate writes must
+not replace a known timeout with `no_local_stream_plans`.
+
+Usage lifecycle is authoritative in records, detail and trace. An individual
+failed candidate during retry cannot change pending/streaming into a request
+failure. Keep per-attempt errors and durations on their nodes; the trace and
+request use whole-request elapsed time: prefer request metadata
+`end_to_end_time_ms`; `response_time_ms` can describe only the final attempt.
+Preserve explicit image failure and
+legacy records that lack a recognized lifecycle, plus frontend protection
+against stale updates reverting a true terminal. Drawer trace events must not
+write an individual attempt's error, status code or latency back as the whole
+request result.
 
 For one logical request and K+format, additional retry waiting totals at most
 2 seconds. Preserve the full valid Retry-After deadline across later requests,
@@ -93,7 +127,7 @@ non-strict failure counter on first projection.
 | Upstream busy/429, temporary 503/504, upstream first-output timeout | -1 |
 | 500/502, attributable connection/TLS/protocol failure, ambiguous relay auth | -2 |
 | Proven current credential invalid or unfunded from a trusted provider error | zero, recoverable circuit |
-| Caller cancellation, local configuration/admission/capacity rejection | neutral |
+| Caller cancellation, local configuration/admission/capacity rejection, local stream total deadline | neutral |
 | Complete valid model terminal | +1 up to 10; reset failure streak |
 
 Consecutive failures 1–2 add 0, 3–4 add 1, 5 onward add 2 to the base penalty.
@@ -161,13 +195,14 @@ read authoritative health/bindings afterward. Keep these suites meaningful:
 Module tests and compile success do not replace real route evidence. Keep live
 Codex/relay verification separate from these isolated fixture results.
 
-For first-output changes, cover early text/compaction snapshots followed by a
-delayed valid completion beyond both deadlines, empty startup frames that still
-time out, total-budget cancellation, and output followed by premature EOF.
-Read back usage/candidate state using SQLite as well as memory: queued candidate
-writes must not change the immediate timeout response; later reads must retain
-failed/504 and the original compact/chat type. EOF after output stays failed and
-must not replay the generation.
+For first-response/total changes, cover fast successful headers followed by a
+late first body, heartbeat then silence, no headers until first timeout, headers
+without a body until total expiry, continuous output beyond total expiry and
+output followed by premature EOF. Include retry-shared deadlines, request/pump
+ownership transfer, permits retained by an unread body, and terminal persistence
+crossing the generation deadline. Read back usage/candidate state through SQLite
+and management APIs. Verify retry gaps, terminal errors and whole elapsed time
+agree in records, detail and trace; reopen/refresh must preserve those results.
 
 ## 7. Incorrect and correct patterns
 
