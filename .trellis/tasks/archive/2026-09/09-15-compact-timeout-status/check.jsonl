@@ -1,0 +1,14 @@
+{"file": ".trellis/spec/aether-gateway/backend/chat-failover.md", "reason": "错误/终态/重试契约；旧首有效内容计时段落由本次PRD有意修订"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "超时取消、资源释放与日志脱敏"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "状态与异步刷新验证"}
+{"file": ".trellis/tasks/09-15-compact-timeout-status/diagnosis.md", "reason": "真实失败与成功对照、状态冲突复现和证据限制"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "风险相称的跨层行为验证"}
+{"file": ".trellis/tasks/09-15-compact-timeout-status/research/upstream-timeout-comparison.md", "reason": "用户指定开源项目的当前超时设置、代码边界和独立静默/语义期限对照"}
+{"file": ".trellis/tasks/09-15-compact-timeout-status/research/response-failure-and-timeout-recommendation.md", "reason": "HTTP200后错误与重试边界；用户已决定不加静默高级配置"}
+{"file": ".trellis/tasks/09-15-compact-timeout-status/prd.md", "reason": "用户已确定HTTP成功响应头结束首次等待；不增加静默/首有效内容期限"}
+{"file": ".trellis/tasks/09-15-compact-timeout-status/design.md", "reason": "独立完整deadline、配置兼容与body pump/隧道/提交边界"}
+{"file": ".trellis/spec/backend/architecture.md", "reason": "公共契约和执行模块边界"}
+{"file": ".trellis/spec/aether-admin/backend/index.md", "reason": "供应商配置校验与读写入口"}
+{"file": ".trellis/spec/aether-tunnel/backend/index.md", "reason": "承载HTTP聊天的隧道接收端时间语义"}
+{"file": ".trellis/spec/aether-gateway-tunnel/backend/index.md", "reason": "网关端真实上游headers与流取消"}
+{"file": ".trellis/spec/aether-usage-runtime/backend/index.md", "reason": "Timeout timing milestones must survive usage metadata sanitization and persistence."}
