@@ -1559,3 +1559,26 @@ Fixed manual key recovery to reset every configured API format to health 100% an
 ### Next Steps
 
 - 实际 Codex/中转与长时间 WS 尚未实测；需要运行更新后的网关才会应用新实现。提交、打包部署留待明确授权。
+
+
+## Session 55: 修复流式超时与请求状态并打包 0.1.25
+<!-- trellis-session: v=2 fp=46a71283fa527b14 -->
+
+**Date**: 2026-09-15
+**Task**: 修复流式超时与请求状态并打包 0.1.25
+**Branch**: `codex/tauri-macos`
+
+### Summary
+
+成功响应头解除 HTTP 流式首次超时，独立总期限覆盖重试与完整输出；统一列表、详情与追踪状态。定向 Rust/前端和浏览器验收通过；桌面 0.1.25 包内超时矩阵 9/9、生命周期、DMG 内容与签名检查通过。源码及版本按用户要求提交推送 codex/tauri-macos，未安装或发布，其他规范整理保留。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `af09ccdf3` | fix(gateway): 修复流式超时与请求状态一致性 |
+| `18f69254d` | build(desktop): 打包 0.1.25 |
+
+### Status
+
+[OK] **Completed**

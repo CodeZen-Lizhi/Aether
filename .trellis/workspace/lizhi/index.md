@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 54
-- **Last Active**: 2026-09-14
+- **Total Sessions**: 55
+- **Last Active**: 2026-09-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1561 | Active |
+| `journal-1.md` | ~1584 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 55 | 2026-09-15 | 修复流式超时与请求状态并打包 0.1.25 | `af09ccdf3`, `18f69254d` | `codex/tauri-macos` |
 | 54 | 2026-09-14 | 实施聊天调度与故障转移 | - | `codex/tauri-macos` |
 | 53 | 2026-09-12 | 修复推理标签间距并交付 0.1.20 | `efc4a1d8f`, `c0a025b68` | `codex/tauri-macos` |
 | 52 | 2026-09-12 | 系统设置固定布局与 0.1.19 打包交付 | `a28a8da98`, `55e7e38ba`, `4f74d362f` | `codex/tauri-macos` |
