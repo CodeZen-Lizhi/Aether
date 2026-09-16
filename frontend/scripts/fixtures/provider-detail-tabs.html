@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>供应商详情分区回归</title>
+<body>
+<div id="fixture"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import { createPinia } from 'pinia'
+import ProviderDetailDrawer from '/src/features/providers/components/ProviderDetailDrawer.vue'
+import client from '/src/api/client'
+import { createI18n, setI18nLocale } from '/src/i18n'
+import '/src/style.css'
+
+setI18nLocale('zh-CN')
+// 合成供应商与数据仅驻留内存；所有读写请求均在 fixture 内拦截。
+const providers = ['alpha', 'beta'].map(id => ({
+  id, name: `Fixture ${id}`, provider_type: 'custom', is_active: true,
+  billing_type: id === 'alpha' ? 'monthly_quota' : 'pay_as_you_go',
+  monthly_quota_usd: 100, monthly_used_usd: 25, quota_reset_day: 1,
+  total_endpoints: 1, total_keys: 5, total_models: 12,
+  api_formats: ['openai:chat'], endpoint_health_details: [],
+}))
+const keys = providers.flatMap(provider => Array.from({ length: 5 }, (_, index) => ({
+  id: `${provider.id}-key-${index}`, provider_id: provider.id,
+  name: `${provider.id} key ${index}`, api_key_masked: 'sk-fixture-***',
+  is_active: true, api_formats: ['openai:chat'], health_score: 1,
+})))
+const models = providers.flatMap(provider => Array.from({ length: 12 }, (_, index) => ({
+  id: `${provider.id}-model-${index}`, provider_id: provider.id,
+  global_model_id: `global-${index}`, provider_model_name: `${provider.id}-model-${index}`,
+  global_model_display_name: `${provider.id} model ${index}`,
+  is_active: true, is_available: true, effective_input_price: 1, effective_output_price: 2,
+  provider_model_mappings: [{ name: `${provider.id}-upstream-${index}`, priority: 1 }],
+})))
+// 用可控屏障观察供应商切换的加载中状态，避免依赖固定延迟。
+let releaseBeta
+const betaReady = new Promise(resolve => { releaseBeta = resolve })
+client.get = async (url, config) => {
+  const provider = providers.find(item => url.includes(`/${item.id}/`))
+  if (url.endsWith('/enable_format_conversion')) return { data: { value: true } }
+  if (url === '/api/admin/proxy-nodes') return { data: { items: [], total: 0 } }
+  if (!provider) throw new Error(`未配置 fixture 请求: ${url}`)
+  if (provider.id === 'beta') await betaReady
+  if (url.endsWith('/summary')) return { data: structuredClone(provider) }
+  if (url.endsWith('/endpoints')) return { data: [{ id: `${provider.id}-endpoint`, provider_id: provider.id, api_format: 'openai:chat', base_url: 'https://fixture.invalid', is_active: true, active_keys: 5 }] }
+  if (url.endsWith('/keys')) {
+    const items = keys.filter(item => item.provider_id === provider.id)
+    const page = config?.params?.page
+    const size = config?.params?.page_size ?? 4
+    return { data: page ? { keys: structuredClone(items.slice((page - 1) * size, page * size)), total: items.length, page, page_size: size } : structuredClone(items) }
+  }
+  if (url.endsWith('/models')) return { data: structuredClone(models.filter(item => item.provider_id === provider.id)) }
+  if (url.endsWith('/mapping-preview')) return { data: { provider_id: provider.id, supported_models: [], regex_mappings: [] } }
+  throw new Error(`未配置 fixture 请求: ${url}`)
+}
+client.patch = async (url, payload) => {
+  const entity = [...models, ...keys].find(item => url.endsWith(`/${item.id}`))
+  if (!entity) throw new Error(`未配置 fixture 写入: ${url}`)
+  Object.assign(entity, payload)
+  return { data: structuredClone(entity) }
+}
+client.put = client.patch
+for (const method of ['post', 'delete']) {
+  client[method] = async url => { throw new Error(`禁止 fixture 外部写入: ${method} ${url}`) }
+}
+// 始终复用同一抽屉实例，覆盖切换供应商及关闭重开时的状态边界。
+const open = ref(true)
+const selected = ref(providers[0])
+// snapshot=0 覆盖调用方没有列表快照、需要先加载详情的打开路径。
+const initialSnapshot = new URLSearchParams(location.search).get('snapshot') !== '0'
+createApp({ render: () => h('main', [
+  h('div', { style: 'position:fixed;left:8px;bottom:8px;z-index:100;display:flex;gap:8px;background:white' }, [
+    ...providers.map(provider => h('button', { onClick: () => { selected.value = provider; open.value = true } }, `打开 ${provider.id}`)),
+    h('button', { onClick: () => { open.value = false } }, '关闭 fixture'),
+    h('button', { onClick: () => releaseBeta() }, '释放 beta'),
+  ]),
+  h(ProviderDetailDrawer, { open: open.value, providerId: selected.value.id, initialProvider: initialSnapshot ? selected.value : undefined, 'onUpdate:open': value => { open.value = value } }),
+]) }).use(createPinia()).use(createI18n()).mount('#fixture')
+</script>
+</body>
+</html>

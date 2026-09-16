@@ -58,17 +58,17 @@
                   type="button"
                   class="shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors"
                   :class="activeDetailSection === section.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'"
-                  @click="activeDetailSection = section.id"
+                  @click="selectDetailSection(section.id)"
                 >
                   {{ section.label }}<span class="ml-1 text-xs text-muted-foreground">{{ section.count }}</span>
                 </button>
               </div>
             </nav>
 
-            <div class="space-y-6 p-4 sm:p-6">
-              <!-- 配额使用情况 -->
+            <div class="flex flex-col gap-6 p-4 sm:p-6">
+              <!-- 订阅配额归属密钥管理，不随模型或映射分区重复展示。 -->
               <ProviderMonthlyQuotaCard
-                v-if="provider.billing_type === 'monthly_quota' && provider.monthly_quota_usd"
+                v-if="activeDetailSection === 'keys' && provider.billing_type === 'monthly_quota' && provider.monthly_quota_usd"
                 :used="provider.monthly_used_usd"
                 :quota="provider.monthly_quota_usd"
                 :reset-day="provider.quota_reset_day"
@@ -270,35 +270,37 @@
                 </div>
               </Card>
 
-              <!-- 模型查看 -->
-              <ModelsTab
-                v-show="activeDetailSection === 'models'"
-                v-if="provider"
-                :key="`models-${provider.id}`"
-                :provider="provider"
-                :models="providerModels"
-                :endpoints="endpoints"
-                :provider-keys="providerKeys"
-                :loading="loadingProviderModels"
-                @edit-model="handleEditModel"
-                @batch-assign="handleBatchAssign"
-                @refresh="loadEndpoints"
-              />
+              <!-- 多根节点子组件不能直接使用 v-show；原生容器隔离内容并保留分页、展开状态。 -->
+              <div v-show="activeDetailSection === 'models'">
+                <ModelsTab
+                  v-if="visitedDetailSections.has('models')"
+                  :key="`models-${provider.id}`"
+                  :provider="provider"
+                  :models="providerModels"
+                  :endpoints="endpoints"
+                  :provider-keys="providerKeys"
+                  :loading="loadingProviderModels"
+                  @edit-model="handleEditModel"
+                  @batch-assign="handleBatchAssign"
+                  @refresh="loadEndpoints"
+                />
+              </div>
 
               <!-- 模型映射 -->
-              <ModelMappingTab
-                v-show="activeDetailSection === 'mapping'"
-                v-if="provider"
-                ref="modelMappingTabRef"
-                :key="`mapping-${provider.id}`"
-                :provider="provider"
-                :endpoints="endpoints"
-                :provider-keys="providerKeys"
-                :models="providerModels"
-                :mapping-preview="providerMappingPreview"
-                :loading="loadingProviderMappingPreview"
-                @refresh="handleModelMappingChanged"
-              />
+              <div v-show="activeDetailSection === 'mapping'">
+                <ModelMappingTab
+                  v-if="visitedDetailSections.has('mapping')"
+                  ref="modelMappingTabRef"
+                  :key="`mapping-${provider.id}`"
+                  :provider="provider"
+                  :endpoints="endpoints"
+                  :provider-keys="providerKeys"
+                  :models="providerModels"
+                  :mapping-preview="providerMappingPreview"
+                  :loading="loadingProviderMappingPreview"
+                  @refresh="handleModelMappingChanged"
+                />
+              </div>
             </div>
           </template>
         </Card>
@@ -521,12 +523,20 @@ const modelFormDialogOpen = ref(false)
 const editingModel = ref<Model | null>(null)
 const batchAssignDialogOpen = ref(false)
 const activeDetailSection = ref<'keys' | 'models' | 'mapping'>('keys')
+// 按详情会话记录访问过的分区，避免隐藏时首次挂载导致智能分页无法测量高度。
+const visitedDetailSections = ref(new Set<string>())
 const detailSections = computed(() => [
   { id: 'keys' as const, label: '密钥管理', count: allKeys.value.length },
   { id: 'models' as const, label: '模型列表', count: providerModels.value.length },
   { id: 'mapping' as const, label: '模型映射', count: providerModels.value.filter(model => (model.provider_model_mappings ?? []).length > 0).length },
 ])
 const modelMappingTabRef = ref<InstanceType<typeof ModelMappingTab> | null>(null)
+
+/** 首次访问时挂载分区，之后只切换显隐，保留当前供应商的分页及展开状态。 */
+function selectDetailSection(section: typeof activeDetailSection.value) {
+  visitedDetailSections.value.add(section)
+  activeDetailSection.value = section
+}
 
 const failoverRulesDialogOpen = ref(false)
 const FAILOVER_RULE_ARRAY_KEYS = [
@@ -655,15 +665,61 @@ async function goToKeyPage(page: number) {
   await loadProviderKeysPage(nextPage)
 }
 
+/** 结束当前详情会话，清空实体数据、编辑状态并使旧请求失效，供切换供应商和关闭时复用。 */
+function resetProviderDetailState() {
+  // 使在途请求失效，避免切换或关闭后旧响应回写
+  providerLoadRequestId += 1
+  endpointsLoadRequestId += 1
+  keysLoadRequestId += 1
+  mappingPreviewLoadRequestId += 1
+
+  // 重置所有状态
+  visitedDetailSections.value.clear()
+  loading.value = false
+  provider.value = null
+  endpoints.value = []
+  providerKeys.value = []  // 清空 Provider 级别的 keys
+  providerKeysTotal.value = 0
+  currentKeyPage.value = 1
+  keyPageSize.value = CUSTOM_PROVIDER_KEYS_PAGE_SIZE
+  providerModels.value = []
+  providerMappingPreview.value = null
+  loadingProviderEndpoints.value = false
+  loadingProviderKeys.value = false
+  loadingProviderModels.value = false
+  loadingProviderMappingPreview.value = false
+
+  // 重置所有对话框状态
+  endpointDialogOpen.value = false
+  keyFormDialogOpen.value = false
+  keyPermissionsDialogOpen.value = false
+  modelFormDialogOpen.value = false
+  failoverRulesDialogOpen.value = false
+  deleteKeyConfirmOpen.value = false
+  batchAssignDialogOpen.value = false
+
+  // 重置临时数据
+  currentEndpoint.value = null
+  editingKey.value = null
+  editingModel.value = null
+  keyToDelete.value = null
+
+  // 清除已显示的密钥（安全考虑）
+  revealedKeys.value.clear()
+  providerProxyPopoverOpen.value = false
+  proxyPopoverOpenKeyId.value = null
+  editingMultiplierKey.value = null
+  editingMultiplierFormat.value = null
+}
+
 // 合并监听 providerId 和 open，避免同一 tick 内两个 watcher 都触发导致重复请求
 watch(
   [() => props.providerId, () => props.open],
-  async ([newId, newOpen], [_oldId, oldOpen]) => {
+  async ([newId, newOpen], [oldId, oldOpen]) => {
     if (newOpen && newId) {
       activeDetailSection.value = 'keys'
-      if (!oldOpen || provider.value?.id !== newId) {
-        currentKeyPage.value = 1
-        providerKeysTotal.value = 0
+      if (!oldOpen || newId !== oldId) {
+        resetProviderDetailState()
       }
       const hasInitialProvider = props.initialProvider?.id === newId
       if (hasInitialProvider) {
@@ -674,6 +730,7 @@ watch(
       void loadSystemFormatConversionConfig()
       if (!hasInitialProvider) {
         await loadProvider()
+        if (!props.open || props.providerId !== newId) return
       }
       const endpointsPromise = loadEndpoints()
       // 仅在抽屉刚打开时启动倒计时
@@ -687,43 +744,8 @@ watch(
         void loadMappingPreview()
       })
     } else if (!newOpen && oldOpen) {
-      // 使在途请求失效，避免关闭后旧响应回写
-      providerLoadRequestId += 1
-      endpointsLoadRequestId += 1
-      keysLoadRequestId += 1
-      mappingPreviewLoadRequestId += 1
-
-      // 停止倒计时定时器
       stopCountdownTimer()
-      // 重置所有状态
-      loading.value = false
-      provider.value = null
-      endpoints.value = []
-      providerKeys.value = []  // 清空 Provider 级别的 keys
-      providerKeysTotal.value = 0
-      currentKeyPage.value = 1
-      keyPageSize.value = CUSTOM_PROVIDER_KEYS_PAGE_SIZE
-      providerModels.value = []
-      providerMappingPreview.value = null
-      loadingProviderEndpoints.value = false
-      loadingProviderKeys.value = false
-      loadingProviderModels.value = false
-      loadingProviderMappingPreview.value = false
-
-      // 重置所有对话框状态
-      endpointDialogOpen.value = false
-      keyFormDialogOpen.value = false
-      keyPermissionsDialogOpen.value = false
-      deleteKeyConfirmOpen.value = false
-      batchAssignDialogOpen.value = false
-
-      // 重置临时数据
-      currentEndpoint.value = null
-      editingKey.value = null
-      keyToDelete.value = null
-
-      // 清除已显示的密钥（安全考虑）
-      revealedKeys.value.clear()
+      resetProviderDetailState()
     }
   },
   { immediate: true },
