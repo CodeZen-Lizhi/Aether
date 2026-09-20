@@ -15,8 +15,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use regex::Regex;
-use semver::Version;
 use serde::{de, de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
@@ -26,12 +24,6 @@ pub struct AdminSystemConfigUpdate {
     pub normalized_key: String,
     pub value: serde_json::Value,
     pub description: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AdminEmailTemplateUpdate {
-    pub subject: Option<String>,
-    pub html: Option<String>,
 }
 
 pub const ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS: &[&str] = &[
@@ -46,171 +38,8 @@ pub const ADMIN_SYSTEM_PROVIDER_OPS_SENSITIVE_CREDENTIAL_FIELDS: &[&str] = &[
     "cookie",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdminSystemUpdateRelease {
-    pub version: String,
-    pub release_url: Option<String>,
-    pub release_notes: Option<String>,
-    pub published_at: Option<String>,
-    pub tarball_url: Option<String>,
-    pub sha256sums_url: Option<String>,
-}
-
 fn default_true() -> bool {
     true
-}
-
-fn chat_pii_redaction_default_rules() -> serde_json::Value {
-    json!([
-        {
-            "id": "email",
-            "name": "邮箱",
-            "pattern": "(?i)[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,253}\\.[A-Z]{2,63}",
-            "enabled": true,
-            "features": {"validator": "email"},
-            "system": true
-        },
-        {
-            "id": "cn_phone",
-            "name": "手机号",
-            "pattern": "(?:\\+?86[- ]?)?(?:1[3-9]\\d[- ]?\\d{4}[- ]?\\d{4}|0\\d{2,3}[- ]\\d{7,8}(?:-\\d{1,6})?)",
-            "enabled": true,
-            "features": {"validator": "cn_phone"},
-            "system": true
-        },
-        {
-            "id": "global_phone",
-            "name": "国际号码",
-            "pattern": "\\+[1-9]\\d(?:[ -]?\\d){6,13}\\d",
-            "enabled": true,
-            "features": {"validator": "global_phone"},
-            "system": true
-        },
-        {
-            "id": "cn_id",
-            "name": "身份证号",
-            "pattern": "(?i)\\b\\d{17}[\\dX]\\b",
-            "enabled": true,
-            "features": {"validator": "cn_id"},
-            "system": true
-        },
-        {
-            "id": "payment_card",
-            "name": "银行卡号",
-            "pattern": "\\b(?:\\d[ -]?){12,18}\\d\\b",
-            "enabled": true,
-            "features": {"validator": "payment_card"},
-            "system": true
-        },
-        {
-            "id": "ipv4",
-            "name": "IPv4",
-            "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
-            "enabled": true,
-            "features": {"validator": "ipv4"},
-            "system": true
-        },
-        {
-            "id": "ipv6",
-            "name": "IPv6",
-            "pattern": "\\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f:.]{1,39}\\b",
-            "enabled": true,
-            "features": {"validator": "ipv6"},
-            "system": true
-        },
-        {
-            "id": "api_key",
-            "name": "API Key",
-            "pattern": "\\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{30,})|xox[baprs]-[A-Za-z0-9-]{20,}|(?:AKIA|ASIA)[0-9A-Z]{16}|[A-Za-z0-9_-]{32,})\\b",
-            "enabled": true,
-            "features": {"validator": "api_key"},
-            "system": true
-        },
-        {
-            "id": "access_token",
-            "name": "Access Token",
-            "pattern": "(?i)\\baccess[_-]?token\\s*[:=]\\s*[\"']?[A-Za-z0-9._~+/=-]{20,}",
-            "enabled": true,
-            "features": {"validator": "access_token"},
-            "system": true
-        },
-        {
-            "id": "secret_key",
-            "name": "Secret Key",
-            "pattern": "(?i)\\bsecret[_-]?key\\s*[:=]\\s*[\"']?[A-Za-z0-9._~+/=-]{20,}",
-            "enabled": true,
-            "features": {"validator": "secret_key"},
-            "system": true
-        },
-        {
-            "id": "bearer_token",
-            "name": "Bearer Token",
-            "pattern": "(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{20,}",
-            "enabled": true,
-            "features": {"validator": "bearer_token"},
-            "system": true
-        },
-        {
-            "id": "jwt",
-            "name": "JWT",
-            "pattern": "\\b[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b",
-            "enabled": true,
-            "features": {"validator": "jwt"},
-            "system": true
-        },
-    ])
-}
-
-fn notification_service_default_items() -> serde_json::Value {
-    json!([
-        {
-            "key": "provider_quota_alert",
-            "name": "号池额度不足",
-            "enabled": true,
-            "channel": "global",
-            "title_template": "",
-            "markdown_template": "",
-            "text_template": "",
-            "user_email_enabled": false,
-            "system": true
-        },
-        {
-            "key": "provider_pool_abnormal",
-            "name": "号池异常",
-            "enabled": true,
-            "channel": "global",
-            "title_template": "号池异常：{provider_name}",
-            "markdown_template": "号池 `{provider_name}` 出现异常，请检查服务状态。",
-            "text_template": "号池 {provider_name} 出现异常，请检查服务状态。",
-            "user_email_enabled": false,
-            "system": true
-        },
-        {
-            "key": "user_balance_low",
-            "name": "用户余额不足",
-            "enabled": true,
-            "channel": "email",
-            "title_template": "余额不足提醒",
-            "markdown_template": "你的账户余额已低于提醒阈值，请及时处理。",
-            "text_template": "你的账户余额已低于提醒阈值，请及时处理。",
-            "user_email_enabled": true,
-            "system": true
-        }
-    ])
-}
-
-fn normalize_chat_pii_redaction_placeholder_prefix(raw: &str) -> Option<String> {
-    let value = raw.trim();
-    if value.is_empty() || value.len() > 32 {
-        return None;
-    }
-    if !value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    {
-        return None;
-    }
-    Some(value.to_ascii_uppercase())
 }
 
 fn invalid_request(detail: impl Into<String>) -> (http::StatusCode, serde_json::Value) {
@@ -651,7 +480,56 @@ struct AdminApiFormatDefinition {
 
 const REQUEST_RECORD_LEVEL_KEY: &str = "request_record_level";
 const LEGACY_REQUEST_LOG_LEVEL_KEY: &str = "request_log_level";
-const DEFAULT_BARK_API_BASE: &str = "https://api.day.app";
+/// 已退役的配置键，仅用于隔离普通管理 API 与历史备份兼容数据。
+const RETIRED_SYSTEM_CONFIG_KEYS: &[&str] = &[
+    "backup_s3_access_key_id",
+    "backup_s3_bucket",
+    "backup_s3_compression",
+    "backup_s3_enabled",
+    "backup_s3_endpoint",
+    "backup_s3_last_slot",
+    "backup_s3_path_style",
+    "backup_s3_prefix",
+    "backup_s3_region",
+    "backup_s3_retention_count",
+    "backup_s3_schedule_hour",
+    "backup_s3_schedule_interval",
+    "backup_s3_schedule_minute",
+    "backup_s3_schedule_month_day",
+    "backup_s3_schedule_unit",
+    "backup_s3_schedule_weekday",
+    "backup_s3_scope",
+    "backup_s3_secret_access_key",
+    "backup_s3_user_agent",
+    "smtp_from_email",
+    "smtp_from_name",
+    "smtp_host",
+    "smtp_password",
+    "smtp_port",
+    "smtp_use_ssl",
+    "smtp_use_tls",
+    "smtp_user",
+    "module.important_notification.default_channel",
+    "module.important_notification.email_enabled",
+    "module.important_notification.email_recipients",
+    "module.important_notification.enabled",
+    "module.important_notification.items",
+    "module.important_notification.server_chan_enabled",
+    "module.important_notification.server_chan_send_key",
+    "module.important_notification.server_chan_template",
+    "module.notification_email.enabled",
+    "module.server_chan_push.enabled",
+    "module.server_chan_push.send_key",
+    "module.server_chan_push.template",
+    "module.bark_push.device_key",
+    "module.bark_push.enabled",
+    "module.bark_push.server_url",
+    "module.bark_push.template",
+    "module.chat_pii_redaction.cache_ttl_seconds",
+    "module.chat_pii_redaction.enabled",
+    "module.chat_pii_redaction.placeholder_prefix",
+    "module.chat_pii_redaction.rules",
+];
 const SENSITIVE_SYSTEM_CONFIG_KEYS: &[&str] = &[
     "smtp_password",
     "backup_s3_secret_access_key",
@@ -792,150 +670,6 @@ const ADMIN_API_FORMAT_DEFINITIONS: &[AdminApiFormatDefinition] = &[
     },
 ];
 
-pub fn build_admin_system_check_update_payload(current_version: String) -> serde_json::Value {
-    build_admin_system_check_update_payload_with_release(
-        current_version,
-        None,
-        Some("检查更新需要 Rust 管理后端".to_string()),
-    )
-}
-
-pub fn build_admin_system_check_update_payload_with_release(
-    current_version: String,
-    latest_release: Option<AdminSystemUpdateRelease>,
-    error: Option<String>,
-) -> serde_json::Value {
-    let has_update = latest_release
-        .as_ref()
-        .is_some_and(|release| admin_system_update_available(&current_version, &release.version));
-    let update_blocker = latest_release
-        .as_ref()
-        .and_then(admin_system_update_blocker);
-    let updatable = latest_release
-        .as_ref()
-        .is_some_and(|release| admin_system_update_blocker(release).is_none());
-
-    json!({
-        "current_version": current_version,
-        "latest_version": latest_release.as_ref().map(|release| release.version.clone()),
-        "has_update": has_update,
-        "updatable": updatable,
-        "update_blocker": update_blocker,
-        "release_url": latest_release.as_ref().and_then(|release| release.release_url.clone()),
-        "release_notes": latest_release.as_ref().and_then(|release| release.release_notes.clone()),
-        "published_at": latest_release.as_ref().and_then(|release| release.published_at.clone()),
-        "error": error,
-    })
-}
-
-pub fn build_admin_system_releases_payload(
-    current_version: String,
-    releases: Vec<AdminSystemUpdateRelease>,
-    error: Option<String>,
-) -> serde_json::Value {
-    let entries: Vec<serde_json::Value> = releases
-        .iter()
-        .map(|release| {
-            let is_current = {
-                let norm_current = normalized_admin_system_version(&current_version);
-                let norm_release = normalized_admin_system_version(&release.version);
-                norm_current == norm_release
-            };
-            let is_newer = admin_system_update_available(&current_version, &release.version);
-            let update_blocker = admin_system_update_blocker(release);
-            json!({
-                "version": release.version,
-                "release_url": release.release_url,
-                "release_notes": release.release_notes,
-                "published_at": release.published_at,
-                "tarball_url": release.tarball_url,
-                "sha256sums_url": release.sha256sums_url,
-                "is_current": is_current,
-                "is_newer": is_newer,
-                "updatable": update_blocker.is_none(),
-                "update_blocker": update_blocker,
-            })
-        })
-        .collect();
-
-    json!({
-        "current_version": current_version,
-        "releases": entries,
-        "error": error,
-    })
-}
-
-fn admin_system_update_blocker(release: &AdminSystemUpdateRelease) -> Option<&'static str> {
-    if release.tarball_url.is_none() {
-        Some("当前平台暂无安装包")
-    } else if release.sha256sums_url.is_none() {
-        Some("缺少 SHA256SUMS 校验文件")
-    } else {
-        None
-    }
-}
-
-fn normalized_admin_system_version(version: &str) -> String {
-    let trimmed = version.trim();
-    trimmed
-        .strip_prefix('v')
-        .or_else(|| trimmed.strip_prefix('V'))
-        .unwrap_or(trimmed)
-        .to_string()
-}
-
-fn admin_system_update_available(current_version: &str, latest_release_version: &str) -> bool {
-    match (
-        parse_admin_system_version_for_update(current_version),
-        parse_admin_system_version_for_update(latest_release_version),
-    ) {
-        (Some(current), Some(latest)) => latest > current,
-        _ => false,
-    }
-}
-
-fn parse_admin_system_version_for_update(version: &str) -> Option<Version> {
-    let base = admin_system_release_base_version(version);
-    let normalized = normalize_admin_system_rc_prerelease(&base);
-    Version::parse(&normalized).ok()
-}
-
-fn admin_system_release_base_version(version: &str) -> String {
-    let normalized = normalized_admin_system_version(version);
-    let without_dirty = normalized.strip_suffix("-dirty").unwrap_or(&normalized);
-    git_describe_base_version(without_dirty)
-        .unwrap_or(without_dirty)
-        .to_string()
-}
-
-fn git_describe_base_version(version: &str) -> Option<&str> {
-    let (before_hash, hash) = version.rsplit_once("-g")?;
-    if hash.is_empty() || !hash.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        return None;
-    }
-
-    let (base, commit_count) = before_hash.rsplit_once('-')?;
-    if commit_count.is_empty() || !commit_count.chars().all(|ch| ch.is_ascii_digit()) {
-        return None;
-    }
-
-    Some(base)
-}
-
-fn normalize_admin_system_rc_prerelease(version: &str) -> String {
-    let Some((core, prerelease)) = version.split_once('-') else {
-        return version.to_string();
-    };
-    let Some(rc_number) = prerelease.strip_prefix("rc") else {
-        return version.to_string();
-    };
-    if rc_number.is_empty() || !rc_number.chars().all(|ch| ch.is_ascii_digit()) {
-        return version.to_string();
-    }
-
-    format!("{core}-rc.{rc_number}")
-}
-
 pub fn build_admin_system_stats_payload(
     total_users: u64,
     active_users: u64,
@@ -957,110 +691,6 @@ pub fn build_admin_system_stats_payload(
         "api_keys": total_api_keys,
         "requests": total_requests,
         "usage_counter": usage_counter,
-    })
-}
-
-pub fn build_admin_email_templates_payload(templates: Vec<serde_json::Value>) -> serde_json::Value {
-    json!({ "templates": templates })
-}
-
-pub fn admin_email_template_not_found_error(
-    template_type: &str,
-) -> (http::StatusCode, serde_json::Value) {
-    (
-        http::StatusCode::NOT_FOUND,
-        json!({ "detail": format!("模板类型 '{template_type}' 不存在") }),
-    )
-}
-
-pub fn parse_admin_email_template_update(
-    request_body: &[u8],
-) -> Result<AdminEmailTemplateUpdate, (http::StatusCode, serde_json::Value)> {
-    let payload = match serde_json::from_slice::<serde_json::Value>(request_body) {
-        Ok(serde_json::Value::Object(payload)) => payload,
-        _ => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-    };
-
-    let subject = match payload.get("subject") {
-        Some(serde_json::Value::String(value)) => Some(value.clone()),
-        Some(serde_json::Value::Null) | None => None,
-        Some(_) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-    };
-    let html = match payload.get("html") {
-        Some(serde_json::Value::String(value)) => Some(value.clone()),
-        Some(serde_json::Value::Null) | None => None,
-        Some(_) => {
-            return Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            ));
-        }
-    };
-
-    if subject.is_none() && html.is_none() {
-        return Err((
-            http::StatusCode::BAD_REQUEST,
-            json!({ "detail": "请提供 subject 或 html" }),
-        ));
-    }
-
-    Ok(AdminEmailTemplateUpdate { subject, html })
-}
-
-pub fn parse_admin_email_template_preview_payload(
-    request_body: Option<&[u8]>,
-) -> Result<serde_json::Map<String, serde_json::Value>, (http::StatusCode, serde_json::Value)> {
-    match request_body {
-        Some(bytes) => match serde_json::from_slice::<serde_json::Value>(bytes) {
-            Ok(serde_json::Value::Object(payload)) => Ok(payload),
-            Ok(serde_json::Value::Null) => Ok(serde_json::Map::new()),
-            _ => Err((
-                http::StatusCode::BAD_REQUEST,
-                json!({ "detail": "请求数据验证失败" }),
-            )),
-        },
-        None => Ok(serde_json::Map::new()),
-    }
-}
-
-pub fn build_admin_email_template_saved_payload() -> serde_json::Value {
-    json!({ "message": "模板保存成功" })
-}
-
-pub fn build_admin_email_template_preview_payload(
-    rendered_html: String,
-    preview_variables: std::collections::BTreeMap<String, String>,
-) -> serde_json::Value {
-    json!({
-        "html": rendered_html,
-        "variables": preview_variables,
-    })
-}
-
-pub fn build_admin_email_template_reset_payload(
-    template_type: &str,
-    name: &str,
-    default_subject: &str,
-    default_html: &str,
-) -> serde_json::Value {
-    json!({
-        "message": "模板已重置为默认值",
-        "template": {
-            "type": template_type,
-            "name": name,
-            "subject": default_subject,
-            "html": default_html,
-        }
     })
 }
 
@@ -1374,12 +1004,21 @@ pub fn admin_system_config_delete_keys(requested_key: &str) -> Vec<String> {
     }
 }
 
+/// 判断配置键是否属于已从单机版本退役的独立功能。
+pub fn is_retired_admin_system_config_key(key: &str) -> bool {
+    let key = key.trim();
+    RETIRED_SYSTEM_CONFIG_KEYS
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(key.trim()))
+}
+
 pub fn is_sensitive_admin_system_config_key(key: &str) -> bool {
     SENSITIVE_SYSTEM_CONFIG_KEYS
         .iter()
-        .any(|candidate| candidate.eq_ignore_ascii_case(key))
+        .any(|candidate| candidate.eq_ignore_ascii_case(key.trim()))
 }
 
+/// 返回当前支持的系统配置默认值，不再提供已退役功能的开关。
 pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value> {
     match key {
         "site_name" => Some(json!("Aether")),
@@ -1407,25 +1046,6 @@ pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value>
         "proxy_node_metrics_cleanup_batch_size" => Some(json!(5000)),
         "scheduling_mode" => Some(json!("cache_affinity")),
         "auto_delete_expired_keys" => Some(json!(false)),
-        "backup_s3_enabled" => Some(json!(false)),
-        "backup_s3_scope" => Some(json!("data")),
-        "backup_s3_endpoint" => Some(serde_json::Value::Null),
-        "backup_s3_region" => Some(json!("auto")),
-        "backup_s3_user_agent" => Some(json!("rclone/v1.68.0")),
-        "backup_s3_bucket" => Some(serde_json::Value::Null),
-        "backup_s3_prefix" => Some(json!("aether/backups/")),
-        "backup_s3_access_key_id" => Some(serde_json::Value::Null),
-        "backup_s3_secret_access_key" => Some(serde_json::Value::Null),
-        "backup_s3_path_style" => Some(json!(true)),
-        "backup_s3_compression" => Some(json!("zstd")),
-        "backup_s3_schedule_unit" => Some(json!("days")),
-        "backup_s3_schedule_interval" => Some(json!(1)),
-        "backup_s3_schedule_minute" => Some(json!(0)),
-        "backup_s3_schedule_hour" => Some(json!(3)),
-        "backup_s3_schedule_weekday" => Some(json!(1)),
-        "backup_s3_schedule_month_day" => Some(json!(1)),
-        "backup_s3_retention_count" => Some(json!(7)),
-        "backup_s3_last_slot" => Some(serde_json::Value::Null),
         "email_suffix_mode" => Some(json!("none")),
         "email_suffix_list" => Some(json!([])),
         "enable_format_conversion" => Some(json!(false)),
@@ -1436,39 +1056,17 @@ pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value>
         "enable_db_maintenance" => Some(json!(true)),
         "system_proxy_node_id" => Some(serde_json::Value::Null),
         "external_models_proxy_node_id" => Some(serde_json::Value::Null),
-        "smtp_host" => Some(serde_json::Value::Null),
-        "smtp_port" => Some(json!(587)),
-        "smtp_user" => Some(serde_json::Value::Null),
-        "smtp_password" => Some(serde_json::Value::Null),
-        "smtp_use_tls" => Some(json!(true)),
-        "smtp_use_ssl" => Some(json!(false)),
-        "smtp_from_email" => Some(serde_json::Value::Null),
-        "smtp_from_name" => Some(json!("Aether")),
-        "module.important_notification.enabled" => Some(json!(false)),
-        "module.important_notification.email_enabled" => Some(json!(false)),
-        "module.important_notification.email_recipients" => Some(json!("")),
-        "module.important_notification.default_channel" => Some(json!("all")),
-        "module.important_notification.items" => Some(notification_service_default_items()),
-        "module.server_chan_push.enabled" => Some(json!(false)),
-        "module.server_chan_push.send_key" => Some(serde_json::Value::Null),
-        "module.server_chan_push.template" => Some(json!("")),
-        "module.bark_push.enabled" => Some(json!(false)),
-        "module.bark_push.device_key" => Some(serde_json::Value::Null),
-        "module.bark_push.server_url" => Some(json!(DEFAULT_BARK_API_BASE)),
-        "module.bark_push.template" => Some(json!("")),
-        "module.chat_pii_redaction.enabled" => Some(json!(false)),
-        "module.chat_pii_redaction.rules" => Some(chat_pii_redaction_default_rules()),
-        "module.chat_pii_redaction.cache_ttl_seconds" => Some(json!(300)),
-        "module.chat_pii_redaction.placeholder_prefix" => Some(json!("AETHER")),
         _ => None,
     }
 }
 
+/// 构造当前配置列表，隐藏退役配置并保留有效键的别名去重。
 pub fn build_admin_system_configs_payload(
     entries: &[StoredSystemConfigEntry],
 ) -> serde_json::Value {
     let canonical_keys = entries
         .iter()
+        .filter(|entry| !is_retired_admin_system_config_key(&entry.key))
         .filter_map(|entry| {
             let normalized = normalize_admin_system_config_key(&entry.key);
             entry
@@ -1480,6 +1078,9 @@ pub fn build_admin_system_configs_payload(
     json!(entries
         .iter()
         .filter_map(|entry| {
+            if is_retired_admin_system_config_key(&entry.key) {
+                return None;
+            }
             let normalized_key = normalize_admin_system_config_key(&entry.key);
             let is_legacy = !entry.key.eq_ignore_ascii_case(&normalized_key);
             if is_legacy && canonical_keys.contains(&normalized_key.to_ascii_lowercase()) {
@@ -1495,11 +1096,18 @@ pub fn build_admin_system_configs_payload(
         .collect::<Vec<_>>())
 }
 
+/// 构造有效配置详情；退役键和缺失键均返回不存在。
 pub fn build_admin_system_config_detail_payload(
     requested_key: &str,
     value: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, (http::StatusCode, serde_json::Value)> {
     let normalized_key = normalize_admin_system_config_key(requested_key);
+    if is_retired_admin_system_config_key(&normalized_key) {
+        return Err((
+            http::StatusCode::NOT_FOUND,
+            json!({ "detail": format!("配置项 '{requested_key}' 不存在") }),
+        ));
+    }
     let value = value.or_else(|| admin_system_config_default_value(&normalized_key));
     let Some(value) = value else {
         return Err((
@@ -1507,284 +1115,10 @@ pub fn build_admin_system_config_detail_payload(
             json!({ "detail": format!("配置项 '{requested_key}' 不存在") }),
         ));
     };
-    if is_sensitive_admin_system_config_key(&normalized_key) {
-        return Ok(json!({
-            "key": requested_key,
-            "value": serde_json::Value::Null,
-            "is_set": system_config_is_set(&value),
-        }));
-    }
     Ok(json!({
         "key": requested_key,
         "value": value,
     }))
-}
-
-fn normalize_chat_pii_redaction_rules_value(
-    value: serde_json::Value,
-) -> Result<serde_json::Value, ()> {
-    let Some(raw_rules) = value.as_array() else {
-        return Err(());
-    };
-    let mut rules = Vec::with_capacity(raw_rules.len());
-    for raw_rule in raw_rules {
-        let Some(raw_rule) = raw_rule.as_object() else {
-            return Err(());
-        };
-        let id = raw_rule
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or(())?;
-        let name = raw_rule
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or(())?;
-        let pattern = raw_rule
-            .get("pattern")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or(())?;
-        Regex::new(pattern).map_err(|_| ())?;
-        let enabled = raw_rule
-            .get("enabled")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(true);
-        let system = raw_rule
-            .get("system")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        let features = normalize_chat_pii_redaction_rule_features(raw_rule)?;
-        rules.push(json!({
-            "id": id,
-            "name": name,
-            "pattern": pattern,
-            "enabled": enabled,
-            "system": system,
-            "features": features,
-        }));
-    }
-    Ok(serde_json::Value::Array(rules))
-}
-
-fn normalize_chat_pii_redaction_rule_features(
-    raw_rule: &Map<String, Value>,
-) -> Result<serde_json::Value, ()> {
-    let mut features = match raw_rule.get("features") {
-        Some(Value::Object(features)) => features.clone(),
-        Some(Value::Null) | None => Map::new(),
-        Some(_) => return Err(()),
-    };
-
-    if !features.contains_key("validator") {
-        if let Some(Value::String(value)) = raw_rule.get("kind") {
-            let value = value.trim();
-            if !value.is_empty() {
-                features.insert("validator".to_string(), json!(value));
-            }
-        } else if raw_rule.get("kind").is_some_and(|value| !value.is_null()) {
-            return Err(());
-        }
-    }
-
-    match features.get("validator") {
-        Some(Value::String(value)) => {
-            let value = value.trim();
-            if value.is_empty() {
-                features.remove("validator");
-            } else {
-                features.insert("validator".to_string(), json!(value));
-            }
-        }
-        Some(Value::Null) => {
-            features.remove("validator");
-        }
-        Some(_) => return Err(()),
-        None => {}
-    }
-
-    Ok(Value::Object(features))
-}
-
-fn normalize_string_list_config_value(value: serde_json::Value) -> Result<serde_json::Value, ()> {
-    match value {
-        Value::Null => Ok(json!("")),
-        Value::String(raw) => Ok(json!(raw.trim())),
-        Value::Array(items) => {
-            let mut normalized = Vec::with_capacity(items.len());
-            for item in items {
-                let Some(raw) = item.as_str() else {
-                    return Err(());
-                };
-                let raw = raw.trim();
-                if !raw.is_empty() {
-                    normalized.push(raw.to_string());
-                }
-            }
-            Ok(json!(normalized))
-        }
-        _ => Err(()),
-    }
-}
-
-fn normalize_nullable_string_config_value(
-    value: serde_json::Value,
-) -> Result<serde_json::Value, ()> {
-    match value {
-        Value::Null => Ok(Value::Null),
-        Value::String(raw) => {
-            let raw = raw.trim();
-            if raw.is_empty() {
-                Ok(Value::Null)
-            } else {
-                Ok(json!(raw))
-            }
-        }
-        _ => Err(()),
-    }
-}
-
-fn normalize_bark_server_url_config_value(
-    value: serde_json::Value,
-) -> Result<serde_json::Value, ()> {
-    match value {
-        Value::Null => Ok(json!(DEFAULT_BARK_API_BASE)),
-        Value::String(raw) => {
-            let raw = raw.trim().trim_end_matches('/');
-            if raw.is_empty() {
-                return Ok(json!(DEFAULT_BARK_API_BASE));
-            }
-            if !raw.starts_with("https://") && !raw.starts_with("http://") {
-                return Err(());
-            }
-            Ok(json!(raw))
-        }
-        _ => Err(()),
-    }
-}
-
-fn normalize_notification_channel_value(value: serde_json::Value) -> Result<serde_json::Value, ()> {
-    match value {
-        Value::Null => Ok(json!("all")),
-        Value::String(raw) => {
-            let normalized = normalize_notification_channel(raw.trim(), false)?;
-            Ok(json!(normalized))
-        }
-        _ => Err(()),
-    }
-}
-
-fn normalize_notification_channel(raw: &str, allow_global: bool) -> Result<&'static str, ()> {
-    match raw.to_ascii_lowercase().as_str() {
-        "all" => Ok("all"),
-        "email" => Ok("email"),
-        "server_chan" | "serverchan" | "serve_chan" => Ok("server_chan"),
-        "bark" => Ok("bark"),
-        "global" | "" if allow_global => Ok("global"),
-        _ => Err(()),
-    }
-}
-
-fn normalize_notification_service_items_value(
-    value: serde_json::Value,
-) -> Result<serde_json::Value, ()> {
-    let Value::Array(items) = value else {
-        return Err(());
-    };
-    let mut normalized_items = Vec::with_capacity(items.len());
-    let mut keys = BTreeSet::new();
-    for item in items {
-        let Value::Object(raw_item) = item else {
-            return Err(());
-        };
-        let key = normalize_notification_item_key(raw_item.get("key"))?;
-        if !keys.insert(key.clone()) {
-            return Err(());
-        }
-        let name = normalize_optional_bounded_string(raw_item.get("name"), 80)?
-            .unwrap_or_else(|| key.clone());
-        let enabled = raw_item
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let channel = raw_item
-            .get("channel")
-            .and_then(Value::as_str)
-            .map(|raw| normalize_notification_channel(raw.trim(), true))
-            .transpose()?
-            .unwrap_or("global");
-        let title_template =
-            normalize_optional_bounded_string(raw_item.get("title_template"), 256)?
-                .unwrap_or_default();
-        let markdown_template =
-            normalize_optional_bounded_string(raw_item.get("markdown_template"), 8_000)?
-                .unwrap_or_default();
-        let text_template =
-            normalize_optional_bounded_string(raw_item.get("text_template"), 8_000)?
-                .unwrap_or_default();
-        let user_email_enabled = raw_item
-            .get("user_email_enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let system = raw_item
-            .get("system")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-
-        normalized_items.push(json!({
-            "key": key,
-            "name": name,
-            "enabled": enabled,
-            "channel": channel,
-            "title_template": title_template,
-            "markdown_template": markdown_template,
-            "text_template": text_template,
-            "user_email_enabled": user_email_enabled,
-            "system": system,
-        }));
-    }
-    Ok(Value::Array(normalized_items))
-}
-
-fn normalize_notification_item_key(value: Option<&Value>) -> Result<String, ()> {
-    let Some(raw) = value.and_then(Value::as_str).map(str::trim) else {
-        return Err(());
-    };
-    if raw.is_empty() || raw.len() > 64 {
-        return Err(());
-    }
-    if !raw
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
-    {
-        return Err(());
-    }
-    Ok(raw.to_string())
-}
-
-fn normalize_optional_bounded_string(
-    value: Option<&Value>,
-    max_len: usize,
-) -> Result<Option<String>, ()> {
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(raw)) => {
-            let trimmed = raw.trim();
-            if trimmed.len() > max_len {
-                return Err(());
-            }
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(trimmed.to_string()))
-            }
-        }
-        Some(_) => Err(()),
-    }
 }
 
 fn validate_model_directives_config_value(value: &Value) -> Result<(), ()> {
@@ -1856,6 +1190,7 @@ fn validate_model_directives_config_value(value: &Value) -> Result<(), ()> {
     Ok(())
 }
 
+/// 解析通用配置写入；备份保留历史标量，普通 API 在入口拒绝退役键。
 pub fn parse_admin_system_config_update(
     requested_key: &str,
     request_body: &[u8],
@@ -1886,12 +1221,7 @@ pub fn parse_admin_system_config_update(
     };
 
     match normalized_key.as_str() {
-        "cyber_continue_failover"
-        | "enable_model_directives"
-        | "module.important_notification.enabled"
-        | "module.important_notification.email_enabled"
-        | "module.server_chan_push.enabled"
-        | "module.bark_push.enabled" => match value.as_bool() {
+        "cyber_continue_failover" | "enable_model_directives" => match value.as_bool() {
             Some(enabled) => value = json!(enabled),
             None if value.is_null() => {
                 value = admin_system_config_default_value(&normalized_key).unwrap_or(json!(false));
@@ -1903,82 +1233,6 @@ pub fn parse_admin_system_config_update(
                 ));
             }
         },
-        "module.important_notification.email_recipients" => {
-            value = normalize_string_list_config_value(value).map_err(|_| {
-                (
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                )
-            })?;
-        }
-        "module.important_notification.default_channel" => {
-            value = normalize_notification_channel_value(value).map_err(|_| {
-                (
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                )
-            })?;
-        }
-        "module.important_notification.items" => {
-            if value.is_null() {
-                value = notification_service_default_items();
-            } else {
-                value = normalize_notification_service_items_value(value).map_err(|_| {
-                    (
-                        http::StatusCode::BAD_REQUEST,
-                        json!({ "detail": "请求数据验证失败" }),
-                    )
-                })?;
-            }
-        }
-        "module.server_chan_push.send_key" => {
-            value = normalize_nullable_string_config_value(value).map_err(|_| {
-                (
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                )
-            })?;
-        }
-        "module.server_chan_push.template" => {
-            value = match value {
-                Value::Null => json!(""),
-                Value::String(raw) => json!(raw),
-                _ => {
-                    return Err((
-                        http::StatusCode::BAD_REQUEST,
-                        json!({ "detail": "请求数据验证失败" }),
-                    ));
-                }
-            };
-        }
-        "module.bark_push.device_key" => {
-            value = normalize_nullable_string_config_value(value).map_err(|_| {
-                (
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                )
-            })?;
-        }
-        "module.bark_push.server_url" => {
-            value = normalize_bark_server_url_config_value(value).map_err(|_| {
-                (
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                )
-            })?;
-        }
-        "module.bark_push.template" => {
-            value = match value {
-                Value::Null => json!(""),
-                Value::String(raw) => json!(raw),
-                _ => {
-                    return Err((
-                        http::StatusCode::BAD_REQUEST,
-                        json!({ "detail": "请求数据验证失败" }),
-                    ));
-                }
-            };
-        }
         "model_directives" => {
             if value.is_null() {
                 value = aether_ai_formats::default_model_directives_config();
@@ -1991,64 +1245,6 @@ pub fn parse_admin_system_config_update(
                 })?;
             }
         }
-        "module.chat_pii_redaction.enabled" => match value.as_bool() {
-            Some(enabled) => value = json!(enabled),
-            None if value.is_null() => {
-                value = admin_system_config_default_value(&normalized_key).unwrap();
-            }
-            None => {
-                return Err((
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                ));
-            }
-        },
-        "module.chat_pii_redaction.rules" => {
-            if value.is_null() {
-                value = chat_pii_redaction_default_rules();
-            } else {
-                value = normalize_chat_pii_redaction_rules_value(value).map_err(|_| {
-                    (
-                        http::StatusCode::BAD_REQUEST,
-                        json!({ "detail": "请求数据验证失败" }),
-                    )
-                })?;
-            }
-        }
-        "module.chat_pii_redaction.cache_ttl_seconds" => match value.as_u64() {
-            Some(300 | 3600) => value = json!(value.as_u64().unwrap()),
-            Some(_) => {
-                return Err((
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                ));
-            }
-            None if value.is_null() => value = json!(300),
-            None => {
-                return Err((
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                ));
-            }
-        },
-        "module.chat_pii_redaction.placeholder_prefix" => match value.as_str() {
-            Some(raw) => {
-                let Some(normalized) = normalize_chat_pii_redaction_placeholder_prefix(raw) else {
-                    return Err((
-                        http::StatusCode::BAD_REQUEST,
-                        json!({ "detail": "请求数据验证失败" }),
-                    ));
-                };
-                value = json!(normalized);
-            }
-            None if value.is_null() => value = json!("AETHER"),
-            None => {
-                return Err((
-                    http::StatusCode::BAD_REQUEST,
-                    json!({ "detail": "请求数据验证失败" }),
-                ));
-            }
-        },
         _ => {}
     }
 
@@ -2079,13 +1275,7 @@ pub fn build_admin_system_config_deleted_payload(requested_key: &str) -> serde_j
     })
 }
 
-pub fn is_admin_management_tokens_root(request_path: &str) -> bool {
-    matches!(
-        request_path,
-        "/api/admin/management-tokens" | "/api/admin/management-tokens/"
-    )
-}
-
+/// 判断路径是否为系统配置集合入口。
 pub fn is_admin_system_configs_root(request_path: &str) -> bool {
     matches!(
         request_path,
@@ -2093,43 +1283,9 @@ pub fn is_admin_system_configs_root(request_path: &str) -> bool {
     )
 }
 
-pub fn is_admin_system_email_templates_root(request_path: &str) -> bool {
-    matches!(
-        request_path,
-        "/api/admin/system/email/templates" | "/api/admin/system/email/templates/"
-    )
-}
-
+/// 从单项系统配置路径提取配置键。
 pub fn admin_system_config_key_from_path(request_path: &str) -> Option<String> {
     path_identifier_from_path(request_path, "/api/admin/system/configs/")
-}
-
-pub fn admin_system_email_template_type_from_path(request_path: &str) -> Option<String> {
-    path_identifier_from_path(request_path, "/api/admin/system/email/templates/")
-}
-
-pub fn admin_system_email_template_preview_type_from_path(request_path: &str) -> Option<String> {
-    suffixed_path_identifier_from_path(
-        request_path,
-        "/api/admin/system/email/templates/",
-        "/preview",
-    )
-}
-
-pub fn admin_system_email_template_reset_type_from_path(request_path: &str) -> Option<String> {
-    suffixed_path_identifier_from_path(request_path, "/api/admin/system/email/templates/", "/reset")
-}
-
-pub fn admin_management_token_id_from_path(request_path: &str) -> Option<String> {
-    path_identifier_from_path(request_path, "/api/admin/management-tokens/")
-}
-
-pub fn admin_management_token_status_id_from_path(request_path: &str) -> Option<String> {
-    suffixed_path_identifier_from_path(request_path, "/api/admin/management-tokens/", "/status")
-}
-
-pub fn admin_management_token_regenerate_id_from_path(request_path: &str) -> Option<String> {
-    suffixed_path_identifier_from_path(request_path, "/api/admin/management-tokens/", "/regenerate")
 }
 
 pub fn admin_adaptive_effective_limit(key: &StoredProviderCatalogKey) -> Option<u32> {
@@ -2752,18 +1908,6 @@ fn path_identifier_from_path(request_path: &str, prefix: &str) -> Option<String>
     }
 }
 
-fn suffixed_path_identifier_from_path(
-    request_path: &str,
-    prefix: &str,
-    suffix: &str,
-) -> Option<String> {
-    request_path
-        .strip_prefix(prefix)?
-        .strip_suffix(suffix)
-        .map(|value| value.trim().trim_matches('/').to_string())
-        .filter(|value| !value.is_empty() && !value.contains('/'))
-}
-
 fn mask_admin_proxy_node_password(password: Option<&str>) -> Option<String> {
     let password = password?;
     if password.is_empty() {
@@ -2807,133 +1951,6 @@ mod tests {
         assert_eq!(live["label"], "OpenAI Live");
         assert_eq!(live["default_path"], "/v1/live");
         assert_eq!(live["aliases"], serde_json::json!(["codex_live", "live"]));
-    }
-
-    #[test]
-    fn build_admin_system_check_update_payload_reports_available_release() {
-        let payload = build_admin_system_check_update_payload_with_release(
-            "0.7.0-rc27".to_string(),
-            Some(AdminSystemUpdateRelease {
-                version: "v0.7.0-rc28".to_string(),
-                release_url: Some(
-                    "https://github.com/fawney19/Aether/releases/tag/v0.7.0-rc28".to_string(),
-                ),
-                release_notes: Some("release notes".to_string()),
-                published_at: Some("2026-05-13T00:00:00Z".to_string()),
-                tarball_url: None,
-                sha256sums_url: None,
-            }),
-            None,
-        );
-
-        assert_eq!(payload["current_version"], "0.7.0-rc27");
-        assert_eq!(payload["latest_version"], "v0.7.0-rc28");
-        assert_eq!(payload["has_update"], true);
-        assert_eq!(
-            payload["release_url"],
-            "https://github.com/fawney19/Aether/releases/tag/v0.7.0-rc28"
-        );
-        assert_eq!(payload["release_notes"], "release notes");
-        assert_eq!(payload["published_at"], "2026-05-13T00:00:00Z");
-        assert_eq!(payload["updatable"], false);
-        assert_eq!(payload["update_blocker"], "当前平台暂无安装包");
-        assert_eq!(payload["error"], serde_json::Value::Null);
-    }
-
-    #[test]
-    fn build_admin_system_check_update_payload_reports_updatable_release() {
-        let payload = build_admin_system_check_update_payload_with_release(
-            "0.7.0-rc27".to_string(),
-            Some(AdminSystemUpdateRelease {
-                version: "v0.7.0-rc28".to_string(),
-                release_url: None,
-                release_notes: None,
-                published_at: None,
-                tarball_url: Some("https://github.com/fawney19/Aether/releases/download/v0.7.0-rc28/aether.tar.gz".to_string()),
-                sha256sums_url: Some("https://github.com/fawney19/Aether/releases/download/v0.7.0-rc28/SHA256SUMS".to_string()),
-            }),
-            None,
-        );
-
-        assert_eq!(payload["has_update"], true);
-        assert_eq!(payload["updatable"], true);
-        assert_eq!(payload["update_blocker"], serde_json::Value::Null);
-    }
-
-    #[test]
-    fn build_admin_system_check_update_payload_normalizes_v_prefix() {
-        let payload = build_admin_system_check_update_payload_with_release(
-            "0.7.0-rc28".to_string(),
-            Some(AdminSystemUpdateRelease {
-                version: "v0.7.0-rc28".to_string(),
-                release_url: None,
-                release_notes: None,
-                published_at: None,
-                tarball_url: None,
-                sha256sums_url: None,
-            }),
-            None,
-        );
-
-        assert_eq!(payload["has_update"], false);
-        assert_eq!(payload["error"], serde_json::Value::Null);
-    }
-
-    #[test]
-    fn build_admin_system_check_update_payload_ignores_git_describe_build_on_latest_release() {
-        let payload = build_admin_system_check_update_payload_with_release(
-            "0.7.0-rc28-11-g63149fe2-dirty".to_string(),
-            Some(AdminSystemUpdateRelease {
-                version: "v0.7.0-rc28".to_string(),
-                release_url: None,
-                release_notes: None,
-                published_at: None,
-                tarball_url: None,
-                sha256sums_url: None,
-            }),
-            None,
-        );
-
-        assert_eq!(payload["has_update"], false);
-        assert_eq!(payload["error"], serde_json::Value::Null);
-    }
-
-    #[test]
-    fn build_admin_system_check_update_payload_ignores_newer_local_release() {
-        let payload = build_admin_system_check_update_payload_with_release(
-            "0.7.0-rc29".to_string(),
-            Some(AdminSystemUpdateRelease {
-                version: "v0.7.0-rc28".to_string(),
-                release_url: None,
-                release_notes: None,
-                published_at: None,
-                tarball_url: None,
-                sha256sums_url: None,
-            }),
-            None,
-        );
-
-        assert_eq!(payload["has_update"], false);
-        assert_eq!(payload["error"], serde_json::Value::Null);
-    }
-
-    #[test]
-    fn build_admin_system_check_update_payload_compares_rc_versions_numerically() {
-        let payload = build_admin_system_check_update_payload_with_release(
-            "0.7.0-rc9".to_string(),
-            Some(AdminSystemUpdateRelease {
-                version: "v0.7.0-rc10".to_string(),
-                release_url: None,
-                release_notes: None,
-                published_at: None,
-                tarball_url: None,
-                sha256sums_url: None,
-            }),
-            None,
-        );
-
-        assert_eq!(payload["has_update"], true);
-        assert_eq!(payload["error"], serde_json::Value::Null);
     }
 
     #[test]
@@ -3215,61 +2232,6 @@ mod tests {
     }
 
     #[test]
-    fn sensitive_admin_system_config_keys_are_case_insensitive() {
-        assert!(is_sensitive_admin_system_config_key("smtp_password"));
-        assert!(is_sensitive_admin_system_config_key("SMTP_PASSWORD"));
-        assert!(is_sensitive_admin_system_config_key(
-            "module.server_chan_push.send_key"
-        ));
-        assert!(is_sensitive_admin_system_config_key(
-            "module.important_notification.server_chan_send_key"
-        ));
-        assert!(is_sensitive_admin_system_config_key(
-            "module.bark_push.device_key"
-        ));
-        assert!(!is_sensitive_admin_system_config_key("site_name"));
-    }
-
-    #[test]
-    fn s3_backup_secret_access_key_is_sensitive() {
-        assert!(is_sensitive_admin_system_config_key(
-            "backup_s3_secret_access_key"
-        ));
-        assert!(is_sensitive_admin_system_config_key(
-            "BACKUP_S3_SECRET_ACCESS_KEY"
-        ));
-        assert!(!is_sensitive_admin_system_config_key("backup_s3_bucket"));
-    }
-
-    #[test]
-    fn s3_backup_defaults_match_admin_ui_contract() {
-        assert_eq!(
-            admin_system_config_default_value("backup_s3_scope"),
-            Some(json!("data"))
-        );
-        assert_eq!(
-            admin_system_config_default_value("backup_s3_schedule_unit"),
-            Some(json!("days"))
-        );
-        assert_eq!(
-            admin_system_config_default_value("backup_s3_schedule_interval"),
-            Some(json!(1))
-        );
-        assert_eq!(
-            admin_system_config_default_value("backup_s3_retention_count"),
-            Some(json!(7))
-        );
-        assert_eq!(
-            admin_system_config_default_value("backup_s3_path_style"),
-            Some(json!(true))
-        );
-        assert_eq!(
-            admin_system_config_default_value("backup_s3_user_agent"),
-            Some(json!("rclone/v1.68.0"))
-        );
-    }
-
-    #[test]
     fn cyber_continue_failover_defaults_to_disabled() {
         assert_eq!(
             admin_system_config_default_value("cyber_continue_failover"),
@@ -3393,130 +2355,42 @@ mod tests {
         .is_err());
     }
 
+    /// 验证退役配置仅在常规管理 API 中隐藏，备份兼容解析仍保留原键和值。
     #[test]
-    fn legacy_notification_email_config_key_normalizes_to_important_notification() {
-        assert_eq!(
-            normalize_admin_system_config_key("module.notification_email.enabled"),
-            "module.important_notification.enabled"
-        );
-        assert_eq!(
-            admin_system_config_delete_keys("module.important_notification.enabled"),
-            vec![
-                "module.important_notification.enabled".to_string(),
-                "module.notification_email.enabled".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn s3_backup_secret_detail_is_write_only() {
-        let payload = build_admin_system_config_detail_payload(
-            "backup_s3_secret_access_key",
-            Some(json!("encrypted-secret")),
-        )
-        .expect("sensitive backup key should render");
-
-        assert_eq!(payload["key"], json!("backup_s3_secret_access_key"));
-        assert_eq!(payload["value"], serde_json::Value::Null);
-        assert_eq!(payload["is_set"], json!(true));
-    }
-
-    #[test]
-    fn legacy_server_chan_config_keys_normalize_to_push_module() {
-        assert_eq!(
-            normalize_admin_system_config_key("module.important_notification.server_chan_send_key"),
-            "module.server_chan_push.send_key"
-        );
-        assert_eq!(
-            admin_system_config_delete_keys("module.server_chan_push.send_key"),
-            vec![
-                "module.server_chan_push.send_key".to_string(),
-                "module.important_notification.server_chan_send_key".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn system_config_list_normalizes_legacy_keys_and_prefers_canonical_rows() {
+    fn retired_system_config_keys_are_hidden_without_changing_backup_parser() {
         let entries = vec![
             StoredSystemConfigEntry {
-                key: "module.important_notification.server_chan_send_key".to_string(),
-                value: json!("legacy-secret"),
+                key: "smtp_password".to_string(),
+                value: json!("legacy-ciphertext"),
                 description: None,
                 updated_at_unix_secs: None,
             },
             StoredSystemConfigEntry {
-                key: "module.server_chan_push.send_key".to_string(),
-                value: json!("canonical-secret"),
-                description: None,
-                updated_at_unix_secs: None,
-            },
-            StoredSystemConfigEntry {
-                key: "module.notification_email.enabled".to_string(),
-                value: json!(true),
+                key: "site_name".to_string(),
+                value: json!("Aether Test"),
                 description: None,
                 updated_at_unix_secs: None,
             },
         ];
 
-        let payload = build_admin_system_configs_payload(&entries);
-        let rows = payload.as_array().expect("config list should be an array");
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|row| {
-            row["key"] == json!("module.server_chan_push.send_key") && row["is_set"] == json!(true)
-        }));
-        assert!(rows.iter().any(|row| {
-            row["key"] == json!("module.important_notification.enabled")
-                && row["value"] == json!(true)
-        }));
-    }
+        let list = build_admin_system_configs_payload(&entries);
+        let items = list.as_array().expect("config list should be an array");
+        assert!(items.iter().any(|item| item["key"] == "site_name"));
+        assert!(!items.iter().any(|item| item["key"] == "smtp_password"));
 
-    #[test]
-    fn notification_service_items_are_normalized() {
+        let detail = build_admin_system_config_detail_payload(
+            "module.chat_pii_redaction.enabled",
+            Some(json!(true)),
+        )
+        .expect_err("retired config detail should be hidden");
+        assert_eq!(detail.0, http::StatusCode::NOT_FOUND);
+
         let update = parse_admin_system_config_update(
-            "module.important_notification.items",
-            r#"{
-                "value": [
-                    {
-                        "key": "user_balance_low",
-                        "name": " 用户余额不足 ",
-                        "enabled": true,
-                        "channel": "serverchan",
-                        "title_template": " 余额提醒 ",
-                        "markdown_template": " {body} ",
-                        "text_template": null,
-                        "user_email_enabled": true,
-                        "system": true
-                    }
-                ]
-            }"#
-            .as_bytes(),
+            "smtp_password",
+            br#"{ "value": "legacy-ciphertext" }"#,
         )
-        .expect("items should parse");
-
-        assert_eq!(update.normalized_key, "module.important_notification.items");
-        assert_eq!(update.value[0]["channel"], json!("server_chan"));
-        assert_eq!(update.value[0]["name"], json!("用户余额不足"));
-        assert_eq!(update.value[0]["text_template"], json!(""));
-        assert_eq!(update.value[0]["user_email_enabled"], json!(true));
-    }
-
-    #[test]
-    fn bark_push_config_values_are_normalized() {
-        let update = parse_admin_system_config_update(
-            "module.bark_push.server_url",
-            r#"{ "value": " https://api.day.app/ " }"#.as_bytes(),
-        )
-        .expect("server url should parse");
-
-        assert_eq!(update.normalized_key, "module.bark_push.server_url");
-        assert_eq!(update.value, json!("https://api.day.app"));
-
-        let err = parse_admin_system_config_update(
-            "module.bark_push.server_url",
-            r#"{ "value": "api.day.app" }"#.as_bytes(),
-        )
-        .expect_err("server url without scheme should fail");
-        assert_eq!(err.0, http::StatusCode::BAD_REQUEST);
+        .expect("backup parser must retain retired scalar config");
+        assert_eq!(update.normalized_key, "smtp_password");
+        assert_eq!(update.value, json!("legacy-ciphertext"));
     }
 }

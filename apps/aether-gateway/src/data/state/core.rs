@@ -579,12 +579,6 @@ impl GatewayDataState {
             .is_some_and(|backends| backends.has_database_pool_summary())
     }
 
-    pub(crate) fn has_wallet_daily_usage_aggregation_backend(&self) -> bool {
-        self.backends
-            .as_ref()
-            .is_some_and(|backends| backends.has_wallet_daily_usage_aggregation_backend())
-    }
-
     pub(crate) fn has_stats_hourly_aggregation_backend(&self) -> bool {
         self.backends
             .as_ref()

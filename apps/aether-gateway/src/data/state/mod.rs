@@ -76,14 +76,10 @@ use aether_data::repository::wallet::{
     StoredAdminRedeemCodeBatchPage, StoredAdminRedeemCodePage, StoredAdminWalletLedgerPage,
     StoredAdminWalletListPage, StoredAdminWalletRefund, StoredAdminWalletRefundPage,
     StoredAdminWalletRefundRequestPage, StoredAdminWalletTransaction,
-    StoredAdminWalletTransactionPage, StoredWalletDailyUsageLedger,
-    StoredWalletDailyUsageLedgerPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
+    StoredAdminWalletTransactionPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
     WalletReadRepository, WalletWriteRepository,
 };
-use aether_data::{
-    DataBackends, DataLayerError, DatabaseMaintenanceSummary, WalletDailyUsageAggregationInput,
-    WalletDailyUsageAggregationResult,
-};
+use aether_data::{DataBackends, DataLayerError, DatabaseMaintenanceSummary};
 use aether_data_contracts::repository::background_tasks::{
     BackgroundTaskListQuery, BackgroundTaskReadRepository, BackgroundTaskSummary,
     BackgroundTaskWriteRepository, StoredBackgroundTaskEvent, StoredBackgroundTaskRun,

@@ -8,10 +8,9 @@ use tracing::warn;
 use crate::data::GatewayDataState;
 
 use super::{
-    system_config_string, WalletDailyUsageAggregationTarget, DB_MAINTENANCE_HOUR,
-    DB_MAINTENANCE_MINUTE, DB_MAINTENANCE_WEEKDAY, DB_MAINTENANCE_WEEKLY_INTERVAL,
-    MAINTENANCE_DEFAULT_TIMEZONE, STATS_DAILY_AGGREGATION_HOUR, STATS_DAILY_AGGREGATION_MINUTE,
-    STATS_HOURLY_AGGREGATION_MINUTE,
+    system_config_string, DB_MAINTENANCE_HOUR, DB_MAINTENANCE_MINUTE, DB_MAINTENANCE_WEEKDAY,
+    DB_MAINTENANCE_WEEKLY_INTERVAL, MAINTENANCE_DEFAULT_TIMEZONE, STATS_DAILY_AGGREGATION_HOUR,
+    STATS_DAILY_AGGREGATION_MINUTE, STATS_HOURLY_AGGREGATION_MINUTE,
 };
 
 pub(super) fn maintenance_timezone() -> Tz {
@@ -175,22 +174,6 @@ pub(super) fn stats_hourly_aggregation_target_hour(now_utc: DateTime<Utc>) -> Da
             .and_hms_opt(previous_hour.hour(), 0, 0)
             .expect("stats hourly aggregation target hour should be valid"),
     )
-}
-
-pub(super) fn wallet_daily_usage_aggregation_target(
-    now_utc: DateTime<Utc>,
-    timezone: Tz,
-) -> WalletDailyUsageAggregationTarget {
-    let local_today = now_utc.with_timezone(&timezone).date_naive();
-    let billing_date = local_today - chrono::Duration::days(1);
-    let next_billing_date = billing_date + chrono::Duration::days(1);
-
-    WalletDailyUsageAggregationTarget {
-        billing_date,
-        billing_timezone: timezone.to_string(),
-        window_start_utc: local_day_start_utc(billing_date, timezone),
-        window_end_utc: local_day_start_utc(next_billing_date, timezone),
-    }
 }
 
 pub(super) fn local_day_start_utc(date: chrono::NaiveDate, timezone: Tz) -> DateTime<Utc> {

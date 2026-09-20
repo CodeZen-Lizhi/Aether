@@ -25,7 +25,6 @@ fn aether_data_backend_pool_modules_do_not_own_maintenance_sql() {
         let production = production_source(&source);
         for forbidden in [
             "run_table_maintenance(",
-            "aggregate_wallet_daily_usage(",
             "aggregate_stats_hourly(",
             "aggregate_stats_daily(",
             "find_system_config_value(",
@@ -48,9 +47,6 @@ fn aether_data_backend_pool_modules_do_not_own_maintenance_sql() {
         "Self::Postgres(postgres) => postgres.run_table_maintenance(table_names).await",
         "Self::Mysql(mysql) => mysql.run_table_maintenance(table_names).await",
         "Self::Sqlite(sqlite) => sqlite.run_table_maintenance(table_names).await",
-        "Self::Postgres(postgres) => postgres.aggregate_wallet_daily_usage(input).await",
-        "Self::Mysql(mysql) => mysql.aggregate_wallet_daily_usage(input).await",
-        "Self::Sqlite(sqlite) => sqlite.aggregate_wallet_daily_usage(input).await",
         "Self::Postgres(postgres) => postgres.aggregate_stats_hourly(input).await",
         "Self::Mysql(mysql) => mysql.aggregate_stats_hourly(input).await",
         "Self::Sqlite(sqlite) => sqlite.aggregate_stats_hourly(input).await",

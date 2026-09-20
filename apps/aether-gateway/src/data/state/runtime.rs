@@ -26,13 +26,11 @@ use super::{
     StoredBackgroundTaskRunPage, StoredBillingModelContext, StoredProviderQuotaSnapshot,
     StoredProviderUsageSummary, StoredRequestUsageAudit, StoredSuspiciousActivity,
     StoredUsageSettlement, StoredUserAuditLogPage, StoredUserAuthRecord, StoredUserExportRow,
-    StoredUserSummary, StoredVideoTask, StoredWalletDailyUsageLedger,
-    StoredWalletDailyUsageLedgerPage, StoredWalletSnapshot, UpdateAnnouncementRecord,
+    StoredUserSummary, StoredVideoTask, StoredWalletSnapshot, UpdateAnnouncementRecord,
     UpsertBackgroundTaskEvent, UpsertBackgroundTaskRun, UpsertUsageRecord, UpsertVideoTask,
     UsageSettlementInput, UserDailyQuotaAvailabilityRecord, UserPlanEntitlementRecord,
     VideoTaskLookupKey, VideoTaskModelCount, VideoTaskQueryFilter, VideoTaskStatusCount,
-    WalletDailyUsageAggregationInput, WalletDailyUsageAggregationResult, WalletLookupKey,
-    WalletMutationOutcome,
+    WalletLookupKey, WalletMutationOutcome,
 };
 use aether_data_contracts::repository::usage::{
     PendingUsageCleanupSummary, ProviderApiKeyWindowUsageRequest,
@@ -333,16 +331,6 @@ impl GatewayDataState {
         }
 
         true
-    }
-
-    pub(crate) async fn aggregate_wallet_daily_usage(
-        &self,
-        input: &WalletDailyUsageAggregationInput,
-    ) -> Result<WalletDailyUsageAggregationResult, DataLayerError> {
-        match &self.backends {
-            Some(backends) => backends.aggregate_wallet_daily_usage(input).await,
-            None => Ok(WalletDailyUsageAggregationResult::default()),
-        }
     }
 
     pub(crate) async fn aggregate_stats_hourly(
@@ -729,37 +717,6 @@ impl GatewayDataState {
                     .await
             }
             None => Ok(StoredAdminWalletTransactionPage::default()),
-        }
-    }
-
-    pub(crate) async fn find_wallet_today_usage(
-        &self,
-        wallet_id: &str,
-        billing_timezone: &str,
-    ) -> Result<Option<StoredWalletDailyUsageLedger>, DataLayerError> {
-        match &self.wallet_reader {
-            Some(repository) => {
-                repository
-                    .find_wallet_today_usage(wallet_id, billing_timezone)
-                    .await
-            }
-            None => Ok(None),
-        }
-    }
-
-    pub(crate) async fn list_wallet_daily_usage_history(
-        &self,
-        wallet_id: &str,
-        billing_timezone: &str,
-        limit: usize,
-    ) -> Result<StoredWalletDailyUsageLedgerPage, DataLayerError> {
-        match &self.wallet_reader {
-            Some(repository) => {
-                repository
-                    .list_wallet_daily_usage_history(wallet_id, billing_timezone, limit)
-                    .await
-            }
-            None => Ok(StoredWalletDailyUsageLedgerPage::default()),
         }
     }
 

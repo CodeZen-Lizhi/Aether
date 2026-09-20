@@ -201,15 +201,6 @@
             @update:model-value="(v: boolean) => form.responses_websocket_enabled = v"
           />
         </div>
-
-        <div class="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/50">
-          <div class="space-y-0.5">
-            <span class="text-sm font-medium">{{ legacyT('敏感信息保护') }}</span>
-            <p class="text-xs text-muted-foreground leading-relaxed">
-              {{ legacyT('请前往模块管理-敏感信息保护中配置详细规则。') }}
-            </p>
-          </div>
-        </div>
       </div>
     </form>
 

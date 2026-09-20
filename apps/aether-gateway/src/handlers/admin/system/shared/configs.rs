@@ -58,21 +58,6 @@ fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value> {
     admin_system_config_default_value_pure(key)
 }
 
-fn legacy_admin_system_config_fallback_key(normalized_key: &str) -> Option<&'static str> {
-    match normalized_key {
-        "module.server_chan_push.enabled" => {
-            Some("module.important_notification.server_chan_enabled")
-        }
-        "module.server_chan_push.send_key" => {
-            Some("module.important_notification.server_chan_send_key")
-        }
-        "module.server_chan_push.template" => {
-            Some("module.important_notification.server_chan_template")
-        }
-        _ => None,
-    }
-}
-
 pub(crate) fn build_admin_system_configs_payload(
     entries: &[aether_data::repository::system::StoredSystemConfigEntry],
 ) -> serde_json::Value {
@@ -84,6 +69,7 @@ pub(crate) fn build_admin_system_configs_payload(
     build_admin_system_configs_payload_pure(&visible_entries)
 }
 
+/// 读取有效系统配置；退役功能键不再通过管理 API 暴露。
 pub(crate) async fn build_admin_system_config_detail_payload(
     state: &AdminAppState<'_>,
     requested_key: &str,
@@ -92,13 +78,14 @@ pub(crate) async fn build_admin_system_config_detail_payload(
     if let Some(error) = external_models_proxy_node_config_owner_error(requested_key) {
         return Ok(Err(error));
     }
-    let normalized_key = normalize_admin_system_config_key(requested_key);
-    let mut value = state.read_system_config_json_value(&normalized_key).await?;
-    if value.is_none() {
-        if let Some(legacy_key) = legacy_admin_system_config_fallback_key(&normalized_key) {
-            value = state.read_system_config_json_value(legacy_key).await?;
-        }
+    if aether_admin::system::is_retired_admin_system_config_key(requested_key) {
+        return Ok(Err((
+            http::StatusCode::NOT_FOUND,
+            json!({ "detail": "该配置所属功能已移除" }),
+        )));
     }
+    let normalized_key = normalize_admin_system_config_key(requested_key);
+    let value = state.read_system_config_json_value(&normalized_key).await?;
     let value = value.or_else(|| admin_system_config_default_value(&normalized_key));
     Ok(build_admin_system_config_detail_payload_pure(
         requested_key,
@@ -106,6 +93,7 @@ pub(crate) async fn build_admin_system_config_detail_payload(
     ))
 }
 
+/// 写入有效系统配置，拒绝退役功能键并保留敏感值加密规则。
 pub(crate) async fn apply_admin_system_config_update(
     state: &AdminAppState<'_>,
     requested_key: &str,
@@ -113,6 +101,12 @@ pub(crate) async fn apply_admin_system_config_update(
 ) -> Result<Result<serde_json::Value, (http::StatusCode, serde_json::Value)>, GatewayError> {
     if let Some(error) = external_models_proxy_node_config_owner_error(requested_key) {
         return Ok(Err(error));
+    }
+    if aether_admin::system::is_retired_admin_system_config_key(requested_key) {
+        return Ok(Err((
+            http::StatusCode::NOT_FOUND,
+            json!({ "detail": "该配置所属功能已移除" }),
+        )));
     }
     let update = match parse_admin_system_config_update(requested_key, request_body) {
         Ok(update) => update,
@@ -155,12 +149,19 @@ pub(crate) async fn apply_admin_system_config_update(
     )))
 }
 
+/// 删除有效系统配置及其兼容别名；退役键保留在历史数据层。
 pub(crate) async fn delete_admin_system_config(
     state: &AdminAppState<'_>,
     requested_key: &str,
 ) -> Result<Result<serde_json::Value, (http::StatusCode, serde_json::Value)>, GatewayError> {
     if let Some(error) = external_models_proxy_node_config_owner_error(requested_key) {
         return Ok(Err(error));
+    }
+    if aether_admin::system::is_retired_admin_system_config_key(requested_key) {
+        return Ok(Err((
+            http::StatusCode::NOT_FOUND,
+            json!({ "detail": "该配置所属功能已移除" }),
+        )));
     }
     let delete_keys = admin_system_config_delete_keys(requested_key);
     let mut deleted = false;

@@ -201,6 +201,7 @@ pub(crate) fn json_string_list(value: Option<&serde_json::Value>) -> Vec<String>
         .collect()
 }
 
+/// 仅为仍支持的管理写操作缓冲请求体。
 pub(crate) fn admin_proxy_local_requires_buffered_body(
     request_context: &GatewayPublicRequestContext,
 ) -> bool {
@@ -228,8 +229,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 )
                 | (Some("endpoints_manage"), http::Method::PUT, Some("update_key"))
                 | (Some("endpoints_manage"), http::Method::PUT, Some("update_endpoint"))
-                | (Some("oauth_manage"), http::Method::PUT, Some("upsert_provider"))
-                | (Some("oauth_manage"), http::Method::POST, Some("test_provider"))
                 | (Some("provider_oauth_manage"), http::Method::POST, Some("complete_key_oauth"))
                 | (
                     Some("provider_oauth_manage"),
@@ -258,13 +257,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("system_manage"), http::Method::POST, Some("config_import"))
                 | (Some("system_manage"), http::Method::POST, Some("data_import"))
                 | (Some("system_manage"), http::Method::PUT, Some("config_set"))
-                | (Some("system_manage"), http::Method::PUT, Some("email_template_set"))
-                | (Some("system_manage"), http::Method::POST, Some("email_template_preview"))
-                | (
-                    Some("system_manage"),
-                    http::Method::POST,
-                    Some("important_notification_test"),
-                )
                 | (
                     Some("provider_models_manage"),
                     http::Method::POST,
@@ -324,14 +316,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("billing_manage"), http::Method::PUT, Some("update_plan"))
                 | (Some("billing_manage"), http::Method::PATCH, Some("set_plan_status"))
                 | (
-                    Some("payments_manage"),
-                    http::Method::PUT,
-                    Some("update_epay_gateway" | "update_payment_gateway"),
-                )
-                | (Some("payments_manage"), http::Method::POST, Some("credit_order"))
-                | (Some("payments_manage"), http::Method::POST, Some("create_redeem_code_batch"))
-                | (Some("payments_manage"), http::Method::POST, Some("delete_redeem_code_batch"))
-                | (
                     Some("api_keys_manage"),
                     http::Method::POST,
                     Some("create_api_key" | "create_api_key_install_session"),
@@ -358,8 +342,6 @@ pub(crate) fn admin_proxy_local_requires_buffered_body(
                 | (Some("pool_manage"), http::Method::POST, Some("resolve_selection"))
                 | (Some("usage_manage"), http::Method::POST, Some("replay"))
                 | (Some("gemini_files_manage"), http::Method::POST, Some("upload"))
-                | (Some("ldap_manage"), http::Method::PUT, Some("set_config"))
-                | (Some("ldap_manage"), http::Method::POST, Some("test_connection"))
                 | (Some("global_models_manage"), http::Method::POST, Some("create_global_model"))
                 | (
                     Some("global_models_manage"),

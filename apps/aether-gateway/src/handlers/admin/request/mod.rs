@@ -1,4 +1,3 @@
-mod auth;
 mod capabilities;
 mod context;
 mod endpoint;

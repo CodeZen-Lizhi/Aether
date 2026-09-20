@@ -18,8 +18,6 @@ mod stats_common;
 #[cfg(feature = "sqlite")]
 mod system;
 mod transactions;
-#[cfg(feature = "sqlite")]
-mod wallet;
 mod write;
 
 #[cfg(feature = "sqlite")]

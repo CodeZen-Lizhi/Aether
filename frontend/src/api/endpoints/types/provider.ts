@@ -169,17 +169,13 @@ export interface FormatAcceptanceConfig {
   reject_formats?: string[]       // 黑名单：拒绝哪些格式（优先级高于白名单）
 }
 
-export interface ChatPiiRedactionProviderConfig {
-  enabled: boolean
-}
-
 export interface ResponsesWebSocketProviderConfig {
   enabled: boolean
 }
 
+/** 供应商当前配置及备份兼容的扩展字段。 */
 export interface ProviderConfig {
   stream_total_timeout_ms?: number | null
-  chat_pii_redaction?: ChatPiiRedactionProviderConfig
   responses_websocket?: ResponsesWebSocketProviderConfig
   failover_rules?: FailoverRulesConfig
   [key: string]: unknown
@@ -533,17 +529,6 @@ export interface HealthRelatedMonitorResponse {
 
 export type ProviderType = 'custom'
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-export function normalizeChatPiiRedactionProviderConfig(value: unknown): ChatPiiRedactionProviderConfig {
-  if (!isPlainObject(value) || typeof value.enabled !== 'boolean') {
-    return { enabled: false }
-  }
-  return { enabled: value.enabled }
-}
-
 export interface FailoverRuleItem {
   pattern: string
   description?: string
@@ -570,6 +555,7 @@ export interface FailoverRulesConfig {
   error_stop_patterns?: FailoverRuleItem[]
 }
 
+/** 供应商列表与详情共用的端点、健康和有效能力摘要。 */
 export interface ProviderWithEndpointsSummary {
   effective_max_attempts?: number
   effective_max_attempts_source?: string
@@ -609,7 +595,6 @@ export interface ProviderWithEndpointsSummary {
   unhealthy_endpoints: number
   api_formats: string[]
   endpoint_health_details: EndpointHealthDetail[]
-  chat_pii_redaction?: ChatPiiRedactionProviderConfig | null
   failover_rules?: FailoverRulesConfig | null
   ops_configured?: boolean  // 是否配置了用户认证（余额查询等）
   ops_architecture_id?: string  // 用户认证使用的架构 ID

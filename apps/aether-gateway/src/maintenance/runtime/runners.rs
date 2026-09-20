@@ -13,8 +13,7 @@ use super::{
     cleanup_request_candidates_once, cleanup_stale_pending_requests_once,
     cleanup_stale_proxy_nodes_once, collect_proxy_upgrade_rollout_probes, now_unix_secs,
     perform_db_maintenance_once, perform_manual_usage_cleanup_once, perform_stats_aggregation_once,
-    perform_stats_hourly_aggregation_once, perform_usage_cleanup_once,
-    perform_wallet_daily_usage_aggregation_once, record_admin_cleanup_run,
+    perform_stats_hourly_aggregation_once, perform_usage_cleanup_once, record_admin_cleanup_run,
     record_completed_cleanup_run, record_failed_cleanup_run, record_proxy_upgrade_traffic_success,
     summarize_database_pool, AdminCleanupRunRecord, ManualUsageCleanupOptions,
 };
@@ -190,23 +189,6 @@ pub(super) async fn run_db_maintenance_once(data: &GatewayDataState) -> Result<(
             "gateway finished db maintenance"
         );
     }
-    Ok(())
-}
-
-pub(super) async fn run_wallet_daily_usage_aggregation_once(
-    data: &GatewayDataState,
-) -> Result<(), DataLayerError> {
-    let summary = perform_wallet_daily_usage_aggregation_once(data).await?;
-    info!(
-        event_name = "wallet_daily_usage_aggregation_completed",
-        log_type = "ops",
-        worker = "wallet_daily_usage_aggregation",
-        billing_date = %summary.billing_date,
-        billing_timezone = %summary.billing_timezone,
-        wallets = summary.aggregated_wallets,
-        stale_deleted = summary.deleted_stale_ledgers,
-        "gateway aggregated wallet daily usage ledgers"
-    );
     Ok(())
 }
 

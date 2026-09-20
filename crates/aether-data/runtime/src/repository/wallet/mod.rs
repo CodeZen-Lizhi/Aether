@@ -21,8 +21,7 @@ pub use aether_data_contracts::repository::wallet::{
     StoredAdminWalletListItem, StoredAdminWalletListPage, StoredAdminWalletRefund,
     StoredAdminWalletRefundPage, StoredAdminWalletRefundRequestItem,
     StoredAdminWalletRefundRequestPage, StoredAdminWalletTransaction,
-    StoredAdminWalletTransactionPage, StoredWalletDailyUsageLedger,
-    StoredWalletDailyUsageLedgerPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
+    StoredAdminWalletTransactionPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
     WalletReadRepository, WalletReadSeed, WalletReadSnapshot, WalletRepository,
     WalletWriteRepository,
 };

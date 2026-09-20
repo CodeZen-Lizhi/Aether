@@ -332,7 +332,6 @@ fn admin_shared_does_not_own_system_core_routes_or_payloads() {
     let admin_shared_paths =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/shared/paths.rs");
     for pattern in [
-        "pub(crate) fn is_admin_management_tokens_root",
         "pub(crate) fn is_admin_system_configs_root",
         "pub(crate) fn admin_oauth_provider_type_from_path",
     ] {
@@ -344,10 +343,7 @@ fn admin_shared_does_not_own_system_core_routes_or_payloads() {
 
     let system_shared_paths =
         read_workspace_file("apps/aether-gateway/src/handlers/admin/system/shared/paths.rs");
-    for pattern in [
-        "pub(crate) fn is_admin_management_tokens_root",
-        "pub(crate) fn is_admin_system_configs_root",
-    ] {
+    for pattern in ["pub(crate) fn is_admin_system_configs_root"] {
         assert!(
             system_shared_paths.contains(pattern),
             "system/shared/paths.rs should own {pattern}"
@@ -681,12 +677,6 @@ fn admin_proxy_uses_single_admin_routes_entrypoint() {
         "pub(crate) fn has_request_candidate_data_reader(&self) -> bool",
         "pub(crate) fn has_global_model_data_reader(&self) -> bool",
         "pub(crate) fn has_usage_data_reader(&self) -> bool",
-        "pub(crate) fn has_auth_module_writer(&self) -> bool",
-        "pub(crate) async fn count_active_local_admin_users_with_valid_password(",
-        "pub(crate) async fn list_oauth_provider_configs(",
-        "pub(crate) async fn get_oauth_provider_config(",
-        "pub(crate) async fn upsert_oauth_provider_config(",
-        "pub(crate) async fn delete_oauth_provider_config(",
         "pub(crate) fn mark_provider_key_rpm_reset(&self, key_id: &str, now_unix_secs: u64)",
         "pub(crate) async fn list_proxy_nodes(",
         "pub(crate) async fn find_proxy_node(",

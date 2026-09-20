@@ -264,28 +264,6 @@ pub struct StoredAdminWalletTransactionPage {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct StoredWalletDailyUsageLedger {
-    pub id: Option<String>,
-    pub billing_date: String,
-    pub billing_timezone: String,
-    pub total_cost_usd: f64,
-    pub total_requests: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub first_finalized_at_unix_secs: Option<u64>,
-    pub last_finalized_at_unix_secs: Option<u64>,
-    pub aggregated_at_unix_secs: Option<u64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub struct StoredWalletDailyUsageLedgerPage {
-    pub items: Vec<StoredWalletDailyUsageLedger>,
-    pub total: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StoredAdminWalletRefund {
     pub id: String,
     pub refund_no: String,
@@ -778,6 +756,7 @@ pub struct CreditAdminPaymentOrderInput {
 }
 
 #[async_trait]
+/// 读取仍被 Key 余额和结算复用的钱包数据，不提供退役的每日账本查询。
 pub trait WalletReadRepository: Send + Sync {
     async fn find(
         &self,
@@ -873,19 +852,6 @@ pub trait WalletReadRepository: Send + Sync {
         limit: usize,
         offset: usize,
     ) -> Result<StoredAdminWalletTransactionPage, crate::DataLayerError>;
-
-    async fn find_wallet_today_usage(
-        &self,
-        wallet_id: &str,
-        billing_timezone: &str,
-    ) -> Result<Option<StoredWalletDailyUsageLedger>, crate::DataLayerError>;
-
-    async fn list_wallet_daily_usage_history(
-        &self,
-        wallet_id: &str,
-        billing_timezone: &str,
-        limit: usize,
-    ) -> Result<StoredWalletDailyUsageLedgerPage, crate::DataLayerError>;
 
     async fn list_admin_wallet_refunds(
         &self,

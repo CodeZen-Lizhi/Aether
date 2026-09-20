@@ -41,8 +41,6 @@ mod tests;
 mod usage_cleanup;
 #[path = "runtime/usage_counter_flush.rs"]
 mod usage_counter_flush;
-#[path = "runtime/wallet_daily_usage.rs"]
-mod wallet_daily_usage;
 #[path = "runtime/workers.rs"]
 mod workers;
 pub(crate) use aether_data_contracts::repository::usage::{
@@ -89,7 +87,6 @@ use usage_counter_flush::*;
 pub(crate) use usage_counter_flush::{
     UsageCounterFlushRuntimeMetrics, UsageCounterFlushWorkerConfig,
 };
-use wallet_daily_usage::*;
 pub(crate) use workers::*;
 
 pub(super) fn postgres_error(
@@ -116,8 +113,6 @@ const STATS_DAILY_AGGREGATION_MINUTE: u32 = 5;
 const STATS_HOURLY_AGGREGATION_MINUTE: u32 = 5;
 const USAGE_CLEANUP_HOUR: u32 = 3;
 const USAGE_CLEANUP_MINUTE: u32 = 0;
-const WALLET_DAILY_USAGE_AGGREGATION_HOUR: u32 = 0;
-const WALLET_DAILY_USAGE_AGGREGATION_MINUTE: u32 = 10;
 const DB_MAINTENANCE_WEEKLY_INTERVAL: chrono::Duration = chrono::Duration::days(7);
 const DB_MAINTENANCE_WEEKDAY: Weekday = Weekday::Sun;
 const DB_MAINTENANCE_HOUR: u32 = 5;

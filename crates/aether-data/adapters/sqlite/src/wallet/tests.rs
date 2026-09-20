@@ -88,19 +88,6 @@ async fn sqlite_wallet_read_repository_reads_wallet_contract_views() {
         .expect("redeem codes should list");
     assert_eq!(codes.total, 1);
     assert_eq!(codes.items[0].masked_code, "ABCD****WXYZ");
-
-    let today = super::current_billing_date("UTC").expect("UTC should parse");
-    sqlx::query("UPDATE wallet_daily_usage_ledgers SET billing_date = ? WHERE id = 'daily-1'")
-        .bind(today)
-        .execute(repository.pool())
-        .await
-        .expect("daily row should update");
-    let daily = repository
-        .find_wallet_today_usage("wallet-1", "UTC")
-        .await
-        .expect("daily usage should query")
-        .expect("daily usage should exist");
-    assert_eq!(daily.total_requests, 2);
 }
 
 #[tokio::test]
@@ -1487,19 +1474,4 @@ INSERT INTO redeem_codes (
     .execute(pool)
     .await
     .expect("redeem code should seed");
-
-    sqlx::query(
-        r#"
-INSERT INTO wallet_daily_usage_ledgers (
-  id, wallet_id, billing_date, billing_timezone, total_cost_usd,
-  total_requests, input_tokens, output_tokens, cache_creation_tokens,
-  cache_read_tokens, aggregated_at, created_at, updated_at
-) VALUES (
-  'daily-1', 'wallet-1', '2000-01-01', 'UTC', 1.25, 2, 10, 20, 3, 4, 11, 11, 11
-)
-"#,
-    )
-    .execute(pool)
-    .await
-    .expect("daily usage should seed");
 }

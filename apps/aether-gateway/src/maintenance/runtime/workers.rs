@@ -16,12 +16,11 @@ use super::{
     run_proxy_node_metrics_cleanup_once, run_proxy_node_stale_cleanup_once,
     run_proxy_upgrade_rollout_once, run_request_candidate_cleanup_once, run_stats_aggregation_once,
     run_stats_hourly_aggregation_once, run_usage_cleanup_once, run_usage_counter_flush_once,
-    run_wallet_daily_usage_aggregation_once, GEMINI_FILE_MAPPING_CLEANUP_INTERVAL,
-    PENDING_CLEANUP_INTERVAL, POOL_MONITOR_INTERVAL, PROVIDER_QUOTA_ALERT_INTERVAL,
-    PROXY_NODE_METRICS_CLEANUP_HOUR, PROXY_NODE_METRICS_CLEANUP_MINUTE,
-    PROXY_NODE_STALE_SWEEP_INTERVAL, PROXY_UPGRADE_ROLLOUT_INTERVAL,
-    REQUEST_CANDIDATE_CLEANUP_INTERVAL, USAGE_CLEANUP_HOUR, USAGE_CLEANUP_MINUTE,
-    WALLET_DAILY_USAGE_AGGREGATION_HOUR, WALLET_DAILY_USAGE_AGGREGATION_MINUTE,
+    GEMINI_FILE_MAPPING_CLEANUP_INTERVAL, PENDING_CLEANUP_INTERVAL, POOL_MONITOR_INTERVAL,
+    PROVIDER_QUOTA_ALERT_INTERVAL, PROXY_NODE_METRICS_CLEANUP_HOUR,
+    PROXY_NODE_METRICS_CLEANUP_MINUTE, PROXY_NODE_STALE_SWEEP_INTERVAL,
+    PROXY_UPGRADE_ROLLOUT_INTERVAL, REQUEST_CANDIDATE_CLEANUP_INTERVAL, USAGE_CLEANUP_HOUR,
+    USAGE_CLEANUP_MINUTE,
 };
 use super::{UsageCounterFlushRuntimeMetrics, UsageCounterFlushWorkerConfig};
 
@@ -138,47 +137,6 @@ pub(crate) fn spawn_db_maintenance_worker(app: AppState) -> Option<tokio::task::
                 }
                 if let Err(err) = run_db_maintenance_once(&data).await {
                     log_maintenance_worker_failure("db_maintenance", "tick", &err);
-                }
-            }
-        },
-    ))
-}
-
-pub(crate) fn spawn_wallet_daily_usage_aggregation_worker(
-    app: AppState,
-) -> Option<tokio::task::JoinHandle<()>> {
-    if !app.data.has_wallet_daily_usage_aggregation_backend() {
-        return None;
-    }
-
-    let timezone = maintenance_timezone();
-    Some(crate::task_runtime::spawn_singleton_worker(
-        app,
-        crate::task_runtime::TASK_KEY_WALLET_DAILY_USAGE_AGG,
-        move |app| async move {
-            let data = app.data;
-            let mut deferred_since = None;
-            loop {
-                tokio::time::sleep(duration_until_next_daily_run(
-                    Utc::now(),
-                    timezone,
-                    WALLET_DAILY_USAGE_AGGREGATION_HOUR,
-                    WALLET_DAILY_USAGE_AGGREGATION_MINUTE,
-                ))
-                .await;
-                loop {
-                    if should_defer_for_database_pressure(
-                        &data,
-                        "wallet_daily_usage_aggregation",
-                        &mut deferred_since,
-                    ) {
-                        tokio::time::sleep(MAINTENANCE_PRESSURE_RETRY_INTERVAL).await;
-                        continue;
-                    }
-                    break;
-                }
-                if let Err(err) = run_wallet_daily_usage_aggregation_once(&data).await {
-                    log_maintenance_worker_failure("wallet_daily_usage_aggregation", "tick", &err);
                 }
             }
         },

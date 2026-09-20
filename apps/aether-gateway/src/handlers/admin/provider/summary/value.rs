@@ -33,6 +33,7 @@ fn endpoint_timestamp_or_now(value: Option<u64>, now_unix_secs: u64) -> serde_js
         .unwrap_or(serde_json::Value::Null)
 }
 
+/// 汇总供应商及其端点、密钥和配额，省略已退役的聊天脱敏能力。
 pub(crate) fn build_admin_provider_summary_value(
     provider: &StoredProviderCatalogProvider,
     endpoints: &[StoredProviderCatalogEndpoint],
@@ -221,7 +222,6 @@ pub(crate) fn build_admin_provider_summary_value(
         "claude_code_advanced": config.and_then(|cfg| cfg.get("claude_code_advanced")).cloned(),
         "pool_advanced": config.and_then(|cfg| cfg.get("pool_advanced")).cloned(),
         "failover_rules": config.and_then(|cfg| cfg.get("failover_rules")).cloned(),
-        "chat_pii_redaction": config.and_then(|cfg| cfg.get("chat_pii_redaction")).cloned(),
         "total_endpoints": total_endpoints,
         "active_endpoints": active_endpoints,
         "total_keys": total_keys,

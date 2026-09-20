@@ -4,8 +4,8 @@ use crate::handlers::admin::provider::shared::support::{
     normalize_provider_transfer_limit_json, parse_optional_rfc3339_unix_secs,
     PROVIDER_MAX_TRANSFER_COUNT_CONFIG_KEY, PROVIDER_MAX_TRANSFER_TIMEOUT_SECONDS_CONFIG_KEY,
 };
-use crate::handlers::admin::provider::write::normalize::normalize_chat_pii_redaction_config;
 use crate::handlers::admin::provider::write::normalize::normalize_provider_type_input;
+use crate::handlers::admin::provider::write::normalize::remove_retired_provider_config;
 use crate::handlers::admin::provider::write::normalize::set_responses_websocket_enabled;
 use crate::handlers::admin::provider::write::normalize::validate_responses_websocket_config;
 use crate::handlers::admin::request::AdminAppState;
@@ -15,6 +15,7 @@ use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
+/// 构造管理 API 写入记录，并移除已退役的聊天脱敏配置。
 pub(crate) async fn build_admin_create_provider_record(
     state: &AdminAppState<'_>,
     payload: AdminProviderCreateRequest,
@@ -26,9 +27,13 @@ pub(crate) async fn build_admin_create_provider_record(
         .list_provider_catalog_providers(false)
         .await
         .map_err(|err| format!("{err:?}"))?;
-    build_admin_create_provider_record_from_existing(&existing_providers, payload)
+    let (mut record, priority) =
+        build_admin_create_provider_record_from_existing(&existing_providers, payload)?;
+    remove_retired_provider_config(&mut record.config);
+    Ok((record, priority))
 }
 
+/// 根据已有记录构造供应商配置；共享备份入口保留历史扩展字段。
 pub(crate) fn build_admin_create_provider_record_from_existing(
     existing_providers: &[StoredProviderCatalogProvider],
     payload: AdminProviderCreateRequest,
@@ -158,12 +163,6 @@ pub(crate) fn build_admin_create_provider_record_from_existing(
             "provider_max_attempts",
             max_retries,
         )?;
-    }
-    if config_map.contains_key("chat_pii_redaction") {
-        let value = normalize_chat_pii_redaction_config(config_map.remove("chat_pii_redaction"))?;
-        if let Some(value) = value {
-            config_map.insert("chat_pii_redaction".to_string(), value);
-        }
     }
     if let Some(enabled) = payload.responses_websocket_enabled {
         set_responses_websocket_enabled(&mut config_map, enabled)?;

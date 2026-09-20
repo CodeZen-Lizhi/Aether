@@ -39,14 +39,6 @@ impl<'a> AdminAppState<'a> {
         self.app.has_request_candidate_data_reader()
     }
 
-    pub(crate) fn has_management_token_reader(&self) -> bool {
-        self.app.has_management_token_reader()
-    }
-
-    pub(crate) fn has_management_token_writer(&self) -> bool {
-        self.app.has_management_token_writer()
-    }
-
     pub(crate) fn has_global_model_data_reader(&self) -> bool {
         self.app.has_global_model_data_reader()
     }
@@ -105,10 +97,6 @@ impl<'a> AdminAppState<'a> {
 
     pub(crate) fn has_auth_api_key_writer(&self) -> bool {
         self.app.data.has_auth_api_key_writer()
-    }
-
-    pub(crate) fn has_auth_module_writer(&self) -> bool {
-        self.app.has_auth_module_writer()
     }
 
     pub(crate) fn has_auth_user_write_capability(&self) -> bool {

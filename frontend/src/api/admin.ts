@@ -87,18 +87,7 @@ export interface AggregateExportData {
   user_data: UsersExportData
 }
 
-export type S3BackupScope = 'config' | 'users' | 'data'
-
-export interface S3BackupRunResponse {
-  message: string
-  task: {
-    id: string
-    task_key: string
-    status: string
-    progress_message?: string
-  }
-}
-
+/** 完整备份中的用户记录，保留历史元数据。 */
 export interface UserExport {
   id: string
   email: string | null
@@ -116,6 +105,7 @@ export interface UserExport {
   rate_limit?: number | null  // null = 跟随系统默认，0 = 不限制
   rate_limit_mode?: 'inherit' | 'system' | 'custom'
   model_capability_settings?: Record<string, Record<string, boolean>>
+  /** 历史功能元数据，仅由完整备份保留，不提供编辑入口。 */
   feature_settings?: Record<string, unknown> | null
   preferences: UserPreferencesExport | null
   is_active: boolean
@@ -138,6 +128,7 @@ export interface UserPreferencesExport {
   announcement_notifications: boolean
 }
 
+/** 完整备份中的 Key 记录，保留限制与历史元数据。 */
 export interface UserApiKeyExport {
   api_key_id: string
   user_id: string
@@ -153,6 +144,7 @@ export interface UserApiKeyExport {
   rate_limit: number | null
   concurrent_limit?: number | null
   force_capabilities?: Record<string, boolean>
+  /** 历史功能元数据，仅由完整备份保留，不提供编辑入口。 */
   feature_settings?: Record<string, unknown> | null
   is_active: boolean
   is_locked: boolean
@@ -346,37 +338,6 @@ export interface ModelExport {
   config?: Record<string, unknown>
 }
 
-// 邮件模板接口
-export interface EmailTemplateInfo {
-  type: string
-  name: string
-  variables: string[]
-  subject: string
-  html: string
-  is_custom: boolean
-  default_subject?: string
-  default_html?: string
-}
-
-export interface EmailTemplatesResponse {
-  templates: EmailTemplateInfo[]
-}
-
-export interface EmailTemplatePreviewResponse {
-  html: string
-  variables: Record<string, string>
-}
-
-export interface EmailTemplateResetResponse {
-  message: string
-  template: {
-    type: string
-    name: string
-    subject: string
-    html: string
-  }
-}
-
 export interface CleanupRunRecord {
   id: string
   kind: string
@@ -453,123 +414,6 @@ export interface ManualUsageCleanupPreview {
 
 export interface ManualUsageCleanupConflict {
   detail: 'usage_cleanup_already_running'
-  message: string
-}
-
-// 检查更新响应
-export interface CheckUpdateResponse {
-  current_version: string
-  latest_version: string | null
-  has_update: boolean
-  updatable: boolean
-  update_blocker: string | null
-  release_url: string | null
-  release_notes: string | null
-  published_at: string | null
-  error: string | null
-}
-
-export interface SystemUpdateCapabilityResponse {
-  supported: boolean
-  build_type: string
-  update_strategy?: 'self' | 'docker' | 'manual' | string
-  strategy?: 'self' | 'docker' | 'manual' | string
-  deployment_topology?: 'single-node' | 'multi-node' | string
-  topology?: 'single-node' | 'multi-node' | string
-  enabled: boolean
-  rollback_available: boolean
-  task_status: string
-  task_error: string | null
-  install_root?: string
-  base_dir?: string
-  data_dir?: string
-  logs_dir?: string
-  docker_update_command?: string | null
-  message: string
-}
-
-export interface UpdateTaskStatusResponse {
-  phase: string
-  error: string | null
-  output: string | null
-  progress_label?: string | null
-  downloaded_bytes?: number | null
-  total_bytes?: number | null
-  progress_percent?: number | null
-}
-
-export interface UpdateHistoryEntry {
-  timestamp: string
-  operation: string
-  success: boolean
-  error: string | null
-  output_tail: string | null
-}
-
-export interface UpdateHistoryResponse {
-  entries: UpdateHistoryEntry[]
-}
-
-export interface ApplySystemUpdateResponse {
-  message: string
-  started: boolean
-  need_restart: boolean
-}
-
-export interface ReleaseEntry {
-  version: string
-  release_url: string | null
-  release_notes: string | null
-  published_at: string | null
-  tarball_url?: string | null
-  sha256sums_url?: string | null
-  is_current: boolean
-  is_newer: boolean
-  updatable: boolean
-  update_blocker: string | null
-}
-
-export interface ReleasesListResponse {
-  current_version: string
-  releases: ReleaseEntry[]
-  error: string | null
-}
-
-// LDAP 配置响应
-export interface LdapConfigResponse {
-  server_url: string | null
-  bind_dn: string | null
-  base_dn: string | null
-  has_bind_password: boolean
-  user_search_filter: string
-  username_attr: string
-  email_attr: string
-  display_name_attr: string
-  is_enabled: boolean
-  is_exclusive: boolean
-  use_starttls: boolean
-  connect_timeout: number
-}
-
-// LDAP 配置更新请求
-export interface LdapConfigUpdateRequest {
-  server_url: string
-  bind_dn: string
-  bind_password?: string
-  base_dn: string
-  user_search_filter?: string
-  username_attr?: string
-  email_attr?: string
-  display_name_attr?: string
-  is_enabled?: boolean
-  is_exclusive?: boolean
-  use_starttls?: boolean
-  connect_timeout?: number
-}
-
-// LDAP 连接测试响应
-export interface LdapTestResponse {
-  success: boolean
   message: string
 }
 
@@ -672,6 +516,7 @@ export interface ConfigImportResponse {
 }
 
 // API密钥管理相关接口定义
+/** 管理页面使用的 Key 摘要及访问限制。 */
 export interface AdminApiKey {
   id: string // UUID
   user_id: string // UUID
@@ -690,7 +535,6 @@ export interface AdminApiKey {
   allowed_api_formats?: string[] | null  // 允许的 API 格式列表
   allowed_models?: string[] | null  // 允许的模型列表
   ip_rules?: string[] | null  // IP 限制规则
-  feature_settings?: Record<string, unknown> | null
   auto_delete_on_expiry?: boolean  // 过期后是否自动删除
   last_used_at?: string
   expires_at?: string
@@ -699,6 +543,7 @@ export interface AdminApiKey {
   wallet?: BillingSummary | null
 }
 
+/** 创建独立 Key 所需的有效配置。 */
 export interface CreateStandaloneApiKeyRequest {
   name?: string
   allowed_providers?: string[] | null
@@ -711,7 +556,6 @@ export interface CreateStandaloneApiKeyRequest {
   initial_balance_usd: number | null  // 初始余额，null = 无限制
   unlimited_balance?: boolean | null  // 编辑时仅切换额度模式，不调整余额数值
   auto_delete_on_expiry?: boolean  // 过期后是否自动删除
-  feature_settings?: Record<string, unknown> | null
 }
 
 export interface AdminApiKeysResponse {
@@ -1094,14 +938,6 @@ export const adminApi = {
     return response.data
   },
 
-  // 立即执行 S3 备份
-  async runS3Backup(): Promise<S3BackupRunResponse> {
-    const response = await apiClient.post<S3BackupRunResponse>(
-      '/api/admin/system/backups/s3/run'
-    )
-    return response.data
-  },
-
   // 查询 Provider 可用模型（从上游 API 获取）
   async queryProviderModels(providerId: string, apiKeyId?: string, forceRefresh = false): Promise<ProviderModelsQueryResponse> {
     const response = await apiClient.post<ProviderModelsQueryResponse>(
@@ -1119,172 +955,11 @@ export const adminApi = {
     return response.data
   },
 
-  // 测试 SMTP 连接，支持传入未保存的配置
-  async testSmtpConnection(config: Record<string, unknown> = {}): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.post<{ success: boolean; message: string }>(
-      '/api/admin/system/smtp/test',
-      config
-    )
-    return response.data
-  },
-
-  async testImportantNotification(options: 'all' | 'email' | 'server_chan' | 'bark' | {
-    channel?: 'all' | 'email' | 'server_chan' | 'bark'
-    item_key?: string
-  } = 'all'): Promise<{
-    success: boolean
-    message: string
-    channels: Array<{ channel: string; success: boolean; message: string }>
-  }> {
-    const payload = typeof options === 'string' ? { channel: options } : options
-    const response = await apiClient.post<{
-      success: boolean
-      message: string
-      channels: Array<{ channel: string; success: boolean; message: string }>
-    }>('/api/admin/system/important-notification/test', payload)
-    return response.data
-  },
-
-  // 邮件模板相关
-  // 获取所有邮件模板
-  async getEmailTemplates(): Promise<EmailTemplatesResponse> {
-    const response = await apiClient.get<EmailTemplatesResponse>('/api/admin/system/email/templates')
-    return response.data
-  },
-
-  // 获取指定类型的邮件模板
-  async getEmailTemplate(templateType: string): Promise<EmailTemplateInfo> {
-    const response = await apiClient.get<EmailTemplateInfo>(
-      `/api/admin/system/email/templates/${templateType}`
-    )
-    return response.data
-  },
-
-  // 更新邮件模板
-  async updateEmailTemplate(
-    templateType: string,
-    data: { subject?: string; html?: string }
-  ): Promise<{ message: string }> {
-    const response = await apiClient.put<{ message: string }>(
-      `/api/admin/system/email/templates/${templateType}`,
-      data
-    )
-    return response.data
-  },
-
-  // 预览邮件模板
-  async previewEmailTemplate(
-    templateType: string,
-    data?: { html?: string } & Record<string, string>
-  ): Promise<EmailTemplatePreviewResponse> {
-    const response = await apiClient.post<EmailTemplatePreviewResponse>(
-      `/api/admin/system/email/templates/${templateType}/preview`,
-      data || {}
-    )
-    return response.data
-  },
-
-  // 重置邮件模板为默认值
-  async resetEmailTemplate(templateType: string): Promise<EmailTemplateResetResponse> {
-    const response = await apiClient.post<EmailTemplateResetResponse>(
-      `/api/admin/system/email/templates/${templateType}/reset`
-    )
-    return response.data
-  },
-
   // 获取系统版本信息
   async getSystemVersion(): Promise<{ version: string }> {
     const response = await apiClient.get<{ version: string }>(
       '/api/admin/system/version'
     )
-    return response.data
-  },
-
-  // 检查系统更新
-  async checkUpdate(force = false): Promise<CheckUpdateResponse> {
-    const response = await apiClient.get<CheckUpdateResponse>(
-      '/api/admin/system/check-update',
-      force ? { params: { force: 'true' } } : undefined
-    )
-    return response.data
-  },
-
-  async getSystemReleases(force = false): Promise<ReleasesListResponse> {
-    const response = await apiClient.get<ReleasesListResponse>(
-      '/api/admin/system/releases',
-      force ? { params: { force: 'true' } } : undefined
-    )
-    return response.data
-  },
-
-  // 获取一键更新能力
-  async getSystemUpdateCapability(): Promise<SystemUpdateCapabilityResponse> {
-    const response = await apiClient.get<SystemUpdateCapabilityResponse>(
-      '/api/admin/system/update-capability'
-    )
-    return response.data
-  },
-
-  // 准备系统一键更新（下载并校验 release 包）
-  async prepareSystemUpdate(version?: string | null): Promise<ApplySystemUpdateResponse> {
-    const response = await apiClient.post<ApplySystemUpdateResponse>(
-      '/api/admin/system/prepare-update',
-      version ? { version } : undefined
-    )
-    return response.data
-  },
-
-  // 触发系统一键重启（切换 release 并退出等待进程管理器拉起）
-  async applySystemUpdate(version?: string | null): Promise<ApplySystemUpdateResponse> {
-    const response = await apiClient.post<ApplySystemUpdateResponse>(
-      '/api/admin/system/apply-update',
-      version ? { version } : undefined
-    )
-    return response.data
-  },
-
-  // 回滚到上一个版本
-  async rollbackSystemUpdate(): Promise<ApplySystemUpdateResponse> {
-    const response = await apiClient.post<ApplySystemUpdateResponse>(
-      '/api/admin/system/rollback'
-    )
-    return response.data
-  },
-
-  // 查询更新任务状态
-  async getUpdateStatus(): Promise<UpdateTaskStatusResponse> {
-    const response = await apiClient.get<UpdateTaskStatusResponse>(
-      '/api/admin/system/update-status'
-    )
-    return response.data
-  },
-
-  async getUpdateHistory(): Promise<UpdateHistoryResponse> {
-    const response = await apiClient.get<UpdateHistoryResponse>(
-      '/api/admin/system/update-history'
-    )
-    return response.data
-  },
-
-  // LDAP 配置相关
-  // 获取 LDAP 配置
-  async getLdapConfig(): Promise<LdapConfigResponse> {
-    const response = await apiClient.get<LdapConfigResponse>('/api/admin/ldap/config')
-    return response.data
-  },
-
-  // 更新 LDAP 配置
-  async updateLdapConfig(config: LdapConfigUpdateRequest): Promise<{ message: string }> {
-    const response = await apiClient.put<{ message: string }>(
-      '/api/admin/ldap/config',
-      config
-    )
-    return response.data
-  },
-
-  // 测试 LDAP 连接
-  async testLdapConnection(config: LdapConfigUpdateRequest): Promise<LdapTestResponse> {
-    const response = await apiClient.post<LdapTestResponse>('/api/admin/ldap/test', config)
     return response.data
   },
 

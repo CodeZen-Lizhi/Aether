@@ -214,6 +214,7 @@ async fn gateway_handles_admin_providers_locally_with_local_503_when_catalog_rea
     upstream_handle.abort();
 }
 #[tokio::test]
+/// 供应商汇总不计入停用密钥，也不再回显退役脱敏字段。
 async fn gateway_provider_summary_excludes_inactive_keys_from_endpoint_health() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
@@ -365,7 +366,7 @@ async fn gateway_provider_summary_excludes_inactive_keys_from_endpoint_health() 
     );
     assert_eq!(payload["ops_configured"], true);
     assert_eq!(payload["ops_architecture_id"], "generic_api");
-    assert_eq!(payload["chat_pii_redaction"], json!({"enabled": true}));
+    assert!(payload.get("chat_pii_redaction").is_none());
     assert_eq!(payload["kiro_simulated_cache_enabled"], true);
     assert_eq!(payload["created_at"], "2024-03-21T05:46:40Z");
     assert_eq!(payload["updated_at"], "2024-03-21T05:48:20Z");
@@ -806,6 +807,7 @@ async fn gateway_returns_service_unavailable_for_admin_provider_create_without_p
 }
 
 #[tokio::test]
+/// 正常供应商更新保留限额和故障转移配置，并从读写结果移除旧脱敏字段。
 async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
@@ -913,7 +915,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
         payload["failover_rules"],
         json!({"strategy": "ordered", "provider_max_attempts": 6, "chat_policy_version": 1})
     );
-    assert_eq!(payload["chat_pii_redaction"], json!({"enabled": true}));
+    assert!(payload.get("chat_pii_redaction").is_none());
     assert_eq!(payload["ops_configured"], true);
     assert_eq!(payload["ops_architecture_id"], "generic_api");
 
@@ -975,10 +977,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
     assert_eq!(disable_status, StatusCode::OK, "body={disable_body}");
     let disable_payload: serde_json::Value =
         serde_json::from_str(&disable_body).expect("json body should parse");
-    assert_eq!(
-        disable_payload["chat_pii_redaction"],
-        json!({"enabled": false})
-    );
+    assert!(disable_payload.get("chat_pii_redaction").is_none());
     assert_eq!(disable_payload["max_transfer_count"], 0);
     assert_eq!(disable_payload["max_transfer_timeout_seconds"], 60);
     assert_eq!(
@@ -987,7 +986,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
     );
     assert_eq!(disable_payload["ops_architecture_id"], "generic_api");
 
-    let invalid_response = reqwest::Client::new()
+    let legacy_response = reqwest::Client::new()
         .patch(format!("{gateway_url}/api/admin/providers/provider-openai"))
         .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
         .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
@@ -1001,7 +1000,7 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
         .send()
         .await
         .expect("request should succeed");
-    assert_eq!(invalid_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(legacy_response.status(), StatusCode::OK);
 
     let providers = provider_catalog_repository
         .list_providers(false)
@@ -1035,9 +1034,8 @@ async fn gateway_updates_admin_provider_locally_with_trusted_admin_principal() {
         updated_provider
             .config
             .as_ref()
-            .and_then(|value| value.get("chat_pii_redaction"))
-            .cloned(),
-        Some(json!({"enabled": false}))
+            .and_then(|value| value.get("chat_pii_redaction")),
+        None
     );
     assert_eq!(
         updated_provider

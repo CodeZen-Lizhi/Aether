@@ -78,21 +78,6 @@ pub struct DatabasePostgresActivityGroup {
     pub max_transaction_age_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WalletDailyUsageAggregationInput {
-    pub billing_date: String,
-    pub billing_timezone: String,
-    pub window_start_unix_secs: u64,
-    pub window_end_unix_secs: u64,
-    pub aggregated_at_unix_secs: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct WalletDailyUsageAggregationResult {
-    pub aggregated_wallets: usize,
-    pub deleted_stale_ledgers: usize,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatsHourlyAggregationInput {
     pub target_hour_utc: DateTime<Utc>,

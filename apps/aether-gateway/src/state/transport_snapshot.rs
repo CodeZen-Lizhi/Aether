@@ -391,10 +391,6 @@ impl AppState {
         self.data.encryption_key()
     }
 
-    pub(crate) fn has_auth_module_writer(&self) -> bool {
-        self.data.has_auth_module_writer()
-    }
-
     pub(crate) async fn read_provider_transport_snapshot_arc(
         &self,
         provider_id: &str,

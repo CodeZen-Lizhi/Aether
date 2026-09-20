@@ -7,7 +7,6 @@ import type {
   ProviderWithEndpointsSummary,
   ProxyConfig,
 } from './types'
-import { normalizeChatPiiRedactionProviderConfig as normalizeChatPiiRedactionProvider } from './types'
 
 interface ProviderRequestOptions {
   timeout?: number
@@ -39,12 +38,12 @@ export interface ProviderSummaryPageResponse {
 
 type ProviderSummaryResponse = ProviderSummaryPageResponse | ProviderWithEndpointsSummary[]
 
+/** 为供应商摘要补齐当前有效设置的缺省值。 */
 function normalizeProviderSummary(
   provider: ProviderWithEndpointsSummary,
 ): ProviderWithEndpointsSummary {
   return {
     ...provider,
-    chat_pii_redaction: normalizeChatPiiRedactionProvider(provider.chat_pii_redaction),
     max_transfer_count: provider.max_transfer_count ?? 0,
     max_transfer_timeout_seconds: provider.max_transfer_timeout_seconds ?? 0,
     responses_websocket_enabled: provider.responses_websocket_enabled ?? false,

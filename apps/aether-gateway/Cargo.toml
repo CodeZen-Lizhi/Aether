@@ -63,10 +63,8 @@ http.workspace = true
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "client-pool", "server-auto", "service", "tokio"] }
-ldap3 = { version = "0.11", default-features = false, features = ["sync", "tls-rustls"] }
 libc = "0.2"
 md-5 = "0.10"
-object_store.workspace = true
 parking_lot = "0.12"
 regex.workspace = true
 reqwest.workspace = true
@@ -74,7 +72,6 @@ rsa = "0.9.10"
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-semver.workspace = true
 sha1 = "0.10"
 sha2 = { workspace = true, features = ["oid"] }
 socket2.workspace = true

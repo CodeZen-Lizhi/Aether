@@ -3,7 +3,6 @@ use super::error::GatewayError;
 
 mod admin_types;
 mod app;
-mod auth_module;
 mod bootstrap_admin;
 mod cache;
 mod catalog;

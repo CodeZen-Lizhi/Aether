@@ -65,7 +65,6 @@ use crate::maintenance::spawn_stats_aggregation_worker;
 use crate::maintenance::spawn_stats_hourly_aggregation_worker;
 use crate::maintenance::spawn_usage_cleanup_worker;
 use crate::maintenance::spawn_usage_counter_flush_worker;
-use crate::maintenance::spawn_wallet_daily_usage_aggregation_worker;
 
 const SYSTEM_CONFIG_CACHE_TTL: Duration = Duration::from_secs(30);
 // Requests may use a stale value after the fresh window until the entry reaches
@@ -2033,6 +2032,7 @@ impl AppState {
         state
     }
 
+    /// 启动当前支持的维护任务；已退役钱包不再注册日汇总 worker。
     pub fn spawn_background_tasks(&self) -> crate::task_runtime::TaskSupervisor {
         let background_state = self.background_worker_state();
         let mut supervisor =
@@ -2086,10 +2086,6 @@ impl AppState {
         supervise_worker(
             crate::task_runtime::TASK_KEY_DB_MAINTENANCE,
             spawn_db_maintenance_worker(background_state.clone()),
-        );
-        supervise_worker(
-            crate::task_runtime::TASK_KEY_WALLET_DAILY_USAGE_AGG,
-            spawn_wallet_daily_usage_aggregation_worker(background_state.clone()),
         );
         supervise_worker(
             crate::task_runtime::TASK_KEY_STATS_DAILY_AGG,

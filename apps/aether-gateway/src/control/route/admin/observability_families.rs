@@ -2,6 +2,7 @@ use axum::http;
 
 use super::{classified, ClassifiedRoute};
 
+/// 识别有效的 Key、统计与监控路由，不包含已退役审计列表。
 pub(super) fn classify_admin_observability_family_route(
     method: &http::Method,
     normalized_path: &str,
@@ -413,19 +414,6 @@ pub(super) fn classify_admin_observability_family_route(
             "stats_manage",
             "time_series",
             "admin:stats",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/admin/monitoring/audit-logs" | "/api/admin/monitoring/audit-logs/"
-        )
-    {
-        Some(classified(
-            "admin_proxy",
-            "monitoring",
-            "audit_logs",
-            "admin:monitoring",
             false,
         ))
     } else if method == http::Method::GET

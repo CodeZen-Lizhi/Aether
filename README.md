@@ -199,6 +199,8 @@ Aether Tunnel 是配套的代理节点程序，为无法直连上游的网络环
 
 保留例外：`aether-billing` 定价引擎（用量成本计算依赖）、`aether-oauth/provider`（渠道订阅账号 OAuth）、`aether-cache`（数据层依赖）、`aether-task`（后台 worker 运行时底座）、per-key IP 规则、隐私还原库壳（`privacy/`，脱敏入口已短路）。
 
+兼容边界：独立 Key 的余额与结算仍复用钱包数据契约，代理节点仍复用管理令牌；管理员审计输出及隐私还原封装仍在正常请求处理链路中。历史 SQLite 表和 JSON 备份字段保留兼容，不做隐式删表或数据迁移。已退役的模块配置不再通过普通管理 API 读写，备份入口仍保留历史标量配置；钱包每日汇总任务已移除。
+
 ## 许可证
 
 沿用上游 [Aether 非商业开源许可证](LICENSE)。

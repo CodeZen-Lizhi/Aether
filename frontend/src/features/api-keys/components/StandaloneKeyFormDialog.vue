@@ -133,22 +133,6 @@
           </div>
         </section>
 
-        <section>
-          <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
-            <div class="flex items-center justify-between gap-3">
-              <Label class="text-sm font-medium">敏感信息保护</Label>
-              <Switch v-model="form.chat_pii_redaction_enabled" />
-            </div>
-            <div
-              v-if="form.chat_pii_redaction_enabled"
-              class="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3"
-            >
-              <Label class="text-sm font-medium">占位符说明</Label>
-              <Switch v-model="form.chat_pii_redaction_placeholder_notice" />
-            </div>
-          </div>
-        </section>
-
         <Collapsible
           v-model:open="accessRestrictionsExpanded"
           class="rounded-lg border border-border"
@@ -367,12 +351,9 @@ import { getGlobalModels } from '@/api/global-models'
 import { adminApi } from '@/api/admin'
 import { log } from '@/utils/logger'
 import { parseNumberInput } from '@/utils/form'
-import {
-  mergeChatPiiRedactionFeatureSettings,
-  readChatPiiRedactionFeatureSettings,
-} from '@/utils/featureSettings'
 import type { ProviderWithEndpointsSummary, GlobalModelResponse } from '@/api/endpoints/types'
 
+/** 独立 Key 表单提交数据，只包含当前支持的额度和访问限制。 */
 export interface StandaloneKeyFormData {
   id?: string
   name: string
@@ -387,9 +368,9 @@ export interface StandaloneKeyFormData {
   allowed_api_formats?: string[] | null
   allowed_models?: string[] | null
   ip_rules?: string[] | null
-  feature_settings?: Record<string, unknown> | null
 }
 
+/** 独立 Key 编辑草稿及限制项的继承状态。 */
 interface StandaloneKeyFormState {
   id?: string
   name: string
@@ -409,8 +390,6 @@ interface StandaloneKeyFormState {
   allowed_api_formats: string[]
   allowed_models: string[]
   ip_rules_text: string
-  chat_pii_redaction_enabled: boolean
-  chat_pii_redaction_placeholder_notice: boolean
 }
 
 const props = defineProps<{
@@ -470,8 +449,6 @@ const form = ref<StandaloneKeyFormState>({
   allowed_api_formats: [],
   allowed_models: [],
   ip_rules_text: '',
-  chat_pii_redaction_enabled: false,
-  chat_pii_redaction_placeholder_notice: true,
 })
 
 function formatDateInputValue(date: Date): string {
@@ -500,6 +477,7 @@ const balanceDisplayText = computed(() => {
   return '按独立钱包余额限制'
 })
 
+/** 重置新建 Key 的有效表单字段。 */
 function resetForm() {
   form.value = {
     name: '',
@@ -519,14 +497,12 @@ function resetForm() {
     allowed_api_formats: [],
     allowed_models: [],
     ip_rules_text: '',
-    chat_pii_redaction_enabled: false,
-    chat_pii_redaction_placeholder_notice: true,
   } as typeof form.value
 }
 
+/** 回填已有 Key 的名称、额度及访问限制。 */
 function loadKeyData() {
   if (!props.apiKey) return
-  const redactionFeature = readChatPiiRedactionFeatureSettings(props.apiKey.feature_settings)
   form.value = {
     id: props.apiKey.id,
     name: props.apiKey.name || '',
@@ -546,8 +522,6 @@ function loadKeyData() {
     allowed_api_formats: props.apiKey.allowed_api_formats ? [...props.apiKey.allowed_api_formats] : [],
     allowed_models: props.apiKey.allowed_models ? [...props.apiKey.allowed_models] : [],
     ip_rules_text: props.apiKey.ip_rules?.join(', ') ?? '',
-    chat_pii_redaction_enabled: redactionFeature.enabled,
-    chat_pii_redaction_placeholder_notice: redactionFeature.inject_model_instruction,
   } as typeof form.value
 }
 
@@ -583,6 +557,7 @@ function clearExpiryDate() {
 }
 
 // 提交表单
+/** 提交当前可编辑字段，不发送已退役的功能开关。 */
 function handleSubmit() {
   emit('submit', {
     id: form.value.id,
@@ -597,10 +572,6 @@ function handleSubmit() {
     allowed_api_formats: form.value.api_format_unrestricted ? null : [...form.value.allowed_api_formats],
     allowed_models: form.value.model_unrestricted ? null : [...form.value.allowed_models],
     ip_rules: parseIpRulesInput(form.value.ip_rules_text),
-    feature_settings: mergeChatPiiRedactionFeatureSettings(props.apiKey?.feature_settings, {
-      enabled: form.value.chat_pii_redaction_enabled,
-      inject_model_instruction: form.value.chat_pii_redaction_placeholder_notice,
-    }),
   })
 }
 

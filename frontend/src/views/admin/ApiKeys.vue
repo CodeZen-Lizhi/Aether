@@ -622,6 +622,7 @@ function serializeExpiryDate(dateString?: string): string | null {
   return date.toISOString()
 }
 
+/** 将已有 Key 的有效设置填入编辑弹窗。 */
 function editApiKey(apiKey: AdminApiKey) {
   // 解析过期日期为 YYYY-MM-DD 格式
   // 保留原始日期，不做时间过滤（避免编辑当天过期的 Key 时意外清空）
@@ -642,7 +643,6 @@ function editApiKey(apiKey: AdminApiKey) {
     allowed_providers: apiKey.allowed_providers == null ? null : [...apiKey.allowed_providers],
     allowed_api_formats: apiKey.allowed_api_formats == null ? null : [...apiKey.allowed_api_formats],
     allowed_models: apiKey.allowed_models == null ? null : [...apiKey.allowed_models],
-    feature_settings: apiKey.feature_settings ?? null
   }
 
   showKeyFormDialog.value = true
@@ -742,6 +742,7 @@ function closeKeyFormDialog() {
 }
 
 // 统一处理表单提交
+/** 保存 Key 的名称、额度和限制，并更新列表中的对应记录。 */
 async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
   // 验证过期日期（如果设置了，必须晚于今天）
   if (data.expires_at) {
@@ -775,7 +776,6 @@ async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
         allowed_api_formats: data.allowed_api_formats,
         allowed_models: data.allowed_models,
         ip_rules: data.ip_rules,
-        feature_settings: data.feature_settings ?? null
       }
       const { message: _, ...updated } = await adminApi.updateApiKey(data.id, updateData)
       // 局部更新：合并字段，避免覆盖丢失列表已有信息
@@ -806,7 +806,6 @@ async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
         allowed_api_formats: data.allowed_api_formats,
         allowed_models: data.allowed_models,
         ip_rules: data.ip_rules,
-        feature_settings: data.feature_settings ?? null
       }
       const response = await adminApi.createStandaloneApiKey(createData)
       newKeyValue.value = response.key

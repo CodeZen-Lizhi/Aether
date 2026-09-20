@@ -60,16 +60,12 @@ fn classifies_admin_system_data_export_as_admin_proxy_route() {
 }
 
 #[test]
+/// 有效的数据维护接口继续按系统管理请求分类。
 fn classifies_admin_system_maintenance_write_routes_as_admin_proxy_route() {
     let headers = headers(&[]);
     let cases = [
         ("/api/admin/system/config/import", "config_import"),
         ("/api/admin/system/data/import", "data_import"),
-        ("/api/admin/system/smtp/test", "smtp_test"),
-        (
-            "/api/admin/system/important-notification/test",
-            "important_notification_test",
-        ),
         ("/api/admin/system/cleanup", "cleanup"),
         ("/api/admin/system/purge/config", "purge_config"),
         ("/api/admin/system/purge/usage", "purge_usage"),
@@ -149,104 +145,6 @@ fn classifies_admin_system_cleanup_runs_as_admin_proxy_route() {
     assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
     assert_eq!(decision.route_family.as_deref(), Some("system_manage"));
     assert_eq!(decision.route_kind.as_deref(), Some("cleanup_runs"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:system")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_system_email_templates_list_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/admin/system/email/templates"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("system_manage"));
-    assert_eq!(decision.route_kind.as_deref(), Some("email_templates_list"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:system")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_system_email_template_get_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/admin/system/email/templates/verification"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::GET, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("system_manage"));
-    assert_eq!(decision.route_kind.as_deref(), Some("email_template_get"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:system")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_system_email_template_set_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/admin/system/email/templates/verification"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::PUT, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("system_manage"));
-    assert_eq!(decision.route_kind.as_deref(), Some("email_template_set"));
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:system")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_system_email_template_preview_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/admin/system/email/templates/verification/preview"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::POST, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("system_manage"));
-    assert_eq!(
-        decision.route_kind.as_deref(),
-        Some("email_template_preview")
-    );
-    assert_eq!(
-        decision.auth_endpoint_signature.as_deref(),
-        Some("admin:system")
-    );
-    assert!(!decision.is_execution_runtime_candidate());
-}
-
-#[test]
-fn classifies_admin_system_email_template_reset_as_admin_proxy_route() {
-    let headers = headers(&[]);
-    let uri: Uri = "/api/admin/system/email/templates/verification/reset"
-        .parse()
-        .expect("uri should parse");
-    let decision =
-        classify_control_route(&http::Method::POST, &uri, &headers).expect("route should classify");
-
-    assert_eq!(decision.route_class.as_deref(), Some("admin_proxy"));
-    assert_eq!(decision.route_family.as_deref(), Some("system_manage"));
-    assert_eq!(decision.route_kind.as_deref(), Some("email_template_reset"));
     assert_eq!(
         decision.auth_endpoint_signature.as_deref(),
         Some("admin:system")

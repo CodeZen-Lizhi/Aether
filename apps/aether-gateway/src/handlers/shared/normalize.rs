@@ -46,6 +46,7 @@ pub(crate) fn normalize_json_array(
     }
 }
 
+/// 校验当前功能设置，并丢弃已退役的聊天脱敏配置。
 pub(crate) fn normalize_feature_settings(value: Option<Value>) -> Result<Option<Value>, String> {
     let Some(mut value) = value else {
         return Ok(None);
@@ -53,7 +54,8 @@ pub(crate) fn normalize_feature_settings(value: Option<Value>) -> Result<Option<
     match value {
         Value::Null => Ok(None),
         Value::Object(ref mut settings) => {
-            normalize_chat_pii_redaction_feature_settings(settings)?;
+            // 旧客户端携带的脱敏开关不再持久化，其它功能设置保持原有校验。
+            settings.remove("chat_pii_redaction");
             normalize_notification_push_service_feature_settings(settings)?;
             if settings.is_empty() {
                 Ok(None)
@@ -327,42 +329,6 @@ where
     <Option<Vec<String>> as serde::Deserialize>::deserialize(deserializer).map(Some)
 }
 
-fn normalize_chat_pii_redaction_feature_settings(
-    settings: &mut Map<String, Value>,
-) -> Result<(), String> {
-    let Some(value) = settings.get_mut("chat_pii_redaction") else {
-        return Ok(());
-    };
-    match value {
-        Value::Null => {
-            settings.remove("chat_pii_redaction");
-            Ok(())
-        }
-        Value::Object(feature) => {
-            normalize_chat_pii_redaction_feature_object(feature)?;
-            if feature.is_empty() {
-                settings.remove("chat_pii_redaction");
-            }
-            Ok(())
-        }
-        _ => Err("chat_pii_redaction 必须是对象".to_string()),
-    }
-}
-
-fn normalize_chat_pii_redaction_feature_object(
-    feature: &mut Map<String, Value>,
-) -> Result<(), String> {
-    feature.remove("inject_model_instruction");
-    for key in ["enabled"] {
-        if let Some(value) = feature.get(key) {
-            if !value.is_boolean() {
-                return Err(format!("chat_pii_redaction.{key} 必须是布尔值"));
-            }
-        }
-    }
-    Ok(())
-}
-
 fn normalize_notification_push_service_feature_settings(
     settings: &mut Map<String, Value>,
 ) -> Result<(), String> {
@@ -448,6 +414,7 @@ mod tests {
     }
 
     #[test]
+    /// 用户更新仍保留通知权限边界，同时丢弃失效脱敏设置。
     fn user_self_feature_update_preserves_notification_push_permission() {
         let normalized = normalize_user_self_feature_settings_update(
             Some(json!({
@@ -465,7 +432,7 @@ mod tests {
             normalized["notification_push_service"]["enabled"],
             json!(true)
         );
-        assert_eq!(normalized["chat_pii_redaction"]["enabled"], json!(true));
+        assert!(normalized.get("chat_pii_redaction").is_none());
     }
 
     #[test]

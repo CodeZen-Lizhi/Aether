@@ -8,7 +8,6 @@ use crate::maintenance::{
     DatabaseMaintenanceSummary, DatabasePoolSummary, DatabasePostgresActivityGroup,
     DatabasePostgresObservabilitySnapshot, StatsDailyAggregationInput,
     StatsDailyAggregationSummary, StatsHourlyAggregationInput, StatsHourlyAggregationSummary,
-    WalletDailyUsageAggregationInput, WalletDailyUsageAggregationResult,
 };
 use crate::repository::system::{
     AdminSystemPurgeSummary, AdminSystemPurgeTarget, AdminSystemStats,
@@ -75,10 +74,6 @@ impl DataBackends {
     }
 
     pub fn has_system_config_backend(&self) -> bool {
-        self.has_database_maintenance_backend()
-    }
-
-    pub fn has_wallet_daily_usage_aggregation_backend(&self) -> bool {
         self.has_database_maintenance_backend()
     }
 
@@ -180,17 +175,6 @@ impl DataBackends {
     ) -> Result<Vec<DatabasePostgresActivityGroup>, DataLayerError> {
         let _ = limit;
         Ok(Vec::new())
-    }
-
-    pub async fn aggregate_wallet_daily_usage(
-        &self,
-        input: &WalletDailyUsageAggregationInput,
-    ) -> Result<WalletDailyUsageAggregationResult, DataLayerError> {
-        #[cfg(feature = "sqlite")]
-        if let Some(sqlite) = self.sqlite.as_ref() {
-            return sqlite.aggregate_wallet_daily_usage(input).await;
-        }
-        Ok(WalletDailyUsageAggregationResult::default())
     }
 
     pub async fn aggregate_stats_hourly(

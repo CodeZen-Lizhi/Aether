@@ -30,5 +30,4 @@ pub use maintenance::{
     DatabaseMaintenanceSummary, DatabasePoolSummary, DatabasePostgresActivityGroup,
     DatabasePostgresObservabilitySnapshot, StatsDailyAggregationInput,
     StatsDailyAggregationSummary, StatsHourlyAggregationInput, StatsHourlyAggregationSummary,
-    WalletDailyUsageAggregationInput, WalletDailyUsageAggregationResult,
 };

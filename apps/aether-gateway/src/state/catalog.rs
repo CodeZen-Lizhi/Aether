@@ -24,14 +24,6 @@ impl AppState {
         self.data.has_minimal_candidate_selection_reader()
     }
 
-    pub(crate) fn has_management_token_reader(&self) -> bool {
-        self.data.has_management_token_reader()
-    }
-
-    pub(crate) fn has_management_token_writer(&self) -> bool {
-        self.data.has_management_token_writer()
-    }
-
     pub(crate) async fn list_provider_catalog_providers(
         &self,
         active_only: bool,
@@ -62,45 +54,6 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
-    pub(crate) async fn list_management_tokens(
-        &self,
-        query: &aether_data::repository::management_tokens::ManagementTokenListQuery,
-    ) -> Result<
-        aether_data::repository::management_tokens::StoredManagementTokenListPage,
-        GatewayError,
-    > {
-        self.data
-            .list_management_tokens(query)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
-    pub(crate) async fn get_management_token_with_user(
-        &self,
-        token_id: &str,
-    ) -> Result<
-        Option<aether_data::repository::management_tokens::StoredManagementTokenWithUser>,
-        GatewayError,
-    > {
-        self.data
-            .get_management_token_with_user(token_id)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
-    pub(crate) async fn get_management_token_with_user_by_hash(
-        &self,
-        token_hash: &str,
-    ) -> Result<
-        Option<aether_data::repository::management_tokens::StoredManagementTokenWithUser>,
-        GatewayError,
-    > {
-        self.data
-            .get_management_token_with_user_by_hash(token_hash)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
     pub(crate) async fn create_management_token(
         &self,
         record: &aether_data::repository::management_tokens::CreateManagementTokenRecord,
@@ -110,70 +63,6 @@ impl AppState {
     > {
         self.data
             .create_management_token(record)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
-    pub(crate) async fn update_management_token(
-        &self,
-        record: &aether_data::repository::management_tokens::UpdateManagementTokenRecord,
-    ) -> Result<
-        LocalMutationOutcome<aether_data::repository::management_tokens::StoredManagementToken>,
-        GatewayError,
-    > {
-        self.data
-            .update_management_token(record)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
-    pub(crate) async fn delete_management_token(
-        &self,
-        token_id: &str,
-    ) -> Result<bool, GatewayError> {
-        self.data
-            .delete_management_token(token_id)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
-    pub(crate) async fn record_management_token_usage(
-        &self,
-        token_id: &str,
-        last_used_ip: Option<&str>,
-    ) -> Result<
-        Option<aether_data::repository::management_tokens::StoredManagementToken>,
-        GatewayError,
-    > {
-        self.data
-            .record_management_token_usage(token_id, last_used_ip)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
-    pub(crate) async fn set_management_token_active(
-        &self,
-        token_id: &str,
-        is_active: bool,
-    ) -> Result<
-        Option<aether_data::repository::management_tokens::StoredManagementToken>,
-        GatewayError,
-    > {
-        self.data
-            .set_management_token_active(token_id, is_active)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))
-    }
-
-    pub(crate) async fn regenerate_management_token_secret(
-        &self,
-        mutation: &aether_data::repository::management_tokens::RegenerateManagementTokenSecret,
-    ) -> Result<
-        LocalMutationOutcome<aether_data::repository::management_tokens::StoredManagementToken>,
-        GatewayError,
-    > {
-        self.data
-            .regenerate_management_token_secret(mutation)
             .await
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }

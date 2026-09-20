@@ -221,6 +221,7 @@ async fn gateway_handles_admin_system_stats_locally_with_trusted_admin_principal
 }
 
 #[tokio::test]
+/// 用隔离 SQLite 验证正常配置和历史退役字段可跨加密密钥完整往返。
 async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
@@ -246,6 +247,7 @@ async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
             Some(30.0),
             Some(12.5),
             Some(json!({
+                "chat_pii_redaction": {"enabled": true},
                 "provider_ops": {
                     "connector": {
                         "credentials": {
@@ -604,6 +606,10 @@ async fn gateway_roundtrips_current_system_config_backup_with_sqlite() {
             .status,
         "offline"
     );
+    assert_eq!(
+        restored["providers"][0]["config"]["chat_pii_redaction"],
+        json!({"enabled": true})
+    );
     for entry in payload["system_configs"].as_array().unwrap() {
         let restored_entry = restored["system_configs"]
             .as_array()
@@ -813,6 +819,7 @@ async fn gateway_handles_admin_system_api_formats_locally_with_trusted_admin_pri
 }
 
 #[tokio::test]
+/// 配置列表保留正常设置并隐藏历史 SMTP 等退役字段。
 async fn gateway_handles_admin_system_configs_locally_with_trusted_admin_principal() {
     let upstream_hits = Arc::new(Mutex::new(0usize));
     let upstream_hits_clone = Arc::clone(&upstream_hits);
@@ -864,12 +871,7 @@ async fn gateway_handles_admin_system_configs_locally_with_trusted_admin_princip
     assert!(!items
         .iter()
         .any(|item| item["key"] == "external_models_proxy_node_id"));
-    let smtp_password = items
-        .iter()
-        .find(|item| item["key"] == "smtp_password")
-        .expect("smtp_password should exist");
-    assert_eq!(smtp_password["value"], serde_json::Value::Null);
-    assert_eq!(smtp_password["is_set"], json!(true));
+    assert!(!items.iter().any(|item| item["key"] == "smtp_password"));
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
@@ -1060,24 +1062,13 @@ async fn gateway_handles_admin_system_model_directives_default_as_disabled() {
 }
 
 #[tokio::test]
-async fn gateway_validates_chat_pii_redaction_system_config_locally_with_trusted_admin_principal() {
-    let upstream_hits = Arc::new(Mutex::new(0usize));
-    let upstream_hits_clone = Arc::clone(&upstream_hits);
-    let upstream = Router::new().route(
-        "/api/admin/system/configs/module.chat_pii_redaction.cache_ttl_seconds",
-        any(move |_request: Request| {
-            let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
-            async move {
-                *upstream_hits_inner.lock().expect("mutex should lock") += 1;
-                (StatusCode::OK, Body::from("unexpected upstream hit"))
-            }
-        }),
-    );
-
-    let data_state =
-        GatewayDataState::disabled()
-            .with_system_config_values_for_tests(Vec::<(String, serde_json::Value)>::new());
-    let (upstream_url, upstream_handle) = start_server(upstream).await;
+/// 验证已退役配置不会通过通用系统配置 API 重新启用。
+async fn gateway_hides_and_rejects_retired_system_config_keys() {
+    let data_state = GatewayDataState::disabled().with_system_config_values_for_tests(vec![
+        ("module.chat_pii_redaction.enabled".to_string(), json!(true)),
+        ("smtp_password".to_string(), json!("encrypted-secret")),
+        ("site_name".to_string(), json!("Aether Test")),
+    ]);
     let gateway = build_router_with_state(
         AppState::new()
             .expect("gateway should build")
@@ -1086,266 +1077,69 @@ async fn gateway_validates_chat_pii_redaction_system_config_locally_with_trusted
     let (gateway_url, gateway_handle) = start_server(gateway).await;
     let client = reqwest::Client::new();
 
-    let get_config = |key: &'static str| {
-        let client = client.clone();
-        let gateway_url = gateway_url.clone();
-        async move {
-            let response = client
-                .get(format!("{gateway_url}/api/admin/system/configs/{key}"))
-                .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
-                .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
-                .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
-                .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
-                .send()
-                .await
-                .expect("request should succeed");
-            assert_eq!(response.status(), StatusCode::OK, "key={key}");
-            response
-                .json::<serde_json::Value>()
-                .await
-                .expect("json body should parse")
-        }
-    };
-    let put_config = |key: &'static str, value: serde_json::Value| {
-        let client = client.clone();
-        let gateway_url = gateway_url.clone();
-        async move {
-            client
-                .put(format!("{gateway_url}/api/admin/system/configs/{key}"))
-                .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
-                .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
-                .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
-                .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
-                .json(&json!({ "value": value }))
-                .send()
-                .await
-                .expect("request should succeed")
-        }
-    };
-
-    assert_eq!(
-        get_config("module.chat_pii_redaction.enabled").await["value"],
-        json!(false)
-    );
-    assert_eq!(
-        get_config("module.chat_pii_redaction.cache_ttl_seconds").await["value"],
-        json!(300)
-    );
-    assert_eq!(
-        get_config("module.chat_pii_redaction.placeholder_prefix").await["value"],
-        json!("AETHER")
-    );
-    let default_rules_payload = get_config("module.chat_pii_redaction.rules").await;
-    let default_rules = default_rules_payload["value"]
-        .as_array()
-        .expect("default rules should be an array");
-    assert!(
-        default_rules.iter().any(|rule| {
-            rule["name"] == json!("手机号") && rule["features"]["validator"] == json!("cn_phone")
-        }),
-        "default rules should include 手机号"
-    );
-
-    let enabled_response = put_config("module.chat_pii_redaction.enabled", json!(true)).await;
-    assert_eq!(enabled_response.status(), StatusCode::OK);
-    let enabled_payload: serde_json::Value = enabled_response
-        .json()
-        .await
-        .expect("json body should parse");
-    assert_eq!(enabled_payload["value"], json!(true));
-
-    let rules_response = put_config(
-        "module.chat_pii_redaction.rules",
-        json!([
-            {
-                "id": "email",
-                "name": "邮箱",
-                "pattern": r"(?i)[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,253}\.[A-Z]{2,63}",
-                "enabled": true,
-                "features": {"validator": "email"},
-                "system": true
-            },
-            {
-                "id": "custom_code",
-                "name": "自定义规则",
-                "pattern": r"CODE-\d{6}",
-                "enabled": false,
-                "features": {"validator": "custom_code", "experimental": true},
-                "system": false
-            }
-        ]),
-    )
-    .await;
-    assert_eq!(rules_response.status(), StatusCode::OK);
-    let rules_payload: serde_json::Value =
-        rules_response.json().await.expect("json body should parse");
-    assert_eq!(
-        rules_payload["value"][1]["features"]["experimental"],
-        json!(true)
-    );
-
-    let ttl_response = put_config("module.chat_pii_redaction.cache_ttl_seconds", json!(3600)).await;
-    assert_eq!(ttl_response.status(), StatusCode::OK);
-    let ttl_payload: serde_json::Value = ttl_response.json().await.expect("json body should parse");
-    assert_eq!(ttl_payload["value"], json!(3600));
-
-    let prefix_response = put_config(
-        "module.chat_pii_redaction.placeholder_prefix",
-        json!("vendor_safe"),
-    )
-    .await;
-    assert_eq!(prefix_response.status(), StatusCode::OK);
-    let prefix_payload: serde_json::Value = prefix_response
-        .json()
-        .await
-        .expect("json body should parse");
-    assert_eq!(prefix_payload["value"], json!("VENDOR_SAFE"));
-
-    let invalid_prefix_response = put_config(
-        "module.chat_pii_redaction.placeholder_prefix",
-        json!("bad-prefix"),
-    )
-    .await;
-    assert_eq!(invalid_prefix_response.status(), StatusCode::BAD_REQUEST);
-
-    let invalid_rules_response = put_config(
-        "module.chat_pii_redaction.rules",
-        json!([
-            {
-                "id": "broken",
-                "name": "坏规则",
-                "pattern": "[",
-                "enabled": true,
-                "features": {"validator": "broken"},
-                "system": false
-            }
-        ]),
-    )
-    .await;
-    assert_eq!(invalid_rules_response.status(), StatusCode::BAD_REQUEST);
-
-    let enabled_default_response =
-        put_config("module.chat_pii_redaction.enabled", serde_json::Value::Null).await;
-    assert_eq!(enabled_default_response.status(), StatusCode::OK);
-    let enabled_default_payload: serde_json::Value = enabled_default_response
-        .json()
-        .await
-        .expect("json body should parse");
-    assert_eq!(enabled_default_payload["value"], json!(false));
-
-    let rules_default_response =
-        put_config("module.chat_pii_redaction.rules", serde_json::Value::Null).await;
-    assert_eq!(rules_default_response.status(), StatusCode::OK);
-    let rules_default_payload: serde_json::Value = rules_default_response
-        .json()
-        .await
-        .expect("json body should parse");
-    assert!(!rules_default_payload["value"]
-        .as_array()
-        .expect("default rules should be an array")
-        .is_empty());
-
-    let invalid_ttl_response =
-        put_config("module.chat_pii_redaction.cache_ttl_seconds", json!(600)).await;
-    assert_eq!(invalid_ttl_response.status(), StatusCode::BAD_REQUEST);
-
-    let ttl_default_response = put_config(
-        "module.chat_pii_redaction.cache_ttl_seconds",
-        serde_json::Value::Null,
-    )
-    .await;
-    assert_eq!(ttl_default_response.status(), StatusCode::OK);
-    let ttl_default_payload: serde_json::Value = ttl_default_response
-        .json()
-        .await
-        .expect("json body should parse");
-    assert_eq!(ttl_default_payload["value"], json!(300));
-
-    let prefix_default_response = put_config(
-        "module.chat_pii_redaction.placeholder_prefix",
-        serde_json::Value::Null,
-    )
-    .await;
-    assert_eq!(prefix_default_response.status(), StatusCode::OK);
-    let prefix_default_payload: serde_json::Value = prefix_default_response
-        .json()
-        .await
-        .expect("json body should parse");
-    assert_eq!(prefix_default_payload["value"], json!("AETHER"));
-    assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
-
-    gateway_handle.abort();
-    upstream_handle.abort();
-}
-
-#[tokio::test]
-async fn gateway_sets_admin_system_config_locally_with_trusted_admin_principal() {
-    let upstream_hits = Arc::new(Mutex::new(0usize));
-    let upstream_hits_clone = Arc::clone(&upstream_hits);
-    let upstream = Router::new().route(
-        "/api/admin/system/configs/smtp_password",
-        any(move |_request: Request| {
-            let upstream_hits_inner = Arc::clone(&upstream_hits_clone);
-            async move {
-                *upstream_hits_inner.lock().expect("mutex should lock") += 1;
-                (StatusCode::OK, Body::from("unexpected upstream hit"))
-            }
-        }),
-    );
-
-    let data_state =
-        GatewayDataState::disabled().with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY);
-    let (upstream_url, upstream_handle) = start_server(upstream).await;
-    let gateway = build_router_with_state(
-        AppState::new()
-            .expect("gateway should build")
-            .with_data_state_for_tests(data_state),
-    );
-    let (gateway_url, gateway_handle) = start_server(gateway).await;
-
-    let client = reqwest::Client::new();
-    let put_response = client
-        .put(format!(
-            "{gateway_url}/api/admin/system/configs/smtp_password"
-        ))
-        .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
-        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
-        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
-        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
-        .json(&json!({
-            "value": "smtp-secret-123",
-            "description": "SMTP password",
-        }))
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(put_response.status(), StatusCode::OK);
-    let put_payload: serde_json::Value = put_response.json().await.expect("json body should parse");
-    assert_eq!(put_payload["key"], "smtp_password");
-    assert_eq!(put_payload["value"], "********");
-    assert!(put_payload["updated_at"].as_str().is_some());
-
-    let get_response = client
-        .get(format!(
-            "{gateway_url}/api/admin/system/configs/smtp_password"
-        ))
+    let list_response = client
+        .get(format!("{gateway_url}/api/admin/system/configs"))
         .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
         .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
         .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
         .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
         .send()
         .await
-        .expect("request should succeed");
+        .expect("config list should complete");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let items = list_response
+        .json::<serde_json::Value>()
+        .await
+        .expect("config list should be JSON");
+    let items = items.as_array().expect("config list should be an array");
+    assert!(items.iter().any(|item| item["key"] == "site_name"));
+    assert!(!items
+        .iter()
+        .any(|item| item["key"] == "module.chat_pii_redaction.enabled"));
+    assert!(!items.iter().any(|item| item["key"] == "smtp_password"));
 
-    assert_eq!(get_response.status(), StatusCode::OK);
-    let get_payload: serde_json::Value = get_response.json().await.expect("json body should parse");
-    assert_eq!(get_payload["value"], serde_json::Value::Null);
-    assert_eq!(get_payload["is_set"], json!(true));
-    assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
+    for key in ["module.chat_pii_redaction.enabled", "smtp_password"] {
+        let url = format!("{gateway_url}/api/admin/system/configs/{key}");
+        let get_response = client
+            .get(&url)
+            .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .send()
+            .await
+            .expect("retired config get should complete");
+        assert_eq!(get_response.status(), StatusCode::NOT_FOUND, "GET {key}");
+
+        let put_response = client
+            .put(&url)
+            .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .json(&json!({ "value": true }))
+            .send()
+            .await
+            .expect("retired config put should complete");
+        assert_eq!(put_response.status(), StatusCode::NOT_FOUND, "PUT {key}");
+
+        let delete_response = client
+            .delete(&url)
+            .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .send()
+            .await
+            .expect("retired config delete should complete");
+        assert_eq!(
+            delete_response.status(),
+            StatusCode::NOT_FOUND,
+            "DELETE {key}"
+        );
+    }
 
     gateway_handle.abort();
-    upstream_handle.abort();
 }
 
 #[tokio::test]

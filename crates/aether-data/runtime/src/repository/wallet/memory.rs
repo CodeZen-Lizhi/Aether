@@ -23,8 +23,7 @@ use super::{
     StoredAdminRedeemCodePage, StoredAdminWalletLedgerPage, StoredAdminWalletListItem,
     StoredAdminWalletListPage, StoredAdminWalletRefund, StoredAdminWalletRefundPage,
     StoredAdminWalletRefundRequestPage, StoredAdminWalletTransaction,
-    StoredAdminWalletTransactionPage, StoredWalletDailyUsageLedger,
-    StoredWalletDailyUsageLedgerPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
+    StoredAdminWalletTransactionPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
     WalletReadRepository, WalletWriteRepository,
 };
 use crate::DataLayerError;
@@ -608,23 +607,6 @@ impl WalletReadRepository for InMemoryWalletRepository {
         let total = items.len() as u64;
         let items = items.into_iter().skip(offset).take(limit).collect();
         Ok(StoredAdminWalletTransactionPage { items, total })
-    }
-
-    async fn find_wallet_today_usage(
-        &self,
-        _wallet_id: &str,
-        _billing_timezone: &str,
-    ) -> Result<Option<StoredWalletDailyUsageLedger>, DataLayerError> {
-        Ok(None)
-    }
-
-    async fn list_wallet_daily_usage_history(
-        &self,
-        _wallet_id: &str,
-        _billing_timezone: &str,
-        _limit: usize,
-    ) -> Result<StoredWalletDailyUsageLedgerPage, DataLayerError> {
-        Ok(StoredWalletDailyUsageLedgerPage::default())
     }
 
     async fn list_admin_wallet_refunds(
@@ -1879,23 +1861,6 @@ mod tests {
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].id, "wallet-3");
         assert_eq!(page.items[0].updated_at_unix_secs, Some(110));
-    }
-
-    #[tokio::test]
-    async fn daily_usage_queries_default_to_empty_in_memory() {
-        let repository = InMemoryWalletRepository::seed(vec![sample_wallet()]);
-        let today = repository
-            .find_wallet_today_usage("wallet-1", "Asia/Shanghai")
-            .await
-            .expect("lookup should succeed");
-        let history = repository
-            .list_wallet_daily_usage_history("wallet-1", "Asia/Shanghai", 20)
-            .await
-            .expect("history should succeed");
-
-        assert!(today.is_none());
-        assert_eq!(history.total, 0);
-        assert!(history.items.is_empty());
     }
 
     #[tokio::test]

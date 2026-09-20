@@ -21,8 +21,7 @@ use aether_data_contracts::repository::wallet::{
     StoredAdminWalletListItem, StoredAdminWalletListPage, StoredAdminWalletRefund,
     StoredAdminWalletRefundPage, StoredAdminWalletRefundRequestItem,
     StoredAdminWalletRefundRequestPage, StoredAdminWalletTransaction,
-    StoredAdminWalletTransactionPage, StoredWalletDailyUsageLedger,
-    StoredWalletDailyUsageLedgerPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
+    StoredAdminWalletTransactionPage, StoredWalletSnapshot, WalletLookupKey, WalletMutationOutcome,
     WalletReadRepository, WalletWriteRepository,
 };
 use aether_data_contracts::DataLayerError;
@@ -485,65 +484,6 @@ LIMIT ? OFFSET ?
             .map(map_wallet_transaction_row)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(StoredAdminWalletTransactionPage { items, total })
-    }
-
-    async fn find_wallet_today_usage(
-        &self,
-        wallet_id: &str,
-        billing_timezone: &str,
-    ) -> Result<Option<StoredWalletDailyUsageLedger>, DataLayerError> {
-        let billing_date = current_billing_date(billing_timezone)?;
-        let sql = daily_usage_select_sql("AND billing_date = ? LIMIT 1");
-        let row = sqlx::query(&sql)
-            .bind(wallet_id)
-            .bind(billing_timezone)
-            .bind(billing_date)
-            .fetch_optional(&self.pool)
-            .await
-            .map_sql_err()?;
-        row.as_ref().map(map_daily_usage_row).transpose()
-    }
-
-    async fn list_wallet_daily_usage_history(
-        &self,
-        wallet_id: &str,
-        billing_timezone: &str,
-        limit: usize,
-    ) -> Result<StoredWalletDailyUsageLedgerPage, DataLayerError> {
-        let billing_date = current_billing_date(billing_timezone)?;
-        let total: i64 = sqlx::query_scalar(
-            r#"
-SELECT COUNT(*)
-FROM wallet_daily_usage_ledgers
-WHERE wallet_id = ?
-  AND billing_timezone = ?
-  AND billing_date < ?
-"#,
-        )
-        .bind(wallet_id)
-        .bind(billing_timezone)
-        .bind(&billing_date)
-        .fetch_one(&self.pool)
-        .await
-        .map_sql_err()?;
-
-        let sql = daily_usage_select_sql("AND billing_date < ? ORDER BY billing_date DESC LIMIT ?");
-        let rows = sqlx::query(&sql)
-            .bind(wallet_id)
-            .bind(billing_timezone)
-            .bind(billing_date)
-            .bind(i64::try_from(limit).unwrap_or(i64::MAX))
-            .fetch_all(&self.pool)
-            .await
-            .map_sql_err()?;
-        let items = rows
-            .iter()
-            .map(map_daily_usage_row)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(StoredWalletDailyUsageLedgerPage {
-            items,
-            total: total.max(0) as u64,
-        })
     }
 
     async fn list_admin_wallet_refunds(
@@ -3499,30 +3439,6 @@ WHERE id = ?
     }
 }
 
-fn daily_usage_select_sql(suffix: &'static str) -> String {
-    format!(
-        r#"
-SELECT
-  id, billing_date, billing_timezone, total_cost_usd, total_requests,
-  input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-  first_finalized_at AS first_finalized_at_unix_secs,
-  last_finalized_at AS last_finalized_at_unix_secs,
-  aggregated_at AS aggregated_at_unix_secs
-FROM wallet_daily_usage_ledgers
-WHERE wallet_id = ?
-  AND billing_timezone = ?
-  {suffix}
-"#
-    )
-}
-
-fn current_billing_date(billing_timezone: &str) -> Result<String, DataLayerError> {
-    let timezone = billing_timezone.parse::<chrono_tz::Tz>().map_err(|err| {
-        DataLayerError::InvalidInput(format!("invalid wallet billing timezone: {err}"))
-    })?;
-    Ok(Utc::now().with_timezone(&timezone).date_naive().to_string())
-}
-
 fn map_wallet_row(row: &SqliteRow) -> Result<StoredWalletSnapshot, DataLayerError> {
     StoredWalletSnapshot::new(
         get(row, "id")?,
@@ -4661,47 +4577,6 @@ fn map_redeem_code_row(row: &SqliteRow) -> Result<StoredAdminRedeemCode, DataLay
         updated_at_unix_secs: timestamp(
             get(row, "updated_at_unix_secs")?,
             "redeem_codes.updated_at",
-        )?,
-    })
-}
-
-fn map_daily_usage_row(row: &SqliteRow) -> Result<StoredWalletDailyUsageLedger, DataLayerError> {
-    Ok(StoredWalletDailyUsageLedger {
-        id: get(row, "id")?,
-        billing_date: get(row, "billing_date")?,
-        billing_timezone: get(row, "billing_timezone")?,
-        total_cost_usd: sqlite_real(row, "total_cost_usd")?,
-        total_requests: nonnegative_u64(
-            get(row, "total_requests")?,
-            "wallet_daily_usage_ledgers.total_requests",
-        )?,
-        input_tokens: nonnegative_u64(
-            get(row, "input_tokens")?,
-            "wallet_daily_usage_ledgers.input_tokens",
-        )?,
-        output_tokens: nonnegative_u64(
-            get(row, "output_tokens")?,
-            "wallet_daily_usage_ledgers.output_tokens",
-        )?,
-        cache_creation_tokens: nonnegative_u64(
-            get(row, "cache_creation_tokens")?,
-            "wallet_daily_usage_ledgers.cache_creation_tokens",
-        )?,
-        cache_read_tokens: nonnegative_u64(
-            get(row, "cache_read_tokens")?,
-            "wallet_daily_usage_ledgers.cache_read_tokens",
-        )?,
-        first_finalized_at_unix_secs: optional_timestamp(
-            get(row, "first_finalized_at_unix_secs")?,
-            "wallet_daily_usage_ledgers.first_finalized_at",
-        )?,
-        last_finalized_at_unix_secs: optional_timestamp(
-            get(row, "last_finalized_at_unix_secs")?,
-            "wallet_daily_usage_ledgers.last_finalized_at",
-        )?,
-        aggregated_at_unix_secs: optional_timestamp(
-            get(row, "aggregated_at_unix_secs")?,
-            "wallet_daily_usage_ledgers.aggregated_at",
         )?,
     })
 }

@@ -1,8 +1,8 @@
 import apiClient from './client'
 import type { UserSession } from '@/types/session'
 import type { BillingSummary } from './auth'
-import type { FeatureSettingsMap } from '@/utils/featureSettings'
 
+/** 当前用户的基础资料与偏好。 */
 export interface Profile {
   id: string // UUID
   email?: string | null
@@ -16,7 +16,6 @@ export interface Profile {
   auth_source: 'local' | 'ldap' | 'oauth'
   has_password: boolean
   preferences?: UserPreferences
-  feature_settings?: FeatureSettingsMap | null
 }
 
 export interface UserPreferences {
@@ -48,10 +47,10 @@ export const meApi = {
   },
 
   // 更新个人信息
+  /** 更新当前用户的名称或邮箱。 */
   async updateProfile(data: {
     email?: string
     username?: string
-    feature_settings?: FeatureSettingsMap | null
   }): Promise<{ message: string }> {
     const response = await apiClient.put('/api/users/me', data)
     return response.data

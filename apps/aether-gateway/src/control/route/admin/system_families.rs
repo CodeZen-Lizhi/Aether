@@ -2,6 +2,7 @@ use axum::http;
 
 use super::{classified, ClassifiedRoute};
 
+/// 识别系统配置、备份导入导出和数据维护路由。
 pub(super) fn classify_admin_system_family_route(
     method: &http::Method,
     normalized_path: &str,
@@ -60,24 +61,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin_proxy",
             "system_manage",
             "data_import",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST && normalized_path == "/api/admin/system/smtp/test" {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "smtp_test",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && normalized_path == "/api/admin/system/important-notification/test"
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "important_notification_test",
             "admin:system",
             false,
         ))
@@ -222,63 +205,6 @@ pub(super) fn classify_admin_system_family_route(
             "admin_proxy",
             "system_manage",
             "api_formats",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/admin/system/email/templates" | "/api/admin/system/email/templates/"
-        )
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "email_templates_list",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && normalized_path.starts_with("/api/admin/system/email/templates/")
-        && normalized_path.matches('/').count() == 6
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "email_template_get",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::PUT
-        && normalized_path.starts_with("/api/admin/system/email/templates/")
-        && normalized_path.matches('/').count() == 6
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "email_template_set",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && normalized_path.starts_with("/api/admin/system/email/templates/")
-        && normalized_path.ends_with("/preview")
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "email_template_preview",
-            "admin:system",
-            false,
-        ))
-    } else if method == http::Method::POST
-        && normalized_path.starts_with("/api/admin/system/email/templates/")
-        && normalized_path.ends_with("/reset")
-    {
-        Some(classified(
-            "admin_proxy",
-            "system_manage",
-            "email_template_reset",
             "admin:system",
             false,
         ))

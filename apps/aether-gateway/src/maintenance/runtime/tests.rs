@@ -23,15 +23,13 @@ use super::{
     run_db_maintenance_with, run_proxy_upgrade_rollout_once, spawn_db_maintenance_worker,
     spawn_pending_cleanup_worker, spawn_pool_monitor_worker, spawn_proxy_node_stale_cleanup_worker,
     spawn_proxy_upgrade_rollout_worker, spawn_stats_aggregation_worker,
-    spawn_stats_hourly_aggregation_worker, spawn_usage_cleanup_worker,
-    spawn_wallet_daily_usage_aggregation_worker, start_proxy_upgrade_rollout,
+    spawn_stats_hourly_aggregation_worker, spawn_usage_cleanup_worker, start_proxy_upgrade_rollout,
     stats_aggregation_target_day, stats_hourly_aggregation_target_hour, summarize_database_pool,
     usage_cleanup_settings, usage_cleanup_window, usage_cleanup_window_for_mode,
-    usage_cleanup_window_with_override, wallet_daily_usage_aggregation_target, AppState,
-    DbMaintenanceRunSummary, FailedPendingUsageRow, GatewayDataState, ManualUsageCleanupMode,
-    ProxyNodeMetricsCleanupSettings, ProxyUpgradeRolloutProbeConfig, StalePendingUsageRow,
-    UsageCleanupSettings, USAGE_CLEANUP_HOUR, USAGE_CLEANUP_MINUTE,
-    WALLET_DAILY_USAGE_AGGREGATION_HOUR, WALLET_DAILY_USAGE_AGGREGATION_MINUTE,
+    usage_cleanup_window_with_override, AppState, DbMaintenanceRunSummary, FailedPendingUsageRow,
+    GatewayDataState, ManualUsageCleanupMode, ProxyNodeMetricsCleanupSettings,
+    ProxyUpgradeRolloutProbeConfig, StalePendingUsageRow, UsageCleanupSettings, USAGE_CLEANUP_HOUR,
+    USAGE_CLEANUP_MINUTE,
 };
 
 #[tokio::test]
@@ -547,15 +545,6 @@ async fn spawn_usage_cleanup_worker_skips_when_usage_writer_unavailable() {
         .expect("gateway state should build")
         .with_data_state_for_tests(GatewayDataState::disabled());
     assert!(spawn_usage_cleanup_worker(state).is_none());
-}
-
-#[tokio::test]
-async fn spawn_wallet_daily_usage_aggregation_worker_skips_when_wallet_daily_usage_backend_unavailable(
-) {
-    let state = AppState::new()
-        .expect("gateway state should build")
-        .with_data_state_for_tests(GatewayDataState::disabled());
-    assert!(spawn_wallet_daily_usage_aggregation_worker(state).is_none());
 }
 
 #[tokio::test]
@@ -1142,27 +1131,6 @@ fn next_db_maintenance_run_rolls_to_next_week_after_slot() {
 }
 
 #[test]
-fn wallet_daily_usage_aggregation_target_uses_previous_local_day_window() {
-    let timezone: Tz = "Asia/Shanghai".parse().expect("timezone should parse");
-    let now_utc = "2026-03-31T16:15:00Z"
-        .parse::<DateTime<Utc>>()
-        .expect("timestamp should parse");
-
-    let target = wallet_daily_usage_aggregation_target(now_utc, timezone);
-
-    assert_eq!(target.billing_date.to_string(), "2026-03-31");
-    assert_eq!(target.billing_timezone, "Asia/Shanghai");
-    assert_eq!(
-        target.window_start_utc.to_rfc3339(),
-        "2026-03-30T16:00:00+00:00"
-    );
-    assert_eq!(
-        target.window_end_utc.to_rfc3339(),
-        "2026-03-31T16:00:00+00:00"
-    );
-}
-
-#[test]
 fn next_daily_run_aligns_to_same_day_when_before_slot() {
     let timezone: Tz = "Asia/Shanghai".parse().expect("timezone should parse");
     let now_utc = "2026-03-31T16:59:00Z"
@@ -1208,38 +1176,4 @@ fn next_usage_cleanup_run_rolls_to_next_day_after_slot() {
     let next = next_daily_run_after(now_utc, timezone, USAGE_CLEANUP_HOUR, USAGE_CLEANUP_MINUTE);
 
     assert_eq!(next.to_rfc3339(), "2026-03-18T19:00:00+00:00");
-}
-
-#[test]
-fn next_wallet_daily_usage_aggregation_run_aligns_to_same_day_when_before_slot() {
-    let timezone: Tz = "Asia/Shanghai".parse().expect("timezone should parse");
-    let now_utc = "2026-03-31T16:09:00Z"
-        .parse::<DateTime<Utc>>()
-        .expect("timestamp should parse");
-
-    let next = next_daily_run_after(
-        now_utc,
-        timezone,
-        WALLET_DAILY_USAGE_AGGREGATION_HOUR,
-        WALLET_DAILY_USAGE_AGGREGATION_MINUTE,
-    );
-
-    assert_eq!(next.to_rfc3339(), "2026-03-31T16:10:00+00:00");
-}
-
-#[test]
-fn next_wallet_daily_usage_aggregation_run_rolls_to_next_day_after_slot() {
-    let timezone: Tz = "Asia/Shanghai".parse().expect("timezone should parse");
-    let now_utc = "2026-03-31T16:10:01Z"
-        .parse::<DateTime<Utc>>()
-        .expect("timestamp should parse");
-
-    let next = next_daily_run_after(
-        now_utc,
-        timezone,
-        WALLET_DAILY_USAGE_AGGREGATION_HOUR,
-        WALLET_DAILY_USAGE_AGGREGATION_MINUTE,
-    );
-
-    assert_eq!(next.to_rfc3339(), "2026-04-01T16:10:00+00:00");
 }

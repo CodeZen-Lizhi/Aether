@@ -17,8 +17,6 @@ use uuid::Uuid;
 use crate::{AppState, GatewayError};
 
 pub(crate) const TASK_KEY_PROVIDER_DELETE: &str = "admin.provider.delete";
-pub(crate) const TASK_KEY_SYSTEM_S3_BACKUP: &str = "system.s3.backup";
-pub(crate) const TASK_KEY_SYSTEM_S3_BACKUP_WORKER: &str = "system.s3.backup.worker";
 pub(crate) const TASK_KEY_USAGE_QUEUE_WORKER: &str = "usage.queue.worker";
 pub(crate) const TASK_KEY_USAGE_COUNTER_FLUSH: &str = "usage.counter.flush.worker";
 pub(crate) const TASK_KEY_CHAT_HEALTH_SETTLEMENT: &str = "provider.chat_health.settlement.worker";
@@ -37,7 +35,6 @@ pub(crate) const TASK_KEY_PROXY_NODE_METRICS_CLEANUP: &str =
 pub(crate) const TASK_KEY_PROXY_UPGRADE_ROLLOUT: &str = "maintenance.proxy.upgrade.rollout";
 pub(crate) const TASK_KEY_PROVIDER_QUOTA_ALERT: &str = "maintenance.provider.quota_alert";
 pub(crate) const TASK_KEY_USAGE_CLEANUP: &str = "maintenance.usage.cleanup";
-pub(crate) const TASK_KEY_WALLET_DAILY_USAGE_AGG: &str = "maintenance.wallet.daily.usage.agg";
 pub(crate) const TASK_KEY_STATS_DAILY_AGG: &str = "maintenance.stats.daily.agg";
 pub(crate) const TASK_KEY_STATS_HOURLY_AGG: &str = "maintenance.stats.hourly.agg";
 pub(crate) const TASK_KEY_USAGE_SYNC_REPORT: &str = "usage.sync.report";
@@ -134,28 +131,13 @@ where
     )
 }
 
+/// 当前有效任务注册表，不包含已退役的 S3 备份和钱包日汇总。
 const TASK_DEFINITIONS: &[TaskDefinition] = &[
     TaskDefinition::new(
         TASK_KEY_PROVIDER_DELETE,
         TaskKind::OnDemand,
         "manual",
         false,
-        true,
-        RETRY_ONCE,
-    ),
-    TaskDefinition::new(
-        TASK_KEY_SYSTEM_S3_BACKUP,
-        TaskKind::Scheduled,
-        "manual",
-        false,
-        true,
-        RETRY_ONCE,
-    ),
-    TaskDefinition::new(
-        TASK_KEY_SYSTEM_S3_BACKUP_WORKER,
-        TaskKind::Daemon,
-        "daemon",
-        true,
         true,
         RETRY_ONCE,
     ),
@@ -289,14 +271,6 @@ const TASK_DEFINITIONS: &[TaskDefinition] = &[
     ),
     TaskDefinition::new(
         TASK_KEY_USAGE_CLEANUP,
-        TaskKind::Scheduled,
-        "interval",
-        true,
-        true,
-        RETRY_ONCE,
-    ),
-    TaskDefinition::new(
-        TASK_KEY_WALLET_DAILY_USAGE_AGG,
         TaskKind::Scheduled,
         "interval",
         true,
