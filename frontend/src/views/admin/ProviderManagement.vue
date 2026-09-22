@@ -255,6 +255,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useRowClick } from '@/composables/useRowClick'
 import { useProviderBalance } from '@/features/providers/composables/useProviderBalance'
 import { useProviderFilters } from '@/features/providers/composables/useProviderFilters'
+import { useProviderHealthRefresh } from '@/features/providers/composables/useProviderHealthRefresh'
 import {
   getProvidersSummary,
   getProvider,
@@ -483,6 +484,8 @@ async function loadProviderPriorities() {
 
 const displayedProviders = computed(() =>
   sortProvidersByActiveAndPriority(providers.value, providerPriorities.value))
+
+useProviderHealthRefresh(providers, queryParams, loading)
 
 function startEditDescription(_event: Event, provider: ProviderWithEndpointsSummary) {
   editingDescriptionId.value = provider.id
