@@ -19,10 +19,10 @@ const providers = ['alpha', 'beta'].map(id => ({
   id, name: `Fixture ${id}`, provider_type: 'custom', is_active: true,
   billing_type: id === 'alpha' ? 'monthly_quota' : 'pay_as_you_go',
   monthly_quota_usd: 100, monthly_used_usd: 25, quota_reset_day: 1,
-  total_endpoints: 1, total_keys: 5, total_models: 12,
+  total_endpoints: 1, total_keys: 12, total_models: 12,
   api_formats: ['openai:chat'], endpoint_health_details: [],
 }))
-const keys = providers.flatMap(provider => Array.from({ length: 5 }, (_, index) => ({
+const keys = providers.flatMap(provider => Array.from({ length: provider.total_keys }, (_, index) => ({
   id: `${provider.id}-key-${index}`, provider_id: provider.id,
   name: `${provider.id} key ${index}`, api_key_masked: 'sk-fixture-***',
   is_active: true, api_formats: ['openai:chat'], health_score: 1,
@@ -44,12 +44,14 @@ client.get = async (url, config) => {
   if (!provider) throw new Error(`未配置 fixture 请求: ${url}`)
   if (provider.id === 'beta') await betaReady
   if (url.endsWith('/summary')) return { data: structuredClone(provider) }
-  if (url.endsWith('/endpoints')) return { data: [{ id: `${provider.id}-endpoint`, provider_id: provider.id, api_format: 'openai:chat', base_url: 'https://fixture.invalid', is_active: true, active_keys: 5 }] }
+  if (url.endsWith('/endpoints')) return { data: [{ id: `${provider.id}-endpoint`, provider_id: provider.id, api_format: 'openai:chat', base_url: 'https://fixture.invalid', is_active: true, active_keys: provider.total_keys }] }
   if (url.endsWith('/keys')) {
     const items = keys.filter(item => item.provider_id === provider.id)
     const page = config?.params?.page
     const size = config?.params?.page_size ?? 4
-    return { data: page ? { keys: structuredClone(items.slice((page - 1) * size, page * size)), total: items.length, page, page_size: size } : structuredClone(items) }
+    const skip = config?.params?.skip ?? 0
+    const limit = config?.params?.limit ?? 100
+    return { data: page ? { keys: structuredClone(items.slice((page - 1) * size, page * size)), total: items.length, page, page_size: size } : structuredClone(items.slice(skip, skip + limit)) }
   }
   if (url.endsWith('/models')) return { data: structuredClone(models.filter(item => item.provider_id === provider.id)) }
   if (url.endsWith('/mapping-preview')) return { data: { provider_id: provider.id, supported_models: [], regex_mappings: [] } }

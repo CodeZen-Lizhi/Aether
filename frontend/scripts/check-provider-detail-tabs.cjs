@@ -1,5 +1,5 @@
 // 打开 /scripts/fixtures/provider-detail-tabs.html 后，用 playwright-cli run-code --filename 执行。
-// 检查真实抽屉及子组件的可见内容与状态，API 数据和写入由 fixture 隔离。
+// 检查真实抽屉的全部密钥、纵向滚动及分区状态，API 数据和写入由 fixture 隔离。
 // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- playwright-cli 执行此函数。
 async (page) => {
   const failures = []
@@ -27,8 +27,9 @@ async (page) => {
   // 首次打开不得出现另两个分区，不能用点击密钥 Tab 来掩盖初始化错误。
   const initial = (await page.locator('h3:visible').allTextContents()).map(text => text.trim())
   if (JSON.stringify(initial) !== JSON.stringify(['订阅配额', '密钥管理'])) throw new Error(`首屏混入内容: ${initial}`)
-  await page.getByRole('button', { name: '›', exact: true }).filter({ visible: true }).click()
-  await page.getByText('alpha key 4', { exact: true }).waitFor()
+  await page.getByText('alpha key 11', { exact: true }).waitFor()
+  if (await page.locator('[class~="group/item"]').count() !== 12) throw new Error('密钥未完整加载')
+  if (await page.getByRole('button', { name: /^[‹›]$/ }).count()) throw new Error('密钥分页控件仍存在')
   await checkSection('模型列表')
   await page.getByRole('button', { name: '›', exact: true }).filter({ visible: true }).click()
   const modelPage = await page.locator('table:visible').innerText()
@@ -36,7 +37,7 @@ async (page) => {
   await page.getByText('alpha model 0', { exact: true }).filter({ visible: true }).click()
   await page.getByText('alpha-upstream-0', { exact: true }).waitFor()
   await checkSection('密钥管理')
-  if (!await page.getByText('alpha key 4', { exact: true }).isVisible()) throw new Error('切换 Tab 丢失密钥分页')
+  if (!await page.getByText('alpha key 11', { exact: true }).isVisible()) throw new Error('切换 Tab 丢失完整密钥列表')
   await checkSection('模型列表')
   if (await page.locator('table:visible').innerText() !== modelPage) throw new Error('切换 Tab 丢失模型分页')
   await checkSection('模型映射')
@@ -68,7 +69,7 @@ async (page) => {
   await checkSection('密钥管理')
 
   // 每个分区各走一次真实管理调用链，并在重新读取后检查结果。
-  const keyRow = page.locator('[class~="group/item"]').filter({ hasText: 'alpha key 0' })
+  const keyRow = page.locator('[class~="group/item"]').filter({ hasText: 'alpha key 11' })
   await keyRow.getByTitle('点击停用', { exact: true }).click()
   await keyRow.getByTitle('点击启用', { exact: true }).waitFor()
   await checkSection('模型列表')
@@ -95,14 +96,26 @@ async (page) => {
 
   const layouts = []
   for (const width of [840, 1024, 1280, 1920, 390]) {
-    await page.setViewportSize({ width, height: 844 })
+    await page.setViewportSize({ width, height: width === 840 ? 620 : 844 })
     for (const section of ['密钥管理', '模型列表', '模型映射']) {
       await checkSection(section)
       const overflow = await page.locator('.drawer-panel').evaluate(element => element.scrollWidth > element.clientWidth)
       if (overflow) throw new Error(`${width}px ${section} 横向溢出`)
+      if (section === '密钥管理') {
+        const lastKey = page.getByText('alpha key 11', { exact: true })
+        await lastKey.scrollIntoViewIfNeeded()
+        const scroll = await page.locator('.drawer-panel').evaluate(element => ({
+          top: element.scrollTop, height: element.clientHeight, total: element.scrollHeight,
+        }))
+        const bounds = await lastKey.boundingBox()
+        if (scroll.total <= scroll.height || scroll.top <= 0 || !bounds || bounds.y < 0 || bounds.y + bounds.height > page.viewportSize().height) {
+          throw new Error(`${width}px 末尾密钥无法通过纵向滚动访问: ${JSON.stringify(scroll)}`)
+        }
+        await page.getByRole('button', { name: '添加密钥', exact: true }).scrollIntoViewIfNeeded()
+      }
       layouts.push(`${width}:${section}`)
     }
   }
   if (failures.length) throw new Error(failures.join('\n'))
-  return { initial, switching: 'passed', reopen: 'passed', preservedState: 'passed', management: 'key/model toggle, mapping save and reread passed', layouts }
+  return { initial, keys: 'all 12 keys rendered without pagination; last key scroll and toggle passed', switching: 'passed', reopen: 'passed', preservedState: 'passed', management: 'key/model toggle, mapping save and reread passed', layouts }
 }

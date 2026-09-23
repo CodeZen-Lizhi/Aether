@@ -16,7 +16,7 @@
           @click="handleBackdropClick"
         />
 
-        <!-- 抽屉内容 -->
+        <!-- 全部密钥连续展示，超出窗口高度时由抽屉统一纵向滚动。 -->
         <Card class="drawer-panel relative h-full w-full sm:w-[700px] sm:max-w-[90vw] rounded-none shadow-2xl overflow-y-auto">
           <!-- 加载状态 -->
           <div
@@ -111,10 +111,9 @@
                 <div
                   v-else-if="allKeys.length > 0"
                   class="divide-y divide-border/40"
-                  :class="shouldPaginateKeys && 'flex flex-col'"
                 >
                   <div
-                    v-for="({ key, endpoint }, localIdx) in paginatedKeys"
+                    v-for="{ key, endpoint } in allKeys"
                     :key="key.id"
                     class="px-4 py-2.5 hover:bg-muted/30 transition-colors group/item"
                     :class="{
@@ -221,34 +220,6 @@
                           :class="{ 'text-destructive': isFormatCircuitOpen(key, format) }"
                         >{{ getFormatProbeCountdown(key, format) }}</span>
                       </template>
-                    </div>
-                  </div>
-                  <!-- 分页控制 -->
-                  <div
-                    v-if="shouldPaginateKeys"
-                    class="px-4 py-2 flex items-center justify-between text-xs text-muted-foreground mt-auto"
-                  >
-                    <span>{{ legacyT('共') }} {{ allKeys.length }} {{ legacyT('个') }}{{ legacyT('密钥') }}</span>
-                    <div class="flex items-center gap-1.5">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        class="h-6 px-2 text-xs"
-                        :disabled="loadingProviderKeys || currentKeyPage <= 1"
-                        @click="goToKeyPage(currentKeyPage - 1)"
-                      >
-                        ‹
-                      </Button>
-                      <span class="tabular-nums">{{ currentKeyPage }} / {{ totalKeyPages }}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        class="h-6 px-2 text-xs"
-                        :disabled="loadingProviderKeys || currentKeyPage >= totalKeyPages"
-                        @click="goToKeyPage(currentKeyPage + 1)"
-                      >
-                        ›
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -435,7 +406,7 @@ import { useProxyNodesStore } from '@/stores/proxy-nodes'
 import {
   deleteEndpointKey,
   recoverKeyHealth,
-  getProviderKeysPage,
+  getProviderKeys,
   updateProviderKey,
   revealEndpointKey,
   type ProviderEndpoint,
@@ -491,7 +462,6 @@ let providerLoadRequestId = 0
 let endpointsLoadRequestId = 0
 let keysLoadRequestId = 0
 let mappingPreviewLoadRequestId = 0
-const CUSTOM_PROVIDER_KEYS_PAGE_SIZE = 4
 
 function applyProviderSnapshot(updated: ProviderWithEndpointsSummary): void {
   if (provider.value?.id === updated.id) {
@@ -588,7 +558,7 @@ const hasBlockingDialogOpen = computed(() =>
   modelMappingTabRef.value?.dialogOpen
 )
 
-// 当前后端分页页内的密钥列表。key 通过 api_formats 字段确定支持的格式，endpoint 可能为 undefined。
+// 当前供应商的全部密钥；通过 api_formats 确定支持格式，无需绑定单个端点。
 const allKeys = computed(() => {
   return providerKeys.value.map(key => ({ key, endpoint: undefined as ProviderEndpointWithKeys | undefined }))
 })
@@ -651,20 +621,6 @@ function syncCurrentSelections(
   }
 }
 
-// ===== 账号列表后端分页 =====
-const providerKeysTotal = ref(0)
-const currentKeyPage = ref(1)
-const keyPageSize = ref(CUSTOM_PROVIDER_KEYS_PAGE_SIZE)
-const totalKeyPages = computed(() => Math.max(1, Math.ceil(providerKeysTotal.value / keyPageSize.value)))
-const shouldPaginateKeys = computed(() => totalKeyPages.value > 1)
-const paginatedKeys = computed(() => allKeys.value)
-
-async function goToKeyPage(page: number) {
-  const nextPage = Math.min(Math.max(page, 1), totalKeyPages.value)
-  if (nextPage === currentKeyPage.value && providerKeys.value.length > 0) return
-  await loadProviderKeysPage(nextPage)
-}
-
 /** 结束当前详情会话，清空实体数据、编辑状态并使旧请求失效，供切换供应商和关闭时复用。 */
 function resetProviderDetailState() {
   // 使在途请求失效，避免切换或关闭后旧响应回写
@@ -679,9 +635,6 @@ function resetProviderDetailState() {
   provider.value = null
   endpoints.value = []
   providerKeys.value = []  // 清空 Provider 级别的 keys
-  providerKeysTotal.value = 0
-  currentKeyPage.value = 1
-  keyPageSize.value = CUSTOM_PROVIDER_KEYS_PAGE_SIZE
   providerModels.value = []
   providerMappingPreview.value = null
   loadingProviderEndpoints.value = false
@@ -724,7 +677,6 @@ watch(
       const hasInitialProvider = props.initialProvider?.id === newId
       if (hasInitialProvider) {
         provider.value = props.initialProvider
-        keyPageSize.value = CUSTOM_PROVIDER_KEYS_PAGE_SIZE
         loading.value = false
       }
       void loadSystemFormatConversionConfig()
@@ -1342,7 +1294,6 @@ async function loadProvider() {
     const providerData = await getProvider(props.providerId)
     if (requestId !== providerLoadRequestId) return
     applyProviderSnapshot(providerData)
-    keyPageSize.value = CUSTOM_PROVIDER_KEYS_PAGE_SIZE
 
     if (!provider.value) {
       throw new Error(legacyT('Provider 不存在'))
@@ -1357,34 +1308,22 @@ async function loadProvider() {
   }
 }
 
-async function loadProviderKeysPage(page = currentKeyPage.value) {
+/** 加载全部密钥，并忽略关闭抽屉或切换供应商之前发起的旧响应。 */
+async function loadProviderKeys() {
   if (!props.providerId) return
   const providerId = props.providerId
   const requestId = ++keysLoadRequestId
   loadingProviderKeys.value = true
 
   try {
-    const result = await getProviderKeysPage(providerId, {
-      page,
-      page_size: keyPageSize.value,
-    })
+    const keys = await getProviderKeys(providerId)
     if (requestId !== keysLoadRequestId || props.providerId !== providerId) return
 
-    const nextTotalPages = Math.max(1, Math.ceil(result.total / result.page_size))
-    if (result.keys.length === 0 && result.total > 0 && result.page > nextTotalPages) {
-      await loadProviderKeysPage(nextTotalPages)
-      return
-    }
-
-    providerKeys.value = result.keys
-    providerKeysTotal.value = result.total
-    currentKeyPage.value = Math.min(result.page, nextTotalPages)
-    keyPageSize.value = result.page_size
-    syncCurrentSelections(endpoints.value, result.keys)
+    providerKeys.value = keys
+    syncCurrentSelections(endpoints.value, keys)
   } catch (err: unknown) {
     if (requestId !== keysLoadRequestId || props.providerId !== providerId) return
     providerKeys.value = []
-    providerKeysTotal.value = 0
     syncCurrentSelections(endpoints.value, [])
     showError(localizedApiError(err, '加载密钥失败'), legacyT('错误'))
   } finally {
@@ -1394,7 +1333,7 @@ async function loadProviderKeysPage(page = currentKeyPage.value) {
   }
 }
 
-// 加载端点列表
+/** 独立加载端点、全部密钥和模型，保留各自的加载状态及旧响应保护。 */
 async function loadEndpoints() {
   if (!props.providerId) return
   const providerId = props.providerId
@@ -1433,7 +1372,7 @@ async function loadEndpoints() {
       }
     })
 
-  const providerKeysPromise = loadProviderKeysPage(currentKeyPage.value)
+  const providerKeysPromise = loadProviderKeys()
 
   const modelsPromise = getProviderModels(providerId)
     .catch(() => [])
