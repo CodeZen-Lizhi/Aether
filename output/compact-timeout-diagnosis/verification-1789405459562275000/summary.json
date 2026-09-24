@@ -1,0 +1,150 @@
+[
+  {
+    "case": "chat_snapshot",
+    "passed": true,
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789405459657776000/results.json",
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/verification-1789405459562275000/chat_snapshot.log",
+    "gateway": {
+      "route": "gateway",
+      "first_content_ms": 647,
+      "read_error": null,
+      "elapsed_ms": 3667,
+      "completed_event": true,
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "1",
+      "budget_ms": "2500",
+      "output_kind": "text_done",
+      "missing_output_error": false
+    },
+    "usage": [
+      {
+        "request_type": "chat",
+        "status": "completed",
+        "status_code": 200,
+        "error_message": null
+      }
+    ]
+  },
+  {
+    "case": "compact_snapshot",
+    "passed": true,
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789405459657778000/results.json",
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/verification-1789405459562275000/compact_snapshot.log",
+    "gateway": {
+      "route": "gateway",
+      "first_content_ms": 642,
+      "read_error": null,
+      "elapsed_ms": 3667,
+      "completed_event": true,
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "1",
+      "budget_ms": "2500",
+      "output_kind": "compaction_done",
+      "missing_output_error": false
+    },
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "completed",
+        "status_code": 200,
+        "error_message": null
+      }
+    ]
+  },
+  {
+    "case": "delta_slow_finish",
+    "passed": false,
+    "report": null,
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/verification-1789405459562275000/delta_slow_finish.log"
+  },
+  {
+    "case": "candidate_timeout",
+    "passed": true,
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789405459717569000/results.json",
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/verification-1789405459562275000/candidate_timeout.log",
+    "gateway": {
+      "route": "gateway",
+      "first_content_ms": null,
+      "read_error": null,
+      "elapsed_ms": 706,
+      "completed_event": false,
+      "padding": 0,
+      "status": 504,
+      "has_output": false,
+      "first_timeout": "0.2",
+      "budget_ms": "5000",
+      "output_kind": "delta",
+      "missing_output_error": false,
+      "error_summary": "{\"error\":{\"message\":\"Stream first effective output timeout\"}}"
+    },
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "failed",
+        "status_code": 504,
+        "error_message": "Stream first effective output timeout"
+      }
+    ]
+  },
+  {
+    "case": "logical_budget_timeout",
+    "passed": true,
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789405464371424000/results.json",
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/verification-1789405459562275000/logical_budget_timeout.log",
+    "gateway": {
+      "route": "gateway",
+      "first_content_ms": null,
+      "read_error": null,
+      "elapsed_ms": 1810,
+      "completed_event": false,
+      "padding": 0,
+      "status": 504,
+      "has_output": false,
+      "first_timeout": "5",
+      "budget_ms": "1800",
+      "output_kind": "delta",
+      "missing_output_error": false,
+      "error_summary": "{\"error\":{\"message\":\"Streaming failover budget exhausted before useful model output\"}}"
+    },
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "failed",
+        "status_code": 504,
+        "error_message": "Streaming failover budget exhausted before useful model output"
+      }
+    ]
+  },
+  {
+    "case": "upstream_eof_after_output",
+    "passed": true,
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789405466364945000/results.json",
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/verification-1789405459562275000/upstream_eof_after_output.log",
+    "gateway": {
+      "route": "gateway",
+      "first_content_ms": 445,
+      "read_error": null,
+      "elapsed_ms": 1650,
+      "completed_event": false,
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "1",
+      "budget_ms": "5000",
+      "output_kind": "delta",
+      "missing_output_error": false
+    },
+    "usage": [
+      {
+        "request_type": "chat",
+        "status": "failed",
+        "status_code": 502,
+        "error_message": "error decoding response body: error reading a body from connection: unexpected EOF during chunk size line"
+      }
+    ]
+  }
+]

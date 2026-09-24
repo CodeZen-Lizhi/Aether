@@ -1,0 +1,114 @@
+[
+  {
+    "filter": "stream_response_timeout",
+    "passed": false,
+    "summary": [
+      "test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 2695 filtered out; finished in 8.37s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/0-stream_response_timeout.log"
+  },
+  {
+    "filter": "scheduler_failover::http_failures",
+    "passed": true,
+    "summary": [
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 2695 filtered out; finished in 6.31s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/1-scheduler_failover_http_failures.log"
+  },
+  {
+    "filter": "delivered_sse_text_is_not_replayed_after_upstream_disconnect",
+    "passed": true,
+    "summary": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2703 filtered out; finished in 2.96s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/2-delivered_sse_text_is_not_replayed_after_upstream_disconnect.log"
+  },
+  {
+    "filter": "scheduler_failover::target_admission",
+    "passed": true,
+    "summary": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2703 filtered out; finished in 3.32s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/3-scheduler_failover_target_admission.log"
+  },
+  {
+    "filter": "stream_candidate_watchdog",
+    "passed": true,
+    "summary": [
+      "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2694 filtered out; finished in 0.04s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/4-stream_candidate_watchdog.log"
+  },
+  {
+    "filter": "direct_stream_execution_runtime",
+    "passed": true,
+    "summary": [
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2701 filtered out; finished in 1.96s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/5-direct_stream_execution_runtime.log"
+  },
+  {
+    "filter": "gateway_admin_usage_retry_lifecycle_sqlite",
+    "passed": true,
+    "summary": [
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2702 filtered out; finished in 1.54s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/6-gateway_admin_usage_retry_lifecycle_sqlite.log"
+  },
+  {
+    "filter": "gateway_derives_legacy_admin_usage",
+    "passed": true,
+    "summary": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2703 filtered out; finished in 0.68s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/7-gateway_derives_legacy_admin_usage.log"
+  },
+  {
+    "filter": "gateway_preserves_admin_usage_explicit_image_failure",
+    "passed": true,
+    "summary": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2703 filtered out; finished in 0.49s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/8-gateway_preserves_admin_usage_explicit_image_failure.log"
+  },
+  {
+    "filter": "observability::usage::summary_routes::tests",
+    "passed": true,
+    "summary": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2699 filtered out; finished in 0.00s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/9-observability_usage_summary_routes_tests.log"
+  },
+  {
+    "filter": "observability::monitoring::tests::trace",
+    "passed": true,
+    "summary": [
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2691 filtered out; finished in 1.51s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/10-observability_monitoring_tests_trace.log"
+  },
+  {
+    "filter": "stream_total_timeout",
+    "passed": true,
+    "summary": [
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2701 filtered out; finished in 2.10s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/11-stream_total_timeout.log"
+  },
+  {
+    "filter": "tunnel::embedded::local_relay::tests",
+    "passed": true,
+    "summary": [
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 2697 filtered out; finished in 0.00s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/12-tunnel_embedded_local_relay_tests.log"
+  },
+  {
+    "filter": "responses::route_smoke",
+    "passed": true,
+    "summary": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2703 filtered out; finished in 1.35s"
+    ],
+    "log": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/rust-checks-1789448249945925000/13-responses_route_smoke.log"
+  }
+]

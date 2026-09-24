@@ -1,0 +1,62 @@
+{
+  "usage": [
+    {
+      "request_type": "compact",
+      "status": "completed",
+      "status_code": 200,
+      "error_message": null
+    }
+  ],
+  "results": [
+    {
+      "route": "direct",
+      "elapsed_ms": 3111,
+      "completed_event": true,
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "1",
+      "budget_ms": "2500",
+      "missing_output_error": false
+    },
+    {
+      "route": "gateway",
+      "elapsed_ms": 3476,
+      "completed_event": true,
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "1",
+      "budget_ms": "2500",
+      "missing_output_error": false
+    }
+  ],
+  "upstream_receipts": [
+    {
+      "padding": 0,
+      "closed_before_output": false,
+      "output_sent": true,
+      "setup_bytes": 225
+    },
+    {
+      "padding": 0,
+      "closed_before_output": false,
+      "output_sent": true,
+      "setup_bytes": 225
+    }
+  ],
+  "candidates": [
+    {
+      "status": "success",
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 3107
+    }
+  ],
+  "health": [
+    {
+      "health_by_format": "{\"openai:responses\":{\"health_policy_version\":2,\"health_score\":1.0,\"consecutive_failures\":0,\"last_failure_at\":null,\"rate_limit_cooldown_until_unix_secs\":null,\"rate_limit_probe_until_unix_secs\":null,\"consecutive_rate_limits\":0}}",
+      "circuit_breaker_by_format": "{\"openai:responses\":{\"request_results_window\":[{\"ts\":1789401033,\"ok\":true}],\"health_policy_version\":2,\"open\":false,\"open_at\":null,\"reason\":null,\"next_probe_at\":null,\"next_probe_at_unix_secs\":null,\"half_open_until\":null,\"half_open_until_unix_secs\":null,\"last_failure_at\":null,\"last_probe_failure_at\":null,\"half_open_successes\":0,\"half_open_failures\":0,\"failure_count\":0,\"probe_interval_minutes\":0}}"
+    }
+  ]
+}

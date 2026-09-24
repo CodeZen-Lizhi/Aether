@@ -1,0 +1,59 @@
+{
+  "usage": [
+    {
+      "request_type": "compact",
+      "status": "pending",
+      "status_code": null,
+      "error_message": null
+    }
+  ],
+  "results": [
+    {
+      "route": "direct",
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "5",
+      "budget_ms": "1800",
+      "missing_output_error": false
+    },
+    {
+      "route": "gateway",
+      "padding": 0,
+      "status": 504,
+      "has_output": false,
+      "first_timeout": "5",
+      "budget_ms": "1800",
+      "missing_output_error": false,
+      "error_summary": "{\"error\":{\"message\":\"Streaming failover budget exhausted before useful model output\"}}"
+    }
+  ],
+  "upstream_receipts": [
+    {
+      "padding": 0,
+      "closed_before_output": false,
+      "output_sent": true,
+      "setup_bytes": 225
+    },
+    {
+      "padding": 0,
+      "closed_before_output": false,
+      "output_sent": false,
+      "setup_bytes": 225
+    }
+  ],
+  "candidates": [
+    {
+      "status": "cancelled",
+      "status_code": 504,
+      "error_type": "stream_failover_budget_exhausted",
+      "latency_ms": 1456
+    }
+  ],
+  "health": [
+    {
+      "health_by_format": null,
+      "circuit_breaker_by_format": null
+    }
+  ]
+}

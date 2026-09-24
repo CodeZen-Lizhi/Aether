@@ -758,8 +758,9 @@ function toggleApiFormat(format: string) {
     form.value.api_formats.push(format)
     setAuthChannelMismatchAllowed(format, true)
   } else {
-    // 移除格式，但保留隐藏配置（用户可能只是临时取消）
+    // 移除格式时同步清理关联的认证通道例外，避免保存后留下无法在界面恢复的孤立配置。
     form.value.api_formats.splice(index, 1)
+    setAuthChannelMismatchAllowed(format, false)
   }
   form.value.allow_auth_channel_mismatch_formats = sanitizeAllowAuthChannelMismatchFormats(
     form.value.allow_auth_channel_mismatch_formats

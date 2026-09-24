@@ -1,0 +1,94 @@
+{
+  "exported_at": "2026-09-12T08:10:53.324458+00:00",
+  "config_data": {
+    "exported_at": "2026-09-12T08:10:53.320128+00:00",
+    "global_models": [],
+    "providers": [],
+    "proxy_nodes": [
+      {
+        "id": "6d8c7e80-004a-4444-91c2-3346bd8e0caf",
+        "name": "设置布局验证节点-Long-Proxy-Name-用于验证最小窗口长名称布局",
+        "ip": "127.0.0.1",
+        "port": 9,
+        "region": null,
+        "is_manual": true,
+        "proxy_url": "http://127.0.0.1:9",
+        "proxy_username": null,
+        "proxy_password": null,
+        "tunnel_mode": false,
+        "heartbeat_interval": 0,
+        "remote_config": null,
+        "config_version": 0
+      }
+    ],
+    "system_configs": [
+      {
+        "key": "admin_cleanup_run_history",
+        "value": [
+          {
+            "id": "d2593cb7-8b81-4687-92b8-7f33567c6f22",
+            "kind": "request_candidate_cleanup",
+            "trigger": "auto",
+            "status": "completed",
+            "message": "候选记录自动清理完成，删除 0 行",
+            "started_at_unix_secs": 1789200086,
+            "completed_at_unix_secs": 1789200086,
+            "duration_ms": 5,
+            "summary": {
+              "request_candidates_deleted": 0
+            },
+            "error": null
+          }
+        ],
+        "description": "最近的系统清理执行记录"
+      },
+      {
+        "key": "default_user_group_id",
+        "value": "00000000-0000-0000-0000-000000000001",
+        "description": "Default user group"
+      },
+      {
+        "key": "system_proxy_node_id",
+        "value": "6d8c7e80-004a-4444-91c2-3346bd8e0caf",
+        "description": "系统默认代理节点 ID"
+      }
+    ],
+    "routing_strategy": null
+  },
+  "user_data": {
+    "exported_at": "2026-09-12T08:10:53.321652+00:00",
+    "provider_names": {},
+    "users": [
+      {
+        "id": "daf49933-011a-4f4d-8967-6737c009509f",
+        "email": "settings-layout-qa@example.test",
+        "email_verified": true,
+        "username": "settings-layout-qa",
+        "password_hash": "$2b$12$UcPFb5D3VKVHT84tYy2XROw4JH0xU7xMV2QyH/nQbzD84ZkH0zBo6",
+        "role": "admin",
+        "auth_source": "local",
+        "allowed_providers": null,
+        "allowed_providers_mode": "unrestricted",
+        "allowed_api_formats": null,
+        "allowed_api_formats_mode": "unrestricted",
+        "allowed_models": null,
+        "allowed_models_mode": "unrestricted",
+        "rate_limit": null,
+        "rate_limit_mode": "system",
+        "model_capability_settings": null,
+        "feature_settings": null,
+        "is_active": true,
+        "preferences": null,
+        "request_count": 0,
+        "total_tokens": 0,
+        "api_keys": []
+      }
+    ],
+    "standalone_keys": [],
+    "usage_aggregates": {
+      "stats_daily": [],
+      "stats_user_daily": [],
+      "stats_daily_api_key": []
+    }
+  }
+}

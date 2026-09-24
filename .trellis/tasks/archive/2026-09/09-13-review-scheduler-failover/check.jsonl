@@ -1,6 +1,0 @@
-{"file":".trellis/tasks/09-13-review-scheduler-failover/prd.md","reason":"逐项验证 A1-A11，不把模块测试视为真实调用链证明"}
-{"file":".trellis/tasks/09-13-review-scheduler-failover/design.md","reason":"审查健康幂等、代次隔离、租约与流式重放边界"}
-{"file":".trellis/tasks/09-13-review-scheduler-failover/implement.md","reason":"检查迁移、调用顺序/次数、后续状态与未验证范围"}
-{"file":".trellis/tasks/09-13-review-scheduler-failover/research/failover-plan-review.md","reason":"证据范围和历史纠正；不得声称旧未完成测试通过"}
-{"file":".trellis/spec/aether-routing-core/backend/simplified-routing.md","reason":"保存往返和条件规则兼容"}
-{"file":".trellis/spec/frontend/index.md","reason":"权威状态、配置读写、交互与响应式规范"}

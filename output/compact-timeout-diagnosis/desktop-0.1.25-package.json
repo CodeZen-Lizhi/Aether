@@ -1,0 +1,10 @@
+{
+  "version": "0.1.25",
+  "architecture": "arm64",
+  "minimum_macos": "14.0",
+  "signature": "ad-hoc; deep strict verification passed",
+  "dmg_contents": "version, signature, binaries and web index match validated app; Applications link present",
+  "dmg_path": "/Users/zhenglizhi/otherProjects/Aether/target/release/bundle/dmg/Aether_0.1.25_aarch64.dmg",
+  "dmg_bytes": 32374023,
+  "dmg_sha256": "31fcc345b4422da751debda1b05ce8a768cabcc132505ff17b1cda8f80e055a2"
+}

@@ -1,0 +1,39 @@
+{
+  "usage": [],
+  "results": [
+    {
+      "route": "direct",
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "2",
+      "budget_ms": "350",
+      "missing_output_error": false
+    },
+    {
+      "route": "gateway",
+      "padding": 0,
+      "status": 504,
+      "has_output": false,
+      "first_timeout": "2",
+      "budget_ms": "350",
+      "missing_output_error": false,
+      "error_summary": "{\"error\":{\"message\":\"Streaming failover budget exhausted before useful model output\"}}"
+    }
+  ],
+  "upstream_receipts": [
+    {
+      "padding": 0,
+      "closed_before_output": false,
+      "output_sent": true,
+      "setup_bytes": 225
+    }
+  ],
+  "candidates": [],
+  "health": [
+    {
+      "health_by_format": null,
+      "circuit_breaker_by_format": null
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+[
+  {
+    "case": "compact_headers_then_delayed_body",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448917683820000-8a071ec6/results.json",
+    "elapsed_ms": 3498,
+    "http_status": 200,
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "completed",
+        "status_code": 200,
+        "error_message": null,
+        "response_time_ms": 3108,
+        "first_byte_time_ms": 3106
+      }
+    ]
+  },
+  {
+    "case": "chat_headers_then_delayed_body",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448924735985000-bd43c140/results.json",
+    "elapsed_ms": 3506,
+    "http_status": 200,
+    "usage": [
+      {
+        "request_type": "chat",
+        "status": "completed",
+        "status_code": 200,
+        "error_message": null,
+        "response_time_ms": 3108,
+        "first_byte_time_ms": 3107
+      }
+    ]
+  },
+  {
+    "case": "compact_startup_then_silence",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448929480661000-ecdaff6a/results.json",
+    "elapsed_ms": 3484,
+    "http_status": 200,
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "completed",
+        "status_code": 200,
+        "error_message": null,
+        "response_time_ms": 3110,
+        "first_byte_time_ms": 104
+      }
+    ]
+  },
+  {
+    "case": "no_headers_first_timeout",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448934311079000-a6cbf65e/results.json",
+    "elapsed_ms": 1394,
+    "http_status": 504,
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "failed",
+        "status_code": 504,
+        "error_message": "Stream first response timeout",
+        "response_time_ms": 1392,
+        "first_byte_time_ms": null
+      }
+    ]
+  },
+  {
+    "case": "headers_only_total_timeout",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448936630759000-43dffb37/results.json",
+    "elapsed_ms": 1504,
+    "http_status": 504,
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "failed",
+        "status_code": 504,
+        "error_message": "Streaming request total timeout exceeded",
+        "response_time_ms": 1502,
+        "first_byte_time_ms": null
+      }
+    ]
+  },
+  {
+    "case": "startup_then_total_timeout",
+    "passed": false,
+    "errors": [
+      "headers/body/effective output milestones not preserved separately"
+    ],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448939503484000-0e18cbf6/results.json",
+    "elapsed_ms": 1511,
+    "http_status": 504,
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "failed",
+        "status_code": 504,
+        "error_message": "Streaming request total timeout exceeded",
+        "response_time_ms": 1502,
+        "first_byte_time_ms": 110
+      }
+    ]
+  },
+  {
+    "case": "chat_output_then_total_timeout",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448942873053000-21867506/results.json",
+    "elapsed_ms": 1504,
+    "http_status": 200,
+    "usage": [
+      {
+        "request_type": "chat",
+        "status": "failed",
+        "status_code": 504,
+        "error_message": "Streaming request total timeout exceeded",
+        "response_time_ms": 1502,
+        "first_byte_time_ms": 105
+      }
+    ]
+  },
+  {
+    "case": "compact_item_then_total_timeout",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448946681848000-bcb60128/results.json",
+    "elapsed_ms": 1504,
+    "http_status": 200,
+    "usage": [
+      {
+        "request_type": "compact",
+        "status": "failed",
+        "status_code": 504,
+        "error_message": "Streaming request total timeout exceeded",
+        "response_time_ms": 1502,
+        "first_byte_time_ms": 109
+      }
+    ]
+  },
+  {
+    "case": "chat_output_then_broken_stream",
+    "passed": true,
+    "errors": [],
+    "report": "/Users/zhenglizhi/otherProjects/Aether/output/compact-timeout-diagnosis/run-1789448949713005000-6462a193/results.json",
+    "elapsed_ms": 712,
+    "http_status": 200,
+    "usage": [
+      {
+        "request_type": "chat",
+        "status": "failed",
+        "status_code": 502,
+        "error_message": "error decoding response body: error reading a body from connection: unexpected EOF during chunk size line",
+        "response_time_ms": 107,
+        "first_byte_time_ms": 106
+      }
+    ]
+  }
+]

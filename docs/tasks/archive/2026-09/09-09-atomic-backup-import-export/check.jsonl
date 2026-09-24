@@ -1,0 +1,3 @@
+{"file":"docs/specs/frontend/index.md","reason":"文案及交互完整性"}
+{"file":"docs/specs/aether-data/backend/sqlite-lifecycle.md","reason":"真实 SQLite 回滚与数据完整性验证"}
+{"file":"docs/specs/guides/code-reuse-thinking-guide.md","reason":"事务 helper 复用与调用方一致性"}

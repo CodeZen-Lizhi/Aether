@@ -1,21 +1,11 @@
-<!-- TRELLIS:START -->
-# Trellis Instructions
 
-These instructions are for AI assistants working in this project.
 
-This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+## 本地 Spec 入口
 
-- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.trellis/workspace/` — per-developer journals and session traces
-- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+开发前从 [docs/specs/index.md](docs/specs/index.md) 找受影响包和对应业务契约；共享审查与验证规则按链接读取。初始化后补齐或维护规范时使用 [Spec 维护指南](docs/specs/guides/spec-maintenance.md)。
 
-If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+## 本地规范与交付
 
-If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable Trellis skills
-- `.codex/agents/` — optional custom subagents
+开发与审查前读取 [项目规范索引](docs/specs/index.md)，再按实际范围读取正文，并应用全局指令中的共享工程规范。开发流程按全局 `delivery` 及任务复杂度执行；独立审查使用对应 Review Skill。
 
-Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
-
-<!-- TRELLIS:END -->
+任务计划与结果使用 `docs/tasks/`；历史日志在 `docs/worklog/`。旧任务中的 JSON/JSONL、状态与命令只作历史参考，不再驱动框架脚本。保留当前项目约定与用户已有改动。

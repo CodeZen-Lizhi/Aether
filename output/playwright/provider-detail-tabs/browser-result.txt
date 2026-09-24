@@ -1,0 +1,2 @@
+### Result
+{"initial":["订阅配额","密钥管理"],"switching":"passed","reopen":"passed","preservedState":"passed","management":"key/model toggle, mapping save and reread passed","layouts":["840:密钥管理","840:模型列表","840:模型映射","1024:密钥管理","1024:模型列表","1024:模型映射","1280:密钥管理","1280:模型列表","1280:模型映射","1920:密钥管理","1920:模型列表","1920:模型映射","390:密钥管理","390:模型列表","390:模型映射"]}

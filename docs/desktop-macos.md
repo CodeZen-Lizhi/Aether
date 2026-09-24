@@ -112,7 +112,7 @@ npm --prefix apps/aether-desktop run build -- --config /absolute/path/signing.js
 
 ## 验证
 
-前后端契约及本次验收证据记录在 `.trellis/tasks/09-09-tauri-macos/implement.md`。核心自动检查：
+前后端契约及本次验收证据记录在 `docs/tasks/09-09-tauri-macos/implement.md`。核心自动检查：
 
 ```bash
 cargo fmt --all -- --check

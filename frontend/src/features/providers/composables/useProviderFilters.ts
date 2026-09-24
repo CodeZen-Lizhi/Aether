@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import type { ProviderSummaryQuery } from '@/api/endpoints'
 import { API_FORMAT_ORDER, formatApiFormat } from '@/api/endpoints/types/api-format'
 import { useI18n } from '@/i18n'
@@ -8,6 +8,10 @@ export interface FilterOption {
   label: string
 }
 
+/** 供应商摘要接口单次返回上限，避免较小页尺寸隐藏列表项。 */
+const PROVIDER_LIST_PAGE_SIZE = 10_000
+
+/** 创建供应商列表筛选状态，并固定请求接口支持的最大页尺寸。 */
 export function useProviderFilters(
   globalModels: () => { id: string; name: string }[],
 ) {
@@ -45,25 +49,15 @@ export function useProviderFilters(
     )
   })
 
-  // 分页
-  const currentPage = ref(1)
-  const pageSize = ref(20)
-  const total = ref(0)
-
-  // 服务端分页查询参数
+  // 服务端筛选参数；使用最大页尺寸一次加载列表。
   const queryParams = computed<ProviderSummaryQuery>(() => ({
-    page: currentPage.value,
-    page_size: pageSize.value,
+    page: 1,
+    page_size: PROVIDER_LIST_PAGE_SIZE,
     search: searchQuery.value.trim() || undefined,
     status: filterStatus.value !== 'all' ? filterStatus.value : undefined,
     api_format: filterApiFormat.value !== 'all' ? filterApiFormat.value : undefined,
     model_id: filterModel.value !== 'all' ? filterModel.value : undefined,
   }))
-
-  // 搜索/筛选变化时重置分页到第1页
-  watch([searchQuery, filterStatus, filterApiFormat, filterModel], () => {
-    currentPage.value = 1
-  })
 
   function resetFilters() {
     searchQuery.value = ''
@@ -81,9 +75,6 @@ export function useProviderFilters(
     apiFormatFilters,
     modelFilters,
     hasActiveFilters,
-    currentPage,
-    pageSize,
-    total,
     queryParams,
     resetFilters,
   }

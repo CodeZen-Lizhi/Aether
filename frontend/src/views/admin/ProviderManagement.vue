@@ -192,17 +192,6 @@
           @cancel-edit-description="cancelEditDescription"
         />
       </div>
-
-      <!-- 分页 -->
-      <Pagination
-        v-if="!loading && total > 0"
-        :current="currentPage"
-        :total="total"
-        :page-size="pageSize"
-        cache-key="provider-management-page-size"
-        @update:current="currentPage = $event"
-        @update:page-size="pageSize = $event"
-      />
     </Card>
   </div>
 
@@ -243,7 +232,6 @@ import TableRow from '@/components/ui/table-row.vue'
 import TableHead from '@/components/ui/table-head.vue'
 import SortableTableHead from '@/components/ui/sortable-table-head.vue'
 import TableFilterMenu from '@/components/ui/table-filter-menu.vue'
-import Pagination from '@/components/ui/pagination.vue'
 import { ProviderFormDialog, ProviderAuthDialog } from '@/features/providers/components'
 import ProviderTableHeader from '@/features/providers/components/ProviderTableHeader.vue'
 import ProviderTableRow from '@/features/providers/components/ProviderTableRow.vue'
@@ -438,9 +426,6 @@ const {
   apiFormatFilters,
   modelFilters,
   hasActiveFilters,
-  currentPage,
-  pageSize,
-  total,
   queryParams,
   resetFilters,
 } = useProviderFilters(
@@ -529,7 +514,7 @@ async function loadGlobalModelList(options: { cacheTtlMs?: number } = {}) {
   }
 }
 
-// 加载提供商列表（服务端分页）
+// 加载服务端筛选后的完整提供商列表
 async function loadProviders(options: { cacheTtlMs?: number } = {}) {
   const requestId = ++providersRequestId
   loading.value = true
@@ -545,7 +530,6 @@ async function loadProviders(options: { cacheTtlMs?: number } = {}) {
       Object.assign(existing, item)
       return existing
     })
-    total.value = response.total
     void loadBalances(providers.value)
   } catch (err: unknown) {
     if (requestId !== providersRequestId) return
@@ -557,7 +541,7 @@ async function loadProviders(options: { cacheTtlMs?: number } = {}) {
   }
 }
 
-// 分页/筛选/搜索变化时重新加载
+// 筛选/搜索变化时重新加载
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 watch(queryParams, (newParams, oldParams) => {
   if (debounceTimer) clearTimeout(debounceTimer)

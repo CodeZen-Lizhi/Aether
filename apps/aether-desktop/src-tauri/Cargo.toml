@@ -1,6 +1,6 @@
 [package]
 name = "aether-desktop"
-version = "0.1.25"
+version = "0.1.28"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

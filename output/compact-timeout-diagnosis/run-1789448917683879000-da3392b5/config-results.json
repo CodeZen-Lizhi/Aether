@@ -1,0 +1,15 @@
+{
+  "saved_seconds": 5.001,
+  "cleared_effective_seconds": 900.0,
+  "invalid_writes_rejected": 5,
+  "sqlite_preserved_config": {
+    "future": {
+      "enabled": true
+    },
+    "failover_rules": {
+      "stream_failover_budget_ms": 1800,
+      "chat_policy_version": 1
+    }
+  },
+  "passed": true
+}

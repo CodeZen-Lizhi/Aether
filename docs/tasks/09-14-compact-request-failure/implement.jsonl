@@ -1,0 +1,5 @@
+{"file": "docs/specs/aether-gateway/backend/index.md", "reason": "网关影响范围入口"}
+{"file": "docs/specs/aether-gateway/backend/chat-failover.md", "reason": "首有效输出预算、重试、取消和结算契约"}
+{"file": "docs/specs/backend/error-handling.md", "reason": "错误类型、脱敏、资源取消边界"}
+{"file": "docs/specs/backend/quality-guidelines.md", "reason": "真实请求链路与SQLite状态验证"}
+{"file": "docs/tasks/09-14-compact-request-failure/timeout-audit.md", "reason": "已验证诊断、事件遗漏复现和反证"}

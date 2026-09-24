@@ -1,0 +1,52 @@
+{
+  "gateway_binary": "/Applications/Aether.app/Contents/MacOS/aether-gateway",
+  "usage": [
+    {
+      "request_type": "compact",
+      "status": "failed",
+      "status_code": 504,
+      "error_message": "Stream first effective output timeout",
+      "response_time_ms": 1330,
+      "first_byte_time_ms": null
+    }
+  ],
+  "results": [
+    {
+      "route": "gateway",
+      "first_content_ms": null,
+      "read_error": null,
+      "elapsed_ms": 1335,
+      "completed_event": false,
+      "padding": 0,
+      "status": 504,
+      "has_output": false,
+      "first_timeout": "1",
+      "budget_ms": "1800",
+      "output_kind": "compaction_done",
+      "missing_output_error": false,
+      "error_summary": "{\"error\":{\"message\":\"Stream first effective output timeout\"}}"
+    }
+  ],
+  "upstream_receipts": [
+    {
+      "padding": 0,
+      "closed_before_output": false,
+      "output_sent": false,
+      "setup_bytes": 225
+    }
+  ],
+  "candidates": [
+    {
+      "status": "failed",
+      "status_code": 504,
+      "error_type": "local_stream_candidate_watchdog_timeout",
+      "latency_ms": 1003
+    }
+  ],
+  "health": [
+    {
+      "health_by_format": "{\"openai:responses\":{\"health_policy_version\":2,\"health_score\":0.9,\"consecutive_failures\":1,\"last_failure_at\":\"2026-09-15T04:29:09Z\",\"last_failure_reason\":\"upstream_timeout\",\"last_failure_base_points\":1,\"last_failure_extra_points\":0,\"last_health_score_before\":1.0,\"rate_limit_probe_until_unix_secs\":null}}",
+      "circuit_breaker_by_format": "{\"openai:responses\":{\"request_results_window\":[{\"ts\":1789446549,\"ok\":false}],\"health_policy_version\":2,\"failure_count\":1}}"
+    }
+  ]
+}

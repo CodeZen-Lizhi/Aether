@@ -1,0 +1,60 @@
+{
+  "gateway_binary": "/Users/zhenglizhi/otherProjects/Aether/target/release/bundle/macos/Aether.app/Contents/MacOS/aether-gateway",
+  "usage": [
+    {
+      "request_type": "compact",
+      "status": "failed",
+      "status_code": 504,
+      "error_message": "Streaming request total timeout exceeded",
+      "response_time_ms": 1502,
+      "first_byte_time_ms": 106
+    }
+  ],
+  "results": [
+    {
+      "route": "gateway",
+      "first_content_ms": 453,
+      "read_error": null,
+      "elapsed_ms": 1503,
+      "completed_event": false,
+      "padding": 0,
+      "status": 200,
+      "has_output": true,
+      "first_timeout": "1",
+      "budget_ms": "1800",
+      "output_kind": "compaction_done",
+      "missing_output_error": false
+    }
+  ],
+  "upstream_receipts": [
+    {
+      "padding": 0,
+      "closed_before_output": false,
+      "output_sent": false,
+      "setup_bytes": 225,
+      "early_output_event_sent": "response.output_item.done"
+    }
+  ],
+  "candidates": [
+    {
+      "status": "failed",
+      "status_code": 504,
+      "error_type": "stream_total_timeout",
+      "latency_ms": 1158
+    }
+  ],
+  "health": [
+    {
+      "health_by_format": null,
+      "circuit_breaker_by_format": null
+    }
+  ],
+  "stream_timings": [
+    {
+      "response_headers_elapsed_ms": 451,
+      "first_body_elapsed_ms": 451,
+      "first_effective_output_elapsed_ms": 452,
+      "first_byte_ms": 106
+    }
+  ]
+}

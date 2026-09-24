@@ -27,3 +27,11 @@ describe('ProviderManagement detail drawer loading', () => {
     expect(source).toContain('providerDrawerMounted.value = true')
   })
 })
+
+describe('ProviderManagement provider list', () => {
+  it('does not render pagination controls', () => {
+    const template = source.split('<script setup lang="ts">')[0]
+
+    expect(template).not.toContain('<Pagination')
+  })
+})
