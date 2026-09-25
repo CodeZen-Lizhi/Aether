@@ -149,6 +149,7 @@ ORDER BY created_at ASC, id ASC
 
 #[async_trait]
 impl RoutingGroupWriteRepository for SqliteRoutingGroupRepository {
+    /// 创建配置并读回触发器归一化后的值，避免响应重新带回失效优先级。
     async fn create_routing_group(
         &self,
         record: CreateRoutingGroupRecord,
@@ -195,11 +196,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         .execute(&mut *tx)
         .await
         .map_sql_err()?;
+        let row = sqlx::query(&format!("{ROUTING_GROUP_SELECT} WHERE id = ?"))
+            .bind(&group.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_sql_err()?;
+        let group = map_group_row(&row)?;
         tx.commit().await.map_sql_err()?;
         drop(connection);
         Ok(group)
     }
 
+    /// 在同一事务中更新并读回配置，返回触发器处理后的实际优先级关联。
     async fn update_routing_group(
         &self,
         id: &str,
@@ -260,6 +268,12 @@ WHERE id = ?
         .execute(&mut *tx)
         .await
         .map_sql_err()?;
+        let row = sqlx::query(&format!("{ROUTING_GROUP_SELECT} WHERE id = ?"))
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_sql_err()?;
+        let group = map_group_row(&row)?;
         tx.commit().await.map_sql_err()?;
         drop(connection);
         Ok(Some(group))

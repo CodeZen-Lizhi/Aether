@@ -73,6 +73,13 @@ in [SQLite lifecycle](../../aether-data/backend/sqlite-lifecycle.md).
   all components before returning JSON. Never truncate malformed string lists,
   unknown nonempty fields, or unsupported API formats. Re-encrypt imported secrets
   using the target's encryption key; never return secret values in diagnostics.
+- SQLite upgrades repair orphan provider/key priority actions and priority maps in
+  current routing configurations. Deletion triggers perform this cleanup in the
+  same transaction as entity deletion; configuration writes normalize stale
+  priority entries too. Keep valid priorities, conditions, phases, action order,
+  empty rules with stop gates, and historical versions. Restriction lists are not
+  priorities: preserve them rather than turning an empty allowlist into unrestricted
+  access. Unresolved restrictive references still fail backup validation explicitly.
 - Preserve all supplied statistics rows (including zero-valued rows), their
   recorded names, costs, and `is_complete`; do not manufacture completion.
 - The UI creates downloads only after a complete successful response. Import
@@ -129,6 +136,11 @@ in [SQLite lifecycle](../../aether-data/backend/sqlite-lifecycle.md).
   address-based proxy ID remapping at all five reference locations, inactive
   provider content, complete channel state, and failure during supplemental state
   restoration with full-table rollback comparisons.
+- `aether-data-sqlite` test `routing_priority_references` covers historical repair,
+  deletion rollback, stale saves and preservation of restrictions/history. Run
+  `apps/aether-desktop/scripts/qa_backup_routing.py NEW_GATEWAY --legacy OLD_GATEWAY`
+  against real local binaries to verify deletion, the old HTTP 500, upgrade,
+  complete JSON export, restoration and a second export with synthetic data.
 
 ## 7. Wrong vs Correct
 
