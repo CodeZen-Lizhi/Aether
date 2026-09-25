@@ -42,6 +42,39 @@ pub(super) async fn maybe_handle(
                     .into_response(),
             ));
         };
+        // 删除模型只解除密钥上的模型白名单关联，保留密钥和其它模型权限。
+        let keys = state
+            .list_provider_catalog_keys_by_provider_ids(&[provider_id.clone()])
+            .await?;
+        let model_names = [
+            Some(existing.provider_model_name.as_str()),
+            existing.global_model_name.as_deref(),
+        ];
+        let mut changed_keys = Vec::new();
+        for mut key in keys {
+            let Some(value) = key.allowed_models.as_ref() else {
+                continue;
+            };
+            let Some(models) = value.as_array() else {
+                continue;
+            };
+            let filtered = models
+                .iter()
+                .filter(|model| {
+                    model.as_str().is_none_or(|name| {
+                        !model_names.iter().flatten().any(|target| name == *target)
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if filtered.len() != models.len() {
+                key.allowed_models = Some(serde_json::Value::Array(filtered));
+                changed_keys.push(key);
+            }
+        }
+        if !changed_keys.is_empty() {
+            state.update_provider_catalog_keys(&changed_keys).await?;
+        }
         if !state
             .delete_admin_provider_model(&provider_id, &model_id)
             .await?

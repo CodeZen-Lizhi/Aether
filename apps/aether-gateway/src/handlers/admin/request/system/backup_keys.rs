@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 use super::AdminAppState;
 use crate::api::ai::admin_endpoint_signature_parts;
 use crate::handlers::admin::provider::write::normalize::{
-    normalize_allow_auth_channel_mismatch_formats, normalize_auth_type_by_format,
+    normalize_auth_type_by_format,
     normalize_default_rate_multiplier, normalize_internal_priority,
     normalize_max_probe_interval_minutes, normalize_rate_multipliers,
 };
@@ -125,11 +125,6 @@ pub(super) fn validate_imported_provider_key(
     normalize_auth_type_by_format(
         key.auth_type_by_format.clone(),
         "auth_type_by_format",
-        formats,
-    )?;
-    normalize_allow_auth_channel_mismatch_formats(
-        key.allow_auth_channel_mismatch_formats.clone(),
-        "allow_auth_channel_mismatch_formats",
         formats,
     )?;
     if key.cache_ttl_minutes.is_some_and(|value| value < 0)

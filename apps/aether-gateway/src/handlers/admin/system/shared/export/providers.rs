@@ -88,6 +88,17 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         key.api_formats.as_ref(),
                         &provider_endpoint_formats,
                     )?;
+                    let allowed_mismatch_formats = read_admin_backup_string_list(
+                        key.allow_auth_channel_mismatch_formats.as_ref(),
+                        "provider_api_keys.allow_auth_channel_mismatch_formats",
+                    )?
+                    .map(|formats| {
+                        formats
+                            .into_iter()
+                            .map(|format| aether_ai_formats::normalize_api_format_alias(&format))
+                            .filter(|format| api_formats.contains(format))
+                            .collect::<Vec<_>>()
+                    });
                     let auth_config = key
                         .encrypted_auth_config
                         .as_deref()
@@ -118,10 +129,7 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         internal_priority: Some(key.internal_priority),
                         default_rate_multiplier: Some(key.default_rate_multiplier),
                         auth_type_by_format: key.auth_type_by_format.clone(),
-                        allow_auth_channel_mismatch_formats: read_admin_backup_string_list(
-                            key.allow_auth_channel_mismatch_formats.as_ref(),
-                            "provider_api_keys.allow_auth_channel_mismatch_formats",
-                        )?,
+                        allow_auth_channel_mismatch_formats: allowed_mismatch_formats,
                         rpm_limit: key.rpm_limit,
                         concurrent_limit: key.concurrent_limit,
                         expires_at_unix_secs: key.expires_at_unix_secs,
