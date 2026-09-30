@@ -245,47 +245,6 @@
             </template>
           </template>
         </template>
-
-        <div class="rounded-lg border border-border bg-muted/20 px-4 py-3">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <Label class="text-sm font-medium">
-                额度提醒
-              </Label>
-              <p class="mt-1 text-xs text-muted-foreground">
-                余额低于阈值时通过通知服务发送提醒
-              </p>
-            </div>
-            <Switch v-model="quotaAlert.enabled" />
-          </div>
-
-          <div
-            v-if="quotaAlert.enabled"
-            class="dialog-grid-2 mt-4 gap-3"
-          >
-            <div class="space-y-2">
-              <Label>提醒阈值</Label>
-              <Input
-                v-model.number="quotaAlert.threshold_amount"
-                type="number"
-                min="0"
-                step="0.0001"
-                placeholder="0"
-              />
-            </div>
-            <div class="space-y-2">
-              <Label>获取频率（秒）</Label>
-              <Input
-                v-model.number="quotaAlert.fetch_interval_seconds"
-                type="number"
-                min="30"
-                max="86400"
-                step="1"
-                placeholder="30"
-              />
-            </div>
-          </div>
-        </div>
       </div>
     </form>
 
@@ -352,7 +311,6 @@ import {
   getProviderOpsConfig,
   deleteProviderOpsConfig,
   type ArchitectureInfo,
-  type QuotaAlertConfig,
 } from '@/api/providerOps'
 import { parseApiError } from '@/utils/errorParser'
 import { useToast } from '@/composables/useToast'
@@ -424,12 +382,6 @@ const SUPPORTED_ARCHITECTURE_IDS = new Set(['new_api', 'sub2api', 'usage_api'])
 const selectedArchitectureId = ref('new_api')
 const selectedAuthType = ref('')
 const formData = ref<Record<string, any>>({})
-const quotaAlert = ref<QuotaAlertConfig>({
-  enabled: false,
-  threshold_amount: 0,
-  fetch_interval_seconds: 30,
-})
-const savedQuotaAlertSignature = ref(quotaAlertSignature(quotaAlert.value))
 
 // 当前架构支持的认证方式
 const currentAuthTypes = computed(() => {
@@ -476,15 +428,8 @@ const canVerify = computed(() => {
 })
 
 // 保存按钮是否可用：验证成功且表单未变动
-const quotaAlertChanged = computed(() => {
-  return quotaAlertSignature(quotaAlert.value) !== savedQuotaAlertSignature.value
-})
-
 const canSave = computed(() => {
-  return (
-    (verifyStatus.value === 'success' && !formChanged.value)
-    || (hasExistingConfig.value && quotaAlertChanged.value && !formChanged.value)
-  )
+  return verifyStatus.value === 'success' && !formChanged.value
 })
 
 // 字段分组
@@ -693,10 +638,8 @@ async function handleSave() {
       formData.value,
       props.providerWebsite,
     )
-    request.quota_alert = normalizedQuotaAlert()
     const result = await saveProviderOpsConfig(props.providerId, request)
     if (result.success) {
-      savedQuotaAlertSignature.value = quotaAlertSignature(quotaAlert.value)
       showSuccess(result.message || '配置已保存', '保存成功')
       emit('saved')
       emit('update:open', false)
@@ -731,7 +674,6 @@ async function handleClear() {
       formChanged.value = false
       selectedArchitectureId.value = 'new_api'
       selectedAuthType.value = ''
-      loadQuotaAlert(null)
       resetFormData()
       emit('saved')
       emit('update:open', false)
@@ -791,46 +733,6 @@ function loadFromConfig(config: Record<string, unknown>) {
 
     formData.value = parsedData
   }
-  loadQuotaAlert(config.quota_alert)
-}
-
-function defaultQuotaAlert(): QuotaAlertConfig {
-  return {
-    enabled: false,
-    threshold_amount: 0,
-    fetch_interval_seconds: 30,
-  }
-}
-
-function normalizeQuotaAlert(value: unknown): QuotaAlertConfig {
-  if (!value || typeof value !== 'object') return defaultQuotaAlert()
-  const item = value as Record<string, unknown>
-  const threshold = Number(item.threshold_amount)
-  const interval = Number(item.fetch_interval_seconds)
-  return {
-    enabled: item.enabled === true,
-    threshold_amount: Number.isFinite(threshold) && threshold >= 0 ? threshold : 0,
-    fetch_interval_seconds: Number.isFinite(interval) && interval >= 30 ? Math.min(Math.floor(interval), 86400) : 30,
-  }
-}
-
-function normalizedQuotaAlert(): QuotaAlertConfig {
-  return normalizeQuotaAlert(quotaAlert.value)
-}
-
-function quotaAlertSignature(value: QuotaAlertConfig): string {
-  const normalized = normalizeQuotaAlert(value)
-  return JSON.stringify([
-    normalized.enabled,
-    normalized.threshold_amount,
-    normalized.fetch_interval_seconds,
-  ])
-}
-
-function loadQuotaAlert(value: unknown) {
-  const normalized = normalizeQuotaAlert(value)
-  quotaAlert.value = normalized
-  savedQuotaAlertSignature.value = quotaAlertSignature(normalized)
 }
 
 /** 确保架构列表已加载 */
@@ -874,13 +776,11 @@ watch(
               architecture_id: config.architecture_id,
               base_url: config.base_url,
               connector: config.connector,
-              quota_alert: config.quota_alert,
             }
             loadFromConfig(configData)
           } else {
             hasExistingConfig.value = false
             sensitivePlaceholders.value = {}
-            loadQuotaAlert(null)
             selectedArchitectureId.value = 'new_api'
             selectedAuthType.value = ''
             resetFormData()
@@ -888,7 +788,6 @@ watch(
         } catch {
           hasExistingConfig.value = false
           sensitivePlaceholders.value = {}
-          loadQuotaAlert(null)
           selectedArchitectureId.value = 'new_api'
           selectedAuthType.value = ''
           resetFormData()
@@ -898,7 +797,6 @@ watch(
       } else {
         hasExistingConfig.value = false
         sensitivePlaceholders.value = {}
-        loadQuotaAlert(null)
         selectedArchitectureId.value = 'new_api'
         selectedAuthType.value = ''
         resetFormData()
