@@ -128,16 +128,21 @@ describe('desktop API session recovery', () => {
     expect(native).toHaveBeenCalledTimes(1)
   })
 
-  it.each(['network', 'disabled'])('shows a connection failure for %s errors without opening login', async errorKind => {
+  it('keeps the desktop session for ordinary API network failures', async () => {
     const originalPath = window.location.pathname
-    raw.client.defaults.adapter = async config => {
-      if (errorKind === 'network') throw new AxiosError('Network error', 'ERR_NETWORK', config)
-      return apiResponse(config, { detail: '用户已禁用' }, 403)
-    }
+    raw.client.defaults.adapter = async config => { throw new AxiosError('Network error', 'ERR_NETWORK', config) }
+    await expect(api.get('/api/admin/data')).rejects.toBeInstanceOf(AxiosError)
+    expect(session.desktopSessionState.value.phase).toBe('idle')
+    expect(api.getToken()).toBe(sessionToken('expired'))
+    expect(window.location.pathname).toBe(originalPath)
+    expect(native).not.toHaveBeenCalled()
+  })
+
+  it('shows a connection failure for disabled desktop accounts', async () => {
+    raw.client.defaults.adapter = async config => apiResponse(config, { detail: '用户已禁用' }, 403)
     await expect(api.get('/api/admin/data')).rejects.toBeInstanceOf(AxiosError)
     expect(session.desktopSessionState.value.phase).toBe('failed')
     expect(api.getToken()).toBeNull()
-    expect(window.location.pathname).toBe(originalPath)
     expect(native).not.toHaveBeenCalled()
   })
 
@@ -175,7 +180,7 @@ describe('desktop API session recovery', () => {
     }
     const slow = api.get('/api/admin/slow').catch(error => error)
     await expect(api.get('/api/admin/first')).rejects.toBeInstanceOf(AxiosError)
-    expect(api.getToken()).toBeNull()
+    expect(api.getToken()).toBe(sessionToken('expired'))
     const retry = session.authenticateDesktopSession({ retry: true })
     expect(session.desktopSessionState.value.phase).toBe('connecting')
     oldResponse.resolve()

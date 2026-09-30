@@ -141,13 +141,10 @@ class ApiClient {
       return Promise.reject(error)
     }
 
-    // 网络错误或服务器不可达
+    // 普通业务接口的网络错误只交给调用方处理。只有桌面会话初始化失败时，
+    // 才应切换到“连接本机网关”页面；上游模型、余额等请求失败不能注销桌面会话。
     if (!error.response) {
       log.warn('Network error or server unreachable', error.message)
-      if (hasDesktopSession() && originalRequest?.url?.includes('/api/')
-        && !isPublicEndpoint(originalRequest.url, originalRequest.method)) {
-        this.failDesktopAuth(originalRequest)
-      }
       return Promise.reject(error)
     }
 
