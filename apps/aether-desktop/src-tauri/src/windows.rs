@@ -80,7 +80,13 @@ pub fn show_launcher(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 恢复 Dock 图标并显示管理窗口，最后恢复焦点。
 fn show(window: &WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    window
+        .app_handle()
+        .set_activation_policy(tauri::ActivationPolicy::Regular)
+        .map_err(|error| format!("恢复 Dock 图标失败：{error}"))?;
     window
         .show()
         .and_then(|_| window.unminimize())
@@ -106,10 +112,10 @@ pub fn close_dashboard(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 打开当前网关的管理窗口；初始化期间保留打开意图，恢复时同步显示 Dock。
 pub fn open_dashboard(app: &AppHandle) -> Result<(), String> {
-    // A Dock/menu activation can arrive before the startup worker acquires the
-    // gateway lifecycle lock. Remember it instead of showing settings because
-    // the gateway is still in Setup/Stopped. Do not hold this lock across UI work.
+    // Dock/菜单激活可能早于网关初始化获取生命周期锁；先保存打开意图，
+    // 避免 Setup/Stopped 阶段误开设置窗口，且不持有意图锁执行原生 UI 操作。
     if app.state::<StartupState>().defer_activation() {
         return Ok(());
     }
@@ -145,11 +151,12 @@ pub fn open_dashboard(app: &AppHandle) -> Result<(), String> {
             let digest = Sha256::digest(gateway.paths.data.to_string_lossy().as_bytes());
             let mut store_id = [0; 16];
             store_id.copy_from_slice(&digest[..16]);
-            // Native destroy is queued. A new label avoids racing the old label's
-            // removal from Tauri's window manager during immediate recovery.
+            // 原生销毁异步排队；新标签避免立即恢复时与旧窗口的标签移除竞争。
             let label = format!("dashboard-{}", uuid::Uuid::new_v4().simple());
-            WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+            let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
                 .title("Aether")
+                .visible(false)
+                .focused(false)
                 .inner_size(1200.0, 820.0)
                 .min_inner_size(900.0, 640.0)
                 .data_store_identifier(store_id)
@@ -168,6 +175,7 @@ pub fn open_dashboard(app: &AppHandle) -> Result<(), String> {
                 generation: connection.generation,
                 label,
             });
+            show(&window)?;
         }
         if let Some(window) = app.get_webview_window("main") {
             window.hide().map_err(|error| error.to_string())?;
@@ -291,6 +299,7 @@ fn watch_gateway(app: AppHandle, gateway: Arc<Gateway>) {
     });
 }
 
+/// 启动桌面宿主；关窗后继续运行网关，仅保留菜单栏入口。
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let Some(mut instance) = crate::instance::Instance::acquire()? else {
         return Ok(());
@@ -377,7 +386,21 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                let result = window.hide().and_then(|_| {
+                    #[cfg(target_os = "macos")]
+                    {
+                        // Accessory 保留菜单栏入口；策略切换不受 Dock 显隐接口的 1 秒限制。
+                        window
+                            .app_handle()
+                            .set_activation_policy(tauri::ActivationPolicy::Accessory)?;
+                    }
+                    Ok(())
+                });
+                if let Err(error) = result {
+                    if let Some(gateway) = window.app_handle().try_state::<Arc<Gateway>>() {
+                        gateway.record_error(format!("隐藏管理窗口或 Dock 图标失败：{error}"));
+                    }
+                }
             }
         })
         .build(tauri::generate_context!())?;
