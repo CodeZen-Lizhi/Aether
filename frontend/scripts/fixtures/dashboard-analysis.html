@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard analysis fixture</title></head>
+<body><main id="fixture" style="max-width:1400px;padding:24px;margin:auto"></main>
+<script type="module">
+import { createApp } from 'vue'
+import Dashboard from '/src/views/shared/Dashboard.vue'
+import { dashboardApi } from '/src/api/dashboard'
+import { adminApi } from '/src/api/admin'
+import { usageApi } from '/src/api/usage'
+import '/src/style.css'
+window.analysisCalls = []
+dashboardApi.getStats = async () => ({ stats: [], system_health: { total_requests: 53, avg_response_time: 12.41 } })
+dashboardApi.getLifetimeStats = async () => ({ tokens: 4300000, requests: 53, cost: 1.749, actualCost: .2624, firstActiveDate: '2026-10-01' })
+dashboardApi.getDailyStats = async params => ({ daily_stats: [], model_summary: [], provider_summary: [] })
+adminApi.getTimeSeries = async params => { window.analysisCalls.push({ type: 'trend', ...params }); return [] }
+usageApi.getUsageByModel = async params => {
+  window.analysisCalls.push({ type: 'model', ...params })
+  await new Promise(resolve => setTimeout(resolve, 60))
+  return [{ model: 'gpt-6.1-sol', request_count: 53, total_tokens: 3548800, effective_input_tokens: 641000, output_tokens: 17800, cache_read_tokens: 2890000, cache_hit_rate: 81.86, total_cost: 1.749, actual_cost: .2624 }]
+}
+usageApi.getUsageByProvider = async params => {
+  window.analysisCalls.push({ type: 'provider', ...params })
+  return [{ provider: 'Input-国际线路', provider_id: 'p1', request_count: 36, total_tokens: 2542800, effective_input_tokens: 323000, output_tokens: 9800, cache_read_tokens: 2210000, cache_hit_rate: 87.26, total_cost: .9654, actual_cost: .1448, success_rate: 100, avg_response_time_ms: 10670 }]
+}
+createApp(Dashboard).mount('#fixture')
+</script></body></html>

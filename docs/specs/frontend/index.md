@@ -82,7 +82,7 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 **Sources**: `/api/admin/usage/stats` 默认窗口和原始 usage 范围不是全部历史；`/api/dashboard/stats` 的 `tokens.month` 在 SQLite 有聚合行时不能保证包含未聚合原始记录。累计应沿用 daily-stats 已修复的保留总量与原始记录去重。今日、累计与筛选周期互相独立，切换趋势不重新解释顶部指标。
 
-**Rankings**: 使用同接口的 `model_summary` / `provider_summary` 周期汇总，不能再次累加每日已舍入的费用，否则小额请求的排行可能错误。默认按 Token 降序，可切费用 / 请求；各组默认显示前五项，分别展开全部。真实名称用跳过 legacy i18n 的 `samp` 文本保留原文与完整长度，费用 / 请求缺失单独标注，不能创造名为 `aggregate` 的业务分组。优先使用服务端 `unattributed_requests` / `unattributed_cost`，不能把舍入后的总额和分项相减冒充历史缺失。费用占比使用本组周期总额加保留缺口，Token / 请求占比仍使用包含历史的每日总量。
+**Analysis**: 仪表盘只展示今日概览、历史累计与使用趋势，不展示用量分布或分组分析表。模型与提供商分析位于 `Usage.vue`，沿用记录页的时间、模型、提供商筛选和持久化折叠状态；不恢复 API 格式分析表。
 
 ## Convention: 仪表盘使用趋势的数据口径
 

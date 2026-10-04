@@ -1,46 +1,21 @@
 <template>
   <div class="space-y-6 pb-8">
-    <!-- 面包屑旁的折叠按钮 -->
-    <Teleport
-      to="#header-actions-right"
-      defer
-    >
+    <!-- 分析与记录共用时间及模型、提供商筛选，折叠状态沿用已有偏好。 -->
+    <Teleport to="#header-actions-right" defer>
       <button
         class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
         :title="statsExpanded ? '收起用量分析' : '展开用量分析'"
+        :aria-expanded="statsExpanded"
         @click="statsExpanded = !statsExpanded"
       >
-        <PanelTopClose
-          v-if="statsExpanded"
-          class="h-4 w-4"
-        />
-        <PanelTopOpen
-          v-else
-          class="h-4 w-4"
-        />
+        <PanelTopClose v-if="statsExpanded" class="h-4 w-4" />
+        <PanelTopOpen v-else class="h-4 w-4" />
       </button>
     </Teleport>
-
-    <!-- 用量分析面板（可折叠） -->
-    <div
-      v-if="statsExpanded"
-      class="space-y-4"
-    >
-      <!-- 分析统计 -->
-      <!-- 模型、提供商和 API 格式统计按可用宽度排列 -->
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,26rem),1fr))] gap-4">
-        <UsageModelTable
-          :data="enhancedModelStats"
-        />
-        <UsageProviderTable
-          :data="providerStats"
-        />
-        <UsageApiFormatTable
-          :data="apiFormatStats"
-        />
-      </div>
+    <div v-if="statsExpanded" class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,26rem),1fr))] gap-4">
+      <UsageModelTable :data="enhancedModelStats" />
+      <UsageProviderTable :data="providerStats" />
     </div>
-
     <!-- 使用记录 -->
     <UsageRecordsTable
       :records="displayRecords"
@@ -98,7 +73,6 @@ import { PanelTopClose, PanelTopOpen } from 'lucide-vue-next'
 import {
   UsageModelTable,
   UsageProviderTable,
-  UsageApiFormatTable,
   UsageRecordsTable,
   RequestDetailDrawer
 } from '@/features/usage/components'
@@ -126,9 +100,9 @@ const { warning } = useToast()
 const authStore = useAuthStore()
 
 
-// 用量分析面板折叠状态（默认展开，持久化到 localStorage）
-const statsExpanded = useLocalStorage('usage-stats-expanded', true)
 const hideUnknownRecords = useLocalStorage('usage-hide-unknown-records', false)
+/** 沿用使用记录页的分析折叠偏好，初次访问默认展开。 */
+const statsExpanded = useLocalStorage('usage-stats-expanded', true)
 
 // 时间范围选择
 const timeRange = ref<DateRangeParams>(
@@ -151,10 +125,9 @@ const filterClientFamily = ref('__all__')
 const {
   isLoadingRecords,
   providerStats,
-  apiFormatStats,
+  enhancedModelStats,
   currentRecords,
   totalRecords,
-  enhancedModelStats,
   availableModels,
   availableProviders,
   loadStats,

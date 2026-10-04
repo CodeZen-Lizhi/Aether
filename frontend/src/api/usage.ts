@@ -76,6 +76,8 @@ export interface UsageByModel {
   cache_creation_tokens?: number
   total_cost: number
   avg_response_time?: number
+  /** 模型聚合的实际结算费用，美元；历史数据可能缺失。 */
+  actual_cost?: number
   cache_read_tokens?: number
   cache_hit_rate?: number
 }

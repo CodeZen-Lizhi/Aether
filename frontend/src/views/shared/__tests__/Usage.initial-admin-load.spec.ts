@@ -8,6 +8,12 @@ const source = readFileSync(
 )
 
 describe('admin usage initial loading', () => {
+  it('keeps collapsible model and provider analysis without API format analysis', () => {
+    expect(source).toContain('<UsageModelTable :data="enhancedModelStats" />')
+    expect(source).toContain('<UsageProviderTable :data="providerStats" />')
+    expect(source).toContain('v-if="statsExpanded"')
+    expect(source).not.toContain('UsageApiFormatTable')
+  })
   it('loads records and analytics without initializing a user filter', () => {
     const mountedBlock = source
       .split('onMounted(async () => {')[1]

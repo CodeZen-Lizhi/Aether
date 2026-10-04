@@ -20,6 +20,10 @@ vi.mock('@/api/dashboard', () => ({
 vi.mock('@/api/admin', () => ({
   adminApi: dashboardApiMocks,
 }))
+vi.mock('@/api/usage', () => ({ usageApi: {
+  getUsageByModel: vi.fn().mockResolvedValue([]),
+  getUsageByProvider: vi.fn().mockResolvedValue([]),
+} }))
 
 vi.mock('@/components/charts/LineChart.vue', async () => {
   const { defineComponent, h } = await import('vue')
@@ -34,10 +38,12 @@ vi.mock('@/components/common', async () => {
   return {
     TimeRangePicker: defineComponent({
       name: 'TimeRangePickerStub',
+      props: ['modelValue'],
       emits: ['update:modelValue'],
-      setup(_, { emit }) {
+      setup(props, { emit }) {
         return () => h('button', {
           'data-change-range': '',
+          'data-preset': props.modelValue?.preset,
           onClick: () => emit('update:modelValue', { preset: 'yesterday', granularity: 'hour', timezone: 'Asia/Shanghai', tz_offset_minutes: 480 }),
         })
       },
@@ -348,7 +354,7 @@ describe('Dashboard overview and trends', () => {
     const root = mountDashboard()
     await settle()
     expect(root.textContent).toContain('使用趋势加载失败，请重试。')
-    expect(root.querySelector('[aria-label="模型用量"]')?.textContent).toContain('trend-model')
+    expect(root.querySelector('[data-dashboard-section="lifetime"]')).not.toBeNull()
     clickButton(root, '重试')
     await settle()
     expect(root.textContent).not.toContain('使用趋势加载失败，请重试。')
@@ -388,170 +394,21 @@ describe('Dashboard overview and trends', () => {
     }
   })
 
-  it('keeps real model names and marks missing historical costs separately', async () => {
-    dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
-    dashboardApiMocks.getDailyStats.mockResolvedValue({
-      daily_stats: [{
-        date: '2026-09-09', requests: 9, tokens: 37, cost: 1.25, actual_cost: 1.0,
-        avg_response_time: 1, unique_models: 1, unique_providers: 1,
-        model_breakdown: [{ model: 'gpt-model-one', requests: 4, tokens: 13, cost: 0.5 }],
-        unattributed_requests: 5, unattributed_cost: 0.75,
-      }],
-      model_summary: modelSummaries([{ model: 'gpt-model-one', requests: 4, tokens: 13, cost: 0.5 }]),
-      provider_summary: [{ provider: 'Provider One', requests: 4, tokens: 13, cost: 0.5 }],
-      period: { start_date: '2026-09-09', end_date: '2026-09-09', days: 1 },
-    })
-    const root = mountDashboard()
-    await settle()
-    const models = root.querySelector('[aria-label="模型用量"]')!
-    const providers = root.querySelector('[aria-label="提供商用量"]')!
-    expect(models.querySelector('ol')?.textContent).toContain('gpt-model-one')
-    expect(providers.querySelector('ol')?.textContent).toContain('Provider One')
-    expect(models.querySelector('ol')?.textContent).not.toContain('未保留')
-    expect(providers.querySelector('ol')?.textContent).not.toContain('未保留')
-    expect(models.querySelector('[role="status"]')?.textContent).toContain('未保留模型明细')
-    expect(providers.querySelector('[role="status"]')?.textContent).toContain('未保留提供商明细')
-    expect(providers.querySelector('[role="status"]')?.textContent).toContain('$0.75')
-    expect(root.textContent).toContain('总请求和总费用已保留')
-  })
-
-  it('preserves real model and provider names when the interface is in English', async () => {
-    const days = trendDays()
-    days.daily_stats[0].model_breakdown = [{ model: '模型A-2026', requests: 1, tokens: 550, cost: 0.5 }]
-    days.model_summary = modelSummaries(days.daily_stats[0].model_breakdown)
-    days.provider_summary = [{ provider: '提供商A', requests: 1, tokens: 550, cost: 0.5 }]
-    dashboardApiMocks.getDailyStats.mockResolvedValue(days)
-    setI18nLocale('en-US')
-    const root = mountDashboard()
-    await settle()
-    expect(root.querySelector('[aria-label="Usage by model"] li')?.textContent).toContain('模型A-2026')
-    expect(root.querySelector('[aria-label="Usage by provider"] li')?.textContent).toContain('提供商A')
-  })
-
-  it('shows totals-only historical costs without inventing a supplier', async () => {
-    dashboardApiMocks.getStats.mockResolvedValue({ stats: [] })
-    dashboardApiMocks.getDailyStats.mockResolvedValue({
-      daily_stats: [{
-        date: '2026-09-09', requests: 9, tokens: 37, cost: 1.25, actual_cost: 1.0,
-        avg_response_time: 1, unique_models: 0, unique_providers: 0, model_breakdown: [],
-        unattributed_requests: 9, unattributed_cost: 1.25,
-      }],
-      model_summary: [], provider_summary: [],
-      period: { start_date: '2026-09-09', end_date: '2026-09-09', days: 1 },
-    })
-    const root = mountDashboard()
-    await settle()
-    const providers = root.querySelector('[aria-label="提供商用量"]')!
-    expect(providers.querySelector('ol')).toBeNull()
-    expect(providers.textContent).toContain('该周期未保留分组明细')
-    expect(providers.querySelector('[role="status"]')?.textContent).toContain('$1.25')
-    expect(root.textContent).not.toContain('aggregate')
-  })
-
-  it.each([
-    { requests: 2, cost: 0.0001, missingRequests: 0, missingCost: 0 },
-    { requests: 3, cost: 0.0002, missingRequests: 1, missingCost: 0.0001 },
-  ])('uses the retained missing cost $missingCost when rounded group costs differ from the daily cost', async ({ requests, cost, missingRequests, missingCost }) => {
-    const models = [
-      { model: 'rounded-model-a', requests: 1, tokens: 10, cost: 0 },
-      { model: 'rounded-model-b', requests: 1, tokens: 10, cost: 0 },
-    ]
-    const days = trendDays()
-    days.daily_stats[0] = {
-      ...days.daily_stats[0], requests, cost, model_breakdown: models,
-      unattributed_requests: missingRequests, unattributed_cost: missingCost,
-    }
-    days.model_summary = modelSummaries(models)
-    days.provider_summary = models.map(row => ({ ...row, provider: `provider-${row.model}` }))
-    dashboardApiMocks.getDailyStats.mockResolvedValue(days)
-    const root = mountDashboard()
-    await settle()
-    for (const label of ['模型用量', '提供商用量']) {
-      const status = root.querySelector(`[aria-label="${label}"] [role="status"]`)
-      if (missingRequests === 0) {
-        expect(status).toBeNull()
-      } else {
-        expect(status?.textContent).toContain('$0.0001')
-        expect(status?.textContent).not.toContain('$0.0002')
-      }
-    }
-  })
-
-  it('ranks cross-day model costs using the period summary before daily rounding loses small amounts', async () => {
-    const smallDailyModel = { model: 'small-daily-cost', requests: 1, tokens: 10, cost: 0 }
-    const singleRequestModel = { model: 'single-request-cost', requests: 1, tokens: 1, cost: 0.0001 }
-    const days = trendDays()
-    days.daily_stats = Array.from({ length: 30 }, (_, index) => ({
-      ...days.daily_stats[0], date: `2026-09-${String(index + 1).padStart(2, '0')}`,
-      requests: index === 0 ? 2 : 1, tokens: index === 0 ? 11 : 10,
-      cost: index === 0 ? 0.0001 : 0, actual_cost: index === 0 ? 0.0001 : 0,
-      model_breakdown: index === 0 ? [smallDailyModel, singleRequestModel] : [smallDailyModel],
-      unattributed_requests: 0, unattributed_cost: 0,
-    }))
-    days.model_summary = modelSummaries([
-      { ...smallDailyModel, requests: 30, tokens: 300, cost: 0.0012 },
-      singleRequestModel,
-    ])
-    days.provider_summary = days.model_summary.map(row => ({ ...row, provider: `provider-${row.model}` }))
-    days.period = { start_date: '2026-09-01', end_date: '2026-09-30', days: 30 }
-    dashboardApiMocks.getDailyStats.mockResolvedValue(days)
-    const root = mountDashboard()
-    await settle()
-    clickButton(root.querySelector<HTMLElement>('[aria-label="排行排序"]')!, '费用')
-    await settle()
-    const firstModel = root.querySelector('[aria-label="模型用量"] li')
-    expect(firstModel?.textContent).toContain('small-daily-cost')
-    expect(firstModel?.textContent).toContain('$0.0012')
-    const costBarWidths = Array.from(
-      root.querySelectorAll<HTMLElement>('[aria-label="模型用量"] li [aria-hidden="true"] > div'),
-      bar => Number.parseFloat(bar.style.width),
-    )
-    expect(costBarWidths).toHaveLength(2)
-    expect(costBarWidths[0]).toBeGreaterThan(90)
-    expect(costBarWidths[0]).toBeLessThan(100)
-    expect(costBarWidths[1]).toBeGreaterThan(0)
-    expect(costBarWidths[1]).toBeLessThan(10)
-    expect(root.querySelector('[aria-label="提供商用量"] li')?.textContent).toContain('provider-small-daily-cost')
-    expect(dashboardApiMocks.getDailyStats).toHaveBeenCalledTimes(1)
-  })
-
-  it('ranks models and providers by the selected metric and expands complete lists', async () => {
-    const models = [
-      { model: 'token-leader', tokens: 700, cost: 0.5, requests: 1 },
-      { model: 'cost-leader', tokens: 600, cost: 9, requests: 2 },
-      { model: 'request-leader', tokens: 500, cost: 0.2, requests: 20 },
-      ...Array.from({ length: 4 }, (_, index) => ({ model: `model-${index}`, tokens: 400 - index * 100, cost: 0.1, requests: 1 })),
-    ]
-    const days = trendDays()
-    days.daily_stats[0] = {
-      ...days.daily_stats[0], model_breakdown: models,
-      requests: 27, tokens: 2800, cost: 10.1,
-    }
-    days.model_summary = modelSummaries(models)
-    days.provider_summary = models.map(row => ({ ...row, provider: `provider-${row.model}` }))
-    dashboardApiMocks.getDailyStats.mockResolvedValue(days)
-    const root = mountDashboard()
-    await settle()
-    const modelCard = root.querySelector<HTMLElement>('[aria-label="模型用量"]')!
-    const providerCard = root.querySelector<HTMLElement>('[aria-label="提供商用量"]')!
-    expect(modelCard.querySelectorAll('li')).toHaveLength(5)
-    expect(providerCard.querySelectorAll('li')).toHaveLength(5)
-    expect(modelCard.querySelector('li')?.textContent).toContain('token-leader')
-    clickButton(root.querySelector<HTMLElement>('[aria-label="排行排序"]')!, '费用')
-    await settle()
-    expect(modelCard.querySelector('li')?.textContent).toContain('cost-leader')
-    expect(providerCard.querySelector('li')?.textContent).toContain('provider-cost-leader')
-    clickButton(root.querySelector<HTMLElement>('[aria-label="排行排序"]')!, '请求')
-    await settle()
-    expect(modelCard.querySelector('li')?.textContent).toContain('request-leader')
-    clickButton(modelCard, '展开全部')
-    await settle()
-    expect(modelCard.querySelectorAll('li')).toHaveLength(7)
-    expect(providerCard.querySelectorAll('li')).toHaveLength(5)
-    clickButton(modelCard, '收起列表')
-    await settle()
-    expect(modelCard.querySelectorAll('li')).toHaveLength(5)
-    expect(dashboardApiMocks.getDailyStats).toHaveBeenCalledTimes(1)
+  it('only keeps the trend range picker and removes distribution', async () => {
+    vi.useFakeTimers()
+    try {
+      const root = mountDashboard()
+      await settle()
+      const controls = root.querySelectorAll<HTMLButtonElement>('[data-change-range]')
+      expect(controls).toHaveLength(1)
+      expect(root.textContent).not.toContain('用量分布')
+      expect(root.textContent).not.toContain('用量分析')
+      controls[0].click()
+      await vi.advanceTimersByTimeAsync(130)
+      await settle()
+      expect(controls[0].dataset.preset).toBe('yesterday')
+      expect(dashboardApiMocks.getTimeSeries).toHaveBeenLastCalledWith(expect.objectContaining({ preset: 'yesterday', granularity: 'hour' }))
+    } finally { vi.useRealTimers() }
   })
 
   it('does not render or run automatic refresh', async () => {

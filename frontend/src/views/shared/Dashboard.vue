@@ -28,14 +28,6 @@
       </template>
     </DashboardUsageTrend>
 
-    <DashboardUsageBreakdown
-      :daily-stats="dailyStats"
-      :models="modelSummary"
-      :providers="providerSummary"
-      :loading="loadingDaily"
-      :error="dailyStatsError"
-      @retry="loadDailyStats"
-    />
   </div>
 </template>
 
@@ -46,8 +38,6 @@ import {
   type DailyStat,
   type DashboardLifetimeStats,
   type DashboardStatsResponse,
-  type ModelSummary,
-  type ProviderSummary,
 } from '@/api/dashboard'
 import { adminApi, type UsageTimeSeriesPoint } from '@/api/admin'
 import { TimeRangePicker } from '@/components/common'
@@ -55,7 +45,6 @@ import { getDateRangeFromPeriod } from '@/features/usage/composables'
 import type { DateRangeParams } from '@/features/usage/types'
 import DashboardOverview from './DashboardOverview.vue'
 import DashboardUsageTrend from './DashboardUsageTrend.vue'
-import DashboardUsageBreakdown from './DashboardUsageBreakdown.vue'
 
 const today = ref<DashboardStatsResponse | null>(null)
 const lifetime = ref<DashboardLifetimeStats | null>(null)
@@ -69,11 +58,8 @@ const dailyTimeRange = ref<DateRangeParams>({
   ...getDateRangeFromPeriod('today'), granularity: 'hour',
 })
 const dailyStats = ref<DailyStat[]>([])
-const modelSummary = ref<ModelSummary[]>([])
-const providerSummary = ref<ProviderSummary[]>([])
 const usageTimeSeries = ref<UsageTimeSeriesPoint[]>([])
 const loadingDaily = ref(true)
-const dailyStatsError = ref(false)
 const usageTrendError = ref(false)
 let dailyStatsRequestId = 0
 let dailyStatsLoadPromise: Promise<void> | null = null
@@ -122,7 +108,6 @@ async function loadDailyStats() {
   const requestId = ++dailyStatsRequestId
   const params = { ...dailyTimeRange.value }
   loadingDaily.value = true
-  dailyStatsError.value = false
   usageTrendError.value = false
   dailyStatsLoadPromise = (async () => {
     const [dailyResult, seriesResult] = await Promise.allSettled([
@@ -131,18 +116,12 @@ async function loadDailyStats() {
     ])
     if (requestId !== dailyStatsRequestId) return
     dailyStats.value = dailyResult.status === 'fulfilled' ? dailyResult.value.daily_stats : []
-    modelSummary.value = dailyResult.status === 'fulfilled' ? dailyResult.value.model_summary : []
-    providerSummary.value = dailyResult.status === 'fulfilled' ? dailyResult.value.provider_summary ?? [] : []
     usageTimeSeries.value = seriesResult.status === 'fulfilled' ? seriesResult.value : []
-    dailyStatsError.value = dailyResult.status === 'rejected'
     usageTrendError.value = dailyResult.status === 'rejected' || seriesResult.status === 'rejected'
   })().catch(() => {
     if (requestId !== dailyStatsRequestId) return
     dailyStats.value = []
-    modelSummary.value = []
-    providerSummary.value = []
     usageTimeSeries.value = []
-    dailyStatsError.value = true
     usageTrendError.value = true
   }).finally(() => {
     if (requestId === dailyStatsRequestId) loadingDaily.value = false
