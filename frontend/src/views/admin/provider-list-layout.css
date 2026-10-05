@@ -1,0 +1,37 @@
+/* 列以真实内容宽度为基础，剩余空间均匀放在列间，而非扩大余额和资源内部。 */
+.provider-list .responsive-list-table table {
+  display: grid;
+  grid-template-columns: fit-content(22rem) max-content max-content max-content max-content max-content;
+  justify-content: space-between;
+  column-gap: 1.5rem;
+  padding-inline: .75rem;
+}
+.provider-list .responsive-list-table colgroup { display: none; }
+.provider-list .responsive-list-table thead,
+.provider-list .responsive-list-table tbody { display: contents; }
+.provider-list .responsive-list-table tr {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+}
+.provider-list .responsive-list-table th,
+.provider-list .responsive-list-table td {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.provider-list .responsive-list-table th:nth-child(3),
+.provider-list .responsive-list-table th:nth-child(5),
+.provider-list .responsive-list-table th:nth-child(6),
+.provider-list .responsive-list-table td:nth-child(5),
+.provider-list .responsive-list-table td:nth-child(6) { justify-content: center; }
+.provider-list .responsive-list-table td:nth-child(4) { width: 15rem; }
+.provider-list .responsive-list-table td:nth-child(4) > div { width: 100%; }
+@container provider-list (min-width: 58rem) {
+  .provider-list > .responsive-list-table { display: block; }
+  .provider-list > .responsive-list-cards { display: none; }
+}
+@container provider-list (max-width: 57.999rem) {
+  .provider-list > .responsive-list-table { display: none; }
+  .provider-list > .responsive-list-cards { display: block; }
+}

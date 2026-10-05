@@ -61,7 +61,7 @@
       >
         <Table>
           <colgroup>
-            <col>
+            <col class="provider-list__info-column">
             <col class="provider-list__balance-column">
             <col class="provider-list__resources-column">
             <col class="provider-list__health-column">
@@ -726,37 +726,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.provider-list {
-  container-name: provider-list;
-}
-
-.provider-list__balance-column {
-  width: 15%;
-}
-
-.provider-list__resources-column {
-  width: 6.5rem;
-}
-
-.provider-list__health-column {
-  width: 22%;
-}
-
-.provider-list__status-column {
-  width: 4.5rem;
-}
-
-.provider-list__actions-column {
-  width: 10.5rem;
-}
-
-@container provider-list (min-width: 45rem) {
-  .provider-list > .responsive-list-table {
-    display: block;
-  }
-
-  .provider-list > .responsive-list-cards {
-    display: none;
-  }
-}
+.provider-list { container-name: provider-list; }
 </style>
+
+<style src="./provider-list-layout.css"></style>

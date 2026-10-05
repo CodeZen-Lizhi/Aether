@@ -1,0 +1,19 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>供应商列间距预览</title></head><body><main id="preview" style="padding:32px"></main><script type="module">
+import {createApp,h,ref} from 'vue'
+import Table from '/src/components/ui/table.vue'
+import Row from '/src/features/providers/components/ProviderTableRow.vue'
+import '/src/style.css'
+import '/src/views/admin/provider-list-layout.css'
+const names=['input','Input-国际线路','聪明','air-router','loomex','神稳AI','世一稳']
+const balances=[1078.42,1078.42,25.24,8.37,1.95,82.17,-.26]
+const props={editingDescriptionId:null,isBalanceLoading:()=>false,getProviderBalance:id=>({available:balances[Number(id)],currency:'USD'}),getProviderBalanceBreakdown:()=>null,getProviderBalanceError:()=>null,getProviderCheckin:()=>null,getProviderBalanceExtra:()=>[],formatBalanceDisplay:b=>'$'+b.available.toFixed(2),formatResetCountdown:()=>'',getQuotaUsedColorClass:()=>''}
+createApp({setup(){const long=ref(false);return()=>h('div',[
+  h('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:20px'},[h('h1',{style:'font-size:20px;font-weight:600'},'供应商管理'),h('button',{onClick:()=>long.value=!long.value,style:'border:1px solid #ddd;padding:8px 12px;border-radius:6px'},long.value?'恢复短名称':'测试长名称')]),
+  h('div',{class:'provider-list responsive-list',style:'container-type:inline-size;border:1px solid var(--border);border-radius:8px'},[
+    h('div',{class:'responsive-list-table'},[h(Table,{},()=>[
+      h('thead',[h('tr',['提供商信息','余额监控','资源统计','端点健康','状态','操作'].map(x=>h('th',{style:'height:52px;padding:10px;font-weight:500;color:var(--muted-foreground)'},x)))]),
+      h('tbody',names.map((name,i)=>h(Row,{...props,provider:{id:String(i),name:long.value&&i===1?'Input-国际线路-这是一个较长的供应商名称用于检查动态列宽':name,website:'https://example.com',ops_configured:true,is_active:i<3,active_endpoints:3,total_endpoints:3,active_keys:1,total_keys:i+1,active_models:4,total_models:4,endpoint_health_details:['openai:responses','openai:chat','openai:embedding'].map((api_format,j)=>({api_format,is_active:true,active_keys:1,health_score:i===0&&j===0?.1:1}))}})))
+    ])]),h('div',{class:'responsive-list-cards',style:'padding:20px'},'窗口较窄时正式页面切换为供应商卡片。')
+  ])
+])}}).mount('#preview')
+</script></body></html>
