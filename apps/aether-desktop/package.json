@@ -1,11 +1,13 @@
 {
   "name": "aether-desktop",
-  "version": "0.1.32",
+  "version": "0.1.40",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node scripts/desktop.mjs dev",
     "build": "node scripts/desktop.mjs build",
+    "build:verified": "node scripts/verify-delivery.mjs --build",
+    "verify:delivery": "node scripts/verify-delivery.mjs",
     "prepare:desktop": "node scripts/prepare.mjs",
     "tauri": "tauri",
     "test": "node --test scripts/*.test.mjs"
