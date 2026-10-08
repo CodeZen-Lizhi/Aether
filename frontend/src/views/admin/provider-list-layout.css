@@ -1,31 +1,25 @@
-/* 列以真实内容宽度为基础，剩余空间均匀放在列间，而非扩大余额和资源内部。 */
+/* 原生表格按比例分配整个容器宽度，避免 Grid 内在宽度在 WebView 中留下右侧空白。 */
 .provider-list .responsive-list-table table {
-  display: grid;
-  grid-template-columns: fit-content(22rem) max-content max-content max-content max-content max-content;
-  justify-content: space-between;
-  column-gap: 1.5rem;
-  padding-inline: .75rem;
+  width: 100%;
+  table-layout: fixed;
 }
-.provider-list .responsive-list-table colgroup { display: none; }
-.provider-list .responsive-list-table thead,
-.provider-list .responsive-list-table tbody { display: contents; }
-.provider-list .responsive-list-table tr {
-  display: grid;
-  grid-template-columns: subgrid;
-  grid-column: 1 / -1;
-}
+.provider-list__info-column { width: 22%; }
+.provider-list__balance-column { width: 16%; }
+.provider-list__resources-column { width: 12%; }
+.provider-list__health-column { width: 26%; }
+.provider-list__status-column { width: 8%; }
+.provider-list__actions-column { width: 16%; }
 .provider-list .responsive-list-table th,
 .provider-list .responsive-list-table td {
   min-width: 0;
-  display: flex;
-  align-items: center;
+  vertical-align: middle;
 }
 .provider-list .responsive-list-table th:nth-child(3),
 .provider-list .responsive-list-table th:nth-child(5),
 .provider-list .responsive-list-table th:nth-child(6),
 .provider-list .responsive-list-table td:nth-child(5),
-.provider-list .responsive-list-table td:nth-child(6) { justify-content: center; }
-.provider-list .responsive-list-table td:nth-child(4) { width: 15rem; }
+.provider-list .responsive-list-table td:nth-child(6) { text-align: center; }
+.provider-list .responsive-list-table td:nth-child(3) > div { margin-inline: auto; }
 .provider-list .responsive-list-table td:nth-child(4) > div { width: 100%; }
 @container provider-list (min-width: 58rem) {
   .provider-list > .responsive-list-table { display: block; }
