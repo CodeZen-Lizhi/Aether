@@ -189,7 +189,7 @@
               step="0.01"
               :disabled="form.multiplier_source === 'upstream'"
               size="sm"
-              class="h-9 text-right font-mono tabular-nums"
+              class="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               aria-describedby="default-rate-multiplier-help"
             />
             </div>
@@ -213,7 +213,7 @@
               min="0"
               step="1"
               size="sm"
-              class="h-9 text-right font-mono tabular-nums"
+              class="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               aria-describedby="internal-priority-help"
             />
           </div>

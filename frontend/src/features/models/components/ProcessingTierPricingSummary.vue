@@ -14,7 +14,7 @@
         </p>
       </div>
       <div
-        class="flex max-w-full flex-wrap gap-1"
+        class="flex max-w-full flex-wrap items-end gap-1 border-b border-border/60"
         role="group"
         aria-label="处理层级定价"
       >
@@ -23,8 +23,9 @@
           :key="entry.key"
           type="button"
           size="sm"
-          :variant="activeTierKey === entry.key ? 'secondary' : 'ghost'"
-          class="h-8 max-w-full px-2.5"
+          variant="ghost"
+          class="h-8 max-w-full rounded-none border-b-2 border-transparent px-2.5 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
+          :class="activeTierKey === entry.key ? 'border-primary text-primary' : ''"
           :aria-pressed="activeTierKey === entry.key"
           :data-processing-tier="entry.key"
           @click="activeTierKey = entry.key"

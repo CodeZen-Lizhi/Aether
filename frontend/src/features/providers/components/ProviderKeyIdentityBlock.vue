@@ -10,22 +10,22 @@
       >
         {{ apiKey.name || legacyT('未命名密钥') }}
       </span>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        class="h-5 w-5 shrink-0"
+        :title="legacyT('复制密钥')"
+        @click.stop="$emit('copyFullKey')"
+      >
+        <Copy class="w-3 h-3" />
+      </Button>
     </div>
 
     <div class="flex items-center gap-1">
       <span class="text-[11px] font-mono text-muted-foreground">
         {{ maskedSecretLabel }}
       </span>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        class="h-4 w-4 shrink-0"
-        :title="legacyT('复制密钥')"
-        @click.stop="$emit('copyFullKey')"
-      >
-        <Copy class="w-2.5 h-2.5" />
-      </Button>
     </div>
   </div>
 </template>

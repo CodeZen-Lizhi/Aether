@@ -13,9 +13,11 @@
     >
       <!-- 基本信息 -->
       <div class="space-y-3">
-        <h3 class="text-sm font-medium border-b pb-2">
+        <div class="flex items-center gap-2 border-b border-border/60 pb-2">
+          <h3 class="text-sm font-medium">
           {{ legacyT('基本信息') }}
-        </h3>
+          </h3>
+        </div>
 
         <div class="space-y-1.5">
           <Label for="name">{{ legacyT('名称 *') }}</Label>
@@ -38,9 +40,11 @@
 
       <!-- 请求配置 -->
       <div class="space-y-3">
-        <h3 class="text-sm font-medium border-b pb-2">
+        <div class="flex items-center gap-2 border-b border-border/60 pb-2">
+          <h3 class="text-sm font-medium">
           {{ legacyT('请求配置') }}
-        </h3>
+          </h3>
+        </div>
         <div class="dialog-grid-2 gap-4">
           <div class="space-y-1.5">
             <Label for="chat-max-attempts">{{ legacyT('总尝试次数（含首次）') }}</Label>
@@ -175,9 +179,11 @@
 
       <!-- 功能开关 -->
       <div class="space-y-3">
-        <h3 class="text-sm font-medium border-b pb-2">
+        <div class="flex items-center gap-2 border-b border-border/60 pb-2">
+          <h3 class="text-sm font-medium">
           {{ legacyT('功能开关') }}
-        </h3>
+          </h3>
+        </div>
 
         <div
           class="flex items-center justify-between gap-3 p-3 border rounded-lg bg-muted/50"
