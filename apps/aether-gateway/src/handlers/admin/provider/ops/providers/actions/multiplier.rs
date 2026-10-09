@@ -6,10 +6,12 @@ use super::super::verify::{
 use super::responses::{admin_provider_ops_action_error, admin_provider_ops_action_response};
 use crate::handlers::admin::request::AdminAppState;
 use aether_admin::provider::ops::multiplier::resolve_sub2api_key_multiplier;
+use aether_admin::provider::ops::multiplier::Sub2ApiKeyMultiplier;
 use aether_contracts::ProxySnapshot;
 use aether_data_contracts::repository::provider_catalog::{
     ProviderCatalogKeyMultiplierUpdate, StoredProviderCatalogProvider,
 };
+use futures_util::StreamExt;
 use serde_json::{json, Map, Value};
 
 /// 获取账号接口数据；保留 HTTP 错误，拒绝业务失败和不合法响应。
@@ -35,7 +37,7 @@ async fn fetch_data(
         AdminProviderOpsExecuteJsonError::Transport(_) => "上游倍率接口请求失败".to_string(),
     })?;
     if !status.is_success() {
-        return Err(format!("上游倍率接口返回 HTTP {}", status.as_u16()));
+        return Err(super::multiplier_upstream::status_message(status));
     }
     if value.get("code").and_then(Value::as_i64) != Some(0) {
         return Err("上游倍率接口返回业务失败".to_string());
@@ -75,6 +77,12 @@ async fn run_sync(
     proxy: Option<&ProxySnapshot>,
     config: Option<&Map<String, Value>>,
 ) -> Result<Value, String> {
+    let architecture = provider
+        .config
+        .as_ref()
+        .and_then(|value| value.pointer("/provider_ops/architecture_id"))
+        .and_then(Value::as_str)
+        .unwrap_or("generic_api");
     if config.is_some_and(|config| {
         ["key_id", "mode"].iter().any(|field| {
             config.get(*field).is_some_and(|value| {
@@ -105,45 +113,39 @@ async fn run_sync(
     if selected_id.is_some() && keys.is_empty() {
         return Err("密钥不属于当前供应商".to_string());
     }
-    if let Some(mode) = mode {
+    let manual_multiplier = config.and_then(|value| value.get("multiplier"));
+    if manual_multiplier.is_some_and(|value| {
+        mode != Some("manual")
+            || value
+                .as_f64()
+                .is_none_or(|value| !value.is_finite() || value < 0.0)
+    }) {
+        return Err("手动倍率必须是大于或等于 0 的有效数值".to_string());
+    }
+    if mode == Some("manual") {
         let key = &keys[0];
-        if !matches!(key.auth_type.as_str(), "api_key" | "bearer") {
-            return Err("该认证方式不支持上游倍率".to_string());
-        }
-        if mode == "upstream"
-            && !(credentials.get("_cached_access_token").is_some()
-                || credentials.get("refresh_token").is_some()
-                || (credentials.get("email").is_some() && credentials.get("password").is_some()))
-        {
-            return Err("请先配置 SUB2API 账号凭据".to_string());
-        }
-        let metadata = json!({"source":mode,"generation":uuid::Uuid::new_v4().to_string(),"status":if mode == "manual" { "manual" } else { "pending" }});
-        if !state
+        let metadata = json!({"source":"manual","generation":uuid::Uuid::new_v4().to_string(),"status":"manual"});
+        let written = state
             .as_ref()
             .compare_and_update_provider_catalog_key_multiplier(
                 &ProviderCatalogKeyMultiplierUpdate {
                     expected_key: key.clone(),
-                    metadata: metadata.clone(),
-                    multiplier: None,
+                    expected_provider_ops: None,
+                    metadata,
+                    multiplier: manual_multiplier.and_then(Value::as_f64),
                 },
             )
             .await
-            .map_err(|_| "保存倍率模式失败".to_string())?
-        {
+            .map_err(|_| "保存倍率设置失败".to_string())?;
+        if !written {
             return Err("密钥配置已变化，请刷新后重试".to_string());
         }
-        let mut root = key
-            .upstream_metadata
-            .as_ref()
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        root.insert("multiplier".to_string(), metadata);
-        keys[0].upstream_metadata = Some(Value::Object(root));
-        if mode == "manual" {
-            return Ok(json!({"updated":0,"unchanged":0,"failed":0,"skipped":1,"results":[]}));
-        }
+        return Ok(json!({"updated":1,"unchanged":0,"failed":0,"skipped":0,"results":[]}));
     }
+    if mode == Some("upstream") && !matches!(keys[0].auth_type.as_str(), "api_key" | "bearer") {
+        return Err("该密钥的认证方式不支持上游倍率查询".to_string());
+    }
+    // 仅首次开启时也选中手动密钥；探测成功后才原子保存来源和倍率。
     let skipped = keys
         .iter()
         .filter(|key| {
@@ -155,22 +157,43 @@ async fn run_sync(
         })
         .count();
     keys.retain(|key| {
-        key.upstream_metadata
-            .as_ref()
-            .and_then(|value| value.pointer("/multiplier/source"))
-            .and_then(Value::as_str)
-            == Some("upstream")
+        mode == Some("upstream")
+            || key
+                .upstream_metadata
+                .as_ref()
+                .and_then(|value| value.pointer("/multiplier/source"))
+                .and_then(Value::as_str)
+                == Some("upstream")
     });
     if keys.is_empty() {
         return Ok(json!({"updated":0,"unchanged":0,"failed":0,"skipped":skipped,"results":[]}));
     }
+    if credentials.is_empty() {
+        return Err("请先配置供应商用户认证，再开启或同步跟随上游倍率".to_string());
+    }
+    let mut expected_provider_ops = provider
+        .config
+        .as_ref()
+        .and_then(|value| value.get("provider_ops"))
+        .cloned();
     let upstream_request = async {
+        if architecture != "sub2api" {
+            return Ok((Vec::new(), Vec::new(), Map::new()));
+        }
         let (token, updated, _) =
-            admin_provider_ops_sub2api_exchange_token(state, base, credentials, proxy).await?;
-        if !updated.is_empty() {
-            persist_admin_provider_ops_runtime_credentials(state, provider, &updated)
+            admin_provider_ops_sub2api_exchange_token(state, base, credentials, proxy)
                 .await
-                .map_err(|_| "保存账号续期凭据失败".to_string())?;
+                .map_err(|_| "用户认证失效或暂时无法验证，请检查用户认证配置".to_string())?;
+        if !updated.is_empty() {
+            let saved = persist_admin_provider_ops_runtime_credentials(state, provider, &updated)
+                .await
+                .map_err(|_| "保存账号续期凭据失败".to_string())?
+                .ok_or_else(|| "用户认证配置已变化，本次未更新倍率".to_string())?;
+            expected_provider_ops = saved
+                .config
+                .as_ref()
+                .and_then(|value| value.get("provider_ops"))
+                .cloned();
         }
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
@@ -234,18 +257,47 @@ async fn run_sync(
     let mut updated = 0;
     let mut unchanged = 0;
     let mut failed = 0;
-    for key in keys {
-        let resolved = match &upstream {
-            Ok((upstream_keys, groups, rates)) => key
-                .encrypted_api_key
-                .as_deref()
-                .and_then(|ciphertext| state.decrypt_catalog_secret_with_fallbacks(ciphertext))
-                .ok_or_else(|| "本地密钥无法解密".to_string())
-                .and_then(|secret| {
-                    resolve_sub2api_key_multiplier(&secret, upstream_keys, groups, rates)
-                }),
-            Err(error) => Err(error.clone()),
-        };
+    // 每个密钥独立查询并限制并发，慢请求不会阻止其他密钥发起查询。
+    let resolved_keys = futures_util::stream::iter(keys.into_iter().map(|key| {
+        let upstream = &upstream;
+        async move {
+            let resolved = if architecture != "sub2api" {
+                if let Some(secret) = key
+                    .encrypted_api_key
+                    .as_deref()
+                    .and_then(|value| state.decrypt_catalog_secret_with_fallbacks(value))
+                {
+                    resolve_other_multiplier(state, architecture, base, credentials, proxy, &secret)
+                        .await
+                } else {
+                    Err("本地密钥无法解密".to_string())
+                }
+            } else {
+                match &upstream {
+                    Ok((upstream_keys, groups, rates)) => key
+                        .encrypted_api_key
+                        .as_deref()
+                        .and_then(|ciphertext| {
+                            state.decrypt_catalog_secret_with_fallbacks(ciphertext)
+                        })
+                        .ok_or_else(|| "本地密钥无法解密".to_string())
+                        .and_then(|secret| {
+                            resolve_sub2api_key_multiplier(&secret, upstream_keys, groups, rates)
+                        }),
+                    Err(error) => Err(error.clone()),
+                }
+            };
+            (key, resolved)
+        }
+    }))
+    .buffer_unordered(4);
+    futures_util::pin_mut!(resolved_keys);
+    while let Some((key, resolved)) = resolved_keys.next().await {
+        if mode == Some("upstream") {
+            if let Err(error) = &resolved {
+                return Err(error.clone());
+            }
+        }
         let previous = key
             .upstream_metadata
             .as_ref()
@@ -265,6 +317,7 @@ async fn run_sync(
         );
         let multiplier = match resolved {
             Ok(value) => {
+                metadata.insert("source".to_string(), json!("upstream"));
                 metadata.insert("status".to_string(), json!("success"));
                 metadata.insert("error".to_string(), Value::Null);
                 metadata.insert("last_success_at".to_string(), json!(now));
@@ -278,11 +331,13 @@ async fn run_sync(
                 None
             }
         };
+        // 在同一数据库条件更新中核验认证快照，清除或更换认证后丢弃在途结果。
         let written = state
             .as_ref()
             .compare_and_update_provider_catalog_key_multiplier(
                 &ProviderCatalogKeyMultiplierUpdate {
                     expected_key: key.clone(),
+                    expected_provider_ops: expected_provider_ops.clone(),
                     metadata: Value::Object(metadata.clone()),
                     multiplier,
                 },
@@ -307,4 +362,69 @@ async fn run_sync(
     Ok(
         json!({"updated":updated,"unchanged":unchanged,"failed":failed,"skipped":skipped,"results":results}),
     )
+}
+
+/// 按认证模板查询 New API 分组或兼容的密钥计费接口；失败保留本地倍率。
+async fn resolve_other_multiplier(
+    state: &AdminAppState<'_>,
+    architecture: &str,
+    base: &str,
+    credentials: &Map<String, Value>,
+    proxy: Option<&ProxySnapshot>,
+    secret: &str,
+) -> Result<Sub2ApiKeyMultiplier, String> {
+    let query = async {
+        if architecture == "new_api" {
+            return super::multiplier_upstream::resolve_new_api(
+                state,
+                base,
+                credentials,
+                proxy,
+                secret,
+            )
+            .await;
+        }
+        if architecture != "usage_api" {
+            return Err("该供应商暂不支持上游倍率查询".to_string());
+        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {secret}"))
+                .map_err(|_| "本地密钥格式无效".to_string())?,
+        );
+        headers.insert(
+            reqwest::header::USER_AGENT,
+            reqwest::header::HeaderValue::from_static(
+                aether_admin::provider::ops::ADMIN_PROVIDER_OPS_USER_AGENT,
+            ),
+        );
+        let (status, value) = admin_provider_ops_execute_json_request(
+            state,
+            "provider-ops:multiplier:billing",
+            reqwest::Method::GET,
+            &admin_provider_ops_sub2api_request_url(base, "/v1/sub2api/billing"),
+            &headers,
+            None,
+            proxy,
+        )
+        .await
+        .map_err(|_| "上游倍率查询请求失败".to_string())?;
+        if !status.is_success() {
+            return Err(super::multiplier_upstream::status_message(status));
+        }
+        let multiplier = value
+            .get("effective_rate_multiplier")
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .ok_or_else(|| "上游未提供有效的密钥倍率".to_string())?;
+        Ok(Sub2ApiKeyMultiplier {
+            group_id: 0,
+            group_name: None,
+            multiplier,
+        })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(60), query)
+        .await
+        .unwrap_or_else(|_| Err("上游倍率查询超时".to_string()))
 }

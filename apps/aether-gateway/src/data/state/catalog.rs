@@ -815,7 +815,24 @@ impl GatewayDataState {
         Ok(updated)
     }
 
-    /// 原子写入倍率结果并清除目录缓存，冲突也强制后续读取最新状态。
+    /// 条件保存运行时认证并失效供应商目录缓存。
+    pub(crate) async fn compare_and_update_provider_ops(
+        &self,
+        provider_id: &str,
+        expected: &serde_json::Value,
+        updated: &serde_json::Value,
+    ) -> Result<bool, DataLayerError> {
+        let Some(repository) = &self.provider_catalog_writer else {
+            return Ok(false);
+        };
+        let written = repository
+            .compare_and_update_provider_ops(provider_id, expected, updated)
+            .await?;
+        self.clear_provider_catalog_cache();
+        Ok(written)
+    }
+
+    /// 原子写入倍率结果并刷新目录缓存。
     pub(crate) async fn compare_and_update_provider_catalog_key_multiplier(
         &self,
         update: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyMultiplierUpdate,

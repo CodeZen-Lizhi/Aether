@@ -455,6 +455,31 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
         Ok(stored.clone())
     }
 
+    /// 同一写锁内比较认证并局部合并，保留并发编辑的其他供应商字段。
+    async fn compare_and_update_provider_ops(
+        &self,
+        provider_id: &str,
+        expected: &Value,
+        updated: &Value,
+    ) -> Result<bool, DataLayerError> {
+        let mut index = self
+            .index
+            .write()
+            .expect("provider catalog repository lock");
+        let Some(provider) = index.providers.get_mut(provider_id) else {
+            return Ok(false);
+        };
+        let Some(config) = provider.config.as_mut().and_then(Value::as_object_mut) else {
+            return Ok(false);
+        };
+        if config.get("provider_ops") != Some(expected) {
+            return Ok(false);
+        }
+        config.insert("provider_ops".to_string(), updated.clone());
+        provider.updated_at_unix_secs = Some(current_unix_secs());
+        Ok(true)
+    }
+
     async fn delete_provider(&self, provider_id: &str) -> Result<bool, DataLayerError> {
         let mut index = self
             .index
@@ -1268,6 +1293,17 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
             .write()
             .expect("provider catalog repository lock");
         let expected = &update.expected_key;
+        if let Some(ops) = &update.expected_provider_ops {
+            if index
+                .providers
+                .get(&expected.provider_id)
+                .and_then(|provider| provider.config.as_ref())
+                .and_then(|config| config.get("provider_ops"))
+                != Some(ops)
+            {
+                return Ok(false);
+            }
+        }
         let Some(key) = index.keys.get_mut(&expected.id) else {
             return Ok(false);
         };

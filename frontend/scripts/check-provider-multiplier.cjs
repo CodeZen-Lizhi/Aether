@@ -1,4 +1,4 @@
-// 验证实际供应商抽屉中的单密钥和供应商级同步入口。
+// 验证实际供应商抽屉中的逐密钥同步入口和响应式布局。
 async (page) => {
   await page.getByLabel('倍率来源').first().selectOption('upstream')
   await page.getByText('fixture group', { exact: false }).first().waitFor()

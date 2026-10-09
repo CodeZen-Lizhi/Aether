@@ -132,24 +132,11 @@ pub(super) async fn spawn_admin_provider_ops_balance_refresh(
     let app = state.cloned_app();
     let provider_id = provider_id.to_string();
     spawn_fire_and_forget(TASK_KEY_PROVIDER_BALANCE_REFRESH, async move {
-        let permit = match tokio::time::timeout(
-            Duration::from_secs(5),
-            ADMIN_PROVIDER_OPS_BALANCE_REFRESH_SEMAPHORE.acquire(),
-        )
-        .await
-        {
-            Ok(Ok(permit)) => permit,
-            Ok(Err(err)) => {
-                warn!(
-                    provider_id = %provider_id,
-                    error = %err,
-                    "provider ops balance refresh semaphore closed"
-                );
-                finish_refresh_provider(&refresh_key).await;
-                return;
-            }
-            Err(_) => {
-                debug!(provider_id = %provider_id, "provider ops balance refresh skipped by concurrency limit");
+        // 已入队的供应商等待独立执行机会，慢站点不能让其他供应商因等待超时而被跳过。
+        let permit = match ADMIN_PROVIDER_OPS_BALANCE_REFRESH_SEMAPHORE.acquire().await {
+            Ok(permit) => permit,
+            Err(err) => {
+                warn!(provider_id = %provider_id, error = %err, "provider ops balance refresh semaphore closed");
                 finish_refresh_provider(&refresh_key).await;
                 return;
             }

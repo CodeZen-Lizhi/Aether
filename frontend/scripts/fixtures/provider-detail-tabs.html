@@ -77,6 +77,7 @@ if (multiplierFixture) client.post = async (url, body) => {
   const selectedKeys = keys.filter(key => key.provider_id === provider.id && (!body.config?.key_id || key.id === body.config.key_id))
   for (const key of selectedKeys) {
     if (body.config?.mode) key.multiplier_sync.source = body.config.mode
+    if (body.config?.multiplier !== undefined) key.default_rate_multiplier = body.config.multiplier
     if (key.multiplier_sync.source === 'upstream') {
       key.default_rate_multiplier = 0.3
       key.multiplier_sync = { source: 'upstream', status: 'success', group_name: 'fixture group' }

@@ -4,7 +4,7 @@
  * 提供 Provider 扩展操作相关的 API：
  * - 架构管理
  * - 连接管理
- * - 操作执行（余额查询、签到等）
+ * - 操作执行（余额查询、上游倍率查询与同步等）
  */
 
 import client from './client'
@@ -281,8 +281,8 @@ export async function executeAction(
 }
 
 /** 读取或切换密钥倍率来源并同步；上游失败保留现有倍率。 */
-export async function syncProviderMultiplier(providerId: string, keyId?: string, mode?: 'manual' | 'upstream'): Promise<ActionResultResponse> {
-  const response = await client.post<ActionResultResponse>(`${BASE_URL}/providers/${providerId}/actions/sync_multiplier`, { config: { key_id: keyId, mode } }, { timeout: 90000 })
+export async function syncProviderMultiplier(providerId: string, keyId?: string, mode?: 'manual' | 'upstream', multiplier?: number): Promise<ActionResultResponse> {
+  const response = await client.post<ActionResultResponse>(`${BASE_URL}/providers/${providerId}/actions/sync_multiplier`, { config: { key_id: keyId, mode, multiplier } }, { timeout: 90000 })
   return response.data
 }
 

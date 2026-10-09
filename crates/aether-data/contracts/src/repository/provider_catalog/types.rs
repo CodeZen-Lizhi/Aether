@@ -64,6 +64,8 @@ pub struct ProviderCatalogKeyRuntimeMetadataUpdate {
 pub struct ProviderCatalogKeyMultiplierUpdate {
     /// 同步开始时读取的密钥，作为凭据、倍率和来源的条件写入基线。
     pub expected_key: StoredProviderCatalogKey,
+    /// 上游查询时的完整用户认证快照；手动修改传 None，不依赖账号认证。
+    pub expected_provider_ops: Option<serde_json::Value>,
     /// 新的来源、同步状态和时间；仅替换 multiplier 命名空间。
     pub metadata: serde_json::Value,
     /// 成功时写入生效倍率；失败或切换模式时为空，保留现值。
@@ -902,6 +904,18 @@ pub trait ProviderCatalogWriteRepository: Send + Sync {
         &self,
         provider: &StoredProviderCatalogProvider,
     ) -> Result<StoredProviderCatalogProvider, crate::DataLayerError>;
+
+    /// 认证快照未变时仅替换 provider_ops，防止旧续期覆盖用户清除或其他供应商设置。
+    async fn compare_and_update_provider_ops(
+        &self,
+        _provider_id: &str,
+        _expected: &serde_json::Value,
+        _updated: &serde_json::Value,
+    ) -> Result<bool, crate::DataLayerError> {
+        Err(crate::DataLayerError::InvalidConfiguration(
+            "provider ops CAS is not supported".to_string(),
+        ))
+    }
 
     async fn delete_provider(&self, provider_id: &str) -> Result<bool, crate::DataLayerError>;
 

@@ -2,7 +2,7 @@
   <Dialog
     :open="open"
     title="用户认证"
-    description="配置提供商的用户认证信息，用于余额查询、签到等操作"
+    description="配置提供商的用户认证信息，用于余额查询、上游倍率查询与同步"
     :icon="KeyRound"
     size="md"
     @update:open="$emit('update:open', $event)"
@@ -657,7 +657,7 @@ async function handleClear() {
   if (!props.providerId) return
 
   const confirmed = await confirmDanger(
-    '确定要清除该提供商的认证配置吗？清除后将无法进行余额查询、签到等操作。',
+    '确定要清除该提供商的认证配置吗？清除后将无法进行余额查询、上游倍率查询与同步。',
     '清除认证',
     '清除'
   )

@@ -247,9 +247,20 @@ pub(super) async fn persist_admin_provider_ops_runtime_credentials(
         .ok()
         .map(|duration| duration.as_secs());
 
-    state
-        .update_provider_catalog_provider(&updated_provider)
-        .await
+    let written = state
+        .as_ref()
+        .compare_and_update_provider_ops(
+            &provider.id,
+            &serde_json::Value::Object(provider_ops_config),
+            updated_provider
+                .config
+                .as_ref()
+                .and_then(|config| config.get("provider_ops"))
+                .expect("constructed provider ops"),
+        )
+        .await?;
+    // 返回本次实际保存的认证快照，不能重读并接受随后切换的另一账号。
+    Ok(written.then_some(updated_provider))
 }
 
 pub(super) fn build_admin_provider_ops_saved_config_value(

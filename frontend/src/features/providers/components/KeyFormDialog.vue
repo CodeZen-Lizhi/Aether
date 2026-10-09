@@ -164,7 +164,7 @@
 
       <!-- 成本与优先级 -->
       <KeyMultiplierControl
-        v-if="editingKey && providerId && opsArchitectureId === 'sub2api'"
+        v-if="editingKey && providerId"
         :api-key="editingKey"
         :provider-id="providerId"
         @refresh="emit('refresh')"

@@ -602,6 +602,23 @@ impl AppState {
         Ok(updated)
     }
 
+    /// 仅保存仍属于原账号的续期凭据，并使运行时配置重新读取。
+    pub(crate) async fn compare_and_update_provider_ops(
+        &self,
+        provider_id: &str,
+        expected: &serde_json::Value,
+        updated: &serde_json::Value,
+    ) -> Result<bool, GatewayError> {
+        let written = self
+            .data
+            .compare_and_update_provider_ops(provider_id, expected, updated)
+            .await
+            .map_err(|e| GatewayError::Internal(e.to_string()))?;
+        self.invalidate_provider_runtime_state_caches();
+        self.invalidate_provider_transport_runtime_state_caches();
+        Ok(written)
+    }
+
     /// 写入倍率并失效计费与调度所读取的供应商运行快照。
     pub(crate) async fn compare_and_update_provider_catalog_key_multiplier(
         &self,

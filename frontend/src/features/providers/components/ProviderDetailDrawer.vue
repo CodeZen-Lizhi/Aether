@@ -80,14 +80,11 @@
                 class="overflow-hidden"
               >
                 <div class="p-4 border-b border-border/60">
-                  <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between">
                     <h3 class="text-sm font-semibold">
                       {{ legacyT('密钥管理') }}
                     </h3>
                     <div class="flex flex-wrap items-center justify-end gap-2">
-                      <Button v-if="provider.ops_architecture_id === 'sub2api'" variant="outline" size="sm" :disabled="multiplierSyncing" @click="syncAllMultipliers">
-                        <RefreshCw class="mr-1.5 h-3.5 w-3.5" :class="{ 'animate-spin': multiplierSyncing }" />{{ legacyT('同步上游倍率') }}
-                      </Button>
                       <Button
                         v-if="endpoints.length > 0"
                         variant="outline"
@@ -118,7 +115,7 @@
                   <div
                     v-for="{ key, endpoint } in allKeys"
                     :key="key.id"
-                    class="px-4 py-2.5 hover:bg-muted/30 transition-colors group/item"
+                    class="px-4 py-4 hover:bg-muted/20 transition-colors group/item"
                     :class="{
                       'opacity-40 bg-muted/20': !key.is_active
                     }"
@@ -133,6 +130,8 @@
                           @copy-full-key="copyFullKey(key)"
                         />
                       </div>
+                      <div class="flex shrink-0 items-center gap-1">
+                      <KeyMultiplierControl :api-key="key" :provider-id="provider.id" action-only @refresh="loadProviderKeys" />
                       <ProviderKeyActionCluster
                         :api-key="key"
                         :recoverable="isKeyRecoverable(key)"
@@ -154,10 +153,11 @@
                         @toggle-active="toggleKeyActive(key)"
                         @delete="handleDeleteKey(key)"
                       />
+                      </div>
                     </div>
-                    <KeyMultiplierControl v-if="provider.ops_architecture_id === 'sub2api'" :api-key="key" :provider-id="provider.id" @refresh="loadProviderKeys" />
                     <!-- 第二行：API 格式（展开显示） + 统计信息 -->
-                    <div class="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground">
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mt-3 text-[11px] text-muted-foreground">
+                      <KeyMultiplierControl :api-key="key" :provider-id="provider.id" @refresh="loadProviderKeys" @settings-open="multiplierSettingsOpen = $event" />
                       <!-- 自动获取模型状态 -->
                       <template v-if="key.auto_fetch_models">
                         <span class="text-muted-foreground/40">|</span>
@@ -179,16 +179,6 @@
                         <span v-else>{{ key.rpm_limit }} RPM</span>
                       </template>
                       <span class="text-muted-foreground/40">|</span>
-                      <!-- Key 成本倍率（非 1 时展示） -->
-                      <span
-                        v-if="key.default_rate_multiplier != null && key.default_rate_multiplier !== 1"
-                        class="text-primary/80"
-                        :title="legacyT('Key 成本倍率：该密钥所有请求按此计费')"
-                      >{{ legacyT('默认') }} {{ key.default_rate_multiplier }}x</span>
-                      <span
-                        v-if="key.default_rate_multiplier != null && key.default_rate_multiplier !== 1"
-                        class="text-muted-foreground/40"
-                      >|</span>
                       <!-- API 格式：展开显示每个格式、倍率、熔断状态 -->
                       <template
                         v-for="(format, idx) in getKeyApiFormats(key, endpoint)"
@@ -201,24 +191,6 @@
                         <span :class="{ 'text-destructive': isFormatCircuitOpen(key, format) }">
                           {{ formatApiFormatShort(format) }}
                         </span>
-                        <span
-                          v-if="editingMultiplierKey !== key.id || editingMultiplierFormat !== format"
-                          :title="legacyT('点击编辑倍率')"
-                          class="cursor-pointer hover:text-primary hover:underline"
-                          :class="{ 'text-destructive': isFormatCircuitOpen(key, format) }"
-                          @click="startEditMultiplier(key, format)"
-                        >{{ getKeyRateMultiplier(key) }}x</span>
-                        <input
-                          v-else
-                          ref="multiplierInputRef"
-                          v-model="editingMultiplierValue"
-                          type="text"
-                          inputmode="decimal"
-                          pattern="[0-9]*\.?[0-9]*"
-                          class="w-10 h-5 px-1 text-[11px] text-center border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary font-medium text-foreground/80"
-                          @keydown="(e) => handleMultiplierKeydown(e, key)"
-                          @blur="handleMultiplierBlur(key)"
-                        >
                         <span
                           v-if="getFormatProbeCountdown(key, format)"
                           :class="{ 'text-destructive': isFormatCircuitOpen(key, format) }"
@@ -371,7 +343,6 @@ import {
   Plus,
   Key,
   Loader2,
-  RefreshCw,
 } from 'lucide-vue-next'
 import { parseApiError } from '@/utils/errorParser'
 import { useEscapeKey } from '@/composables/useEscapeKey'
@@ -407,7 +378,6 @@ import ProviderDetailHeader from '@/features/providers/components/ProviderDetail
 import ProviderKeyActionCluster from '@/features/providers/components/ProviderKeyActionCluster.vue'
 import ProviderKeyIdentityBlock from '@/features/providers/components/ProviderKeyIdentityBlock.vue'
 import KeyMultiplierControl from '@/features/providers/components/KeyMultiplierControl.vue'
-import { syncProviderMultiplier } from '@/api/providerOps'
 import ProviderMonthlyQuotaCard from '@/features/providers/components/ProviderMonthlyQuotaCard.vue'
 import ProviderQuotaProgressRow from '@/features/providers/components/ProviderQuotaProgressRow.vue'
 import ProviderQuotaSectionHeader from '@/features/providers/components/ProviderQuotaSectionHeader.vue'
@@ -461,30 +431,6 @@ const loading = ref(false)
 const provider = ref<ProviderWithEndpointsSummary | null>(null)
 const endpoints = ref<ProviderEndpointWithKeys[]>([])
 const providerKeys = ref<EndpointAPIKey[]>([])  // Provider 级别的 keys
-/** 当前供应商立即同步状态，不与其他供应商共享。 */
-const multiplierSyncing = ref(false)
-
-/** 同步供应商所有跟随上游的密钥，重读持久化结果并报告部分失败。 */
-async function syncAllMultipliers() {
-  const providerId = props.providerId
-  if (!providerId || multiplierSyncing.value) return
-  multiplierSyncing.value = true
-  try {
-    const result = await syncProviderMultiplier(providerId)
-    if (result.status !== 'success') showError(result.message || legacyT('同步失败'))
-    else {
-      const data = result.data as { failed?: number; updated?: number; unchanged?: number }
-      if (data.failed) showError(legacyT('部分密钥同步失败，请查看密钥详情'))
-      else if (!data.updated && !data.unchanged) showSuccess(legacyT('没有需要同步的密钥'))
-      else showSuccess(legacyT('倍率状态已更新'))
-    }
-  } catch (error) {
-    showError(localizedApiError(error, '倍率操作失败'))
-  } finally {
-    multiplierSyncing.value = false
-    if (props.providerId === providerId) await loadProviderKeys()
-  }
-}
 const providerModels = ref<Model[]>([])  // Provider 级别的 models
 const providerMappingPreview = ref<ProviderMappingPreviewResponse | null>(null)  // 映射预览
 const loadingProviderEndpoints = ref(false)
@@ -573,15 +519,12 @@ const savingProviderProxy = ref(false)
 const savingProxyKeyId = ref<string | null>(null)
 const proxyPopoverOpenKeyId = ref<string | null>(null)
 
-// 点击编辑倍率相关状态
-const editingMultiplierKey = ref<string | null>(null)
-const editingMultiplierFormat = ref<string | null>(null)
-const editingMultiplierValue = ref<number>(1.0)
-const multiplierInputRef = ref<HTMLInputElement[] | null>(null)
-const multiplierSaving = ref(false)
+// 倍率弹窗打开期间保留供应商抽屉。
+const multiplierSettingsOpen = ref(false)
 
 // 任意模态窗口打开时,阻止抽屉被误关闭
 const hasBlockingDialogOpen = computed(() =>
+  multiplierSettingsOpen.value ||
   endpointDialogOpen.value ||
   keyFormDialogOpen.value ||
   keyPermissionsDialogOpen.value ||
@@ -694,8 +637,7 @@ function resetProviderDetailState() {
   revealedKeys.value.clear()
   providerProxyPopoverOpen.value = false
   proxyPopoverOpenKeyId.value = null
-  editingMultiplierKey.value = null
-  editingMultiplierFormat.value = null
+  multiplierSettingsOpen.value = false
 }
 
 // 合并监听 providerId 和 open，避免同一 tick 内两个 watcher 都触发导致重复请求
@@ -1044,95 +986,6 @@ async function handleModelSaved() {
   emit('refresh')
 }
 
-// ===== 点击编辑优先级 =====
-/** 仅允许手动来源通过列表直接编辑倍率。 */
-function startEditMultiplier(key: EndpointAPIKey, format: string) {
-  if (key.multiplier_sync?.source === 'upstream') return
-  editingMultiplierKey.value = key.id
-  editingMultiplierFormat.value = format
-  editingMultiplierValue.value = getKeyRateMultiplier(key)
-  multiplierSaving.value = false
-  nextTick(() => {
-    const input = Array.isArray(multiplierInputRef.value) ? multiplierInputRef.value[0] : multiplierInputRef.value
-    input?.focus()
-    input?.select()
-  })
-}
-
-function cancelEditMultiplier() {
-  editingMultiplierKey.value = null
-  editingMultiplierFormat.value = null
-}
-
-function handleMultiplierKeydown(e: KeyboardEvent, key: EndpointAPIKey) {
-  if (e.key === 'Enter') {
-    e.preventDefault()
-    e.stopPropagation()
-    saveMultiplier(key)
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    multiplierSaving.value = true // 阻止 blur 触发保存
-    cancelEditMultiplier()
-  }
-}
-
-function handleMultiplierBlur(key: EndpointAPIKey) {
-  if (multiplierSaving.value) return
-  saveMultiplier(key)
-}
-
-async function saveMultiplier(key: EndpointAPIKey) {
-  // 防止重复调用（Enter 触发后阻止 blur 再次进入）
-  if (multiplierSaving.value) return
-  multiplierSaving.value = true
-
-  const keyId = editingMultiplierKey.value
-  const newMultiplier = parseFloat(String(editingMultiplierValue.value))
-
-  // 验证输入有效性
-  if (!keyId || isNaN(newMultiplier)) {
-    showError(legacyT('请输入有效的倍率值'))
-    cancelEditMultiplier()
-    multiplierSaving.value = false
-    return
-  }
-
-  // 验证合理范围
-  if (newMultiplier <= 0 || newMultiplier > 100) {
-    showError(legacyT('倍率必须在 0.01 到 100 之间'))
-    cancelEditMultiplier()
-    multiplierSaving.value = false
-    return
-  }
-
-  // 如果倍率没有变化,直接取消编辑（使用精度容差比较浮点数）
-  const currentMultiplier = getKeyRateMultiplier(key)
-  if (Math.abs(currentMultiplier - newMultiplier) < 0.0001) {
-    cancelEditMultiplier()
-    multiplierSaving.value = false
-    return
-  }
-
-  cancelEditMultiplier()
-
-  try {
-    // 成本倍率统一走 Key 级 default_rate_multiplier（与编辑弹窗同一字段）
-    await updateProviderKey(keyId, { default_rate_multiplier: newMultiplier })
-    showSuccess(legacyT('倍率已更新'))
-
-    // 更新本地数据
-    const keyToUpdate = providerKeys.value.find(k => k.id === keyId)
-    if (keyToUpdate) {
-      keyToUpdate.default_rate_multiplier = newMultiplier
-    }
-    emit('refresh')
-  } catch (err: unknown) {
-    showError(localizedApiError(err, '更新倍率失败'), legacyT('错误'))
-  } finally {
-    multiplierSaving.value = false
-  }
-}
-
 // 获取密钥的 API 格式列表（按指定顺序排序）
 function getKeyApiFormats(key: EndpointAPIKey, endpoint?: ProviderEndpointWithKeys): string[] {
   let formats: string[] = []
@@ -1143,11 +996,6 @@ function getKeyApiFormats(key: EndpointAPIKey, endpoint?: ProviderEndpointWithKe
   }
   // 使用统一的排序函数
   return sortApiFormats(formats)
-}
-
-// 获取密钥的 Key 级成本倍率（与编辑弹窗共用 default_rate_multiplier 字段）
-function getKeyRateMultiplier(key: EndpointAPIKey): number {
-  return key.default_rate_multiplier ?? 1.0
 }
 
 // OAuth 订阅类型格式化

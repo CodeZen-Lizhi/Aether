@@ -636,6 +636,23 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         self.reload_provider(&provider.id, "created").await
     }
 
+    /// 仅对未变化的认证快照写入续期结果，不覆盖供应商其他字段。
+    pub async fn compare_and_update_provider_ops(
+        &self,
+        provider_id: &str,
+        expected: &serde_json::Value,
+        updated: &serde_json::Value,
+    ) -> Result<bool, DataLayerError> {
+        let expected = serde_json::to_string(expected)
+            .map_err(|e| DataLayerError::UnexpectedValue(e.to_string()))?;
+        let updated = serde_json::to_string(updated)
+            .map_err(|e| DataLayerError::UnexpectedValue(e.to_string()))?;
+        let rows = sqlx::query("UPDATE providers SET config = json_set(config, '$.provider_ops', json(?)), updated_at = ? WHERE id = ? AND json_extract(config, '$.provider_ops') IS json_extract(json_object('value', json(?)), '$.value')")
+            .bind(updated).bind(current_unix_secs() as i64).bind(provider_id).bind(expected)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?).await.map_sql_err()?.rows_affected();
+        Ok(rows > 0)
+    }
+
     pub async fn update_provider(
         &self,
         provider: &StoredProviderCatalogProvider,
@@ -2189,10 +2206,16 @@ WHERE id = ?
             .map(serde_json::to_string)
             .transpose()
             .map_err(|error| DataLayerError::UnexpectedValue(error.to_string()))?;
-        let rows = sqlx::query("UPDATE provider_api_keys SET upstream_metadata = json_set(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier', json(?)), default_rate_multiplier = COALESCE(?, default_rate_multiplier), updated_at = ? WHERE id = ? AND provider_id = ? AND auth_type = ? AND api_key IS ? AND default_rate_multiplier = ? AND json_type(COALESCE(NULLIF(upstream_metadata, ''), '{}')) = 'object' AND json_extract(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier') IS json_extract(json_object('value', json(?)), '$.value')")
+        let expected_ops = update
+            .expected_provider_ops
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| DataLayerError::UnexpectedValue(error.to_string()))?;
+        let rows = sqlx::query("UPDATE provider_api_keys SET upstream_metadata = json_set(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier', json(?)), default_rate_multiplier = COALESCE(?, default_rate_multiplier), updated_at = ? WHERE id = ? AND provider_id = ? AND auth_type = ? AND api_key IS ? AND default_rate_multiplier = ? AND json_type(COALESCE(NULLIF(upstream_metadata, ''), '{}')) = 'object' AND json_extract(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier') IS json_extract(json_object('value', json(?)), '$.value') AND (? IS NULL OR EXISTS (SELECT 1 FROM providers p WHERE p.id = provider_api_keys.provider_id AND json_extract(p.config, '$.provider_ops') IS json_extract(json_object('value', json(?)), '$.value')))")
             .bind(metadata).bind(update.multiplier).bind(current_unix_secs() as i64)
             .bind(&expected.id).bind(&expected.provider_id).bind(&expected.auth_type)
-            .bind(expected.encrypted_api_key.as_deref()).bind(expected.default_rate_multiplier).bind(previous)
+            .bind(expected.encrypted_api_key.as_deref()).bind(expected.default_rate_multiplier).bind(previous).bind(expected_ops.as_deref()).bind(expected_ops.as_deref())
             .execute(&mut *self.source.acquire().await.map_sql_err()?).await.map_sql_err()?.rows_affected();
         Ok(rows > 0)
     }
@@ -2564,6 +2587,16 @@ impl ProviderCatalogWriteRepository for SqliteProviderCatalogReadRepository {
         provider: &StoredProviderCatalogProvider,
     ) -> Result<StoredProviderCatalogProvider, DataLayerError> {
         Self::update_provider(self, provider).await
+    }
+
+    /// 转发认证配置的原子条件更新。
+    async fn compare_and_update_provider_ops(
+        &self,
+        provider_id: &str,
+        expected: &serde_json::Value,
+        updated: &serde_json::Value,
+    ) -> Result<bool, DataLayerError> {
+        Self::compare_and_update_provider_ops(self, provider_id, expected, updated).await
     }
 
     async fn delete_provider(&self, provider_id: &str) -> Result<bool, DataLayerError> {
@@ -3747,6 +3780,63 @@ mod tests {
     };
     use serde_json::json;
 
+    /// 续期只更新认证命名空间，清除/换账号后不得恢复旧配置。
+    #[tokio::test]
+    async fn sqlite_provider_ops_runtime_cas_preserves_user_changes() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        run_migrations(&pool).await.unwrap();
+        let repository = SqliteProviderCatalogReadRepository::new(pool);
+        let mut provider = StoredProviderCatalogProvider::new(
+            "ops-cas".to_string(),
+            "original".to_string(),
+            None,
+            "openai".to_string(),
+        )
+        .unwrap();
+        let original = json!({"connector":{"credentials":{"refresh_token":"old"}}});
+        let rotated = json!({"connector":{"credentials":{"refresh_token":"rotated"}}});
+        provider.config = Some(json!({"provider_ops":original,"keep":true}));
+        repository.create_provider(&provider, None).await.unwrap();
+        provider.name = "edited".to_string();
+        repository.update_provider(&provider).await.unwrap();
+        assert!(repository
+            .compare_and_update_provider_ops(&provider.id, &original, &rotated)
+            .await
+            .unwrap());
+        let saved = repository
+            .list_providers_by_ids(&[provider.id.clone()])
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(saved.name, "edited");
+        assert_eq!(saved.config.as_ref().unwrap()["keep"], true);
+        assert_eq!(saved.config.unwrap()["provider_ops"], rotated);
+        for config in [
+            json!({}),
+            json!({"provider_ops":{"connector":{"credentials":{"refresh_token":"another-account"}}}}),
+        ] {
+            provider.config = Some(config.clone());
+            repository.update_provider(&provider).await.unwrap();
+            assert!(!repository
+                .compare_and_update_provider_ops(&provider.id, &original, &rotated)
+                .await
+                .unwrap());
+            assert_eq!(
+                repository
+                    .list_providers_by_ids(&[provider.id.clone()])
+                    .await
+                    .unwrap()
+                    .remove(0)
+                    .config,
+                Some(config)
+            );
+        }
+    }
+
     /// 真实 SQLite 验证倍率原子写入、元数据保留和切换手动后的旧结果拒绝。
     #[tokio::test]
     async fn sqlite_multiplier_sync_cas_preserves_manual_and_other_metadata() {
@@ -3786,6 +3876,7 @@ mod tests {
         );
         repository.create_key(&key).await.unwrap();
         let stale = ProviderCatalogKeyMultiplierUpdate {
+            expected_provider_ops: None,
             expected_key: key.clone(),
             metadata: json!({"source":"upstream","generation":"v2","status":"success"}),
             multiplier: Some(0.3),
@@ -3808,7 +3899,67 @@ mod tests {
             current.upstream_metadata.as_ref().unwrap()["other"]["keep"],
             true
         );
+        // 清除或替换账号后的旧请求即便密钥未变也必须拒绝；匹配账号快照才允许写入。
+        let mut provider = repository
+            .list_providers_by_ids(&[key.provider_id.clone()])
+            .await
+            .unwrap()
+            .remove(0);
+        let ops = json!({"connector":{"credentials":{"refresh_token":"account-a"}}});
+        let guarded = ProviderCatalogKeyMultiplierUpdate {
+            expected_key: current.clone(),
+            expected_provider_ops: Some(ops.clone()),
+            metadata: json!({"source":"upstream"}),
+            multiplier: Some(0.8),
+        };
+        assert!(!repository
+            .compare_and_update_key_multiplier(&guarded)
+            .await
+            .unwrap());
+        provider.config = Some(
+            json!({"provider_ops":{"connector":{"credentials":{"refresh_token":"account-b"}}}}),
+        );
+        repository.update_provider(&provider).await.unwrap();
+        assert!(!repository
+            .compare_and_update_key_multiplier(&guarded)
+            .await
+            .unwrap());
+        provider.config = Some(json!({"provider_ops":ops}));
+        repository.update_provider(&provider).await.unwrap();
+        assert!(repository
+            .compare_and_update_key_multiplier(&ProviderCatalogKeyMultiplierUpdate {
+                metadata: current.upstream_metadata.as_ref().unwrap()["multiplier"].clone(),
+                multiplier: None,
+                ..guarded
+            })
+            .await
+            .unwrap());
+        // 认证失效等查询失败只保存状态，重读时仍须保留上一次成功的 0.3。
+        assert!(repository
+            .compare_and_update_key_multiplier(&ProviderCatalogKeyMultiplierUpdate {
+                expected_provider_ops: None,
+                expected_key: current,
+                metadata: json!({"source":"upstream","generation":"failed","status":"failed","error":"认证失败"}),
+                multiplier: None,
+            })
+            .await
+            .unwrap());
+        let current = repository
+            .list_keys_by_ids(&[key.id.clone()])
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(current.default_rate_multiplier, 0.3);
+        assert_eq!(
+            current.upstream_metadata.as_ref().unwrap()["multiplier"]["source"],
+            "upstream"
+        );
+        assert_eq!(
+            current.upstream_metadata.as_ref().unwrap()["multiplier"]["status"],
+            "failed"
+        );
         let manual = ProviderCatalogKeyMultiplierUpdate {
+            expected_provider_ops: None,
             expected_key: current.clone(),
             metadata: json!({"source":"manual","generation":"v3"}),
             multiplier: None,
@@ -3819,6 +3970,7 @@ mod tests {
             .unwrap());
         assert!(!repository
             .compare_and_update_key_multiplier(&ProviderCatalogKeyMultiplierUpdate {
+                expected_provider_ops: None,
                 expected_key: current,
                 ..stale
             })

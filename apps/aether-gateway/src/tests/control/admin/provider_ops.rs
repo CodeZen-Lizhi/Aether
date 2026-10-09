@@ -34,6 +34,386 @@ use crate::data::{GatewayDataConfig, GatewayDataState};
 
 const PROVIDER_OPS_TEST_STACK_BYTES: usize = 16 * 1024 * 1024;
 
+/// 通过真实 HTTP 验证 New API、API Key 计费查询及 auto 分组拒绝切换。
+#[test]
+fn gateway_multiplier_templates_roundtrip() {
+    run_provider_ops_test(
+        "gateway_multiplier_templates_roundtrip",
+        multiplier_templates_roundtrip,
+    );
+}
+
+/// 隔离站点按认证模板提供不同能力，后续查询失败必须保留已同步倍率。
+async fn multiplier_templates_roundtrip() {
+    for (architecture, group, supported) in [
+        ("new_api", "fixed", true),
+        ("usage_api", "fixed", true),
+        ("new_api", "auto", false),
+        ("usage_api", "unsupported", false),
+    ] {
+        let available = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let gate = available.clone();
+        let upstream = if architecture == "new_api" {
+            Router::new()
+                .route("/api/token/", get(move || async move { Json(json!({"success":true,"data":{"total":1,"items":[{"id":1,"key":"loc***ret","group":group}]}})) }))
+                .route("/api/token/1/key", post(|| async { Json(json!({"success":true,"data":{"key":"sk-local-secret"}})) }))
+                .route("/api/user/self/groups", get(move || { let gate = gate.clone(); async move {
+                    Json(if gate.load(std::sync::atomic::Ordering::SeqCst) { json!({"success":true,"data":{"fixed":{"ratio":0.3}}}) } else { json!({"success":false}) })
+                }}))
+        } else if !supported {
+            Router::new().route(
+                "/v1/sub2api/billing",
+                get(|| async {
+                    (
+                        StatusCode::NOT_FOUND,
+                        "<html>upstream internal diagnostic</html>",
+                    )
+                }),
+            )
+        } else {
+            Router::new().route(
+                "/v1/sub2api/billing",
+                get(move || {
+                    let gate = gate.clone();
+                    async move {
+                        Json(if gate.load(std::sync::atomic::Ordering::SeqCst) {
+                            json!({"effective_rate_multiplier":0.3})
+                        } else {
+                            json!({})
+                        })
+                    }
+                }),
+            )
+        };
+        let (base, upstream_handle) = start_server(upstream).await;
+        let mut provider = sample_provider("templates-provider", "openai", 10);
+        provider.config = Some(
+            json!({"provider_ops":{"architecture_id":architecture,"base_url":base,"connector":{"auth_type":"api_key","config":{},"credentials":{"api_key":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"account-token").unwrap(),"user_id":"1"}},"actions":{}}}),
+        );
+        let key = super::super::sample_key(
+            "templates-key",
+            "templates-provider",
+            "openai:chat",
+            "local-secret",
+        );
+        let repo = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+            vec![provider],
+            vec![],
+            vec![key],
+        ));
+        let state = AppState::new().unwrap().with_data_state_for_tests(
+            GatewayDataState::with_provider_catalog_repository_for_tests(repo.clone())
+                .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+        );
+        let (url, gateway_handle) = start_server(build_router_with_state(state)).await;
+        let client = reqwest::Client::new();
+        for attempt in 0..2 {
+            let payload: serde_json::Value = client.post(format!("{url}/api/admin/provider-ops/providers/templates-provider/actions/sync_multiplier"))
+                .header(GATEWAY_HEADER,"rust-phase3b").header(TRUSTED_ADMIN_USER_ID_HEADER,"admin-user-123").header(TRUSTED_ADMIN_USER_ROLE_HEADER,"admin").header(TRUSTED_ADMIN_SESSION_ID_HEADER,"session-123")
+                .json(&json!({"config":{"key_id":"templates-key","mode":if attempt == 0 { Some("upstream") } else { None }}}))
+                .send().await.unwrap().json().await.unwrap();
+            let keys = repo
+                .list_keys_by_provider_ids(&["templates-provider".to_string()])
+                .await
+                .unwrap();
+            assert_eq!(
+                keys[0].default_rate_multiplier,
+                if supported { 0.3 } else { 1.0 },
+                "{architecture}: {payload}"
+            );
+            if !supported {
+                assert_ne!(payload["status"], "success");
+                assert!(!payload.to_string().contains("<html>"));
+                assert!(!payload.to_string().contains("internal diagnostic"));
+                if architecture == "usage_api" {
+                    assert!(payload.to_string().contains("未提供兼容"), "{payload}");
+                }
+                assert!(keys[0]
+                    .upstream_metadata
+                    .as_ref()
+                    .and_then(|v| v.pointer("/multiplier/source"))
+                    .is_none());
+                break;
+            }
+            if attempt == 1 {
+                assert_eq!(payload["data"]["failed"], 1);
+            }
+            available.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+        gateway_handle.abort();
+        upstream_handle.abort();
+    }
+}
+
+/// 同轮查询互不取消：余额失败不阻止倍率成功，认证删除后仍能切回手动。
+#[test]
+fn gateway_multiplier_independent_balance_and_missing_auth() {
+    run_provider_ops_test("multiplier_independence", multiplier_independence);
+}
+
+/// 真实本地上游返回余额错误与有效倍率，检验持久化值及认证清除后的操作。
+async fn multiplier_independence() {
+    use aether_data_contracts::repository::provider_catalog::ProviderCatalogWriteRepository;
+    let upstream = Router::new()
+        .route("/v1/usage", get(|| async { StatusCode::UNAUTHORIZED }))
+        .route(
+            "/v1/sub2api/billing",
+            get(|| async { Json(json!({"effective_rate_multiplier":0.3})) }),
+        );
+    let (base, upstream_handle) = start_server(upstream).await;
+    let mut provider = sample_provider("independent", "openai", 10);
+    provider.config = Some(
+        json!({"provider_ops":{"architecture_id":"usage_api","base_url":base,"connector":{"auth_type":"api_key","config":{},"credentials":{"api_key":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"test-token").unwrap()}},"actions":{}}}),
+    );
+    let mut key = super::super::sample_key(
+        "independent-key",
+        "independent",
+        "openai:chat",
+        "test-token",
+    );
+    key.default_rate_multiplier = 0.5;
+    key.upstream_metadata = Some(json!({"multiplier":{"source":"upstream"}}));
+    let repo = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider.clone()],
+        vec![],
+        vec![key],
+    ));
+    let state = AppState::new().unwrap().with_data_state_for_tests(
+        GatewayDataState::with_provider_catalog_repository_for_tests(repo.clone())
+            .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+    );
+    let (url, gateway_handle) = start_server(build_router_with_state(state)).await;
+    let client = reqwest::Client::new();
+    for (action, config) in [
+        ("query_balance", json!({})),
+        ("sync_multiplier", json!({"key_id":"independent-key"})),
+        (
+            "sync_multiplier",
+            json!({"key_id":"independent-key","mode":"manual","multiplier":0.7}),
+        ),
+        (
+            "sync_multiplier",
+            json!({"key_id":"independent-key","mode":"upstream"}),
+        ),
+    ] {
+        let payload: serde_json::Value = client
+            .post(format!(
+                "{url}/api/admin/provider-ops/providers/independent/actions/{action}"
+            ))
+            .header(GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .json(&json!({"config":config}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let current = repo
+            .list_keys_by_provider_ids(&["independent".to_string()])
+            .await
+            .unwrap()
+            .remove(0);
+        if action == "query_balance" {
+            assert_ne!(payload["status"], "success");
+            assert_eq!(payload["multiplier_sync"]["data"]["updated"], 1);
+            assert_eq!(current.default_rate_multiplier, 0.3);
+            provider.config = Some(json!({}));
+            repo.update_provider(&provider).await.unwrap();
+        } else if config.get("mode") == Some(&json!("manual")) {
+            assert_eq!(payload["status"], "success", "{payload}");
+            assert_eq!(current.default_rate_multiplier, 0.7);
+            assert_eq!(
+                current.upstream_metadata.unwrap()["multiplier"]["source"],
+                "manual"
+            );
+        } else {
+            assert_ne!(payload["status"], "success");
+            assert_eq!(
+                current.default_rate_multiplier,
+                if config.get("mode").is_some() {
+                    0.7
+                } else {
+                    0.3
+                }
+            );
+        }
+    }
+    gateway_handle.abort();
+    upstream_handle.abort();
+}
+
+/// 两个密钥必须同时进入上游，一项失败不能取消另一项的成功写入。
+#[test]
+fn gateway_multiplier_keys_query_concurrently_and_fail_independently() {
+    run_provider_ops_test("multiplier_key_isolation", multiplier_key_isolation);
+}
+
+/// 上游屏障要求两个请求并发到达，模拟同供应商中成功与认证失败的密钥。
+async fn multiplier_key_isolation() {
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let upstream = Router::new().route(
+        "/v1/sub2api/billing",
+        get(move |headers: axum::http::HeaderMap| {
+            let barrier = barrier.clone();
+            async move {
+                tokio::time::timeout(std::time::Duration::from_secs(3), barrier.wait())
+                    .await
+                    .expect("两个密钥应并发查询");
+                if headers.get("authorization").unwrap() == "Bearer good-token" {
+                    (
+                        StatusCode::OK,
+                        Json(json!({"effective_rate_multiplier":0.2})),
+                    )
+                } else {
+                    (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({"secret_diagnostic":"must-not-leak"})),
+                    )
+                }
+            }
+        }),
+    );
+    let (base, upstream_handle) = start_server(upstream).await;
+    let mut provider = sample_provider("parallel", "openai", 10);
+    provider.config = Some(
+        json!({"provider_ops":{"architecture_id":"usage_api","base_url":base,"connector":{"credentials":{"api_key":"account-token"}}}}),
+    );
+    let keys = ["good-token", "bad-token"]
+        .into_iter()
+        .map(|token| {
+            let mut key = super::super::sample_key(token, "parallel", "openai:chat", token);
+            key.default_rate_multiplier = 0.3;
+            key.upstream_metadata = Some(json!({"multiplier":{"source":"upstream"}}));
+            key
+        })
+        .collect();
+    let repo = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider],
+        vec![],
+        keys,
+    ));
+    let state = AppState::new().unwrap().with_data_state_for_tests(
+        GatewayDataState::with_provider_catalog_repository_for_tests(repo.clone())
+            .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+    );
+    let (url, gateway_handle) = start_server(build_router_with_state(state)).await;
+    let payload: serde_json::Value = reqwest::Client::new()
+        .post(format!(
+            "{url}/api/admin/provider-ops/providers/parallel/actions/sync_multiplier"
+        ))
+        .header(GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(payload["data"]["updated"], 1, "{payload}");
+    assert_eq!(payload["data"]["failed"], 1);
+    assert!(!payload.to_string().contains("must-not-leak"));
+    for key in repo
+        .list_keys_by_provider_ids(&["parallel".to_string()])
+        .await
+        .unwrap()
+    {
+        assert_eq!(
+            key.default_rate_multiplier,
+            if key.id == "good-token" { 0.2 } else { 0.3 }
+        );
+    }
+    gateway_handle.abort();
+    upstream_handle.abort();
+}
+
+/// 请求已发出后清除认证，旧响应不能覆盖最后有效倍率或恢复认证。
+#[test]
+fn gateway_multiplier_discards_inflight_result_after_auth_removed() {
+    run_provider_ops_test("multiplier_auth_removed", multiplier_auth_removed);
+}
+
+/// 使用通知控制真实 HTTP 响应顺序，避免用时间猜测并发窗口。
+async fn multiplier_auth_removed() {
+    use aether_data_contracts::repository::provider_catalog::ProviderCatalogWriteRepository;
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let signal = started.clone();
+    let wait = release.clone();
+    let upstream = Router::new().route(
+        "/v1/sub2api/billing",
+        get(move || {
+            let signal = signal.clone();
+            let wait = wait.clone();
+            async move {
+                signal.notify_one();
+                wait.notified().await;
+                Json(json!({"effective_rate_multiplier":0.9}))
+            }
+        }),
+    );
+    let (base, upstream_handle) = start_server(upstream).await;
+    let mut provider = sample_provider("inflight", "openai", 10);
+    provider.config = Some(
+        json!({"provider_ops":{"architecture_id":"usage_api","base_url":base,"connector":{"auth_type":"api_key","config":{},"credentials":{"api_key":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"token").unwrap()}}}}),
+    );
+    let mut key = super::super::sample_key("inflight-key", "inflight", "openai:chat", "token");
+    key.default_rate_multiplier = 0.3;
+    key.upstream_metadata = Some(json!({"multiplier":{"source":"upstream"}}));
+    let repo = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider.clone()],
+        vec![],
+        vec![key],
+    ));
+    let state = AppState::new().unwrap().with_data_state_for_tests(
+        GatewayDataState::with_provider_catalog_repository_for_tests(repo.clone())
+            .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+    );
+    let (url, gateway_handle) = start_server(build_router_with_state(state)).await;
+    let request = tokio::spawn(async move {
+        reqwest::Client::new()
+            .post(format!(
+                "{url}/api/admin/provider-ops/providers/inflight/actions/sync_multiplier"
+            ))
+            .header(GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .json(&json!({"config":{"key_id":"inflight-key"}}))
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), started.notified())
+        .await
+        .unwrap();
+    provider.config = Some(json!({}));
+    repo.update_provider(&provider).await.unwrap();
+    release.notify_one();
+    let payload = request.await.unwrap();
+    assert_eq!(payload["data"]["failed"], 1, "{payload}");
+    let current = repo
+        .list_keys_by_provider_ids(&["inflight".to_string()])
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(current.default_rate_multiplier, 0.3);
+    assert_eq!(
+        current.upstream_metadata.unwrap()["multiplier"]["source"],
+        "upstream"
+    );
+    gateway_handle.abort();
+    upstream_handle.abort();
+}
+
 /// 通过真实本地 HTTP 验证同步、部分失败、模式切换与余额刷新持久化。
 #[test]
 fn gateway_sub2api_multiplier_sync_roundtrip() {
@@ -127,6 +507,7 @@ async fn multiplier_sync_roundtrip() {
             .default_rate_multiplier,
         1.0
     );
+
     gateway_handle.abort();
     upstream_handle.abort();
 }
