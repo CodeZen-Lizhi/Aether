@@ -91,19 +91,19 @@
                   @update:checked="toggleSelectAllModels"
                 />
               </TableHead>
-              <TableHead class="w-[28%]">
+              <TableHead class="w-[24%]">
                 模型名称
               </TableHead>
-              <TableHead class="w-[20%] text-center">
+              <TableHead class="w-[22%] text-center">
                 价格 ($/M)
               </TableHead>
-              <TableHead class="w-[10%] text-center">
+              <TableHead class="w-[12%] text-center">
                 提供商
               </TableHead>
-              <TableHead class="w-[10%] text-center">
+              <TableHead class="w-[12%] text-center">
                 调用次数
               </TableHead>
-              <TableHead class="w-[8%]">
+              <TableHead class="w-[10%]">
                 状态
               </TableHead>
               <TableHead class="text-center">
