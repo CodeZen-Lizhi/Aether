@@ -4,8 +4,9 @@
     {{ legacyT(busy ? '同步中…' : '同步倍率') }}
   </button>
   <template v-else-if="!actionOnly">
-    <button type="button" :aria-label="`${legacyT('倍率设置')} · ${apiKey.name}`" class="inline-flex items-center gap-2 rounded-md bg-muted/60 px-2 py-1 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @click="openSettings">
-      <span class="font-semibold tabular-nums text-foreground">{{ apiKey.default_rate_multiplier ?? 1 }}×</span>
+    <button type="button" :aria-label="`${legacyT('倍率设置')} · ${apiKey.name}`" class="inline-flex items-center gap-2 rounded-md bg-muted/60 px-2.5 py-1 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @click="openSettings">
+      <span class="font-semibold tabular-nums text-foreground">{{ apiKey.default_rate_multiplier ?? 1 }}</span>
+      <span class="h-1.5 w-1.5 rounded-full" :class="source === 'upstream' ? 'bg-primary' : 'bg-muted-foreground/50'" aria-hidden="true" />
       <span :class="source === 'upstream' ? 'text-primary' : 'text-muted-foreground'">{{ legacyT(source === 'upstream' ? '跟随上游' : '手动') }}</span>
       <ChevronDown class="h-3 w-3 text-muted-foreground" />
     </button>
