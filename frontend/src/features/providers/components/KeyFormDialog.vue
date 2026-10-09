@@ -162,25 +162,24 @@
         </div>
       </div>
 
-      <!-- 成本与优先级 -->
-      <KeyMultiplierControl
-        v-if="editingKey && providerId"
-        :api-key="editingKey"
-        :provider-id="providerId"
-        @refresh="emit('refresh')"
-      />
+      <!-- 成本倍率与来源 -->
       <div class="dialog-grid-2 gap-px rounded-lg border border-border/70 bg-border/70">
-        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
+        <div class="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-3 bg-background px-3 py-2.5">
           <div class="min-w-0">
-            <Label for="default_rate_multiplier">{{ legacyT('成本倍率') }}</Label>
+            <Label for="default_rate_multiplier">{{ legacyT('倍率') }}</Label>
             <p
               id="default-rate-multiplier-help"
               class="mt-1 text-xs text-muted-foreground"
             >
-              {{ legacyT('1 × 表示不调整') }}
+              {{ legacyT(form.multiplier_source === 'upstream' ? '随余额监控周期同步' : '默认 1，按当前值固定') }}
             </p>
           </div>
-          <div class="w-24 shrink-0">
+          <div class="flex w-full min-w-0 items-center gap-2">
+            <div class="flex flex-1 rounded-md bg-muted/60 p-0.5" role="group" :aria-label="legacyT('倍率来源')">
+              <button type="button" class="flex-1 rounded px-2 py-1.5 text-xs transition-colors" :class="form.multiplier_source === 'manual' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground'" @click="form.multiplier_source = 'manual'">{{ legacyT('手动') }}</button>
+              <button type="button" class="flex-1 rounded px-2 py-1.5 text-xs transition-colors" :class="form.multiplier_source === 'upstream' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground'" @click="form.multiplier_source = 'upstream'">{{ legacyT('跟随上游') }}</button>
+            </div>
+            <div class="w-20 shrink-0">
             <Input
               id="default_rate_multiplier"
               v-model.number="form.default_rate_multiplier"
@@ -188,11 +187,12 @@
               min="0"
               max="100"
               step="0.01"
-              :disabled="editingKey?.multiplier_sync?.source === 'upstream'"
+              :disabled="form.multiplier_source === 'upstream'"
               size="sm"
               class="h-9 text-right font-mono tabular-nums"
               aria-describedby="default-rate-multiplier-help"
             />
+            </div>
           </div>
         </div>
         <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
@@ -411,7 +411,6 @@ import { useFormDialog } from '@/composables/useFormDialog'
 import { useI18n } from '@/i18n'
 import { parseApiError } from '@/utils/errorParser'
 import { parseNumberInput, parseNullableNumberInput } from '@/utils/form'
-import KeyMultiplierControl from './KeyMultiplierControl.vue'
 import {
   addProviderKey,
   updateProviderKey,
@@ -421,6 +420,7 @@ import {
   type ProviderEndpoint,
   type ProviderType
 } from '@/api/endpoints'
+import { syncProviderMultiplier } from '@/api/providerOps'
 import { formatApiFormat, normalizeApiFormatAlias, formatSupportsAuthOverride } from '@/api/endpoints/types/api-format'
 
 type RawSecretAuthType = 'api_key' | 'bearer'
@@ -436,7 +436,7 @@ const props = defineProps<{
   editingKey: EndpointAPIKey | null
   providerId: string | null
   providerType: ProviderType | null
-  /** 供应商运维架构，仅 SUB2API 显示上游倍率控件。 */
+  /** 供应商用户认证模板，倍率查询能力由服务端验证。 */
   opsArchitectureId?: string | null
   availableApiFormats: string[]  // Provider 支持的所有 API 格式
 }>()
@@ -684,6 +684,7 @@ const form = ref({
   allow_auth_channel_mismatch_formats: [] as string[],
   api_formats: [] as string[],  // 支持的 API 格式列表
   default_rate_multiplier: 1 as number,  // Key 级成本倍率
+  multiplier_source: 'manual' as 'manual' | 'upstream',
   internal_priority: 10,
   rpm_limit: undefined as number | null | undefined,  // RPM 限制（null=自适应，undefined=保持原值）
   concurrent_limit: undefined as number | null | undefined,  // 并发请求上限（null/0=不限制，undefined=保持原值）
@@ -795,6 +796,7 @@ function resetForm() {
       getDefaultAllowAuthChannelMismatchFormats(defaultApiFormats),
     api_formats: defaultApiFormats,
     default_rate_multiplier: 1,
+    multiplier_source: 'manual',
     internal_priority: 10,
     rpm_limit: undefined,
     concurrent_limit: undefined,
@@ -827,6 +829,7 @@ function loadKeyData() {
   if (!props.editingKey) return
   if (loadedKeyId === props.editingKey.id) {
     form.value.default_rate_multiplier = props.editingKey.default_rate_multiplier ?? 1
+    form.value.multiplier_source = props.editingKey.multiplier_sync?.source === 'upstream' ? 'upstream' : 'manual'
     return
   }
   loadedKeyId = props.editingKey.id
@@ -852,6 +855,7 @@ function loadKeyData() {
       )
       : [],  // 编辑模式下保持原有选择，不默认全选
     default_rate_multiplier: props.editingKey.default_rate_multiplier ?? 1,
+    multiplier_source: props.editingKey.multiplier_sync?.source === 'upstream' ? 'upstream' : 'manual',
     internal_priority: props.editingKey.internal_priority ?? 10,
     // 保留原始的 null/undefined 状态，null 表示自适应模式
     rpm_limit: props.editingKey.rpm_limit ?? undefined,
@@ -889,6 +893,23 @@ function parsePatternText(text: string): string[] {
     .map(s => s.trim())
     .filter(s => s.length > 0)
   return [...new Set(patterns)]
+}
+
+/** 密钥已保存后单独保存来源；失败明确说明部分成功，避免重复创建密钥。 */
+async function saveMultiplierSource(keyId: string, multiplier: number): Promise<boolean> {
+  try {
+    const result = await syncProviderMultiplier(props.providerId!, keyId, form.value.multiplier_source,
+      form.value.multiplier_source === 'manual' ? multiplier : undefined)
+    const data = result.data as { failed?: number; results?: { error?: string }[] } | null
+    if (result.status !== 'success' || data?.failed) {
+      showError(`${legacyT('密钥已保存，倍率来源未更新')}：${result.message || data?.results?.find(item => item.error)?.error || legacyT('已保留原倍率')}`)
+      return false
+    }
+    return true
+  } catch {
+    showError(legacyT('密钥已保存，倍率来源同步未完成，请在密钥列表重试'))
+    return false
+  }
 }
 
 async function handleSave() {
@@ -939,7 +960,7 @@ async function handleSave() {
         allow_auth_channel_mismatch_formats: allowAuthChannelMismatchFormats,
         // 按格式覆盖倍率已废弃：更新时显式清空存量覆盖值
         rate_multipliers: null,
-        default_rate_multiplier: props.editingKey.multiplier_sync?.source === 'upstream' ? undefined : defaultRateMultiplier,
+        default_rate_multiplier: props.editingKey.multiplier_sync?.source === 'upstream' || form.value.multiplier_source === 'upstream' ? undefined : defaultRateMultiplier,
         internal_priority: internalPriority,
         rpm_limit: form.value.rpm_limit,
         concurrent_limit: form.value.concurrent_limit,
@@ -959,6 +980,12 @@ async function handleSave() {
       }
 
       const updatedKey = await updateProviderKey(props.editingKey.id, updateData)
+      const sourceChanged = form.value.multiplier_source !== (props.editingKey.multiplier_sync?.source || 'manual')
+      if (sourceChanged) {
+        const applied = await saveMultiplierSource(updatedKey.id, defaultRateMultiplier)
+        emit('refresh')
+        if (!applied) { emit('saved', updatedKey); return }
+      }
       success(legacyT('密钥已更新'), legacyT('成功'))
       emit('saved', updatedKey)
     } else {
@@ -982,7 +1009,10 @@ async function handleSave() {
         model_exclude_patterns: parsePatternText(form.value.model_exclude_patterns_text)
       })
 
-      success(legacyT('密钥已添加'), legacyT('成功'))
+      const applied = form.value.multiplier_source !== 'upstream'
+        || await saveMultiplierSource(createdKey.id, defaultRateMultiplier)
+      if (applied) success(legacyT('密钥已添加'), legacyT('成功'))
+      emit('refresh')
       // 添加模式：不关闭对话框，只清除名称和密钥以便继续添加
       emit('saved', createdKey)
       clearForNextAdd()

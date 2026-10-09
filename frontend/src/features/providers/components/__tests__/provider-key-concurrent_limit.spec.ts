@@ -3,6 +3,9 @@ import { createApp, nextTick, type App, type Component } from 'vue'
 import KeyFormDialog from '@/features/providers/components/KeyFormDialog.vue'
 import type { EndpointAPIKey } from '@/api/endpoints'
 
+const multiplierMock = vi.hoisted(() => vi.fn())
+vi.mock('@/api/providerOps', () => ({ syncProviderMultiplier: multiplierMock }))
+
 const endpointMocks = vi.hoisted(() => ({
   addProviderKey: vi.fn(),
   updateProviderKey: vi.fn(),
@@ -345,6 +348,7 @@ function lastUpdatePayload() {
 }
 
 beforeEach(() => {
+  multiplierMock.mockReset().mockResolvedValue({ status: 'success', data: { failed: 0 } })
   endpointMocks.addProviderKey.mockReset()
   endpointMocks.updateProviderKey.mockReset()
   endpointMocks.getAllCapabilities.mockReset()
@@ -467,5 +471,25 @@ describe('provider key concurrent_limit form behavior', () => {
     expect(payload).toHaveProperty('concurrent_limit', null)
     expect(payload.concurrent_limit).not.toBe('')
     expect(payload.rpm_limit).toBe(24)
+  })
+})
+
+
+describe('密钥表单倍率来源', () => {
+  it('跟随切回手动调用来源接口，普通编辑不直接覆盖上游倍率', async () => {
+    const root = mountDialog(KeyFormDialog, { open: true, endpoint: null, providerId: 'provider-1', providerType: 'custom', availableApiFormats: ['openai:chat'], editingKey: createProviderKey({ default_rate_multiplier: 0.3, multiplier_sync: { source: 'upstream', status: 'success' } }) })
+    await settle()
+    const manual = [...root.querySelectorAll('button')].find(b => b.textContent?.trim() === '手动')!
+    manual.click(); await settle()
+    updateInput(findInput(root, 'default_rate_multiplier'), '0.7')
+    await submit(root)
+    expect(lastUpdatePayload().default_rate_multiplier).toBeUndefined()
+    expect(multiplierMock).toHaveBeenCalledWith('provider-1', 'provider-key-1', 'manual', 0.7)
+  })
+  it('保持跟随来源的普通编辑不重新请求上游', async () => {
+    const root = mountDialog(KeyFormDialog, { open: true, endpoint: null, providerId: 'provider-1', providerType: 'custom', availableApiFormats: ['openai:chat'], editingKey: createProviderKey({ default_rate_multiplier: 0.3, multiplier_sync: { source: 'upstream', status: 'success' } }) })
+    await settle(); await submit(root)
+    expect(multiplierMock).not.toHaveBeenCalled()
+    expect(lastUpdatePayload().default_rate_multiplier).toBeUndefined()
   })
 })
