@@ -1,6 +1,6 @@
 <template>
-  <button v-if="actionOnly && source === 'upstream'" type="button" :disabled="busy" class="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-primary disabled:opacity-50" @click="runSync()">
-    <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': busy }" />
+  <button v-if="actionOnly && source === 'upstream'" type="button" :disabled="busy" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" @click="runSync()">
+    <RefreshCw class="h-3.5 w-3.5 text-primary" :class="{ 'animate-spin': busy }" />
     {{ legacyT(busy ? '同步中…' : '同步倍率') }}
   </button>
   <template v-else-if="!actionOnly">
