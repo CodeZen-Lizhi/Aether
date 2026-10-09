@@ -163,6 +163,12 @@
       </div>
 
       <!-- 成本与优先级 -->
+      <KeyMultiplierControl
+        v-if="editingKey && providerId && opsArchitectureId === 'sub2api'"
+        :api-key="editingKey"
+        :provider-id="providerId"
+        @refresh="emit('refresh')"
+      />
       <div class="dialog-grid-2 gap-px rounded-lg border border-border/70 bg-border/70">
         <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
           <div class="min-w-0">
@@ -182,6 +188,7 @@
               min="0"
               max="100"
               step="0.01"
+              :disabled="editingKey?.multiplier_sync?.source === 'upstream'"
               size="sm"
               class="h-9 text-right font-mono tabular-nums"
               aria-describedby="default-rate-multiplier-help"
@@ -404,6 +411,7 @@ import { useFormDialog } from '@/composables/useFormDialog'
 import { useI18n } from '@/i18n'
 import { parseApiError } from '@/utils/errorParser'
 import { parseNumberInput, parseNullableNumberInput } from '@/utils/form'
+import KeyMultiplierControl from './KeyMultiplierControl.vue'
 import {
   addProviderKey,
   updateProviderKey,
@@ -428,12 +436,16 @@ const props = defineProps<{
   editingKey: EndpointAPIKey | null
   providerId: string | null
   providerType: ProviderType | null
+  /** 供应商运维架构，仅 SUB2API 显示上游倍率控件。 */
+  opsArchitectureId?: string | null
   availableApiFormats: string[]  // Provider 支持的所有 API 格式
 }>()
 
 const emit = defineEmits<{
   close: []
   saved: [key: EndpointAPIKey]
+  /** 倍率操作持久化后通知父级重读密钥。 */
+  refresh: []
 }>()
 
 const { success, error: showError } = useToast()
@@ -768,8 +780,9 @@ function toggleApiFormat(format: string) {
 }
 
 
-// 重置表单
+/** 重置表单及已加载实体，重新打开同一密钥时读取当前配置。 */
 function resetForm() {
+  loadedKeyId = null
   formNonce.value = createFieldNonce()
   advancedSettingsExpanded.value = false
   const defaultApiFormats = getDefaultApiFormats()
@@ -806,9 +819,17 @@ function clearForNextAdd() {
   )
 }
 
-// 加载密钥数据（编辑模式）
+/** 当前表单已加载的密钥 ID；同步刷新同一密钥时保留其他字段草稿。 */
+let loadedKeyId: string | null = null
+
+/** 加载编辑数据；倍率同步刷新只更新倍率，避免覆盖未保存的名称和凭据。 */
 function loadKeyData() {
   if (!props.editingKey) return
+  if (loadedKeyId === props.editingKey.id) {
+    form.value.default_rate_multiplier = props.editingKey.default_rate_multiplier ?? 1
+    return
+  }
+  loadedKeyId = props.editingKey.id
   formNonce.value = createFieldNonce()
   advancedSettingsExpanded.value = hasCustomAdvancedSettings(props.editingKey)
   form.value = {
@@ -918,7 +939,7 @@ async function handleSave() {
         allow_auth_channel_mismatch_formats: allowAuthChannelMismatchFormats,
         // 按格式覆盖倍率已废弃：更新时显式清空存量覆盖值
         rate_multipliers: null,
-        default_rate_multiplier: defaultRateMultiplier,
+        default_rate_multiplier: props.editingKey.multiplier_sync?.source === 'upstream' ? undefined : defaultRateMultiplier,
         internal_priority: internalPriority,
         rpm_limit: form.value.rpm_limit,
         concurrent_limit: form.value.concurrent_limit,

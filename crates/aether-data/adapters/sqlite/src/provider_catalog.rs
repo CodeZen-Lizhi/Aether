@@ -1225,6 +1225,7 @@ WHERE id = ? AND provider_id = ?
         Ok(())
     }
 
+    /// 替换管理员配置，凭据及倍率来源版本变化时拒绝旧编辑结果。
     pub async fn compare_and_update_key_admin_state(
         &self,
         update: &ProviderCatalogKeyAdminCasUpdate,
@@ -1279,6 +1280,16 @@ WHERE id = ? AND provider_id = ?
             )
             .push_bind(&update.expected_credential.provider_type)
             .push(")");
+        // 编辑记录保留读取时的倍率元数据，以此防止整行编辑恢复旧同步倍率。
+        let multiplier_state = key
+            .upstream_metadata
+            .as_ref()
+            .and_then(|value| value.get("multiplier"))
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| DataLayerError::UnexpectedValue(error.to_string()))?;
+        builder.push(" AND json_extract(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier') IS json_extract(json_object('value', json(")
+            .push_bind(multiplier_state).push(")), '$.value')");
         if update.codex_rotation.is_some() {
             builder
                 .push(" AND CASE WHEN upstream_metadata IS NULL THEN 1 WHEN json_valid(upstream_metadata) THEN json_type(upstream_metadata) = 'object' ELSE 0 END")
@@ -2153,6 +2164,39 @@ WHERE id = ?
         Ok(rows_affected > 0)
     }
 
+    /// 条件写入倍率和来源元数据；凭据或来源变化时拒绝旧结果。
+    pub async fn compare_and_update_key_multiplier(
+        &self,
+        update: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyMultiplierUpdate,
+    ) -> Result<bool, DataLayerError> {
+        if !update.metadata.is_object()
+            || update
+                .multiplier
+                .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
+            return Err(DataLayerError::InvalidInput(
+                "倍率元数据或数值无效".to_string(),
+            ));
+        }
+        let expected = &update.expected_key;
+        let previous = expected
+            .upstream_metadata
+            .as_ref()
+            .and_then(|value| value.get("multiplier"));
+        let metadata = serde_json::to_string(&update.metadata)
+            .map_err(|error| DataLayerError::UnexpectedValue(error.to_string()))?;
+        let previous = previous
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| DataLayerError::UnexpectedValue(error.to_string()))?;
+        let rows = sqlx::query("UPDATE provider_api_keys SET upstream_metadata = json_set(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier', json(?)), default_rate_multiplier = COALESCE(?, default_rate_multiplier), updated_at = ? WHERE id = ? AND provider_id = ? AND auth_type = ? AND api_key IS ? AND default_rate_multiplier = ? AND json_type(COALESCE(NULLIF(upstream_metadata, ''), '{}')) = 'object' AND json_extract(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier') IS json_extract(json_object('value', json(?)), '$.value')")
+            .bind(metadata).bind(update.multiplier).bind(current_unix_secs() as i64)
+            .bind(&expected.id).bind(&expected.provider_id).bind(&expected.auth_type)
+            .bind(expected.encrypted_api_key.as_deref()).bind(expected.default_rate_multiplier).bind(previous)
+            .execute(&mut *self.source.acquire().await.map_sql_err()?).await.map_sql_err()?.rows_affected();
+        Ok(rows > 0)
+    }
+
     pub async fn update_key_status_snapshot(
         &self,
         update: &ProviderCatalogKeyStatusSnapshotUpdate,
@@ -2745,6 +2789,14 @@ impl ProviderCatalogWriteRepository for SqliteProviderCatalogReadRepository {
         update: &ProviderCatalogKeyRuntimeMetadataUpdate,
     ) -> Result<bool, DataLayerError> {
         Self::update_key_runtime_metadata(self, update).await
+    }
+
+    /// 将倍率条件写入委托给 SQLite 原子更新实现。
+    async fn compare_and_update_key_multiplier(
+        &self,
+        update: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyMultiplierUpdate,
+    ) -> Result<bool, DataLayerError> {
+        Self::compare_and_update_key_multiplier(self, update).await
     }
 
     async fn update_key_status_snapshot(
@@ -3694,6 +3746,85 @@ mod tests {
         StoredProviderCatalogKey, StoredProviderCatalogProvider,
     };
     use serde_json::json;
+
+    /// 真实 SQLite 验证倍率原子写入、元数据保留和切换手动后的旧结果拒绝。
+    #[tokio::test]
+    async fn sqlite_multiplier_sync_cas_preserves_manual_and_other_metadata() {
+        use aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyMultiplierUpdate;
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        run_migrations(&pool).await.unwrap();
+        let repository = SqliteProviderCatalogReadRepository::new(pool);
+        repository
+            .create_provider(
+                &StoredProviderCatalogProvider::new(
+                    "multiplier-provider".to_string(),
+                    "test".to_string(),
+                    None,
+                    "openai".to_string(),
+                )
+                .unwrap(),
+                None,
+            )
+            .await
+            .unwrap();
+        let mut key = StoredProviderCatalogKey::new(
+            "multiplier-key".to_string(),
+            "multiplier-provider".to_string(),
+            "test".to_string(),
+            "api_key".to_string(),
+            None,
+            true,
+        )
+        .unwrap();
+        key.encrypted_api_key = Some("secret".to_string());
+        key.upstream_metadata = Some(
+            json!({"other":{"keep":true},"multiplier":{"source":"upstream","generation":"v1"}}),
+        );
+        repository.create_key(&key).await.unwrap();
+        let stale = ProviderCatalogKeyMultiplierUpdate {
+            expected_key: key.clone(),
+            metadata: json!({"source":"upstream","generation":"v2","status":"success"}),
+            multiplier: Some(0.3),
+        };
+        assert!(repository
+            .compare_and_update_key_multiplier(&stale)
+            .await
+            .unwrap());
+        assert!(!repository
+            .compare_and_update_key_multiplier(&stale)
+            .await
+            .unwrap());
+        let current = repository
+            .list_keys_by_ids(&[key.id.clone()])
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(current.default_rate_multiplier, 0.3);
+        assert_eq!(
+            current.upstream_metadata.as_ref().unwrap()["other"]["keep"],
+            true
+        );
+        let manual = ProviderCatalogKeyMultiplierUpdate {
+            expected_key: current.clone(),
+            metadata: json!({"source":"manual","generation":"v3"}),
+            multiplier: None,
+        };
+        assert!(repository
+            .compare_and_update_key_multiplier(&manual)
+            .await
+            .unwrap());
+        assert!(!repository
+            .compare_and_update_key_multiplier(&ProviderCatalogKeyMultiplierUpdate {
+                expected_key: current,
+                ..stale
+            })
+            .await
+            .unwrap());
+    }
 
     #[tokio::test]
     async fn sqlite_admin_credential_cas_rotates_codex_namespace_atomically() {

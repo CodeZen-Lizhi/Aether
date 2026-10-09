@@ -39,6 +39,7 @@ pub(crate) async fn build_admin_update_provider_key_record(
     )
 }
 
+/// 根据管理员补丁更新配置，跟随上游时禁止直接覆盖生效倍率。
 pub(crate) fn build_admin_update_provider_key_record_with_existing_keys(
     state: &AdminAppState<'_>,
     provider: &StoredProviderCatalogProvider,
@@ -246,6 +247,15 @@ pub(crate) fn build_admin_update_provider_key_record_with_existing_keys(
         updated.rate_multipliers = normalize_rate_multipliers(payload.rate_multipliers)?;
     }
     if fields.contains("default_rate_multiplier") {
+        if existing
+            .upstream_metadata
+            .as_ref()
+            .and_then(|value| value.pointer("/multiplier/source"))
+            .and_then(serde_json::Value::as_str)
+            == Some("upstream")
+        {
+            return Err("跟随上游时不能手动修改倍率，请先切换为手动模式".to_string());
+        }
         updated.default_rate_multiplier =
             normalize_default_rate_multiplier(payload.default_rate_multiplier)?.unwrap_or(1.0);
     }

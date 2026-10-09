@@ -549,6 +549,7 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
         Ok(stored.clone())
     }
 
+    /// 在同一写锁内核对凭据和倍率来源版本，避免旧编辑回退同步结果。
     async fn compare_and_update_key_admin_state(
         &self,
         update: &ProviderCatalogKeyAdminCasUpdate,
@@ -571,6 +572,15 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
             || stored.encrypted_api_key != expected.encrypted_api_key
             || stored.auth_type != expected.auth_type
             || stored.provider_id != expected.provider_id
+            || stored
+                .upstream_metadata
+                .as_ref()
+                .and_then(|value| value.get("multiplier"))
+                != update
+                    .key
+                    .upstream_metadata
+                    .as_ref()
+                    .and_then(|value| value.get("multiplier"))
             || !provider_type_matches
         {
             return Ok(false);
@@ -1236,6 +1246,56 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
                 .updated_at_unix_secs
                 .unwrap_or_else(current_unix_secs),
         );
+        Ok(true)
+    }
+
+    /// 在同一写锁内核对倍率基线并合并命名空间，保留其他运行状态。
+    async fn compare_and_update_key_multiplier(
+        &self,
+        update: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyMultiplierUpdate,
+    ) -> Result<bool, DataLayerError> {
+        if !update.metadata.is_object()
+            || update
+                .multiplier
+                .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
+            return Err(DataLayerError::InvalidInput(
+                "倍率元数据或数值无效".to_string(),
+            ));
+        }
+        let mut index = self
+            .index
+            .write()
+            .expect("provider catalog repository lock");
+        let expected = &update.expected_key;
+        let Some(key) = index.keys.get_mut(&expected.id) else {
+            return Ok(false);
+        };
+        if key.provider_id != expected.provider_id
+            || key.auth_type != expected.auth_type
+            || key.encrypted_api_key != expected.encrypted_api_key
+            || key.default_rate_multiplier != expected.default_rate_multiplier
+            || key
+                .upstream_metadata
+                .as_ref()
+                .and_then(|value| value.get("multiplier"))
+                != expected
+                    .upstream_metadata
+                    .as_ref()
+                    .and_then(|value| value.get("multiplier"))
+        {
+            return Ok(false);
+        }
+        let mut metadata = json_object_for_merge(
+            key.upstream_metadata.as_ref(),
+            "provider catalog upstream metadata",
+        )?;
+        metadata.insert("multiplier".to_string(), update.metadata.clone());
+        key.upstream_metadata = Some(Value::Object(metadata));
+        if let Some(multiplier) = update.multiplier {
+            key.default_rate_multiplier = multiplier;
+        }
+        key.updated_at_unix_secs = Some(current_unix_secs());
         Ok(true)
     }
 

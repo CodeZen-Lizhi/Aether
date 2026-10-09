@@ -12,7 +12,7 @@ pub use snapshot::ProviderCatalogSnapshot;
 pub use types::{
     ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyAdaptiveStateUpdate,
     ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyHealthStateUpdate,
-    ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery,
+    ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery, ProviderCatalogKeyMultiplierUpdate,
     ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthCredentialFence,
     ProviderCatalogKeyOAuthRuntimeStateCasUpdate, ProviderCatalogKeyRuntimeMetadataUpdate,
     ProviderCatalogKeyStatusSnapshotUpdate, ProviderCatalogReadRepository,

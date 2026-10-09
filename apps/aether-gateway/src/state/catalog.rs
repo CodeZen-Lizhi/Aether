@@ -602,6 +602,21 @@ impl AppState {
         Ok(updated)
     }
 
+    /// 写入倍率并失效计费与调度所读取的供应商运行快照。
+    pub(crate) async fn compare_and_update_provider_catalog_key_multiplier(
+        &self,
+        update: &provider_catalog::ProviderCatalogKeyMultiplierUpdate,
+    ) -> Result<bool, GatewayError> {
+        let updated = self
+            .data
+            .compare_and_update_provider_catalog_key_multiplier(update)
+            .await
+            .map_err(|error| GatewayError::Internal(error.to_string()))?;
+        self.invalidate_provider_runtime_state_caches();
+        self.invalidate_provider_transport_runtime_state_caches();
+        Ok(updated)
+    }
+
     pub(crate) async fn update_provider_catalog_key_status_snapshot(
         &self,
         update: &provider_catalog::ProviderCatalogKeyStatusSnapshotUpdate,

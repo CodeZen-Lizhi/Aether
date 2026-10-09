@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>密钥倍率验证</title>
+<body><div id="fixture"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import KeyMultiplierControl from '/src/features/providers/components/KeyMultiplierControl.vue'
+import client from '/src/api/client'
+import { createI18n } from '/src/i18n'
+import '/src/style.css'
+
+// 隔离数据只驻留内存，所有操作均拦截，不访问用户站点或数据库。
+const key = ref({ id: 'fixture-key', provider_id: 'fixture-provider', name: 'test', default_rate_multiplier: 0.5, multiplier_sync: { source: 'manual', status: 'manual' } })
+let writes = 0
+client.post = async (_url, body) => {
+  writes++
+  const mode = body.config.mode
+  if (mode === 'manual') key.value = { ...key.value, multiplier_sync: { source: 'manual', status: 'manual' } }
+  else if (writes === 1) key.value = { ...key.value, default_rate_multiplier: 0.3, multiplier_sync: { source: 'upstream', status: 'success', group_name: '测试分组', last_success_at: '2026-10-09T08:00:00Z' } }
+  else key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'upstream', status: 'failed', error: '上游未返回该分组的有效倍率' } }
+  return { data: { status: 'success', data: { failed: key.value.multiplier_sync.status === 'failed' ? 1 : 0 } } }
+}
+createApp({ setup() { return () => h('main', { style: 'max-width:600px;padding:24px' }, [h('h1', { style: 'font-size:20px' }, '密钥倍率'), h(KeyMultiplierControl, { apiKey: key.value, providerId: 'fixture-provider' }), h('output', String(key.value.default_rate_multiplier))]) } }).use(createI18n()).mount('#fixture')
+</script>
+</body></html>

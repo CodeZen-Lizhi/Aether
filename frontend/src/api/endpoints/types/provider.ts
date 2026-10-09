@@ -235,6 +235,21 @@ export interface EndpointAPIKey {
   rate_multipliers?: Record<string, number> | null  // 遗留字段：按格式覆盖倍率已废弃，计费只读 default_rate_multiplier
   internal_priority?: number  // 同一供应商内调度优先级，数值越小越优先
   default_rate_multiplier?: number  // Key 级成本倍率（该密钥所有请求按此计费）
+  /** 倍率来源及最近同步状态；缺省视为手动，失败保留上次成功值。 */
+  multiplier_sync?: {
+    /** 生效倍率由用户填写或上游分组提供。 */
+    source: 'manual' | 'upstream'
+    /** 最近尝试结果，pending 表示首次同步尚未成功。 */
+    status: 'manual' | 'pending' | 'success' | 'failed'
+    /** 上游分组名称，可缺省。 */
+    group_name?: string | null
+    /** 上次成功同步的 RFC3339 时间。 */
+    last_success_at?: string | null
+    /** 最近请求尝试时间。 */
+    last_attempt_at?: string | null
+    /** 可展示的失败原因，不包含密钥。 */
+    error?: string | null
+  }
   rpm_limit?: number | null  // RPM 速率限制 (1-10000)，null 表示自适应模式
   concurrent_limit?: number | null  // 并发请求上限，null/0 表示不限制
   allowed_models?: AllowedModels  // 允许使用的模型列表（null=不限制）

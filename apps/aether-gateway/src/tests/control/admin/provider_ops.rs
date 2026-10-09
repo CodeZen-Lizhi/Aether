@@ -34,6 +34,103 @@ use crate::data::{GatewayDataConfig, GatewayDataState};
 
 const PROVIDER_OPS_TEST_STACK_BYTES: usize = 16 * 1024 * 1024;
 
+/// 通过真实本地 HTTP 验证同步、部分失败、模式切换与余额刷新持久化。
+#[test]
+fn gateway_sub2api_multiplier_sync_roundtrip() {
+    run_provider_ops_test(
+        "gateway_sub2api_multiplier_sync_roundtrip",
+        multiplier_sync_roundtrip,
+    );
+}
+
+/// 使用隔离账号和上游响应，验证仅处理本地跟随上游密钥。
+async fn multiplier_sync_roundtrip() {
+    let upstream = Router::new()
+        .route("/api/v1/groups/rates", get(|| async { Json(json!({"code":0,"data":{"1":0.0}})) }))
+        .route("/api/v1/groups/available", get(|| async { Json(json!({"code":0,"data":[{"id":1,"name":"test","rate_multiplier":0.5}]})) }))
+        .route("/api/v1/keys", get(|| async { Json(json!({"code":0,"data":{"total":3,"items":[{"key":"follow","group_id":1},{"key":"manual","group_id":1},{"key":"not-local","group_id":1}]}})) }))
+        .route("/api/v1/auth/me", get(|| async { Json(json!({"code":0,"data":{"balance":8.5,"points":0}})) }))
+        .route("/api/v1/subscriptions/summary", get(|| async { Json(json!({"code":0,"data":{}})) }));
+    let (upstream_url, upstream_handle) = start_server(upstream).await;
+    let mut provider = sample_provider("multiplier-provider", "openai", 10);
+    provider.config = Some(
+        json!({"provider_ops":{"architecture_id":"sub2api","base_url":upstream_url,"connector":{"auth_type":"session_login","config":{},"credentials":{"_cached_access_token":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"token").unwrap(),"_cached_token_expires_at":9999999999_u64}},"actions":{}}}),
+    );
+    let mut follow =
+        super::super::sample_key("follow-key", "multiplier-provider", "openai:chat", "follow");
+    follow.upstream_metadata =
+        Some(json!({"multiplier":{"source":"upstream","generation":"original"}}));
+    let mut missing = super::super::sample_key(
+        "missing-key",
+        "multiplier-provider",
+        "openai:chat",
+        "missing",
+    );
+    missing.upstream_metadata = Some(json!({"multiplier":{"source":"upstream"}}));
+    let manual =
+        super::super::sample_key("manual-key", "multiplier-provider", "openai:chat", "manual");
+    let repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider],
+        vec![],
+        vec![follow, missing, manual],
+    ));
+    let state = AppState::new().unwrap().with_data_state_for_tests(
+        GatewayDataState::with_provider_catalog_repository_for_tests(Arc::clone(&repository))
+            .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+    );
+    let (gateway_url, gateway_handle) = start_server(build_router_with_state(state)).await;
+    let client = reqwest::Client::new();
+    for (action, config) in [
+        ("sync_multiplier", json!({})),
+        (
+            "sync_multiplier",
+            json!({"key_id":"follow-key","mode":"manual"}),
+        ),
+        ("query_balance", json!({})),
+    ] {
+        let response = client.post(format!("{gateway_url}/api/admin/provider-ops/providers/multiplier-provider/actions/{action}"))
+            .header(GATEWAY_HEADER, "rust-phase3b").header(TRUSTED_ADMIN_USER_ID_HEADER,"admin-user-123").header(TRUSTED_ADMIN_USER_ROLE_HEADER,"admin").header(TRUSTED_ADMIN_SESSION_ID_HEADER,"session-123")
+            .json(&json!({"config":config})).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(payload["status"], "success", "{payload}");
+        if action == "query_balance" {
+            assert_eq!(payload["multiplier_sync"]["data"]["skipped"], 2);
+        } else if config.as_object().unwrap().is_empty() {
+            assert_eq!(payload["data"]["unchanged"], 0);
+            assert_eq!(payload["data"]["updated"], 1);
+            assert_eq!(payload["data"]["failed"], 1);
+        }
+    }
+    let keys = repository
+        .list_keys_by_provider_ids(&["multiplier-provider".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(keys.len(), 3);
+    let follow = keys.iter().find(|key| key.id == "follow-key").unwrap();
+    assert_eq!(follow.default_rate_multiplier, 0.0);
+    assert_eq!(
+        follow.upstream_metadata.as_ref().unwrap()["multiplier"]["source"],
+        "manual"
+    );
+    assert_eq!(
+        keys.iter()
+            .find(|key| key.id == "manual-key")
+            .unwrap()
+            .default_rate_multiplier,
+        1.0
+    );
+    assert_eq!(
+        keys.iter()
+            .find(|key| key.id == "missing-key")
+            .unwrap()
+            .default_rate_multiplier,
+        1.0
+    );
+    gateway_handle.abort();
+    upstream_handle.abort();
+}
+
 fn run_provider_ops_test<F, Fut>(test_name: &'static str, make_future: F)
 where
     F: FnOnce() -> Fut + Send + 'static,

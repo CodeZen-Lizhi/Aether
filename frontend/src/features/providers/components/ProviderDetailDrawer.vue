@@ -85,6 +85,9 @@
                       {{ legacyT('密钥管理') }}
                     </h3>
                     <div class="flex flex-wrap items-center justify-end gap-2">
+                      <Button v-if="provider.ops_architecture_id === 'sub2api'" variant="outline" size="sm" :disabled="multiplierSyncing" @click="syncAllMultipliers">
+                        <RefreshCw class="mr-1.5 h-3.5 w-3.5" :class="{ 'animate-spin': multiplierSyncing }" />{{ legacyT('同步上游倍率') }}
+                      </Button>
                       <Button
                         v-if="endpoints.length > 0"
                         variant="outline"
@@ -152,6 +155,7 @@
                         @delete="handleDeleteKey(key)"
                       />
                     </div>
+                    <KeyMultiplierControl v-if="provider.ops_architecture_id === 'sub2api'" :api-key="key" :provider-id="provider.id" @refresh="loadProviderKeys" />
                     <!-- 第二行：API 格式（展开显示） + 统计信息 -->
                     <div class="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground">
                       <!-- 自动获取模型状态 -->
@@ -299,9 +303,11 @@
     :editing-key="editingKey"
     :provider-id="provider ? provider.id : null"
     :provider-type="provider?.provider_type || null"
+    :ops-architecture-id="provider?.ops_architecture_id"
     :available-api-formats="availableKeyApiFormats"
     @close="keyFormDialogOpen = false"
     @saved="handleKeyChanged"
+    @refresh="loadProviderKeys"
   />
 
   <!-- 模型权限对话框 -->
@@ -365,6 +371,7 @@ import {
   Plus,
   Key,
   Loader2,
+  RefreshCw,
 } from 'lucide-vue-next'
 import { parseApiError } from '@/utils/errorParser'
 import { useEscapeKey } from '@/composables/useEscapeKey'
@@ -399,6 +406,8 @@ import FailoverRulesDialog from '@/features/providers/components/FailoverRulesDi
 import ProviderDetailHeader from '@/features/providers/components/ProviderDetailHeader.vue'
 import ProviderKeyActionCluster from '@/features/providers/components/ProviderKeyActionCluster.vue'
 import ProviderKeyIdentityBlock from '@/features/providers/components/ProviderKeyIdentityBlock.vue'
+import KeyMultiplierControl from '@/features/providers/components/KeyMultiplierControl.vue'
+import { syncProviderMultiplier } from '@/api/providerOps'
 import ProviderMonthlyQuotaCard from '@/features/providers/components/ProviderMonthlyQuotaCard.vue'
 import ProviderQuotaProgressRow from '@/features/providers/components/ProviderQuotaProgressRow.vue'
 import ProviderQuotaSectionHeader from '@/features/providers/components/ProviderQuotaSectionHeader.vue'
@@ -452,6 +461,30 @@ const loading = ref(false)
 const provider = ref<ProviderWithEndpointsSummary | null>(null)
 const endpoints = ref<ProviderEndpointWithKeys[]>([])
 const providerKeys = ref<EndpointAPIKey[]>([])  // Provider 级别的 keys
+/** 当前供应商立即同步状态，不与其他供应商共享。 */
+const multiplierSyncing = ref(false)
+
+/** 同步供应商所有跟随上游的密钥，重读持久化结果并报告部分失败。 */
+async function syncAllMultipliers() {
+  const providerId = props.providerId
+  if (!providerId || multiplierSyncing.value) return
+  multiplierSyncing.value = true
+  try {
+    const result = await syncProviderMultiplier(providerId)
+    if (result.status !== 'success') showError(result.message || legacyT('同步失败'))
+    else {
+      const data = result.data as { failed?: number; updated?: number; unchanged?: number }
+      if (data.failed) showError(legacyT('部分密钥同步失败，请查看密钥详情'))
+      else if (!data.updated && !data.unchanged) showSuccess(legacyT('没有需要同步的密钥'))
+      else showSuccess(legacyT('倍率状态已更新'))
+    }
+  } catch (error) {
+    showError(localizedApiError(error, '倍率操作失败'))
+  } finally {
+    multiplierSyncing.value = false
+    if (props.providerId === providerId) await loadProviderKeys()
+  }
+}
 const providerModels = ref<Model[]>([])  // Provider 级别的 models
 const providerMappingPreview = ref<ProviderMappingPreviewResponse | null>(null)  // 映射预览
 const loadingProviderEndpoints = ref(false)
@@ -1012,7 +1045,9 @@ async function handleModelSaved() {
 }
 
 // ===== 点击编辑优先级 =====
+/** 仅允许手动来源通过列表直接编辑倍率。 */
 function startEditMultiplier(key: EndpointAPIKey, format: string) {
+  if (key.multiplier_sync?.source === 'upstream') return
   editingMultiplierKey.value = key.id
   editingMultiplierFormat.value = format
   editingMultiplierValue.value = getKeyRateMultiplier(key)

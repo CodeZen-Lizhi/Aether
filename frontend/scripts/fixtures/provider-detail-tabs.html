@@ -14,6 +14,7 @@ import { createI18n, setI18nLocale } from '/src/i18n'
 import '/src/style.css'
 
 setI18nLocale('zh-CN')
+const multiplierFixture = new URLSearchParams(location.search).has('multiplier')
 // 合成供应商与数据仅驻留内存；所有读写请求均在 fixture 内拦截。
 const providers = ['alpha', 'beta'].map(id => ({
   id, name: `Fixture ${id}`, provider_type: 'custom', is_active: true,
@@ -21,11 +22,13 @@ const providers = ['alpha', 'beta'].map(id => ({
   monthly_quota_usd: 100, monthly_used_usd: 25, quota_reset_day: 1,
   total_endpoints: 1, total_keys: 12, total_models: 12,
   api_formats: ['openai:chat'], endpoint_health_details: [],
+  ops_architecture_id: multiplierFixture ? 'sub2api' : undefined,
 }))
 const keys = providers.flatMap(provider => Array.from({ length: provider.total_keys }, (_, index) => ({
   id: `${provider.id}-key-${index}`, provider_id: provider.id,
   name: `${provider.id} key ${index}`, api_key_masked: 'sk-fixture-***',
   is_active: true, api_formats: ['openai:chat'], health_score: 1,
+  default_rate_multiplier: 0.5, multiplier_sync: { source: 'manual', status: 'manual' },
 })))
 const models = providers.flatMap(provider => Array.from({ length: 12 }, (_, index) => ({
   id: `${provider.id}-model-${index}`, provider_id: provider.id,
@@ -66,6 +69,20 @@ client.patch = async (url, payload) => {
 client.put = client.patch
 for (const method of ['post', 'delete']) {
   client[method] = async url => { throw new Error(`禁止 fixture 外部写入: ${method} ${url}`) }
+}
+// 倍率分支验证真实供应商抽屉的模式控件及供应商级操作，仅修改合成数据。
+if (multiplierFixture) client.post = async (url, body) => {
+  if (!url.endsWith('/actions/sync_multiplier')) throw new Error('禁止 fixture 外部写入')
+  const provider = providers.find(item => url.includes(`/${item.id}/`))
+  const selectedKeys = keys.filter(key => key.provider_id === provider.id && (!body.config?.key_id || key.id === body.config.key_id))
+  for (const key of selectedKeys) {
+    if (body.config?.mode) key.multiplier_sync.source = body.config.mode
+    if (key.multiplier_sync.source === 'upstream') {
+      key.default_rate_multiplier = 0.3
+      key.multiplier_sync = { source: 'upstream', status: 'success', group_name: 'fixture group' }
+    }
+  }
+  return { data: { status: 'success', data: { failed: 0, updated: selectedKeys.filter(key => key.multiplier_sync.source === 'upstream').length, unchanged: 0 } } }
 }
 // 始终复用同一抽屉实例，覆盖切换供应商及关闭重开时的状态边界。
 const open = ref(true)

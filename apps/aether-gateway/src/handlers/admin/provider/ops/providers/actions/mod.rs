@@ -1,4 +1,5 @@
 mod checkin;
+mod multiplier;
 mod query_balance;
 mod responses;
 mod support;
@@ -21,6 +22,7 @@ pub(super) fn admin_provider_ops_is_valid_action_type(action_type: &str) -> bool
     matches!(
         action_type,
         "query_balance"
+            | "sync_multiplier"
             | "checkin"
             | "claim_quota"
             | "refresh_token"
@@ -30,6 +32,7 @@ pub(super) fn admin_provider_ops_is_valid_action_type(action_type: &str) -> bool
     )
 }
 
+/// 执行供应商操作；SUB2API 余额刷新附带独立的倍率同步结果。
 pub(crate) async fn admin_provider_ops_local_action_response(
     state: &AdminAppState<'_>,
     provider_id: &str,
@@ -78,6 +81,23 @@ pub(crate) async fn admin_provider_ops_local_action_response(
             .and_then(admin_provider_ops_connector_object)
             .and_then(|connector| connector.get("credentials")),
     );
+    if action_type == "sync_multiplier" {
+        if architecture_id != "sub2api" {
+            return responses::admin_provider_ops_action_not_supported(
+                action_type,
+                "仅 SUB2API 支持上游倍率同步",
+            );
+        }
+        return multiplier::sync_multiplier(
+            state,
+            provider,
+            &base_url,
+            &credentials,
+            proxy_snapshot.as_ref(),
+            request_config,
+        )
+        .await;
+    }
     let headers = match build_headers(
         architecture.architecture_id,
         &connector_config,
@@ -102,7 +122,7 @@ pub(crate) async fn admin_provider_ops_local_action_response(
 
     match action_type {
         "query_balance" => {
-            query_balance::admin_provider_ops_run_query_balance_action(
+            let mut payload = query_balance::admin_provider_ops_run_query_balance_action(
                 state,
                 provider_id,
                 provider,
@@ -113,7 +133,43 @@ pub(crate) async fn admin_provider_ops_local_action_response(
                 &credentials,
                 proxy_snapshot.as_ref(),
             )
-            .await
+            .await;
+            if architecture_id == "sub2api" {
+                // 余额查询可能轮换 Refresh Token，倍率步骤必须读取已保存的新凭据。
+                let current = state
+                    .read_provider_catalog_providers_by_ids(&[provider.id.clone()])
+                    .await;
+                let sync = match current {
+                    Ok(providers) if !providers.is_empty() => {
+                        let current = &providers[0];
+                        let credentials = admin_provider_ops_decrypted_credentials(
+                            state,
+                            admin_provider_ops_config_object(current)
+                                .and_then(admin_provider_ops_connector_object)
+                                .and_then(|connector| connector.get("credentials")),
+                        );
+                        multiplier::sync_multiplier(
+                            state,
+                            current,
+                            &base_url,
+                            &credentials,
+                            proxy_snapshot.as_ref(),
+                            None,
+                        )
+                        .await
+                    }
+                    _ => responses::admin_provider_ops_action_error(
+                        "unknown_error",
+                        "sync_multiplier",
+                        "无法读取供应商最新凭据",
+                        None,
+                    ),
+                };
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert("multiplier_sync".to_string(), sync);
+                }
+            }
+            payload
         }
         "checkin" => {
             let has_cookie = ["cookie", "session_cookie"].into_iter().any(|key| {

@@ -16,6 +16,7 @@ export type ConnectorAuthType = 'api_key' | 'session_login' | 'oauth' | 'cookie'
 
 /** 操作类型 */
 export type ProviderActionType =
+  | 'sync_multiplier'
   | 'query_balance'
   | 'checkin'
   | 'claim_quota'
@@ -276,6 +277,12 @@ export async function executeAction(
     `${BASE_URL}/providers/${providerId}/actions/${actionType}`,
     request || {}
   )
+  return response.data
+}
+
+/** 读取或切换密钥倍率来源并同步；上游失败保留现有倍率。 */
+export async function syncProviderMultiplier(providerId: string, keyId?: string, mode?: 'manual' | 'upstream'): Promise<ActionResultResponse> {
+  const response = await client.post<ActionResultResponse>(`${BASE_URL}/providers/${providerId}/actions/sync_multiplier`, { config: { key_id: keyId, mode } }, { timeout: 90000 })
   return response.data
 }
 

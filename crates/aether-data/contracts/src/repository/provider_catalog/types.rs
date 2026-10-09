@@ -59,6 +59,17 @@ pub struct ProviderCatalogKeyRuntimeMetadataUpdate {
     pub updated_at_unix_secs: Option<u64>,
 }
 
+/// 原子更新倍率及其来源元数据，防止旧同步覆盖已修改的密钥或手动设置。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderCatalogKeyMultiplierUpdate {
+    /// 同步开始时读取的密钥，作为凭据、倍率和来源的条件写入基线。
+    pub expected_key: StoredProviderCatalogKey,
+    /// 新的来源、同步状态和时间；仅替换 multiplier 命名空间。
+    pub metadata: serde_json::Value,
+    /// 成功时写入生效倍率；失败或切换模式时为空，保留现值。
+    pub multiplier: Option<f64>,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProviderCatalogKeyStatusSnapshotUpdate {
     pub key_id: String,
@@ -79,15 +90,12 @@ pub struct ProviderCatalogKeyOAuthCredentialFence {
     pub provider_type: String,
 }
 
-/// Administrator-owned key replacement fenced by the exact credential state
-/// observed while the edit was prepared. This prevents an older admin request
-/// from restoring credentials that a concurrent request already replaced.
+/// 管理员配置替换核对读取时的凭据与倍率命名空间，避免恢复并发修改前的状态。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProviderCatalogKeyAdminCasUpdate {
     pub expected_encrypted_auth_config: Option<String>,
     pub expected_credential: ProviderCatalogKeyOAuthCredentialFence,
-    /// Full requested key. Repositories merge its administrator-owned fields
-    /// while preserving the currently stored runtime-owned fields.
+    /// 请求记录仅替换管理员字段；multiplier 命名空间保留读取基线用于条件核对。
     pub key: StoredProviderCatalogKey,
     /// Optional replacement for the complete Codex metadata namespace. When
     /// present it must be an object containing only a non-empty string
@@ -1045,7 +1053,7 @@ pub trait ProviderCatalogWriteRepository: Send + Sync {
         ))
     }
 
-    /// Atomically replaces one upstream metadata namespace and merges owned status fields.
+    /// 原子替换一个上游元数据命名空间并合并归属状态字段。
     async fn update_key_runtime_metadata(
         &self,
         _update: &ProviderCatalogKeyRuntimeMetadataUpdate,
@@ -1053,6 +1061,16 @@ pub trait ProviderCatalogWriteRepository: Send + Sync {
         Err(crate::DataLayerError::InvalidConfiguration(
             "provider catalog runtime metadata updates are not supported by this repository"
                 .to_string(),
+        ))
+    }
+
+    /// 在凭据、现有倍率和倍率元数据均未变化时原子写入；冲突返回 false。
+    async fn compare_and_update_key_multiplier(
+        &self,
+        _update: &ProviderCatalogKeyMultiplierUpdate,
+    ) -> Result<bool, crate::DataLayerError> {
+        Err(crate::DataLayerError::InvalidConfiguration(
+            "provider catalog multiplier updates are not supported".to_string(),
         ))
     }
 

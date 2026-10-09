@@ -392,6 +392,17 @@ export const messages = {
 } as const
 
 const legacyExactEnglishMessages: Record<string, string> = {
+  '倍率来源': 'Multiplier source',
+  '手动倍率': 'Manual multiplier',
+  '跟随上游': 'Follow upstream',
+  '同步上游倍率': 'Sync upstream multipliers',
+  '已同步': 'Synced',
+  '尚未同步': 'Not synced yet',
+  '倍率状态已更新': 'Multiplier status updated',
+  '倍率操作失败': 'Multiplier operation failed',
+  '部分密钥同步失败，请查看密钥详情': 'Some keys failed to sync. Check key details.',
+  '同步失败，请查看密钥详情': 'Sync failed. Check key details.',
+  '没有需要同步的密钥': 'No keys to sync',
   '请求链路追踪': 'Request trace',
   '请求详情': 'Request details',
   '时间范围': 'Time range',

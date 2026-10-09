@@ -2215,6 +2215,7 @@ fn provider_key_health_summary_with_circuit_predicate(
     )
 }
 
+/// 构建脱敏管理密钥响应，倍率同步仅暴露来源和展示状态。
 pub(crate) fn build_admin_provider_key_response(
     state: &AppState,
     key: &StoredProviderCatalogKey,
@@ -2296,6 +2297,14 @@ pub(crate) fn build_admin_provider_key_response(
     );
     payload.insert("name".to_string(), json!(key.name));
     payload.insert("rate_multipliers".to_string(), json!(key.rate_multipliers));
+    payload.insert(
+        "multiplier_sync".to_string(),
+        key.upstream_metadata
+            .as_ref()
+            .and_then(|value| value.get("multiplier"))
+            .cloned()
+            .unwrap_or_else(|| json!({"source":"manual","status":"manual"})),
+    );
     payload.insert(
         "internal_priority".to_string(),
         json!(key.internal_priority),
