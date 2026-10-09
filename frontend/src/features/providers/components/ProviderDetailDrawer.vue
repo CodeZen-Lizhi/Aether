@@ -275,6 +275,7 @@
     :editing-key="editingKey"
     :provider-id="provider ? provider.id : null"
     :provider-type="provider?.provider_type || null"
+    :existing-keys="providerKeys"
     :ops-architecture-id="provider?.ops_architecture_id"
     :available-api-formats="availableKeyApiFormats"
     @close="keyFormDialogOpen = false"

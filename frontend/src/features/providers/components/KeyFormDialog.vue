@@ -439,6 +439,8 @@ const props = defineProps<{
   /** 供应商用户认证模板，倍率查询能力由服务端验证。 */
   opsArchitectureId?: string | null
   availableApiFormats: string[]  // Provider 支持的所有 API 格式
+  /** 当前供应商已有的密钥，用于计算新增密钥的默认优先级。 */
+  existingKeys?: EndpointAPIKey[]
 }>()
 
 const emit = defineEmits<{
@@ -676,6 +678,14 @@ const apiKeyFieldName = computed(() => `api-key-field-${formNonce.value}`)
 // 新增密钥时默认不自动开启上游模型获取
 const defaultAutoFetchModels = computed(() => false)
 
+/** 新增密钥默认排在当前供应商已有密钥之后；无密钥时从 1 开始。 */
+const getDefaultInternalPriority = () => {
+  const priorities = (props.existingKeys ?? [])
+    .map(key => key.internal_priority)
+    .filter((priority): priority is number => typeof priority === 'number' && Number.isInteger(priority) && priority >= 0)
+  return priorities.length > 0 ? Math.max(...priorities) + 1 : 1
+}
+
 const form = ref({
   name: '',
   api_key: '',  // 标准 API Key
@@ -685,7 +695,7 @@ const form = ref({
   api_formats: [] as string[],  // 支持的 API 格式列表
   default_rate_multiplier: 1 as number,  // Key 级成本倍率
   multiplier_source: 'manual' as 'manual' | 'upstream',
-  internal_priority: 10,
+  internal_priority: 1,
   rpm_limit: undefined as number | null | undefined,  // RPM 限制（null=自适应，undefined=保持原值）
   concurrent_limit: undefined as number | null | undefined,  // 并发请求上限（null/0=不限制，undefined=保持原值）
   cache_ttl_minutes: 5,
@@ -763,6 +773,16 @@ watch(
   { deep: true, immediate: true }
 )
 
+watch(
+  [() => props.open, () => props.editingKey, () => props.existingKeys],
+  ([open, editingKey]) => {
+    if (open && !editingKey) {
+      form.value.internal_priority = getDefaultInternalPriority()
+    }
+  },
+  { deep: true, immediate: true }
+)
+
 // API 格式切换
 function toggleApiFormat(format: string) {
   const index = form.value.api_formats.indexOf(format)
@@ -797,7 +817,7 @@ function resetForm() {
     api_formats: defaultApiFormats,
     default_rate_multiplier: 1,
     multiplier_source: 'manual',
-    internal_priority: 10,
+    internal_priority: getDefaultInternalPriority(),
     rpm_limit: undefined,
     concurrent_limit: undefined,
     cache_ttl_minutes: 5,
@@ -808,17 +828,6 @@ function resetForm() {
     model_include_patterns_text: '',
     model_exclude_patterns_text: ''
   }
-}
-
-// 添加成功后清除部分字段以便继续添加
-function clearForNextAdd() {
-  formNonce.value = createFieldNonce()
-  form.value.name = ''
-  form.value.api_key = ''
-  form.value.auth_type_by_format = sanitizeAuthTypeByFormat(form.value.auth_type_by_format)
-  form.value.allow_auth_channel_mismatch_formats = sanitizeAllowAuthChannelMismatchFormats(
-    form.value.allow_auth_channel_mismatch_formats
-  )
 }
 
 /** 当前表单已加载的密钥 ID；同步刷新同一密钥时保留其他字段草稿。 */
@@ -984,7 +993,11 @@ async function handleSave() {
       if (sourceChanged) {
         const applied = await saveMultiplierSource(updatedKey.id, defaultRateMultiplier)
         emit('refresh')
-        if (!applied) { emit('saved', updatedKey); return }
+        if (!applied) {
+          emit('saved', updatedKey)
+          emit('close')
+          return
+        }
       }
       success(legacyT('密钥已更新'), legacyT('成功'))
       emit('saved', updatedKey)
@@ -1013,9 +1026,8 @@ async function handleSave() {
         || await saveMultiplierSource(createdKey.id, defaultRateMultiplier)
       if (applied) success(legacyT('密钥已添加'), legacyT('成功'))
       emit('refresh')
-      // 添加模式：不关闭对话框，只清除名称和密钥以便继续添加
       emit('saved', createdKey)
-      clearForNextAdd()
+      emit('close')
       return
     }
 

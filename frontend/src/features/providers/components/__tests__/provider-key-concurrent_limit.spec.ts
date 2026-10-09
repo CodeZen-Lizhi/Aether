@@ -389,6 +389,39 @@ describe('provider key concurrent_limit form behavior', () => {
     expect(root.querySelector('#rpm_limit')).not.toBeNull()
   })
 
+  it('uses the next priority after the current provider keys when adding a key', async () => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey: null,
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+      existingKeys: [
+        createProviderKey({ id: 'key-5', internal_priority: 5 }),
+        createProviderKey({ id: 'key-10', internal_priority: 10 }),
+      ],
+    })
+    await settle()
+
+    expect(findInput(root, 'internal_priority').value).toBe('11')
+  })
+
+  it('starts new provider keys at priority one when no keys exist', async () => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey: null,
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+      existingKeys: [],
+    })
+    await settle()
+
+    expect(findInput(root, 'internal_priority').value).toBe('1')
+  })
+
   it('keeps default advanced settings collapsed when editing a key', async () => {
     const root = mountDialog(KeyFormDialog, {
       open: true,
