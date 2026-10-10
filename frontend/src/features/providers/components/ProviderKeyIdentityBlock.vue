@@ -11,7 +11,10 @@
         {{ apiKey.name || legacyT('未命名密钥') }}
       </span>
 
-      <span class="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <span
+        v-if="maskedSecretLabel"
+        class="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[10px] font-medium text-muted-foreground"
+      >
         {{ maskedSecretLabel }}
       </span>
 

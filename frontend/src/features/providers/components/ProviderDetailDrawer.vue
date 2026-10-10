@@ -131,33 +131,36 @@
                         />
                       </div>
                       <div class="flex shrink-0 items-center gap-1">
-                      <ProviderKeyActionCluster
-                        :api-key="key"
-                        :recoverable="isKeyRecoverable(key)"
-                        :recover-title="getRecoverKeyTitle(key)"
-                        :circuit-breaker-title="getKeyCircuitBreakerTitle(key)"
-                        :circuit-probe-countdown="getKeyCircuitProbeCountdown(key)"
-                        :health-score-bar-class="getHealthScoreBarColor(key.health_score || 0)"
-                        :health-score-text-class="getHealthScoreColor(key.health_score || 0)"
-                        :proxy-popover-open="proxyPopoverOpenKeyId === key.id"
-                        :proxy-node-name="getKeyProxyNodeName(key) || undefined"
-                        :saving-proxy="savingProxyKeyId === key.id"
-                        :toggling="togglingKeyId === key.id"
-                        @recover="handleRecoverKey(key)"
-                        @permissions="handleKeyPermissions(key)"
-                        @update:proxy-popover-open="(v: boolean) => handleProxyPopoverToggle(key.id, v)"
-                        @clear-proxy="clearKeyProxy(key)"
-                        @set-proxy="(v: string) => setKeyProxy(key, v)"
-                        @edit="handleEditKey(endpoint, key)"
-                        @toggle-active="toggleKeyActive(key)"
-                        @delete="handleDeleteKey(key)"
-                      />
+                        <ProviderKeyActionCluster
+                          :api-key="key"
+                          :recoverable="isKeyRecoverable(key)"
+                          :recover-title="getRecoverKeyTitle(key)"
+                          :circuit-breaker-title="getKeyCircuitBreakerTitle(key)"
+                          :circuit-probe-countdown="getKeyCircuitProbeCountdown(key)"
+                          :health-score-bar-class="getHealthScoreBarColor(key.health_score || 0)"
+                          :health-score-text-class="getHealthScoreColor(key.health_score || 0)"
+                          :proxy-popover-open="proxyPopoverOpenKeyId === key.id"
+                          :proxy-node-name="getKeyProxyNodeName(key) || undefined"
+                          :saving-proxy="savingProxyKeyId === key.id"
+                          :toggling="togglingKeyId === key.id"
+                          @recover="handleRecoverKey(key)"
+                          @permissions="handleKeyPermissions(key)"
+                          @update:proxy-popover-open="(v: boolean) => handleProxyPopoverToggle(key.id, v)"
+                          @clear-proxy="clearKeyProxy(key)"
+                          @set-proxy="(v: string) => setKeyProxy(key, v)"
+                          @edit="handleEditKey(endpoint, key)"
+                          @toggle-active="toggleKeyActive(key)"
+                          @delete="handleDeleteKey(key)"
+                        >
+                          <template #after-recover>
+                            <KeyMultiplierControl :api-key="key" :provider-id="provider.id" action-only @refresh="loadProviderKeys" />
+                          </template>
+                        </ProviderKeyActionCluster>
                       </div>
                     </div>
                     <!-- 第二行：API 格式（展开显示） + 统计信息 -->
                     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mt-3 text-[11px] text-muted-foreground">
                       <KeyMultiplierControl :api-key="key" :provider-id="provider.id" @refresh="loadProviderKeys" @settings-open="multiplierSettingsOpen = $event" />
-                      <KeyMultiplierControl :api-key="key" :provider-id="provider.id" action-only @refresh="loadProviderKeys" />
                       <!-- 自动获取模型状态 -->
                       <template v-if="key.auto_fetch_models">
                         <span class="text-muted-foreground/40">|</span>
@@ -173,7 +176,9 @@
                       <template v-if="key.rpm_limit || key.is_adaptive">
                         <span class="text-muted-foreground/40">|</span>
                         <span v-if="key.is_adaptive">
-                          {{ key.learned_rpm_limit != null ? `${key.learned_rpm_limit}` : legacyT('探测中') }} RPM
+                          <template v-if="key.learned_rpm_limit != null">
+                            {{ key.learned_rpm_limit }} RPM
+                          </template>
                           <span class="text-muted-foreground/60">({{ legacyT('自适应') }})</span>
                         </span>
                         <span v-else>{{ key.rpm_limit }} RPM</span>
@@ -191,10 +196,6 @@
                         <span :class="{ 'text-destructive': isFormatCircuitOpen(key, format) }">
                           {{ formatApiFormatShort(format) }}
                         </span>
-                        <span
-                          v-if="getFormatProbeCountdown(key, format)"
-                          :class="{ 'text-destructive': isFormatCircuitOpen(key, format) }"
-                        >{{ getFormatProbeCountdown(key, format) }}</span>
                       </template>
                     </div>
                   </div>
@@ -790,7 +791,7 @@ function handleKeyPermissions(key: EndpointAPIKey) {
 
 // 复制完整密钥或认证配置
 function getProviderMaskedSecretLabel(key: EndpointAPIKey): string {
-  return key.runtime_auth_kind === 'bearer' ? '[Bearer Token]' : '[Key]'
+  return key.runtime_auth_kind === 'bearer' ? '[Bearer Token]' : ''
 }
 
 async function copyFullKey(key: EndpointAPIKey) {
@@ -1059,7 +1060,7 @@ function getKeyCircuitProbeCountdown(key: EndpointAPIKey): string {
     return ''
   }
   const diffMs = nextProbe - Date.now()
-  return diffMs > 0 ? ` ${formatCountdown(diffMs)}` : ` ${legacyT('探测中')}`
+  return diffMs > 0 ? ` ${formatCountdown(diffMs)}` : ''
 }
 
 function getKeyCircuitBreakerTitle(key: EndpointAPIKey): string {

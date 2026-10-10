@@ -97,4 +97,16 @@ describe('ProviderKeyIdentityBlock', () => {
 
     unmount()
   })
+
+  it('does not render an empty authentication label', () => {
+    const { root, unmount } = mount({
+      apiKey: createProviderKey(),
+      maskedSecretLabel: '',
+    })
+
+    expect(root.textContent).not.toContain('[Key]')
+    expect(root.querySelector('span.rounded.border')).toBeNull()
+
+    unmount()
+  })
 })

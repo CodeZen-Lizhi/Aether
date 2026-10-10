@@ -41,6 +41,8 @@
       <RefreshCw class="w-3.5 h-3.5" />
     </Button>
 
+    <slot name="after-recover" />
+
     <Button
       variant="ghost"
       size="icon"
