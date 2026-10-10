@@ -44,7 +44,7 @@ use crate::request_candidate_runtime::{
 use crate::stage_metrics::observe_gateway_stage_ms;
 use crate::{AppState, GatewayError};
 
-const DEFAULT_STREAM_FIRST_BYTE_WATCHDOG_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_STREAM_FIRST_BYTE_WATCHDOG_TIMEOUT_MS: u64 = 60_000;
 const UPSTREAM_TARGET_GATE_NAME: &str = "gateway_upstream_target";
 const UPSTREAM_EXECUTION_GATE_HOLD_STREAM_RESPONSE_ENV: &str =
     "AETHER_GATEWAY_UPSTREAM_EXECUTION_GATE_HOLD_STREAM_RESPONSE";

@@ -75,7 +75,7 @@
               min="1"
               max="1200"
               step="0.001"
-              placeholder="900"
+              placeholder="300"
               aria-describedby="stream-total-timeout-help stream-total-timeout-effective"
               @update:model-value="(v) => form.stream_total_timeout = v === '' ? undefined : Number(v)"
             />
@@ -83,13 +83,13 @@
               id="stream-total-timeout-help"
               class="text-xs text-muted-foreground"
             >
-              {{ legacyT('从请求开始到完整回答结束，包含重试、切换和输出；普通流式与压缩共用。清空恢复默认 900 秒。') }}
+              {{ legacyT('从请求开始到完整回答结束，包含重试、切换和输出；普通流式与压缩共用。清空恢复默认 300 秒。') }}
             </p>
             <p
               id="stream-total-timeout-effective"
               class="text-xs text-muted-foreground"
             >
-              {{ legacyT('当前生效总超时') }}: {{ provider?.effective_stream_total_timeout ?? 900 }} {{ legacyT('秒') }}
+              {{ legacyT('当前生效总超时') }}: {{ provider?.effective_stream_total_timeout ?? 300 }} {{ legacyT('秒') }}
               <span>{{ legacyT(provider?.effective_stream_total_timeout_source === 'config.stream_total_timeout_ms' ? '提供商配置' : '默认配置') }}</span>
             </p>
           </div>
@@ -109,7 +109,7 @@
               min="1"
               max="300"
               step="1"
-              placeholder="30"
+              placeholder="60"
               aria-describedby="stream-first-response-timeout-help"
               @update:model-value="(v) => form.stream_first_byte_timeout = parseNumberInput(v)"
             />

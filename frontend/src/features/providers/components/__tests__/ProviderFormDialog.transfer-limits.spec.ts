@@ -170,7 +170,7 @@ describe('ProviderFormDialog transfer limits', () => {
       effective_max_attempts: 2,
       effective_max_attempts_source: 'provider.max_retries',
       stream_failover_budget_ms: 90000,
-      effective_stream_total_timeout: 900,
+      effective_stream_total_timeout: 300,
     }))
     await settle()
     await setInput('#chat-max-attempts', '3')
@@ -223,7 +223,7 @@ describe('ProviderFormDialog transfer limits', () => {
   it('clears an explicit total timeout to inherit the default', async () => {
     endpointMocks.updateProvider.mockResolvedValue(makeProvider({
       stream_total_timeout: null,
-      effective_stream_total_timeout: 900,
+      effective_stream_total_timeout: 300,
       effective_stream_total_timeout_source: 'default',
     }))
     const dialog = mountDialog(makeProvider({ stream_total_timeout: 300 }))
@@ -237,7 +237,7 @@ describe('ProviderFormDialog transfer limits', () => {
     dialog.open.value = true
     await settle()
     expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.value).toBe('')
-    expect(document.body.querySelector('#stream-total-timeout-effective')?.textContent).toContain('900')
+    expect(document.body.querySelector('#stream-total-timeout-effective')?.textContent).toContain('300')
     expect(document.body.querySelector('#stream-total-timeout-effective')?.textContent).toContain('默认配置')
   })
 
@@ -356,7 +356,7 @@ describe('ProviderFormDialog transfer limits', () => {
     expect(document.body.querySelector<HTMLInputElement>('#max-transfer-count')?.value).toBe('')
     expect(document.body.querySelector<HTMLInputElement>('#max-transfer-timeout-seconds')?.value).toBe('')
 
-    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.placeholder).toBe('900')
+    expect(document.body.querySelector<HTMLInputElement>('#stream-total-timeout')?.placeholder).toBe('300')
     await setInput('#stream-total-timeout', '300')
     await setInput('#name', 'New Provider')
     await setInput('#max-transfer-count', '8')

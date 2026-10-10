@@ -3,7 +3,7 @@ use serde_json::Value;
 
 pub const CHAT_POLICY_VERSION: u32 = 1;
 pub const DEFAULT_STREAM_FAILOVER_BUDGET_MS: u64 = 90_000;
-pub const DEFAULT_STREAM_TOTAL_TIMEOUT_MS: u64 = 900_000;
+pub const DEFAULT_STREAM_TOTAL_TIMEOUT_MS: u64 = 300_000;
 pub const STREAM_TOTAL_TIMEOUT_CONFIG_KEY: &str = "stream_total_timeout_ms";
 
 /// The full HTTP chat stream limit is independent of the legacy first-output budget.
@@ -137,10 +137,10 @@ mod tests {
             json!({"stream_total_timeout_ms": 1200001}),
             json!({"stream_total_timeout_ms": "5000"}),
         ] {
-            assert_eq!(resolve_stream_total_timeout_ms(Some(&config)), 900_000);
+            assert_eq!(resolve_stream_total_timeout_ms(Some(&config)), 300_000);
             assert_eq!(configured_stream_total_timeout_ms(Some(&config)), None);
         }
-        for timeout in [1_000, 1_001, 900_000, 1_200_000] {
+        for timeout in [1_000, 1_001, 300_000, 1_200_000] {
             let config = json!({"stream_total_timeout_ms": timeout});
             assert_eq!(resolve_stream_total_timeout_ms(Some(&config)), timeout);
             assert_eq!(

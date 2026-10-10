@@ -11,7 +11,7 @@ use super::snapshot::GatewayProviderTransportSnapshot;
 const TUNNEL_BASE_URL_EXTRA_KEY: &str = "tunnel_base_url";
 const TUNNEL_OWNER_INSTANCE_ID_EXTRA_KEY: &str = "tunnel_owner_instance_id";
 const TUNNEL_OWNER_OBSERVED_AT_EXTRA_KEY: &str = "tunnel_owner_observed_at_unix_secs";
-const DEFAULT_PROVIDER_STREAM_FIRST_BYTE_TIMEOUT_SECS: f64 = 30.0;
+const DEFAULT_PROVIDER_STREAM_FIRST_BYTE_TIMEOUT_SECS: f64 = 60.0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportTunnelAttachmentOwner {
@@ -415,9 +415,9 @@ mod tests {
             .expect("default provider timeouts should resolve");
 
         assert_eq!(timeouts.total_ms, None);
-        assert_eq!(timeouts.first_byte_ms, Some(30_000));
+        assert_eq!(timeouts.first_byte_ms, Some(60_000));
         assert_eq!(timeouts.stream_failover_budget_ms, Some(90_000));
-        assert_eq!(timeouts.stream_total_ms, Some(900_000));
+        assert_eq!(timeouts.stream_total_ms, Some(300_000));
     }
 
     #[test]
@@ -428,9 +428,9 @@ mod tests {
         transport.provider.request_timeout_secs = Some(1200.0);
         let timeouts = resolve_transport_execution_timeouts(&transport).unwrap();
         assert_eq!(timeouts.stream_failover_budget_ms, Some(4321));
-        assert_eq!(timeouts.stream_total_ms, Some(900_000));
+        assert_eq!(timeouts.stream_total_ms, Some(300_000));
         assert_eq!(timeouts.total_ms, Some(1_200_000));
-        assert_eq!(timeouts.first_byte_ms, Some(30_000));
+        assert_eq!(timeouts.first_byte_ms, Some(60_000));
     }
 
     #[test]
@@ -445,7 +445,7 @@ mod tests {
         assert_eq!(timeouts.stream_total_ms, Some(5001));
         assert_eq!(timeouts.total_ms, Some(15000));
         assert_eq!(timeouts.stream_failover_budget_ms, Some(1800));
-        assert_eq!(timeouts.first_byte_ms, Some(30000));
+        assert_eq!(timeouts.first_byte_ms, Some(60_000));
     }
 
     #[test]
@@ -457,7 +457,7 @@ mod tests {
             .expect("provider timeouts should resolve");
 
         assert_eq!(timeouts.total_ms, Some(12_000));
-        assert_eq!(timeouts.first_byte_ms, Some(30_000));
+        assert_eq!(timeouts.first_byte_ms, Some(60_000));
     }
 
     #[test]
