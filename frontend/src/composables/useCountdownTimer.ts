@@ -34,7 +34,7 @@ export function useCountdownTimer() {
  */
 export function formatCountdown(diffMs: number): string {
   const totalSeconds = Math.ceil(diffMs / 1000)
-  if (totalSeconds <= 0) return '探测中'
+  if (totalSeconds <= 0) return ''
 
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
@@ -65,5 +65,5 @@ export function getProbeCountdown(nextProbeAt: string | null | undefined, _tick:
   if (diffMs > 0) {
     return formatCountdown(diffMs)
   }
-  return '探测中'
+  return null
 }

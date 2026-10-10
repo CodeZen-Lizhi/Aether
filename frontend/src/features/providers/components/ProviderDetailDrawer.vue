@@ -179,6 +179,9 @@
                           <template v-if="key.learned_rpm_limit != null">
                             {{ key.learned_rpm_limit }} RPM
                           </template>
+                          <template v-else>
+                            RPM
+                          </template>
                           <span class="text-muted-foreground/60">({{ legacyT('自适应') }})</span>
                         </span>
                         <span v-else>{{ key.rpm_limit }} RPM</span>
@@ -1082,8 +1085,7 @@ function getKeyCircuitBreakerTitle(key: EndpointAPIKey): string {
     const interval = typeof value.probe_interval_minutes === 'number'
       ? `${legacyT('探测间隔')}: ${value.probe_interval_minutes} ${legacyT('分钟')}`
       : ''
-    const countdown = getFormatProbeCountdown(key, format).trim()
-    return [label, reason, failureProgress, interval, countdown ? `${legacyT('状态')}: ${countdown}` : '']
+    return [label, reason, failureProgress, interval]
       .filter(Boolean)
       .join(' / ')
   })
@@ -1119,38 +1121,6 @@ function isFormatCircuitOpen(key: EndpointAPIKey, format: string): boolean {
   if (!key.circuit_breaker_by_format) return false
   const formatData = key.circuit_breaker_by_format[format]
   return formatData?.open === true
-}
-
-// 获取指定格式的探测倒计时（如果熔断，返回带空格前缀的倒计时文本）
-function getFormatProbeCountdown(key: EndpointAPIKey, format: string): string {
-  // 触发响应式更新
-  void countdownTick.value
-
-  if (!key.circuit_breaker_by_format) return ''
-  const formatData = key.circuit_breaker_by_format[format]
-  if (!formatData?.open) return ''
-
-  // 半开状态
-  if (formatData.half_open_until) {
-    const halfOpenUntil = new Date(formatData.half_open_until)
-    const now = new Date()
-    if (halfOpenUntil > now) {
-      return ` ${legacyT('探测中')}`
-    }
-  }
-  // 等待探测
-  if (formatData.next_probe_at_unix_secs || formatData.next_probe_at) {
-    const nextProbeMs = typeof formatData.next_probe_at_unix_secs === 'number'
-      ? formatData.next_probe_at_unix_secs * 1000
-      : new Date(formatData.next_probe_at || '').getTime()
-    const diffMs = nextProbeMs - Date.now()
-    if (diffMs > 0) {
-      return ` ${formatCountdown(diffMs)}`
-    } else {
-      return ` ${legacyT('探测中')}`
-    }
-  }
-  return ''
 }
 
 // 加载系统级格式转换配置

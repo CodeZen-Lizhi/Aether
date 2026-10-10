@@ -1946,7 +1946,6 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '额度耗尽': 'Quota exhausted',
   '刚刚更新': 'Updated just now',
   '上次同步': 'Last sync',
-  '探测中': 'Probing',
   '探测间隔': 'Probe interval',
   '熔断器已打开': 'Circuit breaker is open',
   '连续失败': 'consecutive failures',
