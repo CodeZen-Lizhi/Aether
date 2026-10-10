@@ -131,7 +131,6 @@
                         />
                       </div>
                       <div class="flex shrink-0 items-center gap-1">
-                      <KeyMultiplierControl :api-key="key" :provider-id="provider.id" action-only @refresh="loadProviderKeys" />
                       <ProviderKeyActionCluster
                         :api-key="key"
                         :recoverable="isKeyRecoverable(key)"
@@ -158,6 +157,7 @@
                     <!-- 第二行：API 格式（展开显示） + 统计信息 -->
                     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mt-3 text-[11px] text-muted-foreground">
                       <KeyMultiplierControl :api-key="key" :provider-id="provider.id" @refresh="loadProviderKeys" @settings-open="multiplierSettingsOpen = $event" />
+                      <KeyMultiplierControl :api-key="key" :provider-id="provider.id" action-only @refresh="loadProviderKeys" />
                       <!-- 自动获取模型状态 -->
                       <template v-if="key.auto_fetch_models">
                         <span class="text-muted-foreground/40">|</span>

@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col min-w-0">
-    <div class="flex items-center gap-1.5">
+    <div class="flex items-center gap-1.5 min-w-0">
       <span
         class="text-sm font-medium truncate"
         :class="apiKey.name ? 'cursor-pointer hover:text-primary transition-colors' : ''"
@@ -9,6 +9,10 @@
         @click.stop="apiKey.name && $emit('copyName', apiKey.name)"
       >
         {{ apiKey.name || legacyT('未命名密钥') }}
+      </span>
+
+      <span class="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+        {{ maskedSecretLabel }}
       </span>
 
       <Button
@@ -22,11 +26,6 @@
       </Button>
     </div>
 
-    <div class="flex items-center gap-1">
-      <span class="text-[11px] font-mono text-muted-foreground">
-        {{ maskedSecretLabel }}
-      </span>
-    </div>
   </div>
 </template>
 

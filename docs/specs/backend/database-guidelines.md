@@ -21,3 +21,5 @@
 ## 验证选择
 
 从受影响 repository 或 `lifecycle::{migrate,backfill,export}` 的现有测试开始，验证真实 SQL、回滚和写后读取。Schema 审计可执行 `bash crates/aether-data/runtime/schema/compose_schema.sh check`；该命令只检查文件，不证明迁移运行成功。驱动 feature 变化才补 README 中相关编译组合，普通查询改动无需全部执行。
+
+涉及后台管理界面展示的数据、Schema 或 SQL 变更时，除数据库层测试外，必须在现有运行实例或本地服务中使用真实数据复核受影响页面。应先复现原问题，修改后重新加载同一真实页面，并通过截图或 DOM 几何信息确认布局与数据契约一致；不能只凭静态代码、模拟数据或单元测试宣称 UI 验收完成。若无法进入真实页面，需明确记录未验证范围。

@@ -14,6 +14,11 @@ vi.mock('@/components/ui', async () => {
     Button: defineComponent({ setup: (_, { slots, attrs }) => () => h('button', attrs, slots.default?.()) }),
   }
 })
+vi.mock('lucide-vue-next', async () => {
+  const { defineComponent, h } = await import('vue')
+  const Icon = defineComponent({ setup: () => () => h('span') })
+  return { ChevronDown: Icon, WifiSync: Icon }
+})
 const disposers: (() => void)[] = []
 afterEach(() => { disposers.splice(0).forEach(fn => fn()); vi.clearAllMocks() })
 /** 挂载真实倍率控件，接口仅返回隔离响应。 */
@@ -58,7 +63,10 @@ describe('A 方案倍率交互', () => {
   it('单密钥同步展示处理后的失败原因', async () => {
     mocks.sync.mockResolvedValue({ status: 'success', data: { failed: 1, results: [{ error: '该供应商未提供兼容的上游倍率查询接口' }] } })
     const root = mountControl('upstream', true)
-    await click(root, '同步倍率')
+    const syncButton = root.querySelector('button[aria-label="立即同步倍率"]') as HTMLButtonElement
+    expect(syncButton).toBeTruthy()
+    syncButton.click()
+    await nextTick(); await Promise.resolve(); await nextTick()
     expect(mocks.error).toHaveBeenCalledWith('该供应商未提供兼容的上游倍率查询接口')
     expect(mocks.sync).toHaveBeenCalledWith('provider', 'key', undefined, undefined)
   })

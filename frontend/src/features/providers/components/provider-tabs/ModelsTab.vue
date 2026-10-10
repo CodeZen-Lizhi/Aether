@@ -75,24 +75,24 @@
             </td>
             <td class="align-top px-4 py-3 text-xs whitespace-nowrap">
               <div
-                class="grid min-h-[3.75rem] grid-cols-[5.25rem_minmax(0,1fr)] items-start gap-x-2 gap-y-1"
+                class="grid min-h-[3.75rem] grid-cols-[7rem_minmax(0,1fr)] items-start gap-x-2 gap-y-1"
               >
                 <!-- 按 Token 计费 -->
                 <template v-if="hasTokenPricing(model)">
-                  <span class="text-muted-foreground text-right">入/出:</span>
+                  <span class="whitespace-nowrap text-muted-foreground text-right">入/出:</span>
                   <span class="font-mono font-semibold">
                     ${{ formatPrice(model.effective_input_price) }}/${{ formatPrice(model.effective_output_price) }}
                   </span>
                 </template>
                 <template v-if="getEffectiveCachePrice(model, 'creation') > 0 || getEffectiveCachePrice(model, 'read') > 0">
-                  <span class="text-muted-foreground text-right">缓存:</span>
+                  <span class="whitespace-nowrap text-muted-foreground text-right">缓存:</span>
                   <span class="font-mono font-semibold">
                     ${{ formatPrice(getEffectiveCachePrice(model, 'creation')) }}/${{ formatPrice(getEffectiveCachePrice(model, 'read')) }}
                   </span>
                 </template>
                 <!-- 1h 缓存价格 -->
                 <template v-if="get1hCachePrice(model) > 0">
-                  <span class="text-muted-foreground text-right">1h 缓存创建:</span>
+                  <span class="whitespace-nowrap text-muted-foreground text-right">1h 缓存创建:</span>
                   <span class="font-mono font-semibold">
                     ${{ formatPrice(get1hCachePrice(model)) }}
                   </span>
