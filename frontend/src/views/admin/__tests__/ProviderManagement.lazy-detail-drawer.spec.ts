@@ -34,4 +34,15 @@ describe('ProviderManagement provider list', () => {
 
     expect(template).not.toContain('<Pagination')
   })
+
+  it('keeps the provider list in table layout at narrow widths', () => {
+    const layout = readFileSync(
+      resolve(process.cwd(), 'src/views/admin/provider-list-layout.css'),
+      'utf8',
+    )
+
+    expect(layout).toContain('.responsive-list.provider-list > .responsive-list-table { display: block; }')
+    expect(layout).toContain('.responsive-list.provider-list > .responsive-list-cards { display: none; }')
+    expect(layout).not.toContain('@container provider-list (max-width: 57.999rem)')
+  })
 })

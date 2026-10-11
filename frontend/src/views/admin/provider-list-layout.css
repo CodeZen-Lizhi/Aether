@@ -21,11 +21,7 @@
 .provider-list .responsive-list-table td:nth-child(6) { text-align: center; }
 .provider-list .responsive-list-table td:nth-child(3) > div { margin-inline: auto; }
 .provider-list .responsive-list-table td:nth-child(4) > div { width: 100%; }
-@container provider-list (min-width: 58rem) {
-  .provider-list > .responsive-list-table { display: block; }
-  .provider-list > .responsive-list-cards { display: none; }
-}
-@container provider-list (max-width: 57.999rem) {
-  .provider-list > .responsive-list-table { display: none; }
-  .provider-list > .responsive-list-cards { display: block; }
-}
+
+/* 供应商管理始终保持表格列布局，窗口缩小时也不切换成纵向卡片。 */
+.responsive-list.provider-list > .responsive-list-table { display: block; }
+.responsive-list.provider-list > .responsive-list-cards { display: none; }

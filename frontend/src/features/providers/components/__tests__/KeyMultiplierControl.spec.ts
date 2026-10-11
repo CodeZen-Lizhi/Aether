@@ -17,7 +17,7 @@ vi.mock('@/components/ui', async () => {
 vi.mock('lucide-vue-next', async () => {
   const { defineComponent, h } = await import('vue')
   const Icon = defineComponent({ setup: () => () => h('span') })
-  return { ChevronDown: Icon, WifiSync: Icon }
+  return { BadgePercent: Icon, ChevronDown: Icon }
 })
 const disposers: (() => void)[] = []
 afterEach(() => { disposers.splice(0).forEach(fn => fn()); vi.clearAllMocks() })

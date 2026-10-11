@@ -1,6 +1,6 @@
 <template>
   <button v-if="actionOnly && source === 'upstream'" type="button" :disabled="busy" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" :title="legacyT(busy ? '同步中…' : '立即同步倍率')" :aria-label="legacyT(busy ? '同步中…' : '立即同步倍率')" @click="runSync()">
-    <WifiSync class="h-4 w-4" :class="{ 'animate-pulse': busy }" />
+    <BadgePercent class="h-4 w-4" :class="{ 'animate-pulse': busy }" />
   </button>
   <template v-else-if="!actionOnly">
     <button type="button" :aria-label="`${legacyT('倍率设置')} · ${apiKey.name}`" class="inline-flex items-center gap-2 rounded-md bg-muted/60 px-2.5 py-1 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @click="openSettings">
@@ -36,7 +36,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, WifiSync } from 'lucide-vue-next'
+import { BadgePercent, ChevronDown } from 'lucide-vue-next'
 import { Dialog, Button } from '@/components/ui'
 import { useI18n } from '@/i18n'
 import { useToast } from '@/composables/useToast'
