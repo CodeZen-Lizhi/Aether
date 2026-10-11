@@ -6,7 +6,7 @@ import '/src/style.css'
 import '/src/views/admin/provider-list-layout.css'
 const names=['input','Input-国际线路','聪明','air-router','loomex','神稳AI','世一稳']
 const balances=[1078.42,1078.42,25.24,8.37,1.95,82.17,-.26]
-const props={editingDescriptionId:null,isBalanceLoading:()=>false,getProviderBalance:id=>({available:balances[Number(id)],currency:'USD'}),getProviderBalanceBreakdown:()=>null,getProviderBalanceError:()=>null,getProviderCheckin:()=>null,getProviderBalanceExtra:()=>[],formatBalanceDisplay:b=>'$'+b.available.toFixed(2),formatResetCountdown:()=>'',getQuotaUsedColorClass:()=>''}
+const props={isBalanceLoading:()=>false,getProviderBalance:id=>({available:balances[Number(id)],currency:'USD'}),getProviderBalanceBreakdown:()=>null,getProviderBalanceError:()=>null,getProviderCheckin:()=>null,getProviderBalanceExtra:()=>[],formatBalanceDisplay:b=>'$'+b.available.toFixed(2),formatResetCountdown:()=>'',getQuotaUsedColorClass:()=>''}
 createApp({setup(){const long=ref(false);return()=>h('div',[
   h('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:20px'},[h('h1',{style:'font-size:20px;font-weight:600'},'供应商管理'),h('button',{onClick:()=>long.value=!long.value,style:'border:1px solid #ddd;padding:8px 12px;border-radius:6px'},long.value?'恢复短名称':'测试长名称')]),
   h('div',{class:'provider-list responsive-list',style:'container-type:inline-size;container-name:provider-list;border:1px solid var(--border);border-radius:8px'},[

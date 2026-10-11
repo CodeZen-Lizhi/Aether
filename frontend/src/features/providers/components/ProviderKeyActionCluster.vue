@@ -101,6 +101,8 @@
       </PopoverContent>
     </Popover>
 
+    <slot name="before-edit" />
+
     <Button
       variant="ghost"
       size="icon"

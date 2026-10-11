@@ -24,10 +24,18 @@ const providers = ['alpha', 'beta'].map(id => ({
   api_formats: ['openai:chat'], endpoint_health_details: [],
   ops_architecture_id: multiplierFixture ? 'sub2api' : undefined,
 }))
+// note 覆盖三种形态：常规备注、无备注空态、超长多行备注。
+const keyNotes = {
+  0: '财务对账专用，7 月勿删',
+  1: `第一行：长备注文本用于验证单行省略与悬浮完整显示。\n第二行：详情浮层必须保留换行且不横向溢出。${'补充说明，'.repeat(20)}`,
+}
 const keys = providers.flatMap(provider => Array.from({ length: provider.total_keys }, (_, index) => ({
   id: `${provider.id}-key-${index}`, provider_id: provider.id,
   name: `${provider.id} key ${index}`, api_key_masked: 'sk-fixture-***',
   is_active: true, api_formats: ['openai:chat'], health_score: 1,
+  rpm_limit: index === 0 ? 60 : null, concurrent_limit: index === 0 ? 4 : 0,
+  allowed_models: index === 0 ? ['gpt-5', 'claude-opus-5'] : null,
+  note: keyNotes[index],
   default_rate_multiplier: 0.5, multiplier_sync: { source: 'manual', status: 'manual' },
 })))
 const models = providers.flatMap(provider => Array.from({ length: 12 }, (_, index) => ({

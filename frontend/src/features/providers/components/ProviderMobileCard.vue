@@ -26,46 +26,6 @@
             {{ legacyT(provider.is_active ? '活跃' : '停用') }}
           </Badge>
         </div>
-        <!-- 内联编辑备注 (移动端) -->
-        <div
-          v-if="editingDescriptionId === provider.id"
-          data-desc-editor
-          class="flex items-center gap-1 max-w-[180px]"
-          @click.stop
-        >
-          <input
-            v-model="localDescriptionValue"
-            v-auto-focus
-            class="flex-1 min-w-0 text-xs px-1.5 py-0.5 rounded border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
-            :placeholder="legacyT('输入备注...')"
-            @keydown="handleDescriptionKeydown"
-          >
-          <button
-            class="shrink-0 p-0.5 rounded hover:bg-muted text-primary"
-            :title="legacyT('保存')"
-            @click="handleSave"
-          >
-            <Check class="w-3.5 h-3.5" />
-          </button>
-          <button
-            class="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground"
-            :title="legacyT('取消')"
-            @click="handleCancel"
-          >
-            <X class="w-3.5 h-3.5" />
-          </button>
-        </div>
-        <span
-          v-else-if="provider.description"
-          class="text-xs text-muted-foreground truncate block max-w-[120px] group/desc cursor-pointer hover:text-foreground/70 transition-colors"
-          :title="provider.description"
-          @click="handleStartEdit"
-        >{{ provider.description }} <Pencil class="w-3 h-3 inline-block opacity-0 group-hover/desc:opacity-50 transition-opacity" /></span>
-        <span
-          v-else
-          class="text-xs text-muted-foreground cursor-pointer hover:text-foreground/70 transition-colors"
-          @click="handleStartEdit"
-        >{{ legacyT('添加备注') }}</span>
       </div>
       <div
         class="flex items-center gap-0.5 shrink-0"
@@ -208,7 +168,6 @@ import { useI18n } from '@/i18n'
 
 const props = defineProps<{
   provider: ProviderWithEndpointsSummary
-  editingDescriptionId: string | null
   isBalanceLoading: (providerId: string) => boolean
   getProviderBalance: (providerId: string) => { available: number | null; currency: string } | null
   getProviderBalanceBreakdown: (providerId: string) => { balance: number; points: number; currency: string } | null
@@ -226,50 +185,9 @@ const emit = defineEmits<{
   'openOpsConfig': [provider: ProviderWithEndpointsSummary]
   'toggleStatus': [provider: ProviderWithEndpointsSummary]
   'deleteProvider': [provider: ProviderWithEndpointsSummary]
-  'startEditDescription': [event: Event, provider: ProviderWithEndpointsSummary]
-  'saveDescription': [event: Event, provider: ProviderWithEndpointsSummary, value: string]
-  'cancelEditDescription': [event?: Event]
 }>()
 
-const vAutoFocus = {
-  mounted: (el: HTMLElement) => el.focus(),
-}
-
-const localDescriptionValue = ref('')
 const { legacyT, locale } = useI18n()
-
-watch(
-  () => props.editingDescriptionId,
-  (newId) => {
-    if (newId === props.provider.id) {
-      localDescriptionValue.value = props.provider.description || ''
-    }
-  },
-)
-
-function handleStartEdit(event: Event) {
-  event.stopPropagation()
-  emit('startEditDescription', event, props.provider)
-}
-
-function handleSave(event: Event) {
-  event.stopPropagation()
-  emit('saveDescription', event, props.provider, localDescriptionValue.value)
-}
-
-function handleCancel(event?: Event) {
-  event?.stopPropagation()
-  emit('cancelEditDescription', event)
-}
-
-function handleDescriptionKeydown(event: KeyboardEvent) {
-  if (event.key === 'Enter') {
-    event.preventDefault()
-    handleSave(event)
-  } else if (event.key === 'Escape') {
-    handleCancel(event)
-  }
-}
 
 function getCredentialLabel(_provider: ProviderWithEndpointsSummary): string {
   return legacyT('密钥')

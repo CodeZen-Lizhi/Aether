@@ -4,30 +4,20 @@
   table-layout: fixed;
 }
 /*
- * 固定宽度列按内容的真实上限分配，避免列宽大于内容后在宽窗口留下空白；
- * 提供商信息列不设宽度，由 table-layout:fixed 把剩余空间全部给它，
- * 名称和备注可自然换行，窗口缩小时也不会挤压右侧状态与操作列。
+ * 除提供商信息外的五列全部使用固定像素，使窗口缩放时列宽完全一致，
+ * 与最大化时看到的是同一套列宽；多出的宽度全部回到提供商信息列，
+ * 由 table-layout:fixed 分配，名称和备注在信息列内自然换行。
  */
 .provider-list__info-column { width: auto; }
-.provider-list__balance-column { width: 15%; }
-.provider-list__resources-column { width: 8%; }
-/* 端点健康内容有 max-w-[240px] 上限，列宽只需覆盖该上限。 */
-.provider-list__health-column { width: 18%; }
-.provider-list__status-column { width: 7%; }
+/* 余额监控按“签到 + 进度条”一行排布的实际占位。 */
+.provider-list__balance-column { width: 7rem; }
+/* 资源统计用 w-fit 双列网格，需要 7rem 才能让「端点/密钥/模型」保持单行。 */
+.provider-list__resources-column { width: 7rem; }
+/* 端点健康为自适应网格，窄一点会换成两行展示，避免宽窗口下留白。 */
+.provider-list__health-column { width: 13rem; }
+.provider-list__status-column { width: 4rem; }
 /* 操作列需容纳 5 个 28px 图标按钮及间距，固定像素避免窄窗口压缩按钮。 */
 .provider-list__actions-column { width: 11rem; }
-
-/*
- * 百分比列在窄窗口会随容器收缩，保证最小窗口仍可读；但在宽窗口会无限增长，
- * 超过内容实际占用后形成大片留白。容器够宽时改为按内容上限固定宽度，
- * 让多出的空间全部回到提供商信息列。
- */
-@container provider-list (min-width: 70rem) {
-  .provider-list__balance-column { width: 10rem; }
-  .provider-list__resources-column { width: 6rem; }
-  .provider-list__health-column { width: 16rem; }
-  .provider-list__status-column { width: 4.5rem; }
-}
 .provider-list .responsive-list-table th,
 .provider-list .responsive-list-table td {
   min-width: 0;

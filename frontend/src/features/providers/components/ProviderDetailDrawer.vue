@@ -152,12 +152,28 @@
                           @toggle-active="toggleKeyActive(key)"
                           @delete="handleDeleteKey(key)"
                         >
+                          <template #before-edit>
+                            <ProviderKeyDetailPopover
+                              :api-key="key"
+                              :masked-secret-label="getProviderMaskedSecretLabel(key)"
+                              @edit="handleEditKey(endpoint, key)"
+                            />
+                          </template>
                           <template #after-recover>
                             <KeyMultiplierControl :api-key="key" :provider-id="provider.id" action-only @refresh="loadProviderKeys" />
                           </template>
                         </ProviderKeyActionCluster>
                       </div>
                     </div>
+                    <!-- 备注：有值才占用一行，单行省略并悬浮显示完整内容 -->
+                    <p
+                      v-if="key.note"
+                      class="mt-2 truncate text-[11px] text-muted-foreground"
+                      :title="key.note"
+                      data-testid="provider-key-note"
+                    >
+                      {{ legacyT('备注') }}: {{ key.note }}
+                    </p>
                     <!-- 第二行：API 格式（展开显示） + 统计信息 -->
                     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mt-3 text-[11px] text-muted-foreground">
                       <KeyMultiplierControl :api-key="key" :provider-id="provider.id" @refresh="loadProviderKeys" @settings-open="multiplierSettingsOpen = $event" />
@@ -382,6 +398,7 @@ import FailoverRulesDialog from '@/features/providers/components/FailoverRulesDi
 import ProviderDetailHeader from '@/features/providers/components/ProviderDetailHeader.vue'
 import ProviderKeyActionCluster from '@/features/providers/components/ProviderKeyActionCluster.vue'
 import ProviderKeyIdentityBlock from '@/features/providers/components/ProviderKeyIdentityBlock.vue'
+import ProviderKeyDetailPopover from '@/features/providers/components/ProviderKeyDetailPopover.vue'
 import KeyMultiplierControl from '@/features/providers/components/KeyMultiplierControl.vue'
 import ProviderMonthlyQuotaCard from '@/features/providers/components/ProviderMonthlyQuotaCard.vue'
 import ProviderQuotaProgressRow from '@/features/providers/components/ProviderQuotaProgressRow.vue'

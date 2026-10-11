@@ -112,6 +112,37 @@ npm --prefix apps/aether-desktop run build -- --config /absolute/path/signing.js
 
 ## 验证
 
+### 交付门禁
+
+agent 按全局共享手册的 `tools/delivery-gate.md` 创建本次任务清单及简短审查记录，保存于 `.cache/delivery/<任务>/` 或私有临时目录；由 agent 完成，不要求用户手工维护。清单 `root` 必须为当前仓库绝对路径，列出实际适用规范正文、受影响源码/测试/配置和本次行为断言。共享脚本通过 `--gate` 或 `DELIVERY_GATE` 指定，另可用 `PYTHON` 指定解释器，不把个人云盘路径写进项目脚本。
+
+```bash
+# 验收已构建候选包；示例路径由 agent 按本次任务填写
+npm --prefix apps/aether-desktop run verify:delivery -- \
+  --gate /absolute/engineering-handbook/tools/delivery_gate.py \
+  --plan .cache/delivery/task/plan.json --output .cache/delivery/task/run-1
+
+# 校验清单 → 原有构建入口 → 对实际产物执行验收 → 复核证据
+npm --prefix apps/aether-desktop run build:verified -- \
+  --gate /absolute/engineering-handbook/tools/delivery_gate.py \
+  --plan .cache/delivery/task/plan.json --output .cache/delivery/task/run-2 -- --bundles app
+```
+
+每次执行需要全新证据目录。`build:verified` 要求声明 `artifacts` 并提供 `artifact` 检查；实际产物路径须与目标架构、输出目录及新版本一致（需要时直接绑定稳定的 `.app` 路径）。构建仍按原规则递增版本，构建结束后才绑定文件指纹。构建和测试脚本也纳入输入，候选包的测试必须运行声明的包内程序/资源；仅检查包存在不能冒充功能成功。实际服务、浏览器和 WKWebView 的选择继续遵循下面的验证要求。
+
+最终交付草稿可用 `--final /absolute/draft.md` 一并检查。后续只复核已有证据可直接调用共享工具 `check`，无需重新打包。失败返回非零，日志留在私有证据目录；普通 `build` 仍可用于开发构建，其产物不自动获得功能通过结论。该入口不安装、上传或发布产物，也不拦截聊天回复。
+
+### 现有验证命令
+
+调度优先级引用已删除供应商导致备份失败的回归，可用真实网关程序运行：
+
+```bash
+python3 apps/aether-desktop/scripts/qa_backup_routing.py /absolute/new/aether-gateway \
+  --legacy /absolute/old/aether-gateway
+```
+
+脚本创建隔离 SQLite 和合成凭据，实际删除供应商、等待后台任务完成、验证旧版 HTTP 500，再用新版启动同一数据库并导出、解析、恢复、再次导出。不会读写已安装应用的工作数据库；旧程序参数仅用于复现，可省略。升级只清理不存在实体的优先级，保留有效密钥和规则；未处理的失效白名单仍由完整性校验明确报错。
+
 前后端契约及本次验收证据记录在 `docs/tasks/09-09-tauri-macos/implement.md`。核心自动检查：
 
 ```bash

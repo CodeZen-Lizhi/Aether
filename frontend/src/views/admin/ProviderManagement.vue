@@ -138,7 +138,6 @@
               v-for="provider in displayedProviders"
               :key="provider.id"
               :provider="provider"
-              :editing-description-id="editingDescriptionId"
               :is-balance-loading="isBalanceLoading"
               :get-provider-balance="getProviderBalance"
               :get-provider-balance-breakdown="getProviderBalanceBreakdown"
@@ -155,9 +154,6 @@
               @open-ops-config="openOpsConfigDialog"
               @toggle-status="toggleProviderStatus"
               @delete-provider="handleDeleteProvider"
-              @start-edit-description="startEditDescription"
-              @save-description="saveDescription"
-              @cancel-edit-description="cancelEditDescription"
             />
           </TableBody>
         </Table>
@@ -172,7 +168,6 @@
           v-for="provider in displayedProviders"
           :key="provider.id"
           :provider="provider"
-          :editing-description-id="editingDescriptionId"
           :is-balance-loading="isBalanceLoading"
           :get-provider-balance="getProviderBalance"
           :get-provider-balance-breakdown="getProviderBalanceBreakdown"
@@ -187,9 +182,6 @@
           @open-ops-config="openOpsConfigDialog"
           @toggle-status="toggleProviderStatus"
           @delete-provider="handleDeleteProvider"
-          @start-edit-description="startEditDescription"
-          @save-description="saveDescription"
-          @cancel-edit-description="cancelEditDescription"
         />
       </div>
     </Card>
@@ -448,9 +440,6 @@ const {
   stopTick,
 } = useProviderBalance()
 
-// 内联编辑备注
-const editingDescriptionId = ref<string | null>(null)
-
 // 系统默认路由分组的供应商调度优先级（provider_id -> priority，1 起越小越靠前）；
 // 加载失败或无配置时保持空表，排序退化为「启用状态 → 创建时间」
 const providerPriorities = ref<Record<string, number>>({})
@@ -471,35 +460,6 @@ const displayedProviders = computed(() =>
   sortProvidersByActiveAndPriority(providers.value, providerPriorities.value))
 
 useProviderHealthRefresh(providers, queryParams, loading)
-
-function startEditDescription(_event: Event, provider: ProviderWithEndpointsSummary) {
-  editingDescriptionId.value = provider.id
-}
-
-function cancelEditDescription(_event?: Event) {
-  editingDescriptionId.value = null
-}
-
-async function saveDescription(_event: Event, provider: ProviderWithEndpointsSummary, newValue: string) {
-  const trimmed = newValue.trim()
-  const oldValue = provider.description || ''
-  if (trimmed === oldValue) {
-    cancelEditDescription()
-    return
-  }
-  try {
-    await updateProvider(provider.id, { description: trimmed || null })
-    provider.description = trimmed || undefined
-    // 同步更新 providers 数组
-    const target = providers.value.find(p => p.id === provider.id)
-    if (target) {
-      target.description = trimmed || undefined
-    }
-    cancelEditDescription()
-  } catch (err: unknown) {
-    showLegacyError(err, '更新备注失败')
-  }
-}
 
 // 加载全局模型列表（用于模型筛选下拉）
 async function loadGlobalModelList(options: { cacheTtlMs?: number } = {}) {
@@ -700,27 +660,17 @@ async function toggleProviderStatus(provider: ProviderWithEndpointsSummary) {
   }
 }
 
-// 点击外部自动取消编辑备注
-function handleGlobalClick(event: MouseEvent) {
-  if (!editingDescriptionId.value) return
-  const target = event.target as HTMLElement
-  if (target.closest('[data-desc-editor]')) return
-  cancelEditDescription()
-}
-
 onMounted(() => {
   void loadProviders({ cacheTtlMs: PROVIDER_SUMMARY_CACHE_TTL_MS })
   void loadGlobalModelList({ cacheTtlMs: PROVIDER_MODEL_FILTER_CACHE_TTL_MS })
   void loadArchitectureSchemas()
   void loadProviderPriorities()
-  document.addEventListener('click', handleGlobalClick, true)
   startTick()
 })
 
 onUnmounted(() => {
   deletePollAbort?.abort()
   if (debounceTimer) clearTimeout(debounceTimer)
-  document.removeEventListener('click', handleGlobalClick, true)
   stopTick()
 })
 </script>

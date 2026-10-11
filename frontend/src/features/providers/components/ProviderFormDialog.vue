@@ -278,7 +278,6 @@ const submitLabel = computed(() => {
 // 表单数据
 const form = ref({
   name: '',
-  description: '',
   website: '',
   // 状态配置
   is_active: true,
@@ -300,7 +299,6 @@ const form = ref({
 function resetForm() {
   form.value = {
     name: '',
-    description: '',
     website: '',
     is_active: true,
     rate_limit: undefined,
@@ -323,7 +321,6 @@ function loadProviderData() {
   if (!props.provider) return
   form.value = {
     name: props.provider.name,
-    description: props.provider.description || '',
     website: props.provider.website || '',
     is_active: props.provider.is_active,
     rate_limit: undefined,
@@ -385,7 +382,6 @@ const handleSubmit = async () => {
     }
     const basePayload = {
       name: form.value.name,
-      description: form.value.description || undefined,
       website: form.value.website || undefined,
       responses_websocket_enabled: form.value.responses_websocket_enabled,
       is_active: form.value.is_active,
