@@ -4,32 +4,39 @@
   table-layout: fixed;
 }
 /*
- * 除提供商信息外的五列全部使用固定像素，使窗口缩放时列宽完全一致，
- * 与最大化时看到的是同一套列宽；多出的宽度全部回到提供商信息列，
- * 由 table-layout:fixed 分配，名称和备注在信息列内自然换行。
+ * 六列全部按比例分配，窗口缩放时列宽同比变化：窄窗口下各列仍够放下单行
+ * 内容，宽窗口下所有列同步拉开，不会出现某一列独吞富余宽度、其余列挤在
+ * 一侧的情况。比例取自各列内容的实际占位，合计 100%。
  */
-.provider-list__info-column { width: auto; }
-/* 余额监控按“签到 + 进度条”一行排布的实际占位。 */
-.provider-list__balance-column { width: 7rem; }
-/* 资源统计用 w-fit 双列网格，需要 7rem 才能让「端点/密钥/模型」保持单行。 */
-.provider-list__resources-column { width: 7rem; }
-/* 端点健康为自适应网格，窄一点会换成两行展示，避免宽窗口下留白。 */
-.provider-list__health-column { width: 13rem; }
-.provider-list__status-column { width: 4rem; }
-/* 操作列需容纳 5 个 28px 图标按钮及间距，固定像素避免窄窗口压缩按钮。 */
-.provider-list__actions-column { width: 11rem; }
-.provider-list .responsive-list-table th,
-.provider-list .responsive-list-table td {
-  min-width: 0;
-  vertical-align: middle;
-}
-.provider-list .responsive-list-table th:nth-child(3),
-.provider-list .responsive-list-table th:nth-child(5),
-.provider-list .responsive-list-table th:nth-child(6),
-.provider-list .responsive-list-table td:nth-child(5),
-.provider-list .responsive-list-table td:nth-child(6) { text-align: center; }
+.provider-list__info-column { width: 20%; }
+/* 余额监控为“签到 + 进度条”一行排布。 */
+.provider-list__balance-column { width: 12%; }
+/* 资源统计用双列网格。 */
+.provider-list__resources-column { width: 15%; }
+/* 端点健康为自适应网格，需要最宽的份额才能在窄窗口下保持单行。 */
+.provider-list__health-column { width: 26%; }
+/* 状态列只放一个固定尺寸的短徽标。 */
+.provider-list__status-column { width: 7%; }
+/* 操作列需容纳 5 个 28px 图标按钮及间距。 */
+.provider-list__actions-column { width: 20%; }
+
+/*
+ * 窄窗口下按比例算出的宽度可能不足以放下单行内容：资源统计会竖排，操作按钮
+ * 会被挤出单元格。这里为这两列补下限；下限只在该列按比例算出的宽度确实不够时
+ * 生效，窗口放宽后仍回到纯比例，因此最大化时各列间距依然同步放大。
+ */
+.provider-list__resources-column,
+.provider-list .responsive-list-table td:nth-child(3) { min-width: 7.5rem; }
+.provider-list__actions-column,
+.provider-list .responsive-list-table td:nth-child(6) { min-width: 10.5rem; }
+
+/*
+ * 资源统计、端点健康与状态三列的内容宽度由内容本身决定（w-fit / max-w /
+ * 固定徽标），不随列宽拉伸。居中摆放让两侧留白均分，避免空白全部堆在一侧。
+ */
 .provider-list .responsive-list-table td:nth-child(3) > div { margin-inline: auto; }
-.provider-list .responsive-list-table td:nth-child(4) > div { width: 100%; }
+.provider-list .responsive-list-table td:nth-child(4) > div { margin-inline: auto; }
+.provider-list .responsive-list-table td:nth-child(5) > div { margin-inline: auto; }
 
 /* 供应商管理始终保持表格列布局，窗口缩小时也不切换成纵向卡片。 */
 .responsive-list.provider-list > .responsive-list-table { display: block; }

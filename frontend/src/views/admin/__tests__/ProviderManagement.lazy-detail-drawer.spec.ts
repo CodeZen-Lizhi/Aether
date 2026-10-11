@@ -46,23 +46,25 @@ describe('ProviderManagement provider list', () => {
     expect(layout).not.toContain('@container provider-list (max-width: 57.999rem)')
   })
 
-  it('pins provider table columns to fixed widths so zooming does not reshuffle them', () => {
+  it('lays out provider table columns proportionally so resizing rescales every column', () => {
     const layout = readFileSync(
       resolve(process.cwd(), 'src/views/admin/provider-list-layout.css'),
       'utf8',
     )
 
-    // 提供商信息列吸收全部剩余宽度。
-    expect(layout).toContain('.provider-list__info-column { width: auto; }')
-    // 其余五列必须使用固定像素；百分比会让列宽随窗口缩放变化。
-    for (const column of ['balance', 'resources', 'health', 'status', 'actions']) {
-      expect(layout).toMatch(new RegExp(`\\.provider-list__${column}-column \\{ width: [\\d.]+rem; \\}`))
+    // 六列都必须按百分比分配：固定像素会让某一列独吞富余宽度、其余列挤在一侧。
+    const ratios: Record<string, number> = {}
+    for (const column of ['info', 'balance', 'resources', 'health', 'status', 'actions']) {
+      const matched = layout.match(new RegExp(`\\.provider-list__${column}-column \\{ width: ([\\d.]+)%; \\}`))
+      expect(matched, `${column} 列必须声明百分比宽度`).not.toBeNull()
+      ratios[column] = Number(matched?.[1])
     }
-    // 资源统计需 7rem 才能让「端点/密钥/模型」保持单行。
-    expect(layout).toContain('.provider-list__resources-column { width: 7rem; }')
-    // 操作列需容纳 5 个 28px 图标按钮及间距。
-    expect(layout).toContain('.provider-list__actions-column { width: 11rem; }')
-    // 固定列宽后不再按容器宽度分档。
+    // 比例合计必须为 100%，否则 table-layout:fixed 会留下一列独吞差额。
+    const total = Object.values(ratios).reduce((sum, value) => sum + value, 0)
+    expect(total).toBeCloseTo(100, 5)
+    // 不允许任何一列退化为固定像素或 auto。
+    expect(layout).not.toMatch(/\.provider-list__\w+-column \{ width: (auto|[\d.]+rem); \}/)
+    // 比例分配后不再按容器宽度分档。
     expect(layout).not.toContain('@container provider-list (min-width: 70rem)')
   })
 })
