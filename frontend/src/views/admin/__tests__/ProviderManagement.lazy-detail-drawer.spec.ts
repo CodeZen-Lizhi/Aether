@@ -45,4 +45,17 @@ describe('ProviderManagement provider list', () => {
     expect(layout).toContain('.responsive-list.provider-list > .responsive-list-cards { display: none; }')
     expect(layout).not.toContain('@container provider-list (max-width: 57.999rem)')
   })
+
+  it('allocates provider table columns without leaving empty gaps', () => {
+    const layout = readFileSync(
+      resolve(process.cwd(), 'src/views/admin/provider-list-layout.css'),
+      'utf8',
+    )
+
+    // 提供商信息列吸收全部剩余宽度，其余列不得再按比例撑出内容上限之外的空白。
+    expect(layout).toContain('.provider-list__info-column { width: auto; }')
+    // 端点健康内容有 max-w-[240px] 上限，操作列需容纳 5 个 28px 图标按钮。
+    expect(layout).toContain('.provider-list__health-column { width: 18%; }')
+    expect(layout).toContain('.provider-list__actions-column { width: 11rem; }')
+  })
 })

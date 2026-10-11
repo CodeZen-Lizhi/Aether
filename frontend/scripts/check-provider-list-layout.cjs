@@ -16,6 +16,12 @@ async (page) => {
         tableWidth: rect.width,
         overflow: document.documentElement.scrollWidth > innerWidth,
         aligned: cells.every((cell, i) => Math.abs(cell.x - heads[i].x) < 1 && Math.abs(cell.width - heads[i].width) < 1),
+        // 列宽不得远超内容实际占用，避免出现截图里那种大片空白。
+        gaps: [...document.querySelector('tbody tr').children].map(cell => {
+          const content = cell.firstElementChild
+          if (!content) return 0
+          return Math.round(cell.getBoundingClientRect().width - content.getBoundingClientRect().width)
+        }),
         actionsRight: cells[5].right,
         tableRight: rect.right,
         buttonsFit: [...document.querySelectorAll('tbody tr')].every(row => {
@@ -29,6 +35,9 @@ async (page) => {
     })
     if (result.overflow) throw new Error(`${width}: 页面横向溢出`)
     if (result.visible) {
+      // 允许的差额只是单元格 padding；正文列超出说明列宽分配与内容不匹配。
+      const tooWide = result.gaps.findIndex((gap, index) => index !== 0 && gap > 48)
+      if (tooWide > 0) throw new Error(`${width}: 第 ${tooWide + 1} 列过宽，留白 ${result.gaps[tooWide]}px ${JSON.stringify(result)}`)
       if (Math.abs(result.tableWidth - result.containerWidth) > 2 || !result.aligned || !result.buttonsFit || Math.abs(result.actionsRight - result.tableRight) > 2) {
         throw new Error(`${width}: 列宽或对齐错误 ${JSON.stringify(result)}`)
       }
