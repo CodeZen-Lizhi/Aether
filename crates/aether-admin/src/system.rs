@@ -6,9 +6,7 @@ use aether_data::repository::{
     system::StoredSystemConfigEntry,
     wallet::StoredWalletSnapshot,
 };
-use aether_data_contracts::repository::provider_catalog::{
-    StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
-};
+use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogEndpoint;
 use axum::http;
 use axum::{
     body::Body,
@@ -195,24 +193,6 @@ pub struct AdminSystemConfigProviderKey {
     pub proxy: Option<Value>,
     #[serde(default)]
     pub fingerprint: Option<Value>,
-    #[serde(default)]
-    pub learned_rpm_limit: Option<u32>,
-    #[serde(default)]
-    pub concurrent_429_count: Option<u32>,
-    #[serde(default)]
-    pub rpm_429_count: Option<u32>,
-    #[serde(default)]
-    pub last_429_at_unix_secs: Option<u64>,
-    #[serde(default)]
-    pub last_429_type: Option<String>,
-    #[serde(default)]
-    pub adjustment_history: Option<Value>,
-    #[serde(default)]
-    pub utilization_samples: Option<Value>,
-    #[serde(default)]
-    pub last_probe_increase_at_unix_secs: Option<u64>,
-    #[serde(default)]
-    pub last_rpm_peak: Option<u32>,
     #[serde(default)]
     pub request_count: Option<u32>,
     #[serde(default)]
@@ -870,6 +850,26 @@ pub fn validate_admin_backup_fields(
 fn normalize_config_backup_content(
     root: &mut Map<String, Value>,
 ) -> Result<(), (http::StatusCode, Value)> {
+    const RETIRED_PROVIDER_KEY_LEARNING_FIELDS: [&str; 9] = [
+        "learned_rpm_limit",
+        "concurrent_429_count",
+        "rpm_429_count",
+        "last_429_at_unix_secs",
+        "last_429_type",
+        "adjustment_history",
+        "utilization_samples",
+        "last_probe_increase_at_unix_secs",
+        "last_rpm_peak",
+    ];
+    const RETIRED_PROVIDER_KEY_SNAPSHOT_LEARNING_FIELDS: [&str; 6] = [
+        "learning_confidence",
+        "enforcement_active",
+        "observation_count",
+        "header_observation_count",
+        "latest_upstream_limit",
+        "known_boundary",
+    ];
+
     let Some(providers) = root.get_mut("providers").and_then(Value::as_array_mut) else {
         return Ok(()); // The document decoder reports missing or malformed sections.
     };
@@ -906,6 +906,18 @@ fn normalize_config_backup_content(
                 &mut key_ids,
                 format!("import:key:{provider_index}:{key_index}"),
             );
+            // 旧备份中的学习状态已停用；丢弃这些字段后继续恢复其他配置。
+            for field in RETIRED_PROVIDER_KEY_LEARNING_FIELDS {
+                key.remove(field);
+            }
+            if let Some(status_snapshot) = key
+                .get_mut("status_snapshot")
+                .and_then(Value::as_object_mut)
+            {
+                for field in RETIRED_PROVIDER_KEY_SNAPSHOT_LEARNING_FIELDS {
+                    status_snapshot.remove(field);
+                }
+            }
             if let Some(legacy) = key
                 .remove("supported_endpoints")
                 .filter(|value| !value.is_null())
@@ -1286,214 +1298,6 @@ pub fn is_admin_system_configs_root(request_path: &str) -> bool {
 /// 从单项系统配置路径提取配置键。
 pub fn admin_system_config_key_from_path(request_path: &str) -> Option<String> {
     path_identifier_from_path(request_path, "/api/admin/system/configs/")
-}
-
-pub fn admin_adaptive_effective_limit(key: &StoredProviderCatalogKey) -> Option<u32> {
-    if key.rpm_limit.is_none() {
-        key.learned_rpm_limit
-    } else {
-        key.rpm_limit
-    }
-}
-
-pub fn admin_adaptive_adjustment_items(
-    value: Option<&serde_json::Value>,
-) -> Vec<serde_json::Map<String, serde_json::Value>> {
-    value
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(serde_json::Value::as_object)
-        .cloned()
-        .collect()
-}
-
-pub fn admin_adaptive_key_payload(key: &StoredProviderCatalogKey) -> serde_json::Value {
-    json!({
-        "id": key.id,
-        "name": key.name,
-        "provider_id": key.provider_id,
-        "api_formats": key
-            .api_formats
-            .as_ref()
-            .and_then(serde_json::Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(serde_json::Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default(),
-        "is_adaptive": key.rpm_limit.is_none(),
-        "rpm_limit": key.rpm_limit,
-        "effective_limit": admin_adaptive_effective_limit(key),
-        "learned_rpm_limit": key.learned_rpm_limit,
-        "concurrent_429_count": key.concurrent_429_count.unwrap_or(0),
-        "rpm_429_count": key.rpm_429_count.unwrap_or(0),
-    })
-}
-
-pub fn build_admin_adaptive_summary_payload(
-    keys: &[StoredProviderCatalogKey],
-) -> serde_json::Value {
-    let adaptive_keys = keys
-        .iter()
-        .filter(|key| key.rpm_limit.is_none())
-        .collect::<Vec<_>>();
-
-    let total_keys = adaptive_keys.len() as u64;
-    let total_concurrent_429 = adaptive_keys
-        .iter()
-        .map(|key| u64::from(key.concurrent_429_count.unwrap_or(0)))
-        .sum::<u64>();
-    let total_rpm_429 = adaptive_keys
-        .iter()
-        .map(|key| u64::from(key.rpm_429_count.unwrap_or(0)))
-        .sum::<u64>();
-
-    let mut recent_adjustments = Vec::new();
-    let mut total_adjustments = 0usize;
-    for key in adaptive_keys {
-        let history = admin_adaptive_adjustment_items(key.adjustment_history.as_ref());
-        total_adjustments += history.len();
-        for adjustment in history.into_iter().rev().take(3) {
-            let mut payload = adjustment;
-            payload.insert("key_id".to_string(), json!(key.id));
-            payload.insert("key_name".to_string(), json!(key.name));
-            recent_adjustments.push(serde_json::Value::Object(payload));
-        }
-    }
-
-    recent_adjustments.sort_by(|left, right| {
-        let lhs = left
-            .get("timestamp")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let rhs = right
-            .get("timestamp")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        rhs.cmp(lhs)
-    });
-
-    json!({
-        "total_adaptive_keys": total_keys,
-        "total_concurrent_429_errors": total_concurrent_429,
-        "total_rpm_429_errors": total_rpm_429,
-        "total_adjustments": total_adjustments,
-        "recent_adjustments": recent_adjustments.into_iter().take(10).collect::<Vec<_>>(),
-    })
-}
-
-pub fn build_admin_adaptive_stats_payload(key: &StoredProviderCatalogKey) -> serde_json::Value {
-    let status_snapshot = key
-        .status_snapshot
-        .as_ref()
-        .and_then(serde_json::Value::as_object);
-    let adjustments = admin_adaptive_adjustment_items(key.adjustment_history.as_ref());
-    let adjustment_count = adjustments.len();
-    let recent_adjustments = adjustments
-        .into_iter()
-        .rev()
-        .take(10)
-        .map(serde_json::Value::Object)
-        .collect::<Vec<_>>();
-
-    json!({
-        "adaptive_mode": key.rpm_limit.is_none(),
-        "rpm_limit": key.rpm_limit,
-        "effective_limit": admin_adaptive_effective_limit(key),
-        "learned_limit": key.learned_rpm_limit,
-        "concurrent_429_count": key.concurrent_429_count.unwrap_or(0),
-        "rpm_429_count": key.rpm_429_count.unwrap_or(0),
-        "last_429_at": key.last_429_at_unix_secs.and_then(unix_secs_to_rfc3339),
-        "last_429_type": key.last_429_type,
-        "adjustment_count": adjustment_count,
-        "recent_adjustments": recent_adjustments,
-        "learning_confidence": status_snapshot.and_then(|value| value.get("learning_confidence")).cloned(),
-        "enforcement_active": status_snapshot.and_then(|value| value.get("enforcement_active")).cloned(),
-        "observation_count": status_snapshot
-            .and_then(|value| value.get("observation_count"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0),
-        "header_observation_count": status_snapshot
-            .and_then(|value| value.get("header_observation_count"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0),
-        "latest_upstream_limit": status_snapshot
-            .and_then(|value| value.get("latest_upstream_limit"))
-            .and_then(serde_json::Value::as_u64),
-    })
-}
-
-pub fn build_admin_adaptive_toggle_mode_payload(
-    updated: &StoredProviderCatalogKey,
-    message: String,
-) -> serde_json::Value {
-    json!({
-        "message": message,
-        "key_id": updated.id,
-        "is_adaptive": updated.rpm_limit.is_none(),
-        "rpm_limit": updated.rpm_limit,
-        "effective_limit": admin_adaptive_effective_limit(updated),
-    })
-}
-
-pub fn build_admin_adaptive_set_limit_payload(
-    updated: &StoredProviderCatalogKey,
-    was_adaptive: bool,
-    limit: u32,
-) -> serde_json::Value {
-    json!({
-        "message": format!("已设置为固定限制模式，RPM 限制为 {limit}"),
-        "key_id": updated.id,
-        "is_adaptive": false,
-        "rpm_limit": updated.rpm_limit,
-        "previous_mode": if was_adaptive { "adaptive" } else { "fixed" },
-    })
-}
-
-pub fn build_admin_adaptive_reset_learning_payload(key_id: &str) -> serde_json::Value {
-    json!({
-        "message": "学习状态已重置",
-        "key_id": key_id,
-    })
-}
-
-pub fn admin_adaptive_key_not_found_response(key_id: &str) -> Response<Body> {
-    (
-        http::StatusCode::NOT_FOUND,
-        Json(json!({ "detail": format!("Key {key_id} 不存在") })),
-    )
-        .into_response()
-}
-
-pub fn admin_adaptive_dispatcher_not_found_response() -> Response<Body> {
-    (
-        http::StatusCode::NOT_FOUND,
-        Json(json!({ "detail": "Adaptive route not found" })),
-    )
-        .into_response()
-}
-
-pub fn admin_adaptive_key_id_from_path(path: &str) -> Option<String> {
-    let normalized = path.trim_end_matches('/');
-    let mut segments = normalized.split('/').filter(|segment| !segment.is_empty());
-    match (
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-    ) {
-        (Some("api"), Some("admin"), Some("adaptive"), Some("keys"), Some(key_id))
-            if !key_id.is_empty() =>
-        {
-            Some(key_id.to_string())
-        }
-        _ => None,
-    }
 }
 
 pub const ADMIN_PROXY_NODES_DATA_UNAVAILABLE_DETAIL: &str = "Admin proxy nodes data unavailable";

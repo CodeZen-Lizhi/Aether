@@ -2,87 +2,13 @@ use axum::http;
 
 use super::{classified, ClassifiedRoute};
 
-/// 识别仍受支持的自适应与计价管理路由。
+/// 识别仍受支持的计价管理路由。
 pub(super) fn classify_admin_basic_family_route(
     method: &http::Method,
     normalized_path: &str,
     normalized_path_no_trailing: &str,
 ) -> Option<ClassifiedRoute> {
     if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/admin/adaptive/keys" | "/api/admin/adaptive/keys/"
-        )
-    {
-        Some(classified(
-            "admin_proxy",
-            "adaptive_manage",
-            "list_keys",
-            "admin:adaptive",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && matches!(
-            normalized_path,
-            "/api/admin/adaptive/summary" | "/api/admin/adaptive/summary/"
-        )
-    {
-        Some(classified(
-            "admin_proxy",
-            "adaptive_manage",
-            "summary",
-            "admin:adaptive",
-            false,
-        ))
-    } else if method == http::Method::GET
-        && normalized_path.starts_with("/api/admin/adaptive/keys/")
-        && normalized_path.ends_with("/stats")
-        && normalized_path.matches('/').count() == 6
-    {
-        Some(classified(
-            "admin_proxy",
-            "adaptive_manage",
-            "get_stats",
-            "admin:adaptive",
-            false,
-        ))
-    } else if method == http::Method::PATCH
-        && normalized_path.starts_with("/api/admin/adaptive/keys/")
-        && normalized_path.ends_with("/mode")
-        && normalized_path.matches('/').count() == 6
-    {
-        Some(classified(
-            "admin_proxy",
-            "adaptive_manage",
-            "toggle_mode",
-            "admin:adaptive",
-            false,
-        ))
-    } else if method == http::Method::PATCH
-        && normalized_path.starts_with("/api/admin/adaptive/keys/")
-        && normalized_path.ends_with("/limit")
-        && normalized_path.matches('/').count() == 6
-    {
-        Some(classified(
-            "admin_proxy",
-            "adaptive_manage",
-            "set_limit",
-            "admin:adaptive",
-            false,
-        ))
-    } else if method == http::Method::DELETE
-        && normalized_path.starts_with("/api/admin/adaptive/keys/")
-        && normalized_path.ends_with("/learning")
-        && normalized_path.matches('/').count() == 6
-    {
-        Some(classified(
-            "admin_proxy",
-            "adaptive_manage",
-            "reset_learning",
-            "admin:adaptive",
-            false,
-        ))
-    } else if method == http::Method::GET
         && matches!(
             normalized_path,
             "/api/admin/provider-strategy/strategies" | "/api/admin/provider-strategy/strategies/"

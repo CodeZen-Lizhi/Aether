@@ -571,21 +571,6 @@ impl AppState {
         Ok(updated)
     }
 
-    pub(crate) async fn compare_and_update_provider_catalog_key_adaptive_state(
-        &self,
-        update: &provider_catalog::ProviderCatalogKeyAdaptiveStateUpdate,
-    ) -> Result<bool, GatewayError> {
-        let updated = self
-            .data
-            .compare_and_update_provider_catalog_key_adaptive_state(update)
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))?;
-        // A CAS conflict means a remote writer changed state, so local runtime reads
-        // must be refreshed even though this instance did not update the row.
-        self.invalidate_provider_runtime_state_caches();
-        Ok(updated)
-    }
-
     pub(crate) async fn update_provider_catalog_key_runtime_metadata(
         &self,
         update: &provider_catalog::ProviderCatalogKeyRuntimeMetadataUpdate,
@@ -597,7 +582,7 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))?;
         // A false result is a namespace CAS conflict.  Invalidate the runtime
         // snapshots before the caller reloads and retries. Upstream metadata is
-        // part of the transport snapshot, unlike health/adaptive state.
+        // part of the transport snapshot, unlike health state.
         self.invalidate_provider_transport_runtime_state_caches();
         Ok(updated)
     }

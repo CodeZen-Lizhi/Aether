@@ -96,8 +96,9 @@ use aether_data_contracts::repository::candidate_selection::{
     StoredMinimalCandidateSelectionRow, StoredRequestedModelCandidateRowsQuery,
 };
 use aether_data_contracts::repository::candidates::{
-    PublicHealthStatusCount, PublicHealthTimelineBucket, RequestCandidateReadRepository,
-    RequestCandidateWriteRepository, StoredRequestCandidate, UpsertRequestCandidateRecord,
+    KeyAttemptUsage, PublicHealthStatusCount, PublicHealthTimelineBucket,
+    RequestCandidateReadRepository, RequestCandidateWriteRepository, StoredRequestCandidate,
+    UpsertRequestCandidateRecord,
 };
 use aether_data_contracts::repository::global_models::{
     AdminGlobalModelListQuery, AdminProviderModelListQuery, CreateAdminGlobalModelRecord,
@@ -108,13 +109,13 @@ use aether_data_contracts::repository::global_models::{
     StoredPublicGlobalModelPage, UpdateAdminGlobalModelRecord, UpsertAdminProviderModelRecord,
 };
 use aether_data_contracts::repository::provider_catalog::{
-    ProviderCatalogKeyAdaptiveStateUpdate, ProviderCatalogKeyAdminCasUpdate,
-    ProviderCatalogKeyHealthStateUpdate, ProviderCatalogKeyListQuery,
-    ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthRuntimeStateCasUpdate,
-    ProviderCatalogKeyRuntimeMetadataUpdate, ProviderCatalogKeyStatusSnapshotUpdate,
-    ProviderCatalogReadRepository, ProviderCatalogWriteRepository, StoredProviderCatalogEndpoint,
-    StoredProviderCatalogKey, StoredProviderCatalogKeyMaintenanceSummary,
-    StoredProviderCatalogKeyPage, StoredProviderCatalogKeyStats, StoredProviderCatalogProvider,
+    ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyHealthStateUpdate,
+    ProviderCatalogKeyListQuery, ProviderCatalogKeyOAuthCredentialCasDelete,
+    ProviderCatalogKeyOAuthRuntimeStateCasUpdate, ProviderCatalogKeyRuntimeMetadataUpdate,
+    ProviderCatalogKeyStatusSnapshotUpdate, ProviderCatalogReadRepository,
+    ProviderCatalogWriteRepository, StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
+    StoredProviderCatalogKeyMaintenanceSummary, StoredProviderCatalogKeyPage,
+    StoredProviderCatalogKeyStats, StoredProviderCatalogProvider,
 };
 use aether_data_contracts::repository::quota::{
     ProviderQuotaReadRepository, ProviderQuotaWriteRepository, StoredProviderQuotaSnapshot,

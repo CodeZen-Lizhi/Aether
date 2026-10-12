@@ -543,7 +543,7 @@ async fn upstream_drop_mid_turn_reports_an_error_and_settles_the_usage_row() -> 
 ///
 /// 第一个 attempt 拿到 Codex 的 `usage_limit_reached`，网关换到第二把 key 重开一条
 /// 上游连接重放同一个 `response.create`。C6 之前，重试的规划发生在旧 attempt 结算
-/// 之前：规划读到的是旧 attempt 还没投射的 health / adaptive / pool 状态，而且旧
+/// 之前：规划读到的是旧 attempt 还没投射的 health / pool 状态，而且旧
 /// attempt 的 pool key lease 还被它自己占着。
 ///
 /// 顺序本身在这里无法确定性断言（结算与规划都在同一个任务里、DB 里看不到先后），

@@ -66,9 +66,8 @@ use crate::log_ids::short_request_id;
 use crate::orchestration::{
     apply_local_execution_effect, build_local_error_flow_metadata, trace_upstream_response_body,
     with_error_flow_report_context, with_upstream_response_report_context,
-    LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
-    LocalExecutionEffect, LocalExecutionEffectContext, LocalFailoverClassification,
-    LocalHealthFailureEffect, LocalHealthSuccessEffect,
+    LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
+    LocalFailoverClassification, LocalHealthFailureEffect, LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::acquire_provider_pool_in_flight_guard;
 use crate::request_candidate_runtime::{
@@ -1730,15 +1729,6 @@ async fn apply_sync_success_effects(
         LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
     )
     .await;
-    apply_local_execution_effect(
-        state,
-        LocalExecutionEffectContext {
-            plan,
-            report_context,
-        },
-        LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
-    )
-    .await;
 }
 
 #[cfg(test)]
@@ -2308,19 +2298,6 @@ async fn execute_execution_runtime_sync_impl(
             LocalExecutionEffect::AttemptFailure(LocalAttemptFailureEffect {
                 status_code: result.status_code,
                 classification: local_failover_analysis.classification,
-            }),
-        )
-        .await;
-        apply_local_execution_effect(
-            state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: report_context.as_ref(),
-            },
-            LocalExecutionEffect::AdaptiveRateLimit(LocalAdaptiveRateLimitEffect {
-                status_code: result.status_code,
-                classification: local_failover_analysis.classification,
-                headers: Some(&headers),
             }),
         )
         .await;

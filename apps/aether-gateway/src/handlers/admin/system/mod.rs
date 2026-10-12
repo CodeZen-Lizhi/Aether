@@ -1,4 +1,3 @@
-mod adaptive;
 mod core;
 mod proxy_nodes;
 mod routes;

@@ -107,9 +107,9 @@ use crate::orchestration::{
     apply_local_execution_effect, build_local_error_flow_metadata, classify_failure_disposition,
     trace_upstream_response_body, with_error_flow_report_context,
     with_upstream_response_report_context, FailureDisposition, FailureTokenAction,
-    LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect,
-    LocalExecutionEffect, LocalExecutionEffectContext, LocalFailoverAnalysis,
-    LocalFailoverClassification, LocalHealthFailureEffect, LocalHealthSuccessEffect,
+    LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
+    LocalFailoverAnalysis, LocalFailoverClassification, LocalHealthFailureEffect,
+    LocalHealthSuccessEffect,
 };
 use crate::provider_pool_demand::{
     acquire_provider_pool_in_flight_guard, ProviderPoolInFlightGuard,
@@ -1768,15 +1768,6 @@ impl DirectPassthroughFinalizerCore {
                 LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
             )
             .await;
-            apply_local_execution_effect(
-                &state,
-                LocalExecutionEffectContext {
-                    plan: &plan,
-                    report_context: usage_payload.report_context.as_ref(),
-                },
-                LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
-            )
-            .await;
         }
         record_stream_terminal_usage(
             &state,
@@ -2914,15 +2905,6 @@ async fn execute_stream_from_direct_passthrough(
                     report_context: usage_payload.report_context.as_ref(),
                 },
                 LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
-            )
-            .await;
-            apply_local_execution_effect(
-                &state_for_report,
-                LocalExecutionEffectContext {
-                    plan: &plan_for_report,
-                    report_context: usage_payload.report_context.as_ref(),
-                },
-                LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
             )
             .await;
         }
@@ -5230,19 +5212,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 plan: &plan,
                 report_context: report_context.as_ref(),
             },
-            LocalExecutionEffect::AdaptiveRateLimit(LocalAdaptiveRateLimitEffect {
-                status_code,
-                classification: failover_analysis.classification,
-                headers: Some(&headers),
-            }),
-        )
-        .await;
-        apply_local_execution_effect(
-            state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: report_context.as_ref(),
-            },
             LocalExecutionEffect::ClassifiedHealthFailure(
                 LocalHealthFailureEffect {
                     status_code,
@@ -7264,15 +7233,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
             )
             .await;
-            apply_local_execution_effect(
-                &state_for_report,
-                LocalExecutionEffectContext {
-                    plan: &plan_for_report,
-                    report_context: usage_payload.report_context.as_ref(),
-                },
-                LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
-            )
-            .await;
         }
         record_stream_terminal_usage(
             &state_for_report,
@@ -7394,9 +7354,9 @@ mod tests {
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
     use aether_data::repository::usage::InMemoryUsageReadRepository;
     use aether_data_contracts::repository::candidates::{
-        PublicHealthStatusCount, PublicHealthTimelineBucket, RequestCandidateReadRepository,
-        RequestCandidateStatus, RequestCandidateWriteRepository, StoredRequestCandidate,
-        UpsertRequestCandidateRecord,
+        KeyAttemptUsage, PublicHealthStatusCount, PublicHealthTimelineBucket,
+        RequestCandidateReadRepository, RequestCandidateStatus, RequestCandidateWriteRepository,
+        StoredRequestCandidate, UpsertRequestCandidateRecord,
     };
     use aether_data_contracts::repository::provider_catalog::{
         StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,
@@ -8228,6 +8188,15 @@ mod tests {
             limit: usize,
         ) -> Result<Vec<StoredRequestCandidate>, DataLayerError> {
             self.inner.list_recent(limit).await
+        }
+
+        async fn aggregate_attempted_by_key_ids_since(
+            &self,
+            min_observed_at_unix_secs_by_key: &std::collections::BTreeMap<String, u64>,
+        ) -> Result<Vec<KeyAttemptUsage>, DataLayerError> {
+            self.inner
+                .aggregate_attempted_by_key_ids_since(min_observed_at_unix_secs_by_key)
+                .await
         }
 
         async fn list_by_provider_id(

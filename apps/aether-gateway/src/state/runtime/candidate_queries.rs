@@ -89,6 +89,18 @@ impl AppState {
             .map_err(|err| GatewayError::Internal(err.to_string()))
     }
 
+    pub(crate) async fn aggregate_attempted_request_candidate_usage_by_key_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &std::collections::BTreeMap<String, u64>,
+    ) -> Result<Vec<candidates::KeyAttemptUsage>, GatewayError> {
+        self.data
+            .aggregate_attempted_request_candidate_usage_by_key_since(
+                min_observed_at_unix_secs_by_key,
+            )
+            .await
+            .map_err(|err| GatewayError::Internal(err.to_string()))
+    }
+
     pub(crate) async fn upsert_request_candidate(
         &self,
         candidate: candidates::UpsertRequestCandidateRecord,

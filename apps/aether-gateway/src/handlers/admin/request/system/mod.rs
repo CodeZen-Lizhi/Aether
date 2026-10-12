@@ -1,7 +1,6 @@
 use super::AdminAppState;
 use crate::GatewayError;
 
-mod adaptive;
 mod backup_keys;
 mod backup_proxy;
 mod backup_state;

@@ -52,9 +52,14 @@ in [SQLite lifecycle](../../aether-data/backend/sqlite-lifecycle.md).
   references. Match an existing address to its target ID before restoring these
   references; never leave the system default pointing at the source ID.
 - Channel Keys include upstream account metadata, model-fetch state, OAuth
-  invalidation, status/health/circuit snapshots, adaptive limits and cumulative
-  request/token/cost counters. For historical files, omitted state fields preserve
-  existing target values; explicit null/zero overwrites them. Restore these fields
+  invalidation, status/health/circuit snapshots, explicitly configured
+  `rpm_limit` / `concurrent_limit`, and cumulative request/token/cost counters.
+  Historical learning fields (`learned_rpm_limit`, 429 learning counters,
+  adjustment history, utilization samples, and probe/peak snapshots) are ignored
+  on import and omitted from new exports. Their legacy SQLite columns remain for
+  schema compatibility but are not read or written by active Key code. For
+  supported historical state fields, omitted values preserve existing target
+  values; explicit null/zero overwrites them. Restore those supported fields
   through `restore_key_backup_state` in the backup transaction after the normal
   credential CAS. Ordinary administrative edits must keep their runtime-writer
   ownership boundary.

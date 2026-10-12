@@ -328,7 +328,7 @@ async fn seed_provider_catalog(
         None,
         None,
     )?
-    .with_rate_limit_fields(None, None, None, None, None, None, None, None, None)
+    .with_rate_limits(None, None)
     .with_health_fields(
         Some(json!({"openai:chat": {"status": "healthy"}})),
         Some(json!({"openai:chat": {"state": "closed"}})),

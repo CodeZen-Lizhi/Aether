@@ -7,9 +7,7 @@ export interface RoutingKeyInfo {
   id: string
   name: string
   masked_key: string
-  rpm_limit?: number | null
-  is_adaptive: boolean
-  effective_rpm?: number | null
+  rpm_limit?: number | null // null 表示无限制
   cache_ttl_minutes: number
   health_score: number  // 0-1 小数格式
   is_active: boolean

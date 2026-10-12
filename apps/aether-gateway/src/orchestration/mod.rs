@@ -4,7 +4,6 @@ use serde_json::{json, Map, Value};
 
 use crate::AppState;
 
-mod adaptive;
 mod attempt;
 mod chat_health;
 mod circuit_probe;
@@ -21,10 +20,6 @@ mod rate_limit_probe;
 mod recovery;
 mod report_effects;
 
-pub(crate) use self::adaptive::{
-    project_local_adaptive_rate_limit, project_local_adaptive_success,
-    LocalAdaptiveRateLimitProjection, LocalAdaptiveSuccessProjection,
-};
 pub(crate) use self::attempt::{
     attempt_identity_from_report_context, build_local_attempt_identities,
     insert_pool_key_lease_report_context_fields, local_attempt_slot_count,
@@ -48,10 +43,9 @@ pub(crate) use self::codex_quota_breaker::{
 pub(crate) use self::effects::{
     apply_local_execution_effect, apply_local_stream_failure_effects,
     apply_local_stream_success_effects, capture_chat_health_attempt,
-    classify_chat_failure_for_plan, LocalAdaptiveRateLimitEffect, LocalAdaptiveSuccessEffect,
-    LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
-    LocalHealthFailureEffect, LocalHealthSuccessEffect, LocalStreamFailureEffect,
-    CHAT_HEALTH_ATTEMPT_REPORT_FIELD,
+    classify_chat_failure_for_plan, LocalAttemptFailureEffect, LocalExecutionEffect,
+    LocalExecutionEffectContext, LocalHealthFailureEffect, LocalHealthSuccessEffect,
+    LocalStreamFailureEffect, CHAT_HEALTH_ATTEMPT_REPORT_FIELD,
 };
 pub(crate) const RATE_LIMIT_COOLDOWN_MAX_SECS: u64 = 600;
 pub(crate) use health_settlement::spawn_health_settlement_worker;

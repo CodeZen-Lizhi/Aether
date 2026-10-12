@@ -39,9 +39,9 @@ pub use health::{
     provider_key_rate_limit_cooldown_active_at, provider_key_rate_limit_cooldown_payload,
     provider_key_rate_limit_probe_active_at, provider_key_rate_limit_probe_payload,
     provider_key_rpm_allows_request, provider_key_rpm_allows_request_since,
-    ProviderKeyHealthBucket, ProviderKeyRateLimitCooldown, ProviderKeyRateLimitProbe,
-    UpstreamFailureClass, PROVIDER_KEY_RPM_WINDOW_SECS, RATE_LIMIT_COOLDOWN_BASE_SECS,
-    RATE_LIMIT_COOLDOWN_MAX_SECS, RATE_LIMIT_PROBE_RESERVATION_SECS,
+    provider_key_rpm_usage_allows_request, ProviderKeyHealthBucket, ProviderKeyRateLimitCooldown,
+    ProviderKeyRateLimitProbe, UpstreamFailureClass, PROVIDER_KEY_RPM_WINDOW_SECS,
+    RATE_LIMIT_COOLDOWN_BASE_SECS, RATE_LIMIT_COOLDOWN_MAX_SECS, RATE_LIMIT_PROBE_RESERVATION_SECS,
 };
 pub use model::{
     candidate_model_names, extract_global_priority_for_format, matches_model_mapping,

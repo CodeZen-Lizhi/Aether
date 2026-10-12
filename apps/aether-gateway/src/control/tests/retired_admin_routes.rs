@@ -7,6 +7,15 @@ use super::{classify_control_route, headers};
 fn retired_admin_routes_are_not_classified() {
     let headers = headers(&[]);
     for (method, path) in [
+        (http::Method::GET, "/api/admin/adaptive/keys"),
+        (http::Method::GET, "/api/admin/adaptive/summary"),
+        (http::Method::GET, "/api/admin/adaptive/keys/key-1/stats"),
+        (http::Method::PATCH, "/api/admin/adaptive/keys/key-1/mode"),
+        (http::Method::PATCH, "/api/admin/adaptive/keys/key-1/limit"),
+        (
+            http::Method::DELETE,
+            "/api/admin/adaptive/keys/key-1/learning",
+        ),
         (http::Method::GET, "/api/admin/payments/orders"),
         (http::Method::GET, "/api/admin/monitoring/audit-logs"),
         (
@@ -53,6 +62,15 @@ async fn retired_admin_routes_use_unsupported_fallback() {
 
     let app = build_router_with_state(AppState::new().expect("gateway should build"));
     for (method, path) in [
+        (http::Method::GET, "/api/admin/adaptive/keys"),
+        (http::Method::GET, "/api/admin/adaptive/summary"),
+        (http::Method::GET, "/api/admin/adaptive/keys/key-1/stats"),
+        (http::Method::PATCH, "/api/admin/adaptive/keys/key-1/mode"),
+        (http::Method::PATCH, "/api/admin/adaptive/keys/key-1/limit"),
+        (
+            http::Method::DELETE,
+            "/api/admin/adaptive/keys/key-1/learning",
+        ),
         (http::Method::GET, "/api/admin/payments/orders"),
         (http::Method::GET, "/api/admin/monitoring/audit-logs"),
         (http::Method::POST, "/api/admin/system/smtp/test"),

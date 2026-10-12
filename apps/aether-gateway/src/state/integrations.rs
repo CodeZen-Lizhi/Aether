@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use aether_contracts::{ExecutionPlan, ExecutionResult, ProxySnapshot};
 use aether_data_contracts::repository::candidates::{
-    StoredRequestCandidate, UpsertRequestCandidateRecord,
+    KeyAttemptUsage, StoredRequestCandidate, UpsertRequestCandidateRecord,
 };
 use aether_data_contracts::repository::global_models::{
     AdminGlobalModelListQuery, AdminProviderModelListQuery, StoredAdminGlobalModelPage,
@@ -351,6 +351,17 @@ impl SchedulerRuntimeState for AppState {
         limit: usize,
     ) -> Result<Vec<StoredRequestCandidate>, GatewayError> {
         AppState::read_recent_request_candidates(self, limit).await
+    }
+
+    async fn aggregate_attempted_request_candidate_usage_by_key_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &std::collections::BTreeMap<String, u64>,
+    ) -> Result<Vec<KeyAttemptUsage>, GatewayError> {
+        AppState::aggregate_attempted_request_candidate_usage_by_key_since(
+            self,
+            min_observed_at_unix_secs_by_key,
+        )
+        .await
     }
 
     fn provider_key_rpm_reset_at(&self, key_id: &str, now_unix_secs: u64) -> Option<u64> {

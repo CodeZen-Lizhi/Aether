@@ -298,6 +298,7 @@ fn sqlite_migrations_include_enabled_incrementals() {
             20260903000000,
             20260913000000,
             20260913001000,
+            20260925000000,
         ]
     );
 }

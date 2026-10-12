@@ -91,6 +91,16 @@ pub(crate) fn normalize_optional_api_key_concurrent_limit(
     Ok(value)
 }
 
+/// 校验供应商 Key 的手动 RPM 上限；缺失值表示不限制。
+pub(crate) fn normalize_optional_provider_key_rpm_limit(
+    value: Option<u32>,
+) -> Result<Option<u32>, String> {
+    if value.is_some_and(|limit| !(1..=10_000).contains(&limit)) {
+        return Err("rpm_limit 必须是 1 到 10000 之间的整数".to_string());
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -151,5 +161,24 @@ mod tests {
             masked_gateway_api_key_display(Some("ak-1234567890abcdef")),
             "ak-1234567...cdef".to_string()
         );
+    }
+
+    #[test]
+    fn validates_optional_provider_key_rpm_limit_bounds() {
+        assert_eq!(
+            super::normalize_optional_provider_key_rpm_limit(None),
+            Ok(None)
+        );
+        assert_eq!(
+            super::normalize_optional_provider_key_rpm_limit(Some(1)),
+            Ok(Some(1))
+        );
+        assert_eq!(
+            super::normalize_optional_provider_key_rpm_limit(Some(10_000)),
+            Ok(Some(10_000))
+        );
+        for invalid in [0, 10_001] {
+            assert!(super::normalize_optional_provider_key_rpm_limit(Some(invalid)).is_err());
+        }
     }
 }

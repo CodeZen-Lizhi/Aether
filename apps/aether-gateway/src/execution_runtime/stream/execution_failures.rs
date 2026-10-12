@@ -26,9 +26,9 @@ use crate::orchestration::{
     apply_local_execution_effect, classify_failure_disposition,
     resolve_local_failover_analysis_for_attempt,
     resolve_local_transport_failover_analysis_for_attempt, with_upstream_response_report_context,
-    LocalAdaptiveRateLimitEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
-    LocalExecutionEffectContext, LocalFailoverAnalysis, LocalFailoverClassification,
-    LocalFailoverDecision, LocalHealthFailureEffect,
+    LocalAttemptFailureEffect, LocalExecutionEffect, LocalExecutionEffectContext,
+    LocalFailoverAnalysis, LocalFailoverClassification, LocalFailoverDecision,
+    LocalHealthFailureEffect,
 };
 use crate::request_candidate_runtime::record_report_request_candidate_status;
 use crate::request_diagnostics::attach_current_request_diagnostics_and_candidate_timing_to_report_context;
@@ -388,19 +388,6 @@ async fn record_stream_sync_failure(
         LocalExecutionEffect::AttemptFailure(LocalAttemptFailureEffect {
             status_code: payload.status_code,
             classification: failure_analysis.classification,
-        }),
-    )
-    .await;
-    apply_local_execution_effect(
-        state,
-        LocalExecutionEffectContext {
-            plan,
-            report_context,
-        },
-        LocalExecutionEffect::AdaptiveRateLimit(LocalAdaptiveRateLimitEffect {
-            status_code: payload.status_code,
-            classification: failure_analysis.classification,
-            headers: Some(&payload.headers),
         }),
     )
     .await;

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use aether_data_contracts::repository::candidates::StoredRequestCandidate;
+use aether_data_contracts::repository::candidates::{KeyAttemptUsage, StoredRequestCandidate};
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogKey, StoredProviderCatalogProvider,
 };
@@ -42,6 +42,12 @@ pub(crate) trait SchedulerRuntimeState {
         &self,
         limit: usize,
     ) -> Result<Vec<StoredRequestCandidate>, GatewayError>;
+
+    /// 按每个 Key 的时间下界读取 RPM 窗口使用量，避免全局最近候选记录截断计数。
+    async fn aggregate_attempted_request_candidate_usage_by_key_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &std::collections::BTreeMap<String, u64>,
+    ) -> Result<Vec<KeyAttemptUsage>, GatewayError>;
 
     fn provider_key_rpm_reset_at(&self, key_id: &str, now_unix_secs: u64) -> Option<u64>;
 

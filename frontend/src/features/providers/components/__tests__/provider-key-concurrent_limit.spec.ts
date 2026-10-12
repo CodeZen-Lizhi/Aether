@@ -505,6 +505,32 @@ describe('provider key concurrent_limit form behavior', () => {
     expect(payload.concurrent_limit).not.toBe('')
     expect(payload.rpm_limit).toBe(24)
   })
+
+  it('shows blank RPM as unlimited and serializes a cleared limit as null', async () => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey: createProviderKey({ rpm_limit: 24, concurrent_limit: null }),
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+    })
+    await settle()
+
+    const rpmInput = findInput(root, 'rpm_limit')
+    expect(rpmInput.value).toBe('24')
+    expect(rpmInput.placeholder).toBe('无限制')
+
+    updateInput(rpmInput, '')
+    await settle()
+
+    expect(root.textContent).toContain('无限制 RPM')
+    expect(root.textContent).toContain('留空表示无限制')
+    expect(root.textContent).not.toContain('自适应')
+
+    await submit(root)
+    expect(lastUpdatePayload()).toHaveProperty('rpm_limit', null)
+  })
 })
 
 

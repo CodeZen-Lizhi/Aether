@@ -8,8 +8,8 @@ use sqlx::{
 };
 
 use aether_data_contracts::repository::provider_catalog::{
-    ProviderCatalogKeyAdaptiveStateUpdate, ProviderCatalogKeyAdminCasUpdate,
-    ProviderCatalogKeyHealthStateUpdate, ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery,
+    ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyHealthStateUpdate,
+    ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery,
     ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthRuntimeStateCasUpdate,
     ProviderCatalogKeyRuntimeMetadataUpdate, ProviderCatalogKeyStatusSnapshotUpdate,
     ProviderCatalogReadRepository, ProviderCatalogUpstreamMetadataNamespaceUpdate,
@@ -103,6 +103,7 @@ FROM provider_endpoints
 WHERE provider_id IN (
 "#;
 
+// 旧 RPM 学习列保留在 SQLite Schema 中，但不再进入活动 Key 查询结果。
 const LIST_KEYS_BY_IDS_PREFIX: &str = r#"
 SELECT
   id,
@@ -128,15 +129,6 @@ SELECT
   fingerprint,
   rpm_limit,
   concurrent_limit,
-  learned_rpm_limit,
-  concurrent_429_count,
-  rpm_429_count,
-  last_429_at AS last_429_at_unix_secs,
-  last_429_type,
-  adjustment_history,
-  utilization_samples,
-  last_probe_increase_at AS last_probe_increase_at_unix_secs,
-  last_rpm_peak,
   request_count,
   total_tokens,
   CAST(total_cost_usd AS REAL) AS total_cost_usd,
@@ -187,15 +179,6 @@ SELECT
   fingerprint,
   rpm_limit,
   concurrent_limit,
-  learned_rpm_limit,
-  concurrent_429_count,
-  rpm_429_count,
-  last_429_at AS last_429_at_unix_secs,
-  last_429_type,
-  adjustment_history,
-  utilization_samples,
-  last_probe_increase_at AS last_probe_increase_at_unix_secs,
-  last_rpm_peak,
   request_count,
   total_tokens,
   CAST(total_cost_usd AS REAL) AS total_cost_usd,
@@ -249,15 +232,6 @@ SELECT
   NULL AS fingerprint,
   NULL AS rpm_limit,
   NULL AS concurrent_limit,
-  NULL AS learned_rpm_limit,
-  NULL AS concurrent_429_count,
-  NULL AS rpm_429_count,
-  NULL AS last_429_at_unix_secs,
-  NULL AS last_429_type,
-  NULL AS adjustment_history,
-  NULL AS utilization_samples,
-  NULL AS last_probe_increase_at_unix_secs,
-  NULL AS last_rpm_peak,
   NULL AS request_count,
   0 AS total_tokens,
   0.0 AS total_cost_usd,
@@ -1014,27 +988,6 @@ WHERE id = ?
             )?)
             .bind(optional_i64_from_u32(key.rpm_limit))
             .bind(key.concurrent_limit)
-            .bind(optional_i64_from_u32(key.learned_rpm_limit))
-            .bind(optional_i64_from_u32(key.concurrent_429_count).unwrap_or(0))
-            .bind(optional_i64_from_u32(key.rpm_429_count).unwrap_or(0))
-            .bind(optional_i64_from_u64(
-                key.last_429_at_unix_secs,
-                "provider_api_keys.last_429_at",
-            )?)
-            .bind(&key.last_429_type)
-            .bind(optional_json_to_string(
-                &key.adjustment_history,
-                "provider_api_keys.adjustment_history",
-            )?)
-            .bind(optional_json_to_string(
-                &key.utilization_samples,
-                "provider_api_keys.utilization_samples",
-            )?)
-            .bind(optional_i64_from_u64(
-                key.last_probe_increase_at_unix_secs,
-                "provider_api_keys.last_probe_increase_at",
-            )?)
-            .bind(optional_i64_from_u32(key.last_rpm_peak))
             .bind(optional_i64_from_u32(key.request_count).unwrap_or(0))
             .bind(i64::try_from(key.total_tokens).map_err(|_| {
                 DataLayerError::InvalidInput(format!(
@@ -1125,8 +1078,8 @@ WHERE id = ?
         self.reload_key(&key.id, "updated").await
     }
 
-    /// Restore the non-admin fields inside an administrator backup transaction.
-    /// Normal key edits deliberately leave these fields to runtime writers.
+    /// 在管理员备份事务中恢复受支持的用量、模型抓取及运行状态快照。
+    /// 旧 RPM 学习列不再参与导入，普通 Key 编辑仍不写入这些运行态字段。
     pub async fn restore_key_backup_state(
         &self,
         key: &StoredProviderCatalogKey,
@@ -1135,15 +1088,6 @@ WHERE id = ?
         let affected = sqlx::query(
             r#"
 UPDATE provider_api_keys SET
-  learned_rpm_limit = ?,
-  concurrent_429_count = ?,
-  rpm_429_count = ?,
-  last_429_at = ?,
-  last_429_type = ?,
-  adjustment_history = ?,
-  utilization_samples = ?,
-  last_probe_increase_at = ?,
-  last_rpm_peak = ?,
   request_count = ?,
   total_tokens = ?,
   total_cost_usd = ?,
@@ -1162,27 +1106,6 @@ UPDATE provider_api_keys SET
 WHERE id = ? AND provider_id = ?
 "#,
         )
-        .bind(optional_i64_from_u32(key.learned_rpm_limit))
-        .bind(optional_i64_from_u32(key.concurrent_429_count).unwrap_or(0))
-        .bind(optional_i64_from_u32(key.rpm_429_count).unwrap_or(0))
-        .bind(optional_i64_from_u64(
-            key.last_429_at_unix_secs,
-            "provider_api_keys.last_429_at",
-        )?)
-        .bind(&key.last_429_type)
-        .bind(optional_json_to_string(
-            &key.adjustment_history,
-            "provider_api_keys.adjustment_history",
-        )?)
-        .bind(optional_json_to_string(
-            &key.utilization_samples,
-            "provider_api_keys.utilization_samples",
-        )?)
-        .bind(optional_i64_from_u64(
-            key.last_probe_increase_at_unix_secs,
-            "provider_api_keys.last_probe_increase_at",
-        )?)
-        .bind(optional_i64_from_u32(key.last_rpm_peak))
         .bind(optional_i64_from_u32(key.request_count).unwrap_or(0))
         .bind(optional_i64_from_u64(
             Some(key.total_tokens),
@@ -2007,105 +1930,6 @@ WHERE id = ?
         Ok(rows_affected > 0)
     }
 
-    pub async fn compare_and_update_key_adaptive_state(
-        &self,
-        update: &ProviderCatalogKeyAdaptiveStateUpdate,
-    ) -> Result<bool, DataLayerError> {
-        validate_non_empty(&update.key_id, "provider catalog key_id")?;
-        let status_snapshot_patch = adaptive_status_snapshot_patch(&update.status_snapshot_patch)?;
-        let expected = update.expected.canonicalized();
-        let next = update.next.canonicalized();
-        let mut builder =
-            QueryBuilder::<Sqlite>::new("UPDATE provider_api_keys SET learned_rpm_limit = ");
-        builder
-            .push_bind(optional_i64_from_u32(next.learned_rpm_limit))
-            .push(", rpm_429_count = ")
-            .push_bind(optional_i64_from_u32(next.rpm_429_count))
-            .push(", last_429_at = ")
-            .push_bind(optional_i64_from_u64(
-                next.last_429_at_unix_secs,
-                "provider_api_keys.last_429_at",
-            )?)
-            .push(", last_429_type = ")
-            .push_bind(&next.last_429_type)
-            .push(", adjustment_history = ")
-            .push_bind(optional_json_to_string(
-                &next.adjustment_history,
-                "provider_api_keys.adjustment_history",
-            )?)
-            .push(", utilization_samples = ")
-            .push_bind(optional_json_to_string(
-                &next.utilization_samples,
-                "provider_api_keys.utilization_samples",
-            )?)
-            .push(", last_probe_increase_at = ")
-            .push_bind(optional_i64_from_u64(
-                next.last_probe_increase_at_unix_secs,
-                "provider_api_keys.last_probe_increase_at",
-            )?)
-            .push(", last_rpm_peak = ")
-            .push_bind(optional_i64_from_u32(next.last_rpm_peak))
-            .push(", concurrent_429_count = ")
-            .push_bind(optional_i64_from_u32(next.concurrent_429_count))
-            .push(", status_snapshot = ");
-        push_status_snapshot_shallow_patch(&mut builder, &status_snapshot_patch)?;
-        builder
-            .push(", updated_at = ")
-            .push_bind(
-                update
-                    .updated_at_unix_secs
-                    .unwrap_or_else(current_unix_secs) as i64,
-            )
-            .push(" WHERE id = ")
-            .push_bind(&update.key_id)
-            .push(" AND learned_rpm_limit IS ")
-            .push_bind(optional_i64_from_u32(expected.learned_rpm_limit))
-            .push(" AND rpm_429_count IS ")
-            .push_bind(optional_i64_from_u32(expected.rpm_429_count))
-            .push(" AND last_429_at IS ")
-            .push_bind(optional_i64_from_u64(
-                expected.last_429_at_unix_secs,
-                "provider_api_keys.last_429_at",
-            )?)
-            .push(" AND last_429_type IS ")
-            .push_bind(&expected.last_429_type)
-            .push(" AND json(adjustment_history) IS json(")
-            .push_bind(optional_json_to_string(
-                &expected.adjustment_history,
-                "provider_api_keys.adjustment_history",
-            )?)
-            .push(")")
-            .push(" AND json(utilization_samples) IS json(")
-            .push_bind(optional_json_to_string(
-                &expected.utilization_samples,
-                "provider_api_keys.utilization_samples",
-            )?)
-            .push(")")
-            .push(" AND last_probe_increase_at IS ")
-            .push_bind(optional_i64_from_u64(
-                expected.last_probe_increase_at_unix_secs,
-                "provider_api_keys.last_probe_increase_at",
-            )?)
-            .push(" AND last_rpm_peak IS ")
-            .push_bind(optional_i64_from_u32(expected.last_rpm_peak))
-            .push(" AND concurrent_429_count IS ")
-            .push_bind(optional_i64_from_u32(expected.concurrent_429_count));
-        if let Some(expected_encrypted_auth_config) =
-            update.expected_encrypted_auth_config.as_deref()
-        {
-            builder
-                .push(" AND auth_config IS ")
-                .push_bind(expected_encrypted_auth_config);
-        }
-        let rows_affected = builder
-            .build()
-            .execute(&mut *self.source.acquire().await.map_sql_err()?)
-            .await
-            .map_sql_err()?
-            .rows_affected();
-        Ok(rows_affected > 0)
-    }
-
     pub async fn update_key_runtime_metadata(
         &self,
         update: &ProviderCatalogKeyRuntimeMetadataUpdate,
@@ -2810,13 +2634,6 @@ impl ProviderCatalogWriteRepository for SqliteProviderCatalogReadRepository {
         Self::reset_key_error_count(self, key_id).await
     }
 
-    async fn compare_and_update_key_adaptive_state(
-        &self,
-        update: &ProviderCatalogKeyAdaptiveStateUpdate,
-    ) -> Result<bool, DataLayerError> {
-        Self::compare_and_update_key_adaptive_state(self, update).await
-    }
-
     async fn update_key_runtime_metadata(
         &self,
         update: &ProviderCatalogKeyRuntimeMetadataUpdate,
@@ -2948,35 +2765,6 @@ fn validate_non_empty(value: &str, field_name: &str) -> Result<(), DataLayerErro
         )));
     }
     Ok(())
-}
-
-fn adaptive_status_snapshot_patch(
-    patch: &serde_json::Value,
-) -> Result<serde_json::Value, DataLayerError> {
-    const OWNED_FIELDS: [&str; 6] = [
-        "observation_count",
-        "header_observation_count",
-        "latest_upstream_limit",
-        "learning_confidence",
-        "enforcement_active",
-        "known_boundary",
-    ];
-    let object = patch.as_object().ok_or_else(|| {
-        DataLayerError::InvalidInput(
-            "provider catalog adaptive status snapshot patch must be an object".to_string(),
-        )
-    })?;
-    Ok(serde_json::Value::Object(
-        OWNED_FIELDS
-            .into_iter()
-            .filter_map(|field| {
-                object
-                    .get(field)
-                    .cloned()
-                    .map(|value| (field.to_string(), value))
-            })
-            .collect(),
-    ))
 }
 
 fn validate_runtime_metadata_update(
@@ -3150,21 +2938,21 @@ fn optional_json_to_string(
     optional_json_ref_to_string(value.as_ref(), field_name)
 }
 
+// 新建 Key 不再写入已停用的 RPM 学习列；这些列只为兼容既有 Schema 而保留。
 fn key_insert_sql() -> &'static str {
     r#"
 INSERT INTO provider_api_keys (
   id, provider_id, name, api_key, auth_type, capabilities,
   is_active, api_formats, auth_type_by_format, allow_auth_channel_mismatch_formats, auth_config, note,
   rate_multipliers, internal_priority, default_rate_multiplier, allowed_models, expires_at, cache_ttl_minutes, max_probe_interval_minutes, proxy,
-  fingerprint, rpm_limit, concurrent_limit, learned_rpm_limit, concurrent_429_count, rpm_429_count,
-  last_429_at, last_429_type, adjustment_history, utilization_samples, last_probe_increase_at, last_rpm_peak,
+  fingerprint, rpm_limit, concurrent_limit,
   request_count, total_tokens, total_cost_usd, success_count, error_count, total_response_time_ms,
   last_used_at, auto_fetch_models, last_models_fetch_at, last_models_fetch_error, locked_models, model_include_patterns,
   model_exclude_patterns, upstream_metadata, oauth_invalid_at, oauth_invalid_reason, status_snapshot, health_by_format,
   circuit_breaker_by_format, created_at, updated_at
 )
 VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 "#
 }
@@ -3627,32 +3415,14 @@ fn map_key_row(row: &SqliteRow) -> Result<StoredProviderCatalogKey, DataLayerErr
                     .map_sql_err()?
                     .unwrap_or(1.0),
             )
-            .with_rate_limit_fields(
+            .with_rate_limits(
                 optional_u32(
                     row.try_get("rpm_limit").map_sql_err()?,
                     "provider_api_keys.rpm_limit",
                 )?,
                 row.try_get("concurrent_limit").map_sql_err()?,
-                optional_u32(
-                    row.try_get("learned_rpm_limit").map_sql_err()?,
-                    "provider_api_keys.learned_rpm_limit",
-                )?,
-                optional_u32(
-                    row.try_get("concurrent_429_count").map_sql_err()?,
-                    "provider_api_keys.concurrent_429_count",
-                )?,
-                optional_u32(
-                    row.try_get("rpm_429_count").map_sql_err()?,
-                    "provider_api_keys.rpm_429_count",
-                )?,
-                optional_u64(
-                    row.try_get("last_429_at_unix_secs").map_sql_err()?,
-                    "provider_api_keys.last_429_at",
-                )?,
-                optional_json_from_string(
-                    row.try_get("adjustment_history").map_sql_err()?,
-                    "provider_api_keys.adjustment_history",
-                )?,
+            )
+            .with_usage_counts(
                 optional_u32(
                     row.try_get("request_count").map_sql_err()?,
                     "provider_api_keys.request_count",
@@ -3702,20 +3472,6 @@ fn map_key_row(row: &SqliteRow) -> Result<StoredProviderCatalogKey, DataLayerErr
         )?;
         key.cache_ttl_minutes = row.try_get("cache_ttl_minutes").map_sql_err()?;
         key.max_probe_interval_minutes = row.try_get("max_probe_interval_minutes").map_sql_err()?;
-        key.last_429_type = row.try_get("last_429_type").map_sql_err()?;
-        key.utilization_samples = optional_json_from_string(
-            row.try_get("utilization_samples").map_sql_err()?,
-            "provider_api_keys.utilization_samples",
-        )?;
-        key.last_probe_increase_at_unix_secs = optional_u64(
-            row.try_get("last_probe_increase_at_unix_secs")
-                .map_sql_err()?,
-            "provider_api_keys.last_probe_increase_at",
-        )?;
-        key.last_rpm_peak = optional_u32(
-            row.try_get("last_rpm_peak").map_sql_err()?,
-            "provider_api_keys.last_rpm_peak",
-        )?;
         key.last_used_at_unix_secs = optional_u64(
             row.try_get("last_used_at_unix_secs").map_sql_err()?,
             "provider_api_keys.last_used_at",
@@ -3769,7 +3525,6 @@ mod tests {
     use super::SqliteProviderCatalogReadRepository;
     use crate::run_migrations;
     use aether_data_contracts::repository::provider_catalog::{
-        ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyAdaptiveStateUpdate,
         ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyHealthStateUpdate,
         ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery,
         ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthCredentialFence,
@@ -3789,7 +3544,7 @@ mod tests {
             .await
             .unwrap();
         run_migrations(&pool).await.unwrap();
-        let repository = SqliteProviderCatalogReadRepository::new(pool);
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
         let mut provider = StoredProviderCatalogProvider::new(
             "ops-cas".to_string(),
             "original".to_string(),
@@ -3847,7 +3602,7 @@ mod tests {
             .await
             .unwrap();
         run_migrations(&pool).await.unwrap();
-        let repository = SqliteProviderCatalogReadRepository::new(pool);
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
         repository
             .create_provider(
                 &StoredProviderCatalogProvider::new(
@@ -4014,7 +3769,6 @@ mod tests {
         .expect("key should build");
         original.encrypted_api_key = Some("api-v1".to_string());
         original.encrypted_auth_config = Some("auth-v1".to_string());
-        original.learned_rpm_limit = Some(17);
         original.error_count = Some(9);
         original.oauth_invalid_at_unix_secs = Some(123);
         original.oauth_invalid_reason = Some("old credential invalid".to_string());
@@ -4068,7 +3822,6 @@ mod tests {
         assert_eq!(stored.auth_type, "api_key");
         assert_eq!(stored.encrypted_api_key.as_deref(), Some("api-v2"));
         assert_eq!(stored.encrypted_auth_config, None);
-        assert_eq!(stored.learned_rpm_limit, Some(17));
         assert_eq!(stored.error_count, Some(0));
         assert_eq!(stored.oauth_invalid_at_unix_secs, None);
         assert_eq!(stored.oauth_invalid_reason, None);
@@ -4318,17 +4071,7 @@ mod tests {
             false,
         )
         .expect("key should build")
-        .with_rate_limit_fields(
-            None,
-            None,
-            Some(10),
-            None,
-            Some(1),
-            Some(100),
-            Some(json!([{"limit":10}])),
-            None,
-            None,
-        )
+        .with_rate_limits(None, None)
         .with_health_fields(
             Some(json!({"openai:chat":{"consecutive_failures":1}})),
             None,
@@ -4367,53 +4110,6 @@ mod tests {
             .await
             .expect("stale health CAS should conflict"));
 
-        let adaptive_current = repository
-            .list_keys_by_ids(&["runtime-key".to_string()])
-            .await
-            .expect("key should reload before adaptive CAS")
-            .pop()
-            .expect("key should exist");
-        let expected = ProviderCatalogKeyAdaptiveState::from(&adaptive_current);
-        let mut next = expected.clone();
-        next.learned_rpm_limit = Some(8);
-        next.rpm_429_count = Some(2);
-        let adaptive_update = ProviderCatalogKeyAdaptiveStateUpdate {
-            key_id: "runtime-key".to_string(),
-            expected_encrypted_auth_config: Some("auth-current".to_string()),
-            expected: expected.clone(),
-            next,
-            status_snapshot_patch: json!({
-                "observation_count": 2,
-                "learning_confidence": 0.5,
-                "known_boundary": null,
-                "quota": {"remaining": 0}
-            }),
-            updated_at_unix_secs: Some(200),
-        };
-        let stale_generation_update = ProviderCatalogKeyAdaptiveStateUpdate {
-            expected_encrypted_auth_config: Some("auth-stale".to_string()),
-            ..adaptive_update.clone()
-        };
-        assert!(!repository
-            .compare_and_update_key_adaptive_state(&stale_generation_update)
-            .await
-            .expect("stale auth generation should conflict"));
-        assert!(repository
-            .compare_and_update_key_adaptive_state(&adaptive_update)
-            .await
-            .expect("adaptive CAS should succeed"));
-        assert!(!repository
-            .compare_and_update_key_adaptive_state(&ProviderCatalogKeyAdaptiveStateUpdate {
-                key_id: "runtime-key".to_string(),
-                expected_encrypted_auth_config: Some("auth-current".to_string()),
-                expected: expected.clone(),
-                next: expected,
-                status_snapshot_patch: json!({}),
-                updated_at_unix_secs: Some(201),
-            })
-            .await
-            .expect("stale adaptive CAS should conflict"));
-
         assert!(repository
             .update_key_runtime_metadata(&ProviderCatalogKeyRuntimeMetadataUpdate {
                 key_id: "runtime-key".to_string(),
@@ -4441,8 +4137,6 @@ mod tests {
             .expect("key should exist");
         assert_eq!(stored.name, "Admin Renamed");
         assert!(stored.is_active);
-        assert_eq!(stored.learned_rpm_limit, Some(8));
-        assert_eq!(stored.rpm_429_count, Some(2));
         assert_eq!(
             stored.health_by_format,
             Some(json!({"openai:chat":{"consecutive_failures":2}}))
@@ -4459,13 +4153,12 @@ mod tests {
         assert_eq!(status["quota"], json!({"remaining":3}));
         assert!(status["quota"].get("window").is_none());
         assert_eq!(status["oauth"], json!({"invalid":false}));
-        assert_eq!(status["observation_count"], json!(2));
-        assert_eq!(status["learning_confidence"], json!(0.5));
+        assert_eq!(status["observation_count"], json!(1));
         assert!(status
             .as_object()
             .expect("status should be an object")
             .contains_key("known_boundary"));
-        assert_eq!(status["known_boundary"], serde_json::Value::Null);
+        assert_eq!(status["known_boundary"], json!("old"));
     }
 
     #[tokio::test]
@@ -5001,7 +4694,19 @@ mod tests {
             .await
             .expect("sqlite migrations should run");
 
-        let repository = SqliteProviderCatalogReadRepository::new(pool);
+        let schema_columns: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('provider_api_keys')")
+                .fetch_all(&pool)
+                .await
+                .expect("key schema should be readable");
+        assert!(schema_columns
+            .iter()
+            .any(|column| column == "learned_rpm_limit"));
+        assert!(schema_columns
+            .iter()
+            .any(|column| column == "adjustment_history"));
+
+        let repository = SqliteProviderCatalogReadRepository::new(pool.clone());
         let provider = StoredProviderCatalogProvider::new(
             "provider-write-1".to_string(),
             "Provider Write".to_string(),
@@ -5104,17 +4809,8 @@ mod tests {
             Some(json!({"fp":"abc"})),
         )
         .expect("key transport should build")
-        .with_rate_limit_fields(
-            Some(120),
-            Some(3),
-            Some(110),
-            Some(1),
-            Some(2),
-            Some(1_720_000_000),
-            Some(json!([{"rpm":110}])),
-            Some(10),
-            Some(9),
-        )
+        .with_rate_limits(Some(120), Some(3))
+        .with_usage_counts(Some(10), Some(9))
         .with_usage_fields(Some(1), Some(u32::MAX as u64 + 42))
         .with_usage_totals(1234, 1.5)
         .with_health_fields(
@@ -5128,6 +4824,22 @@ mod tests {
             .create_key(&key)
             .await
             .expect("key should create");
+        assert_eq!(created_key.rpm_limit, Some(120));
+        let inserted_legacy_state: (Option<i64>, Option<String>) = sqlx::query_as(
+            "SELECT learned_rpm_limit, adjustment_history FROM provider_api_keys WHERE id = ?",
+        )
+        .bind(&key.id)
+        .fetch_one(&pool)
+        .await
+        .expect("legacy RPM columns should retain their schema defaults");
+        assert_eq!(inserted_legacy_state, (None, None));
+        sqlx::query(
+            "UPDATE provider_api_keys SET learned_rpm_limit = 40, rpm_429_count = 3, adjustment_history = '[{\"rpm\":90}]', utilization_samples = '[0.5]' WHERE id = ?",
+        )
+        .bind(&key.id)
+        .execute(&pool)
+        .await
+        .expect("legacy RPM state should seed");
         assert_eq!(created_key.concurrent_limit, Some(3));
         assert_eq!(created_key.internal_priority, 7);
         assert_eq!(created_key.total_tokens, 1234);
@@ -5170,6 +4882,23 @@ mod tests {
             Some("stale models fetch error")
         );
         assert_eq!(updated_key.upstream_metadata, created_key.upstream_metadata);
+        let retained_legacy_state: (Option<i64>, i64, Option<String>, Option<String>) =
+            sqlx::query_as(
+                "SELECT learned_rpm_limit, rpm_429_count, adjustment_history, utilization_samples FROM provider_api_keys WHERE id = ?",
+            )
+            .bind(&key.id)
+            .fetch_one(&pool)
+            .await
+            .expect("administrative key updates should not write legacy RPM state");
+        assert_eq!(
+            retained_legacy_state,
+            (
+                Some(40),
+                3,
+                Some("[{\"rpm\":90}]".to_string()),
+                Some("[0.5]".to_string()),
+            )
+        );
 
         let mut batch_first = updated_key.clone();
         batch_first.auto_fetch_models = true;

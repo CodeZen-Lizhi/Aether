@@ -4,9 +4,9 @@ use std::sync::RwLock;
 use async_trait::async_trait;
 
 use super::{
-    request_candidate_lifecycle_would_regress, PublicHealthStatusCount, PublicHealthTimelineBucket,
-    RequestCandidateReadRepository, RequestCandidateStatus, RequestCandidateWriteRepository,
-    StoredRequestCandidate, UpsertRequestCandidateRecord,
+    request_candidate_lifecycle_would_regress, KeyAttemptUsage, PublicHealthStatusCount,
+    PublicHealthTimelineBucket, RequestCandidateReadRepository, RequestCandidateStatus,
+    RequestCandidateWriteRepository, StoredRequestCandidate, UpsertRequestCandidateRecord,
 };
 use crate::DataLayerError;
 
@@ -88,6 +88,59 @@ impl RequestCandidateReadRepository for InMemoryRequestCandidateRepository {
         rows.sort_by_key(|entry| std::cmp::Reverse(entry.created_at_unix_ms));
         rows.truncate(limit);
         Ok(rows)
+    }
+
+    async fn aggregate_attempted_by_key_ids_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &BTreeMap<String, u64>,
+    ) -> Result<Vec<KeyAttemptUsage>, DataLayerError> {
+        if min_observed_at_unix_secs_by_key.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut usage_by_key = BTreeMap::<String, (u64, u64)>::new();
+        for candidate in self
+            .by_id
+            .read()
+            .expect("request candidate repository lock")
+            .values()
+        {
+            let Some(key_id) = candidate.key_id.as_deref() else {
+                continue;
+            };
+            let Some(min_observed_at_unix_secs) =
+                min_observed_at_unix_secs_by_key.get(key_id).copied()
+            else {
+                continue;
+            };
+            if !candidate.status.is_attempted(candidate.started_at_unix_ms) {
+                continue;
+            }
+            let min_observed_at_unix_ms = min_observed_at_unix_secs.saturating_mul(1000);
+            let observed_at_unix_ms = candidate
+                .started_at_unix_ms
+                .unwrap_or(candidate.created_at_unix_ms);
+            if observed_at_unix_ms < min_observed_at_unix_ms {
+                continue;
+            }
+
+            let usage = usage_by_key.entry(key_id.to_string()).or_default();
+            usage.0 = usage.0.saturating_add(1);
+            usage.1 = usage
+                .1
+                .max(candidate.concurrent_requests.unwrap_or_default() as u64);
+        }
+
+        Ok(usage_by_key
+            .into_iter()
+            .map(
+                |(key_id, (attempted_count, max_concurrent_requests))| KeyAttemptUsage {
+                    key_id,
+                    attempted_count,
+                    max_concurrent_requests,
+                },
+            )
+            .collect())
     }
 
     async fn list_by_provider_id(
@@ -455,6 +508,8 @@ impl RequestCandidateWriteRepository for InMemoryRequestCandidateRepository {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::InMemoryRequestCandidateRepository;
     use crate::repository::candidates::{
         RequestCandidateReadRepository, RequestCandidateStatus, RequestCandidateWriteRepository,
@@ -512,6 +567,41 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].request_id, "req-1");
         assert_eq!(rows[1].request_id, "req-1");
+    }
+
+    #[tokio::test]
+    async fn aggregates_recent_attempts_for_a_key_using_the_same_observation_rules() {
+        let mut candidates = (0..200)
+            .map(|index| {
+                let mut candidate =
+                    sample_candidate(&format!("rpm-candidate-{index}"), "rpm-load", 99_000);
+                if index == 199 {
+                    candidate.concurrent_requests = Some(250);
+                }
+                candidate
+            })
+            .collect::<Vec<_>>();
+        let mut old = sample_candidate("rpm-old", "rpm-old-request", 39_999);
+        old.started_at_unix_ms = None;
+        candidates.push(old);
+        let mut skipped = sample_candidate("rpm-skipped", "rpm-skipped-request", 99_000);
+        skipped.status = RequestCandidateStatus::Skipped;
+        candidates.push(skipped);
+        let mut unstarted_pending = sample_candidate("rpm-pending", "rpm-pending-request", 99_000);
+        unstarted_pending.status = RequestCandidateStatus::Pending;
+        unstarted_pending.started_at_unix_ms = None;
+        candidates.push(unstarted_pending);
+
+        let repository = InMemoryRequestCandidateRepository::seed(candidates);
+        let usage = repository
+            .aggregate_attempted_by_key_ids_since(&BTreeMap::from([("key-1".to_string(), 40)]))
+            .await
+            .expect("key usage should aggregate");
+
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].key_id, "key-1");
+        assert_eq!(usage[0].attempted_count, 200);
+        assert_eq!(usage[0].max_concurrent_requests, 250);
     }
 
     #[tokio::test]

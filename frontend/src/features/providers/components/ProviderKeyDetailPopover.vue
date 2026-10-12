@@ -125,9 +125,7 @@ const detailRows = computed(() => {
 
   rows.push({
     label: legacyT('RPM 限制'),
-    value: key.is_adaptive
-      ? `${legacyT('自适应')}${key.learned_rpm_limit != null ? ` (${key.learned_rpm_limit})` : ''}`
-      : (key.rpm_limit != null ? String(key.rpm_limit) : legacyT('无限制')),
+    value: key.rpm_limit != null ? String(key.rpm_limit) : legacyT('无限制'),
   })
 
   rows.push({

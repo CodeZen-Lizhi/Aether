@@ -11,7 +11,9 @@ use crate::handlers::admin::shared::{
     decrypt_catalog_secret_with_fallbacks, encrypt_catalog_secret_with_fallbacks, json_string_list,
     normalize_json_object, normalize_string_list, parse_catalog_auth_config_json,
 };
-use crate::handlers::shared::normalize_optional_api_key_concurrent_limit;
+use crate::handlers::shared::{
+    normalize_optional_api_key_concurrent_limit, normalize_optional_provider_key_rpm_limit,
+};
 use aether_data_contracts::repository::provider_catalog::{
     ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyOAuthCredentialFence,
     StoredProviderCatalogKey, StoredProviderCatalogProvider,
@@ -264,10 +266,7 @@ pub(crate) fn build_admin_update_provider_key_record_with_existing_keys(
             normalize_internal_priority(payload.internal_priority)?.unwrap_or(50);
     }
     if fields.contains("rpm_limit") {
-        updated.rpm_limit = payload.rpm_limit;
-        if payload.rpm_limit.is_none() {
-            updated.learned_rpm_limit = None;
-        }
+        updated.rpm_limit = normalize_optional_provider_key_rpm_limit(payload.rpm_limit)?;
     }
     if fields.contains("concurrent_limit") {
         updated.concurrent_limit =

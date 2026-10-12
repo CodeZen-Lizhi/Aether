@@ -332,6 +332,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             },
         ));
     }
@@ -357,6 +358,7 @@ mod tests {
                     oauth_invalid: false,
                     enforce_key_circuit_breaker: true,
                     rpm_reset_at: None,
+                    current_key_rpm_usage: None,
                 }),
                 None
             );
@@ -383,6 +385,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             Some("provider_key_concurrency_limit_reached")
         );
@@ -412,9 +415,39 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             Some("provider_key_concurrency_limit_reached")
         );
+    }
+
+    #[test]
+    fn candidate_selectability_uses_preaggregated_rpm_usage_when_available() {
+        let mut key = sample_key("1", 1.0);
+        key.rpm_limit = Some(5);
+        let provider_key_rpm_states = BTreeMap::from([("key-1".to_string(), key)]);
+        let candidate = sample_candidate("1", None);
+        let provider_concurrent_limits = BTreeMap::new();
+        let mut input = CandidateRuntimeSelectabilityInput {
+            candidate: &candidate,
+            recent_candidates: &[],
+            provider_concurrent_limits: &provider_concurrent_limits,
+            provider_key_rpm_states: &provider_key_rpm_states,
+            now_unix_secs: 100,
+            provider_quota_blocks_requests: false,
+            account_quota_exhausted: false,
+            oauth_invalid: false,
+            enforce_key_circuit_breaker: true,
+            rpm_reset_at: None,
+            current_key_rpm_usage: Some(5),
+        };
+
+        assert_eq!(
+            candidate_runtime_skip_reason_with_state(input),
+            Some("key_rpm_exhausted")
+        );
+        input.current_key_rpm_usage = Some(4);
+        assert_eq!(candidate_runtime_skip_reason_with_state(input), None);
     }
 
     #[test]
@@ -442,6 +475,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             None
         );
@@ -463,6 +497,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             None
         );
@@ -487,6 +522,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             None
         );
@@ -511,6 +547,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             Some("key_circuit_open")
         );
@@ -522,17 +559,7 @@ mod tests {
         )];
         let provider_key_rpm_states = BTreeMap::from([(
             "key-1".to_string(),
-            sample_key_with_concurrent_limit("1", Some(2)).with_rate_limit_fields(
-                Some(1),
-                Some(2),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            ),
+            sample_key_with_concurrent_limit("1", Some(2)).with_rate_limits(Some(1), Some(2)),
         )]);
 
         assert_eq!(
@@ -547,6 +574,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             Some("key_rpm_exhausted")
         );
@@ -581,6 +609,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             Some("key_circuit_open")
         );
@@ -596,6 +625,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             None
         );
@@ -617,6 +647,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             },
         ));
         assert!(!candidate_is_selectable_with_runtime_state(
@@ -631,6 +662,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             },
         ));
     }
@@ -660,6 +692,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             }),
             Some("key_rate_limit_probe_in_flight")
         );
@@ -679,6 +712,7 @@ mod tests {
                 oauth_invalid: false,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             },
         ));
     }
@@ -697,6 +731,7 @@ mod tests {
                 oauth_invalid: true,
                 enforce_key_circuit_breaker: true,
                 rpm_reset_at: None,
+                current_key_rpm_usage: None,
             },
         ));
     }

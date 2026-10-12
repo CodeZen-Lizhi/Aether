@@ -56,4 +56,11 @@ describe('ProviderDetailDrawer loading priorities', () => {
   it('marks a transport-error stop policy as a configured failover rule', () => {
     expect(source).toContain('rules.stop_on_transport_errors === true')
   })
+
+  it('shows only the configured RPM cap or the unlimited state', () => {
+    expect(source).toContain('key.rpm_limit != null')
+    expect(source).toContain("legacyT('无限制 RPM')")
+    expect(source).not.toContain('learned_rpm_limit')
+    expect(source).not.toContain('key.is_adaptive')
+  })
 })

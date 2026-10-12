@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use serde_json::{json, Map, Value};
 
 use super::{
-    ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyAdaptiveStateUpdate,
     ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyHealthStateUpdate,
     ProviderCatalogKeyListQuery, ProviderCatalogKeyOAuthCredentialCasDelete,
     ProviderCatalogKeyOAuthRuntimeStateCasUpdate, ProviderCatalogKeyRuntimeMetadataUpdate,
@@ -1158,56 +1157,6 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
         Ok(true)
     }
 
-    async fn compare_and_update_key_adaptive_state(
-        &self,
-        update: &ProviderCatalogKeyAdaptiveStateUpdate,
-    ) -> Result<bool, DataLayerError> {
-        if update.key_id.trim().is_empty() {
-            return Err(DataLayerError::InvalidInput(
-                "provider catalog key_id is empty".to_string(),
-            ));
-        }
-        let patch = adaptive_status_snapshot_patch(&update.status_snapshot_patch)?;
-        let mut index = self
-            .index
-            .write()
-            .expect("provider catalog repository lock");
-        let Some(key) = index.keys.get_mut(&update.key_id) else {
-            return Ok(false);
-        };
-        let expected = update.expected.canonicalized();
-        let next = update.next.canonicalized();
-        if update
-            .expected_encrypted_auth_config
-            .as_deref()
-            .is_some_and(|expected| key.encrypted_auth_config.as_deref() != Some(expected))
-            || ProviderCatalogKeyAdaptiveState::from(&*key) != expected
-        {
-            return Ok(false);
-        }
-        let status_snapshot = json_object_for_merge(
-            key.status_snapshot.as_ref(),
-            "provider catalog status snapshot",
-        )?;
-        key.learned_rpm_limit = next.learned_rpm_limit;
-        key.concurrent_429_count = next.concurrent_429_count;
-        key.rpm_429_count = next.rpm_429_count;
-        key.last_429_at_unix_secs = next.last_429_at_unix_secs;
-        key.last_429_type.clone_from(&next.last_429_type);
-        key.adjustment_history.clone_from(&next.adjustment_history);
-        key.utilization_samples
-            .clone_from(&next.utilization_samples);
-        key.last_probe_increase_at_unix_secs = next.last_probe_increase_at_unix_secs;
-        key.last_rpm_peak = next.last_rpm_peak;
-        key.status_snapshot = Some(Value::Object(merge_json_objects(status_snapshot, patch)));
-        key.updated_at_unix_secs = Some(
-            update
-                .updated_at_unix_secs
-                .unwrap_or_else(current_unix_secs),
-        );
-        Ok(true)
-    }
-
     async fn update_key_runtime_metadata(
         &self,
         update: &ProviderCatalogKeyRuntimeMetadataUpdate,
@@ -1537,19 +1486,6 @@ fn merge_admin_key_update(
 
     // Catalog edits own configuration, not live observations. Keep operational
     // fields from the current row so stale admin snapshots cannot undo runtime writes.
-    merged.learned_rpm_limit = stored.learned_rpm_limit;
-    merged.concurrent_429_count = stored.concurrent_429_count;
-    merged.rpm_429_count = stored.rpm_429_count;
-    merged.last_429_at_unix_secs = stored.last_429_at_unix_secs;
-    merged.last_429_type.clone_from(&stored.last_429_type);
-    merged
-        .adjustment_history
-        .clone_from(&stored.adjustment_history);
-    merged
-        .utilization_samples
-        .clone_from(&stored.utilization_samples);
-    merged.last_probe_increase_at_unix_secs = stored.last_probe_increase_at_unix_secs;
-    merged.last_rpm_peak = stored.last_rpm_peak;
     merged.last_models_fetch_at_unix_secs = stored.last_models_fetch_at_unix_secs;
     merged
         .last_models_fetch_error
@@ -1626,31 +1562,6 @@ fn validate_admin_cas_update(
     Ok(())
 }
 
-fn adaptive_status_snapshot_patch(patch: &Value) -> Result<Map<String, Value>, DataLayerError> {
-    const OWNED_FIELDS: [&str; 6] = [
-        "observation_count",
-        "header_observation_count",
-        "latest_upstream_limit",
-        "learning_confidence",
-        "enforcement_active",
-        "known_boundary",
-    ];
-    let object = patch.as_object().ok_or_else(|| {
-        DataLayerError::InvalidInput(
-            "provider catalog adaptive status snapshot patch must be an object".to_string(),
-        )
-    })?;
-    Ok(OWNED_FIELDS
-        .into_iter()
-        .filter_map(|field| {
-            object
-                .get(field)
-                .cloned()
-                .map(|value| (field.to_string(), value))
-        })
-        .collect())
-}
-
 fn json_object_for_merge(
     value: Option<&Value>,
     field_name: &str,
@@ -1676,7 +1587,6 @@ fn merge_json_objects(
 mod tests {
     use super::InMemoryProviderCatalogReadRepository;
     use crate::repository::provider_catalog::{
-        ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyAdaptiveStateUpdate,
         ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyHealthStateUpdate,
         ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery,
         ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthCredentialFence,
@@ -2957,74 +2867,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn adaptive_cas_detects_conflicts_and_merges_only_owned_status_fields() {
+    async fn runtime_metadata_update_preserves_provider_runtime_state_and_other_namespaces() {
         let mut key = sample_key("key-1", "provider-1");
-        key.encrypted_auth_config = Some("auth-current".to_string());
-        key.learned_rpm_limit = Some(10);
-        key.rpm_429_count = Some(1);
-        key.status_snapshot = Some(json!({
-            "quota": {"remaining": 9},
-            "oauth": {"invalid": false},
-            "observation_count": 1
-        }));
-        let expected = ProviderCatalogKeyAdaptiveState::from(&key);
-        let mut next = expected.clone();
-        next.learned_rpm_limit = Some(8);
-        next.rpm_429_count = Some(2);
-        let repository = InMemoryProviderCatalogReadRepository::seed(
-            vec![sample_provider("provider-1")],
-            vec![],
-            vec![key],
-        );
-        let update = ProviderCatalogKeyAdaptiveStateUpdate {
-            key_id: "key-1".to_string(),
-            expected_encrypted_auth_config: Some("auth-current".to_string()),
-            expected,
-            next,
-            status_snapshot_patch: json!({
-                "observation_count": 2,
-                "learning_confidence": 0.5,
-                "quota": {"remaining": 0}
-            }),
-            updated_at_unix_secs: Some(10),
-        };
-
-        let stale_generation_update = ProviderCatalogKeyAdaptiveStateUpdate {
-            expected_encrypted_auth_config: Some("auth-stale".to_string()),
-            ..update.clone()
-        };
-        assert!(!repository
-            .compare_and_update_key_adaptive_state(&stale_generation_update)
-            .await
-            .expect("stale auth generation should conflict"));
-        assert!(repository
-            .compare_and_update_key_adaptive_state(&update)
-            .await
-            .expect("adaptive CAS should succeed"));
-        assert!(!repository
-            .compare_and_update_key_adaptive_state(&update)
-            .await
-            .expect("stale adaptive CAS should report a conflict"));
-
-        let stored = repository
-            .list_keys_by_ids(&["key-1".to_string()])
-            .await
-            .expect("key should reload")
-            .pop()
-            .expect("key should exist");
-        let status = stored.status_snapshot.expect("status should exist");
-        assert_eq!(stored.learned_rpm_limit, Some(8));
-        assert_eq!(stored.rpm_429_count, Some(2));
-        assert_eq!(status["quota"], json!({"remaining": 9}));
-        assert_eq!(status["oauth"], json!({"invalid": false}));
-        assert_eq!(status["observation_count"], json!(2));
-        assert_eq!(status["learning_confidence"], json!(0.5));
-    }
-
-    #[tokio::test]
-    async fn runtime_metadata_update_preserves_adaptive_state_and_other_namespaces() {
-        let mut key = sample_key("key-1", "provider-1");
-        key.learned_rpm_limit = Some(12);
         key.upstream_metadata = Some(json!({
             "codex": {"remaining": 5},
             "grok": {"remaining": 7}
@@ -3058,7 +2902,6 @@ mod tests {
             .expect("key should reload")
             .pop()
             .expect("key should exist");
-        assert_eq!(stored.learned_rpm_limit, Some(12));
         assert_eq!(
             stored.upstream_metadata,
             Some(json!({
@@ -3309,8 +3152,6 @@ mod tests {
     #[tokio::test]
     async fn stale_admin_update_preserves_concurrent_runtime_owned_fields() {
         let mut key = sample_key("key-1", "provider-1");
-        key.learned_rpm_limit = Some(10);
-        key.rpm_429_count = Some(1);
         key.health_by_format = Some(json!({"openai:chat":{"consecutive_failures":1}}));
         key.upstream_metadata = Some(json!({"codex":{"remaining":5}}));
         key.status_snapshot = Some(json!({
@@ -3335,21 +3176,6 @@ mod tests {
             })
             .await
             .expect("health CAS should run");
-        let expected = ProviderCatalogKeyAdaptiveState::from(&key);
-        let mut next = expected.clone();
-        next.learned_rpm_limit = Some(8);
-        next.rpm_429_count = Some(2);
-        repository
-            .compare_and_update_key_adaptive_state(&ProviderCatalogKeyAdaptiveStateUpdate {
-                key_id: key.id.clone(),
-                expected_encrypted_auth_config: None,
-                expected,
-                next,
-                status_snapshot_patch: json!({"observation_count":2}),
-                updated_at_unix_secs: Some(20),
-            })
-            .await
-            .expect("adaptive CAS should run");
         repository
             .update_key_runtime_metadata(&ProviderCatalogKeyRuntimeMetadataUpdate {
                 key_id: key.id.clone(),
@@ -3377,8 +3203,6 @@ mod tests {
             .expect("key should exist");
         assert_eq!(stored.name, "admin-renamed");
         assert!(!stored.is_active);
-        assert_eq!(stored.learned_rpm_limit, Some(8));
-        assert_eq!(stored.rpm_429_count, Some(2));
         assert_eq!(
             stored.health_by_format,
             Some(json!({"openai:chat":{"consecutive_failures":2}}))
@@ -3389,7 +3213,7 @@ mod tests {
         );
         assert_eq!(
             stored.status_snapshot,
-            Some(json!({"quota":{"remaining":3},"observation_count":2}))
+            Some(json!({"quota":{"remaining":3},"observation_count":1}))
         );
     }
 

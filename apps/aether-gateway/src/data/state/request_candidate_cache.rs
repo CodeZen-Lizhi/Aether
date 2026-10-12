@@ -3,8 +3,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use aether_data_contracts::repository::candidates::{
-    PublicHealthStatusCount, PublicHealthTimelineBucket, RequestCandidateReadRepository,
-    StoredRequestCandidate,
+    KeyAttemptUsage, PublicHealthStatusCount, PublicHealthTimelineBucket,
+    RequestCandidateReadRepository, StoredRequestCandidate,
 };
 use async_trait::async_trait;
 
@@ -93,6 +93,15 @@ impl RequestCandidateReadRepository for CachedRequestCandidateReadRepository {
         let rows = self.inner.list_recent(limit).await?;
         self.store_recent(limit, &rows, now);
         Ok(rows)
+    }
+
+    async fn aggregate_attempted_by_key_ids_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &BTreeMap<String, u64>,
+    ) -> Result<Vec<KeyAttemptUsage>, aether_data::DataLayerError> {
+        self.inner
+            .aggregate_attempted_by_key_ids_since(min_observed_at_unix_secs_by_key)
+            .await
     }
 
     async fn list_by_provider_id(

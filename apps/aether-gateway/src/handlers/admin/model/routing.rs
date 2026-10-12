@@ -132,8 +132,6 @@ pub(crate) async fn build_admin_global_model_routing_payload(
             let key_payloads = endpoint_keys
                 .iter()
                 .map(|key| {
-                    let effective_rpm = key.learned_rpm_limit.or(key.rpm_limit);
-                    let is_adaptive = key.rpm_limit.is_none();
                     let allowed_models = json_string_list(key.allowed_models.as_ref());
                     let circuit_breaker_formats = key
                         .circuit_breaker_by_format
@@ -169,8 +167,7 @@ pub(crate) async fn build_admin_global_model_routing_payload(
                             &provider.provider_type,
                         ),
                         "is_active": key.is_active,
-                        "is_adaptive": is_adaptive,
-                        "effective_rpm": effective_rpm,
+                        "rpm_limit": key.rpm_limit,
                         "allowed_models": allowed_models,
                         "health_score": provider_key_health_score(key, &endpoint.api_format),
                         "circuit_breaker_open": is_provider_key_circuit_open_at(key, &endpoint.api_format, now_unix_secs),

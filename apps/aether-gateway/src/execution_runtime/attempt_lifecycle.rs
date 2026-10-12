@@ -4,7 +4,7 @@
 //! `pending` → `started` → `terminal`。差异只在「终态事实从哪来」——HTTP 从
 //! SSE 字节流解析，WS 从协议事件观察。在这里抽出来之前，WS 侧在
 //! `handlers/proxy/websocket/responses/turn.rs` 里重写了一遍 usage 写入、
-//! candidate 状态流转、health/adaptive 效果投射、pool key lease 释放、
+//! candidate 状态流转、health 效果投射、pool key lease 释放、
 //! body capture 和账单失败判定，与 HTTP 的顺序、超时语义只能靠人工对齐。
 //!
 //! # HTTP 侧调用点映射
@@ -598,7 +598,7 @@ impl ExecutionAttemptLifecycle {
     /// 1. usage terminal —— 这次 attempt 的账单记录。行是以 Pending 建立的，
     ///    没有别的东西会去对账，所以用 detachable 保证不丢。
     /// 2. candidate terminal —— 调度侧的终态，慢依赖不能让它停在 Streaming。
-    /// 3. provider 效果 —— health / adaptive / pool 反馈，次于前两段；超时后
+    /// 3. provider 效果 —— health / pool 反馈，次于前两段；超时后
     ///    仍然兜底释放 pool key lease，否则要等 lease TTL 过期才放出这把 key。
     /// 4. execution report —— 作废账单的分支不提交（与 HTTP 在下游断开后
     ///    同样不提交一致）。

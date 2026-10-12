@@ -231,7 +231,7 @@ impl PreviousAttemptSettled {
 /// 与 [`queue_turn_finalization`] 的区别只在于「等」：后者把 handle 挂在连接上
 /// 让 relay loop 继续跑，适用于结算之后不再需要读取共享状态的出口；这个用在
 /// 必须先看到结算结果才能继续的路径上——典型的就是透明重试，它紧接着要按
-/// health / adaptive / pool 状态规划下一个 attempt。
+/// health / pool 状态规划下一个 attempt。
 pub(super) async fn settle_turn_finalization(
     bound: &mut BoundResponsesConnection,
     state: &AppState,
@@ -430,7 +430,7 @@ mod tests {
 
     /// C6 依赖的性质：结算是「等到落地」而不是「排进队列」。
     ///
-    /// 透明重试在这之后立刻按 health / adaptive / pool 状态规划下一个 attempt，
+    /// 透明重试在这之后立刻按 health / pool 状态规划下一个 attempt，
     /// 所以结算任务必须已经跑完——只把 handle 挂起来是不够的。
     #[tokio::test]
     async fn awaiting_a_finalization_handle_runs_the_settlement_to_completion() {

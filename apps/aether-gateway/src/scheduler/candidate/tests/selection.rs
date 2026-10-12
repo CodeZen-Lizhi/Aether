@@ -1616,6 +1616,128 @@ async fn selects_next_candidate_when_first_provider_key_rpm_slots_are_reserved_f
 }
 
 #[tokio::test]
+async fn rpm_limit_counts_key_attempts_beyond_the_global_recent_candidate_window() {
+    let mut first = sample_row();
+    first.provider_id = "provider-a".to_string();
+    first.provider_name = "openai-a".to_string();
+    first.endpoint_id = "endpoint-a".to_string();
+    first.key_id = "key-a".to_string();
+    first.key_name = "alpha".to_string();
+
+    let mut second = sample_row();
+    second.provider_id = "provider-b".to_string();
+    second.provider_name = "openai-b".to_string();
+    second.endpoint_id = "endpoint-b".to_string();
+    second.key_id = "key-b".to_string();
+    second.key_name = "beta".to_string();
+
+    let candidates = Arc::new(InMemoryMinimalCandidateSelectionReadRepository::seed(vec![
+        first, second,
+    ]));
+    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![
+            sample_provider("provider-a", None),
+            sample_provider("provider-b", None),
+        ],
+        Vec::new(),
+        vec![
+            sample_key("key-a", "provider-a", Some(10)),
+            sample_key("key-b", "provider-b", Some(10)),
+        ],
+    ));
+    let quotas = Arc::new(InMemoryProviderQuotaRepository::seed(vec![]));
+    let mut request_candidates = Vec::new();
+    for index in 0..200 {
+        request_candidates.push(
+            StoredRequestCandidate::new(
+                format!("noise-{index}"),
+                format!("noise-request-{index}"),
+                None,
+                None,
+                None,
+                None,
+                0,
+                0,
+                Some("noise-provider".to_string()),
+                Some("noise-endpoint".to_string()),
+                Some("noise-key".to_string()),
+                RequestCandidateStatus::Success,
+                None,
+                false,
+                Some(200),
+                None,
+                None,
+                Some(10),
+                Some(1),
+                None,
+                None,
+                99_000,
+                Some(99_000),
+                Some(99_100),
+            )
+            .expect("noise candidate should build"),
+        );
+    }
+    for index in 0..10 {
+        request_candidates.push(
+            StoredRequestCandidate::new(
+                format!("zz-key-a-attempt-{index}"),
+                format!("key-a-request-{index}"),
+                None,
+                None,
+                None,
+                None,
+                0,
+                0,
+                Some("provider-a".to_string()),
+                Some("endpoint-a".to_string()),
+                Some("key-a".to_string()),
+                RequestCandidateStatus::Success,
+                None,
+                false,
+                Some(200),
+                None,
+                None,
+                Some(10),
+                Some(1),
+                None,
+                None,
+                95_000,
+                Some(95_000),
+                Some(96_000),
+            )
+            .expect("key candidate should build"),
+        );
+    }
+    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(request_candidates));
+    let state = AppState::new()
+        .expect("state should build")
+        .with_data_state_for_tests(
+            GatewayDataState::with_candidate_selection_provider_catalog_quota_and_request_candidates_for_tests(
+                candidates,
+                provider_catalog,
+                quotas,
+                request_candidates,
+            ),
+        );
+
+    let selected = select_candidate(
+        state.data.as_ref(),
+        &state,
+        "openai:chat",
+        "gpt-4.1",
+        false,
+        None,
+        100,
+    )
+    .await
+    .expect("selection should succeed")
+    .expect("the second provider key should remain available");
+
+    assert_eq!(selected.key_id, "key-b");
+}
+
+#[tokio::test]
 async fn selects_next_candidate_when_first_provider_key_circuit_is_open() {
     let mut first = sample_row();
     first.provider_id = "provider-a".to_string();

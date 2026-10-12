@@ -1,4 +1,3 @@
-mod adaptive;
 mod api_keys;
 mod endpoints;
 mod health_access;

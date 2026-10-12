@@ -80,17 +80,8 @@ pub(super) fn sample_key(
         true,
     )
     .expect("key should build")
-    .with_rate_limit_fields(
-        rpm_limit,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(20),
-        Some(20),
-    )
+    .with_rate_limits(rpm_limit, None)
+    .with_usage_counts(Some(20), Some(20))
 }
 
 pub(super) fn sample_auth_snapshot(api_key_id: &str) -> GatewayAuthApiKeySnapshot {

@@ -31,6 +31,7 @@ pub struct CandidateRuntimeSelectabilityInput<'a> {
     pub oauth_invalid: bool,
     pub enforce_key_circuit_breaker: bool,
     pub rpm_reset_at: Option<u64>,
+    pub current_key_rpm_usage: Option<usize>,
 }
 
 pub fn candidate_is_selectable_with_runtime_state(
@@ -53,6 +54,7 @@ pub fn candidate_runtime_skip_reason_with_state(
         oauth_invalid,
         enforce_key_circuit_breaker,
         rpm_reset_at,
+        current_key_rpm_usage,
     } = input;
 
     if provider_quota_blocks_requests {
@@ -132,13 +134,24 @@ pub fn candidate_runtime_skip_reason_with_state(
         {
             return Some("key_health_score_zero");
         }
-        if !crate::provider_key_rpm_allows_request_since(
-            provider_key,
-            recent_candidates,
-            now_unix_secs,
-            false,
-            rpm_reset_at,
-        ) {
+        let allows_rpm_request = current_key_rpm_usage.map_or_else(
+            || {
+                crate::provider_key_rpm_allows_request_since(
+                    provider_key,
+                    recent_candidates,
+                    now_unix_secs,
+                    rpm_reset_at,
+                )
+            },
+            |current_usage| {
+                crate::provider_key_rpm_usage_allows_request(
+                    provider_key,
+                    current_usage,
+                    now_unix_secs,
+                )
+            },
+        );
+        if !allows_rpm_request {
             return Some("key_rpm_exhausted");
         }
     }

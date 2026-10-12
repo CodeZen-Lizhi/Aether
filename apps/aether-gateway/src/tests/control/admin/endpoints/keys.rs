@@ -551,6 +551,36 @@ async fn provider_key_concurrent_limit_create_and_list_responses() {
     assert_eq!(create_payload["rpm_limit"], 60);
     assert_eq!(create_payload["concurrent_limit"], 3);
 
+    for invalid_rpm_limit in [0, 10_001] {
+        let invalid_response = reqwest::Client::new()
+            .post(format!(
+                "{gateway_url}/api/admin/endpoints/providers/provider-openai/keys"
+            ))
+            .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .json(&json!({
+                "api_formats": ["openai:chat"],
+                "api_key": format!("sk-created-openai-rpm-{invalid_rpm_limit}"),
+                "name": format!("invalid rpm {invalid_rpm_limit}"),
+                "rpm_limit": invalid_rpm_limit
+            }))
+            .send()
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(invalid_response.status(), StatusCode::BAD_REQUEST);
+        let invalid_payload: serde_json::Value = invalid_response
+            .json()
+            .await
+            .expect("json body should parse");
+        assert!(invalid_payload["detail"]
+            .as_str()
+            .expect("detail should be string")
+            .contains("rpm_limit"));
+    }
+
     let create_null_response = reqwest::Client::new()
         .post(format!(
             "{gateway_url}/api/admin/endpoints/providers/provider-openai/keys"
@@ -923,7 +953,6 @@ async fn gateway_updates_admin_provider_key_locally_with_trusted_admin_principal
         "openai:chat",
         "sk-test-a",
     );
-    key.learned_rpm_limit = Some(88);
     key.allowed_models = Some(json!(["gpt-4.1"]));
     key.fingerprint = Some(json!({"user_agent": "old-ua"}));
 
@@ -971,7 +1000,9 @@ async fn gateway_updates_admin_provider_key_locally_with_trusted_admin_principal
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["name"], "updated key");
     assert_eq!(payload["rpm_limit"], serde_json::Value::Null);
-    assert_eq!(payload["learned_rpm_limit"], serde_json::Value::Null);
+    assert!(payload.get("learned_rpm_limit").is_none());
+    assert!(payload.get("is_adaptive").is_none());
+    assert!(payload.get("effective_limit").is_none());
     assert_eq!(payload["allowed_models"], json!([]));
     assert_eq!(payload["note"], "updated from rust");
     assert_eq!(payload["is_active"], false);
@@ -984,7 +1015,6 @@ async fn gateway_updates_admin_provider_key_locally_with_trusted_admin_principal
         .expect("keys should read");
     assert_eq!(reloaded[0].name, "updated key");
     assert_eq!(reloaded[0].rpm_limit, None);
-    assert_eq!(reloaded[0].learned_rpm_limit, None);
     assert_eq!(reloaded[0].allowed_models, None);
     assert_eq!(reloaded[0].note.as_deref(), Some("updated from rust"));
     assert!(!reloaded[0].is_active);
@@ -1125,6 +1155,78 @@ async fn provider_key_concurrent_limit_update_presence_semantics() {
     assert_eq!(reloaded[0].name, "renamed without concurrency");
     assert_eq!(reloaded[0].concurrent_limit, None);
 
+    gateway_handle.abort();
+}
+
+#[tokio::test]
+async fn provider_key_rpm_limit_rejects_zero_and_values_above_the_ui_range() {
+    let mut key = sample_key(
+        "key-openai-rpm-validation",
+        "provider-openai",
+        "openai:chat",
+        "sk-test-rpm-validation",
+    );
+    key.rpm_limit = Some(50);
+    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![sample_provider("provider-openai", "openai", 10)],
+        vec![],
+        vec![key],
+    ));
+    let gateway = build_router_with_state(
+        AppState::new()
+            .expect("gateway should build")
+            .with_data_state_for_tests(
+                GatewayDataState::with_provider_catalog_repository_for_tests(
+                    provider_catalog_repository.clone(),
+                )
+                .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+            ),
+    );
+    let (gateway_url, gateway_handle) = start_server(gateway).await;
+
+    let valid_response = reqwest::Client::new()
+        .put(format!(
+            "{gateway_url}/api/admin/endpoints/keys/key-openai-rpm-validation"
+        ))
+        .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .json(&json!({"rpm_limit": 40}))
+        .send()
+        .await
+        .expect("request should succeed");
+    assert_eq!(valid_response.status(), StatusCode::OK);
+
+    for invalid_rpm_limit in [0, 10_001] {
+        let invalid_response = reqwest::Client::new()
+            .put(format!(
+                "{gateway_url}/api/admin/endpoints/keys/key-openai-rpm-validation"
+            ))
+            .header(crate::constants::GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .json(&json!({"rpm_limit": invalid_rpm_limit}))
+            .send()
+            .await
+            .expect("request should succeed");
+        assert_eq!(invalid_response.status(), StatusCode::BAD_REQUEST);
+        let invalid_payload: serde_json::Value = invalid_response
+            .json()
+            .await
+            .expect("json body should parse");
+        assert!(invalid_payload["detail"]
+            .as_str()
+            .expect("detail should be string")
+            .contains("rpm_limit"));
+    }
+
+    let stored = provider_catalog_repository
+        .list_keys_by_ids(&["key-openai-rpm-validation".to_string()])
+        .await
+        .expect("updated key should read");
+    assert_eq!(stored[0].rpm_limit, Some(40));
     gateway_handle.abort();
 }
 

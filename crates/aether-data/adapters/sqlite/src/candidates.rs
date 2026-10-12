@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use sqlx::{sqlite::SqliteRow, QueryBuilder, Row, Sqlite, SqliteConnection};
 
 use aether_data_contracts::repository::candidates::{
-    request_candidate_lifecycle_would_regress, PublicHealthStatusCount, PublicHealthTimelineBucket,
-    RequestCandidateReadRepository, RequestCandidateStatus, RequestCandidateWriteRepository,
-    StoredRequestCandidate, UpsertRequestCandidateRecord,
+    request_candidate_lifecycle_would_regress, KeyAttemptUsage, PublicHealthStatusCount,
+    PublicHealthTimelineBucket, RequestCandidateReadRepository, RequestCandidateStatus,
+    RequestCandidateWriteRepository, StoredRequestCandidate, UpsertRequestCandidateRecord,
 };
 use aether_data_contracts::DataLayerError;
 use aether_data_query::{push_in, WhereClause};
@@ -102,6 +102,69 @@ impl RequestCandidateReadRepository for SqliteRequestCandidateRepository {
         .await
         .map_sql_err()?;
         rows.iter().map(map_candidate_row).collect()
+    }
+
+    async fn aggregate_attempted_by_key_ids_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &BTreeMap<String, u64>,
+    ) -> Result<Vec<KeyAttemptUsage>, DataLayerError> {
+        if min_observed_at_unix_secs_by_key.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "SELECT key_id, COUNT(*) AS attempted_count, \
+             COALESCE(MAX(concurrent_requests), 0) AS max_concurrent_requests \
+             FROM request_candidates \
+             WHERE ((status IN ('streaming', 'success', 'failed', 'cancelled')) \
+               OR (status = 'pending' AND started_at IS NOT NULL)) \
+               AND (",
+        );
+        for (index, (key_id, min_observed_at_unix_secs)) in
+            min_observed_at_unix_secs_by_key.iter().enumerate()
+        {
+            if index > 0 {
+                builder.push(" OR ");
+            }
+            builder
+                .push("(key_id = ")
+                .push_bind(key_id)
+                .push(" AND (started_at >= ")
+                .push_bind(unix_secs_to_ms_i64(*min_observed_at_unix_secs)?)
+                .push(" OR (started_at IS NULL AND created_at >= ")
+                .push_bind(unix_secs_to_ms_i64(*min_observed_at_unix_secs)?)
+                .push(")")
+                .push(")")
+                .push(")");
+        }
+        builder.push(") GROUP BY key_id");
+
+        let rows = builder.build().fetch_all(&self.pool).await.map_sql_err()?;
+        rows.iter()
+            .map(|row| {
+                let attempted_count =
+                    u64::try_from(row.try_get::<i64, _>("attempted_count").map_sql_err()?)
+                        .map_err(|_| {
+                            DataLayerError::UnexpectedValue(
+                                "request candidate attempted count out of range".to_string(),
+                            )
+                        })?;
+                let max_concurrent_requests = u64::try_from(
+                    row.try_get::<i64, _>("max_concurrent_requests")
+                        .map_sql_err()?,
+                )
+                .map_err(|_| {
+                    DataLayerError::UnexpectedValue(
+                        "request candidate concurrent count out of range".to_string(),
+                    )
+                })?;
+                Ok(KeyAttemptUsage {
+                    key_id: row.try_get("key_id").map_sql_err()?,
+                    attempted_count,
+                    max_concurrent_requests,
+                })
+            })
+            .collect()
     }
 
     async fn list_by_provider_id(
@@ -870,6 +933,8 @@ fn optional_u64_to_i64(value: Option<u64>, name: &str) -> Result<Option<i64>, Da
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::SqliteRequestCandidateRepository;
     use crate::run_migrations;
     use aether_data_contracts::repository::candidates::{
@@ -966,6 +1031,77 @@ mod tests {
                 .expect("old candidates should delete"),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn aggregates_recent_attempts_for_a_key_without_a_global_row_limit() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("sqlite pool should connect");
+        run_migrations(&pool)
+            .await
+            .expect("sqlite migrations should run");
+        let repository = SqliteRequestCandidateRepository::new(pool);
+
+        for index in 0..200_u32 {
+            let mut candidate = sample_upsert(
+                format!("rpm-candidate-{index}").as_str(),
+                RequestCandidateStatus::Success,
+                None,
+                99_000,
+            );
+            candidate.request_id = "rpm-load".to_string();
+            candidate.candidate_index = index;
+            candidate.concurrent_requests = Some(if index == 199 { 250 } else { 1 });
+            repository
+                .upsert(candidate)
+                .await
+                .expect("attempted candidate should insert");
+        }
+
+        let mut old = sample_upsert("rpm-old", RequestCandidateStatus::Success, None, 39_999);
+        old.request_id = "rpm-old-request".to_string();
+        old.started_at_unix_ms = None;
+        repository
+            .upsert(old)
+            .await
+            .expect("old candidate should insert");
+
+        let mut skipped =
+            sample_upsert("rpm-skipped", RequestCandidateStatus::Skipped, None, 99_000);
+        skipped.request_id = "rpm-skipped-request".to_string();
+        repository
+            .upsert(skipped)
+            .await
+            .expect("skipped candidate should insert");
+
+        let mut unstarted_pending = sample_upsert(
+            "rpm-unstarted-pending",
+            RequestCandidateStatus::Pending,
+            None,
+            99_000,
+        );
+        unstarted_pending.request_id = "rpm-pending-request".to_string();
+        unstarted_pending.started_at_unix_ms = None;
+        repository
+            .upsert(unstarted_pending)
+            .await
+            .expect("pending candidate should insert");
+
+        let usage = repository
+            .aggregate_attempted_by_key_ids_since(&BTreeMap::from([(
+                "provider-key-1".to_string(),
+                40,
+            )]))
+            .await
+            .expect("key usage should aggregate");
+
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].key_id, "provider-key-1");
+        assert_eq!(usage[0].attempted_count, 200);
+        assert_eq!(usage[0].max_concurrent_requests, 250);
     }
 
     #[tokio::test]

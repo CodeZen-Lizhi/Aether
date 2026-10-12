@@ -7,41 +7,6 @@ pub struct ProviderCatalogUpstreamMetadataNamespaceUpdate {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ProviderCatalogKeyAdaptiveState {
-    pub learned_rpm_limit: Option<u32>,
-    pub concurrent_429_count: Option<u32>,
-    pub rpm_429_count: Option<u32>,
-    pub last_429_at_unix_secs: Option<u64>,
-    pub last_429_type: Option<String>,
-    pub adjustment_history: Option<serde_json::Value>,
-    pub utilization_samples: Option<serde_json::Value>,
-    pub last_probe_increase_at_unix_secs: Option<u64>,
-    pub last_rpm_peak: Option<u32>,
-}
-
-impl ProviderCatalogKeyAdaptiveState {
-    pub fn canonicalized(&self) -> Self {
-        let mut state = self.clone();
-        state.concurrent_429_count = Some(state.concurrent_429_count.unwrap_or(0));
-        state.rpm_429_count = Some(state.rpm_429_count.unwrap_or(0));
-        state
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ProviderCatalogKeyAdaptiveStateUpdate {
-    pub key_id: String,
-    /// Optional auth_config fence for request-owned adaptive feedback.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected_encrypted_auth_config: Option<String>,
-    pub expected: ProviderCatalogKeyAdaptiveState,
-    pub next: ProviderCatalogKeyAdaptiveState,
-    /// Top-level status fields owned by adaptive rate-limit learning.
-    pub status_snapshot_patch: serde_json::Value,
-    pub updated_at_unix_secs: Option<u64>,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProviderCatalogKeyRuntimeMetadataUpdate {
     pub key_id: String,
     pub namespace: String,
@@ -438,15 +403,6 @@ pub struct StoredProviderCatalogKey {
     pub fingerprint: Option<serde_json::Value>,
     pub rpm_limit: Option<u32>,
     pub concurrent_limit: Option<i32>,
-    pub learned_rpm_limit: Option<u32>,
-    pub concurrent_429_count: Option<u32>,
-    pub rpm_429_count: Option<u32>,
-    pub last_429_at_unix_secs: Option<u64>,
-    pub last_429_type: Option<String>,
-    pub adjustment_history: Option<serde_json::Value>,
-    pub utilization_samples: Option<serde_json::Value>,
-    pub last_probe_increase_at_unix_secs: Option<u64>,
-    pub last_rpm_peak: Option<u32>,
     pub request_count: Option<u32>,
     pub total_tokens: u64,
     pub total_cost_usd: f64,
@@ -522,15 +478,6 @@ impl StoredProviderCatalogKey {
             fingerprint: None,
             rpm_limit: None,
             concurrent_limit: None,
-            learned_rpm_limit: None,
-            concurrent_429_count: None,
-            rpm_429_count: None,
-            last_429_at_unix_secs: None,
-            last_429_type: None,
-            adjustment_history: None,
-            utilization_samples: None,
-            last_probe_increase_at_unix_secs: None,
-            last_rpm_peak: None,
             request_count: None,
             total_tokens: 0,
             total_cost_usd: 0.0,
@@ -600,26 +547,23 @@ impl StoredProviderCatalogKey {
         self
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_rate_limit_fields(
+    /// 设置供应商 Key 手动配置的 RPM 和并发上限；`None` 表示不限制。
+    pub fn with_rate_limits(
         mut self,
         rpm_limit: Option<u32>,
         concurrent_limit: Option<i32>,
-        learned_rpm_limit: Option<u32>,
-        concurrent_429_count: Option<u32>,
-        rpm_429_count: Option<u32>,
-        last_429_at_unix_secs: Option<u64>,
-        adjustment_history: Option<serde_json::Value>,
-        request_count: Option<u32>,
-        success_count: Option<u32>,
     ) -> Self {
         self.rpm_limit = rpm_limit;
         self.concurrent_limit = concurrent_limit;
-        self.learned_rpm_limit = learned_rpm_limit;
-        self.concurrent_429_count = concurrent_429_count;
-        self.rpm_429_count = rpm_429_count;
-        self.last_429_at_unix_secs = last_429_at_unix_secs;
-        self.adjustment_history = adjustment_history;
+        self
+    }
+
+    /// 设置该 Key 的累计请求数和成功数，用于管理统计与备份。
+    pub fn with_usage_counts(
+        mut self,
+        request_count: Option<u32>,
+        success_count: Option<u32>,
+    ) -> Self {
         self.request_count = request_count;
         self.success_count = success_count;
         self
@@ -656,22 +600,6 @@ impl StoredProviderCatalogKey {
     }
 }
 
-impl From<&StoredProviderCatalogKey> for ProviderCatalogKeyAdaptiveState {
-    fn from(key: &StoredProviderCatalogKey) -> Self {
-        Self {
-            learned_rpm_limit: key.learned_rpm_limit,
-            concurrent_429_count: Some(key.concurrent_429_count.unwrap_or(0)),
-            rpm_429_count: Some(key.rpm_429_count.unwrap_or(0)),
-            last_429_at_unix_secs: key.last_429_at_unix_secs,
-            last_429_type: key.last_429_type.clone(),
-            adjustment_history: key.adjustment_history.clone(),
-            utilization_samples: key.utilization_samples.clone(),
-            last_probe_increase_at_unix_secs: key.last_probe_increase_at_unix_secs,
-            last_rpm_peak: key.last_rpm_peak,
-        }
-    }
-}
-
 #[cfg(test)]
 mod transport_tests {
     use super::StoredProviderCatalogKey;
@@ -702,17 +630,7 @@ mod transport_tests {
             true,
         )
         .expect("key should build")
-        .with_rate_limit_fields(
-            Some(120),
-            Some(3),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        .with_rate_limits(Some(120), Some(3));
 
         assert_eq!(key.rpm_limit, Some(120));
         assert_eq!(key.concurrent_limit, Some(3));
@@ -1055,17 +973,6 @@ pub trait ProviderCatalogWriteRepository: Send + Sync {
 
     /// Explicit administrator recovery action; does not replace other usage counters.
     async fn reset_key_error_count(&self, key_id: &str) -> Result<bool, crate::DataLayerError>;
-
-    /// Compare-and-swap adaptive fields without replacing unrelated key columns.
-    async fn compare_and_update_key_adaptive_state(
-        &self,
-        _update: &ProviderCatalogKeyAdaptiveStateUpdate,
-    ) -> Result<bool, crate::DataLayerError> {
-        Err(crate::DataLayerError::InvalidConfiguration(
-            "provider catalog adaptive state updates are not supported by this repository"
-                .to_string(),
-        ))
-    }
 
     /// 原子替换一个上游元数据命名空间并合并归属状态字段。
     async fn update_key_runtime_metadata(

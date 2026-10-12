@@ -198,18 +198,10 @@
                         </span>
                       </template>
                       <!-- RPM 限制信息（第二位） -->
-                      <template v-if="key.rpm_limit || key.is_adaptive">
+                      <template>
                         <span class="text-muted-foreground/40">|</span>
-                        <span v-if="key.is_adaptive">
-                          <template v-if="key.learned_rpm_limit != null">
-                            {{ key.learned_rpm_limit }} RPM
-                          </template>
-                          <template v-else>
-                            RPM
-                          </template>
-                          <span class="text-muted-foreground/60">({{ legacyT('自适应') }})</span>
-                        </span>
-                        <span v-else>{{ key.rpm_limit }} RPM</span>
+                        <span v-if="key.rpm_limit != null">{{ key.rpm_limit }} RPM</span>
+                        <span v-else>{{ legacyT('无限制 RPM') }}</span>
                       </template>
                       <span class="text-muted-foreground/40">|</span>
                       <!-- API 格式：展开显示每个格式、倍率、熔断状态 -->

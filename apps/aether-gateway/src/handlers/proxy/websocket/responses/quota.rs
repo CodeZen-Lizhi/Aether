@@ -98,7 +98,7 @@ pub(super) fn record_exhausted_bound_key(
 /// 为同一个 logical turn 规划并绑定下一个 attempt。
 ///
 /// `_previous_settled` 不被使用，它只是把「上一个 attempt 已经结算完毕」这个
-/// 前置条件写进签名：规划要读 health / adaptive / pool 状态，而这些是上一个
+/// 前置条件写进签名：规划要读 health / pool 状态，而这些是上一个
 /// attempt 结算时才投射的；它的 pool key lease 也要先释放，否则替代 key 的挑选
 /// 会看到一把仍被占用的 key。
 pub(super) async fn retry_active_turn_after_quota_exhaustion(

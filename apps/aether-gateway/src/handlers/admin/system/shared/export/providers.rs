@@ -9,7 +9,28 @@ use aether_admin::system::{
     AdminSystemConfigEndpoint, AdminSystemConfigProvider, AdminSystemConfigProviderKey,
     AdminSystemConfigProviderModel,
 };
+use serde_json::Value;
 use std::collections::BTreeMap;
+
+const RETIRED_PROVIDER_KEY_SNAPSHOT_LEARNING_FIELDS: [&str; 6] = [
+    "learning_confidence",
+    "enforcement_active",
+    "observation_count",
+    "header_observation_count",
+    "latest_upstream_limit",
+    "known_boundary",
+];
+
+fn project_provider_key_status_snapshot(snapshot: Option<Value>) -> Option<Value> {
+    snapshot.map(|mut snapshot| {
+        if let Some(snapshot) = snapshot.as_object_mut() {
+            for field in RETIRED_PROVIDER_KEY_SNAPSHOT_LEARNING_FIELDS {
+                snapshot.remove(field);
+            }
+        }
+        snapshot
+    })
+}
 
 pub(crate) async fn build_admin_system_export_providers_payload(
     state: &AdminBackupState<'_>,
@@ -156,15 +177,6 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         is_active: key.is_active,
                         proxy: key.proxy.clone(),
                         fingerprint: key.fingerprint.clone(),
-                        learned_rpm_limit: key.learned_rpm_limit,
-                        concurrent_429_count: key.concurrent_429_count,
-                        rpm_429_count: key.rpm_429_count,
-                        last_429_at_unix_secs: key.last_429_at_unix_secs,
-                        last_429_type: key.last_429_type.clone(),
-                        adjustment_history: key.adjustment_history.clone(),
-                        utilization_samples: key.utilization_samples.clone(),
-                        last_probe_increase_at_unix_secs: key.last_probe_increase_at_unix_secs,
-                        last_rpm_peak: key.last_rpm_peak,
                         request_count: key.request_count,
                         total_tokens: Some(key.total_tokens),
                         total_cost_usd: Some(key.total_cost_usd),
@@ -177,7 +189,9 @@ pub(crate) async fn build_admin_system_export_providers_payload(
                         upstream_metadata: key.upstream_metadata.clone(),
                         oauth_invalid_at_unix_secs: key.oauth_invalid_at_unix_secs,
                         oauth_invalid_reason: key.oauth_invalid_reason.clone(),
-                        status_snapshot: key.status_snapshot.clone(),
+                        status_snapshot: project_provider_key_status_snapshot(
+                            key.status_snapshot.clone(),
+                        ),
                         health_by_format: key.health_by_format.clone(),
                         circuit_breaker_by_format: key.circuit_breaker_by_format.clone(),
                     })

@@ -1212,7 +1212,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gemini_report_metadata_write_preserves_adaptive_and_other_provider_state() {
+    async fn gemini_report_metadata_write_preserves_other_provider_state() {
         let provider = StoredProviderCatalogProvider::new(
             "gemini-provider".to_string(),
             "Gemini CLI".to_string(),
@@ -1229,8 +1229,6 @@ mod tests {
             true,
         )
         .expect("key should build");
-        key.learned_rpm_limit = Some(12);
-        key.rpm_429_count = Some(3);
         key.upstream_metadata = Some(json!({
             "gemini_cli": {"credits":{"remaining":9}},
             "codex": {"remaining":7}
@@ -1238,7 +1236,7 @@ mod tests {
         key.status_snapshot = Some(json!({
             "quota": {"source":"old"},
             "observation_count": 4,
-            "learning_confidence": 0.7,
+            "provider_observation": "preserved",
             "oauth": {"invalid":false}
         }));
         let repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
@@ -1266,8 +1264,6 @@ mod tests {
             .expect("key should reload")
             .pop()
             .expect("key should exist");
-        assert_eq!(stored.learned_rpm_limit, Some(12));
-        assert_eq!(stored.rpm_429_count, Some(3));
         assert_eq!(
             stored.upstream_metadata.as_ref().unwrap()["codex"],
             json!({"remaining":7})
@@ -1278,7 +1274,7 @@ mod tests {
         );
         let status = stored.status_snapshot.expect("status should exist");
         assert_eq!(status["observation_count"], json!(4));
-        assert_eq!(status["learning_confidence"], json!(0.7));
+        assert_eq!(status["provider_observation"], json!("preserved"));
         assert_eq!(status["oauth"], json!({"invalid":false}));
         assert_eq!(status["quota"]["provider_type"], json!("gemini_cli"));
     }

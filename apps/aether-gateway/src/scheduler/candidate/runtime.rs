@@ -7,6 +7,7 @@ use aether_scheduler_core::{
     auth_api_key_concurrency_limit_reached, build_provider_concurrent_limit_map,
     candidate_is_selectable_with_runtime_state, candidate_runtime_skip_reason_with_state,
     effective_provider_key_rpm_limit, CandidateRuntimeSelectabilityInput,
+    PROVIDER_KEY_RPM_WINDOW_SECS,
 };
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -22,6 +23,7 @@ pub(super) struct CandidateRuntimeSelectionSnapshot {
     pub(super) recent_candidates: Vec<StoredRequestCandidate>,
     pub(super) provider_concurrent_limits: BTreeMap<String, usize>,
     pub(super) provider_key_rpm_states: BTreeMap<String, StoredProviderCatalogKey>,
+    provider_key_rpm_usages: BTreeMap<String, usize>,
     provider_quota_blocks_requests: BTreeMap<String, bool>,
     key_oauth_invalid: BTreeMap<String, bool>,
     provider_key_rpm_reset_ats: BTreeMap<String, Option<u64>>,
@@ -35,6 +37,8 @@ pub(super) async fn read_candidate_runtime_selection_snapshot(
 ) -> Result<CandidateRuntimeSelectionSnapshot, GatewayError> {
     let provider_concurrent_limits = read_provider_concurrent_limits(state, candidates).await?;
     let provider_key_rpm_states = read_provider_key_rpm_states(state, candidates).await?;
+    let provider_key_rpm_reset_ats =
+        read_provider_key_rpm_reset_at_map(state, candidates, now_unix_secs);
     let recent_candidates = if runtime_snapshot_requires_recent_candidates(
         auth_snapshot,
         &provider_concurrent_limits,
@@ -45,17 +49,22 @@ pub(super) async fn read_candidate_runtime_selection_snapshot(
     } else {
         Vec::new()
     };
+    let provider_key_rpm_usages = read_provider_key_rpm_usages(
+        state,
+        &provider_key_rpm_states,
+        &provider_key_rpm_reset_ats,
+        now_unix_secs,
+    )
+    .await?;
     let key_oauth_invalid =
         read_key_oauth_invalid_map(candidates, &provider_key_rpm_states, now_unix_secs);
     let provider_quota_blocks_requests =
         read_provider_quota_block_map(state, candidates, now_unix_secs).await?;
-    let provider_key_rpm_reset_ats =
-        read_provider_key_rpm_reset_at_map(state, candidates, now_unix_secs);
-
     Ok(CandidateRuntimeSelectionSnapshot {
         recent_candidates,
         provider_concurrent_limits,
         provider_key_rpm_states,
+        provider_key_rpm_usages,
         provider_quota_blocks_requests,
         key_oauth_invalid,
         provider_key_rpm_reset_ats,
@@ -79,10 +88,51 @@ fn runtime_snapshot_requires_recent_candidates(
         return true;
     }
 
-    provider_key_rpm_states.values().any(|key| {
-        key.concurrent_limit.is_some_and(|limit| limit > 0)
-            || effective_provider_key_rpm_limit(key, now_unix_secs).is_some()
-    })
+    provider_key_rpm_states
+        .values()
+        .any(|key| key.concurrent_limit.is_some_and(|limit| limit > 0))
+}
+
+/// 为设置了手动 RPM 上限的 Key 聚合窗口内使用量，重置点之后从下一秒重新计数。
+async fn read_provider_key_rpm_usages(
+    state: &(impl SchedulerRuntimeState + ?Sized),
+    provider_key_rpm_states: &BTreeMap<String, StoredProviderCatalogKey>,
+    reset_ats: &BTreeMap<String, Option<u64>>,
+    now_unix_secs: u64,
+) -> Result<BTreeMap<String, usize>, GatewayError> {
+    let min_observed_at_by_key = provider_key_rpm_states
+        .values()
+        .filter(|key| effective_provider_key_rpm_limit(key, now_unix_secs).is_some())
+        .map(|key| {
+            let window_start = now_unix_secs.saturating_sub(PROVIDER_KEY_RPM_WINDOW_SECS);
+            let reset_start = reset_ats
+                .get(&key.id)
+                .copied()
+                .flatten()
+                .map(|reset_at| reset_at.saturating_add(1))
+                .unwrap_or(0);
+            (key.id.clone(), window_start.max(reset_start))
+        })
+        .collect::<BTreeMap<_, _>>();
+    if min_observed_at_by_key.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut usages = min_observed_at_by_key
+        .keys()
+        .map(|key_id| (key_id.clone(), 0usize))
+        .collect::<BTreeMap<_, _>>();
+    for usage in state
+        .aggregate_attempted_request_candidate_usage_by_key_since(&min_observed_at_by_key)
+        .await?
+    {
+        if let Some(current_usage) = usages.get_mut(&usage.key_id) {
+            *current_usage =
+                usize::try_from(usage.attempted_count.max(usage.max_concurrent_requests))
+                    .unwrap_or(usize::MAX);
+        }
+    }
+    Ok(usages)
 }
 
 pub(super) fn auth_snapshot_concurrency_limit_reached(
@@ -139,6 +189,10 @@ pub(super) fn is_candidate_selectable(
             .get(candidate.key_id.as_str())
             .copied()
             .flatten(),
+        current_key_rpm_usage: snapshot
+            .provider_key_rpm_usages
+            .get(candidate.key_id.as_str())
+            .copied(),
     })
 }
 
@@ -170,6 +224,10 @@ pub(super) fn current_candidate_runtime_skip_reason(
             .get(candidate.key_id.as_str())
             .copied()
             .flatten(),
+        current_key_rpm_usage: snapshot
+            .provider_key_rpm_usages
+            .get(candidate.key_id.as_str())
+            .copied(),
     })
 }
 

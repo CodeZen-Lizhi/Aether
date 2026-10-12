@@ -224,7 +224,7 @@ pub(super) async fn forward_client_message(
 
             // A prior terminal turn may still be writing usage/audit and
             // projecting provider effects. Do not let a new independent turn
-            // plan against stale health, adaptive, or pool state.
+            // plan against stale health or pool state.
             await_pending_turn_finalization(bound).await;
 
             let requested_model =

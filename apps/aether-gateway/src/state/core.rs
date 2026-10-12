@@ -887,8 +887,8 @@ impl AppState {
         self.candidate_page_cache.clear();
         self.candidate_resolved_page_cache.clear();
         // Transport snapshots contain static provider/endpoint/key configuration,
-        // including `is_active`, but not runtime health, circuit-breaker, or
-        // adaptive projections. Keeping them avoids a global three-query transport
+        // including `is_active`, but not runtime health or circuit-breaker
+        // projections. Keeping them avoids a global three-query transport
         // reload after every runtime health feedback write.
     }
 

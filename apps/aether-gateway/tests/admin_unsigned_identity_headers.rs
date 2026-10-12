@@ -517,21 +517,50 @@ async fn full_backup_preserves_provider_key_metadata_usage_and_state() {
             .unwrap();
     }
     let key_state = json!({
-        "learned_rpm_limit": 40, "concurrent_429_count": 2, "rpm_429_count": 3,
-        "last_429_at_unix_secs": 1704067200, "last_429_type": "rpm",
-        "adjustment_history": [{"reason": "synthetic"}], "utilization_samples": [0.5],
-        "last_probe_increase_at_unix_secs": 1704067201, "last_rpm_peak": 25,
         "request_count": 19, "total_tokens": 1234, "total_cost_usd": 4.25,
         "success_count": 17, "error_count": 2, "total_response_time_ms": 4321,
         "last_used_at_unix_secs": 1704067202,
         "last_models_fetch_at_unix_secs": 1704067203, "last_models_fetch_error": "synthetic error",
         "upstream_metadata": {"account": {"id": "synthetic-account", "balance": 12.5}, "models": ["upstream-model"]},
         "oauth_invalid_at_unix_secs": 1704067204, "oauth_invalid_reason": "synthetic reason",
-        "status_snapshot": {"quota": {"remaining": 23}},
+        "status_snapshot": {
+            "quota": {"remaining": 23},
+            "oauth": {"account_id": "synthetic-oauth-account"},
+            "learning_confidence": 0.91,
+            "enforcement_active": true,
+            "observation_count": 12,
+            "header_observation_count": 3,
+            "latest_upstream_limit": 60,
+            "known_boundary": {"remaining": 4}
+        },
         "health_by_format": {"openai:chat": {"score": 0.75}},
         "circuit_breaker_by_format": {"openai:chat": {"state": "closed"}}
     });
+    let legacy_learning_state = json!({
+        "learned_rpm_limit": 40, "concurrent_429_count": 2, "rpm_429_count": 3,
+        "last_429_at_unix_secs": 1704067200, "last_429_type": "rpm",
+        "adjustment_history": [{"reason": "synthetic"}], "utilization_samples": [0.5],
+        "last_probe_increase_at_unix_secs": 1704067201, "last_rpm_peak": 25
+    });
+    let legacy_snapshot_learning_state = json!({
+        "learning_confidence": 0.91,
+        "enforcement_active": true,
+        "observation_count": 12,
+        "header_observation_count": 3,
+        "latest_upstream_limit": 60,
+        "known_boundary": {"remaining": 4}
+    });
     for (field, value) in key_state.as_object().unwrap() {
+        let column = field.strip_suffix("_unix_secs").unwrap_or(field);
+        sqlx::query(&format!(
+            "UPDATE provider_api_keys SET {column} = json_extract(?, '$') WHERE id = 'oauth-a'"
+        ))
+        .bind(value.to_string())
+        .execute(&source_pool)
+        .await
+        .unwrap();
+    }
+    for (field, value) in legacy_learning_state.as_object().unwrap() {
         let column = field.strip_suffix("_unix_secs").unwrap_or(field);
         sqlx::query(&format!(
             "UPDATE provider_api_keys SET {column} = json_extract(?, '$') WHERE id = 'oauth-a'"
@@ -558,11 +587,28 @@ async fn full_backup_preserves_provider_key_metadata_usage_and_state() {
         .iter()
         .find(|key| key["id"] == "oauth-a")
         .unwrap();
-    for (field, expected) in key_state.as_object().unwrap() {
-        assert_eq!(
-            &source_key[field], expected,
-            "missing exported key field {field}"
+    for field in legacy_learning_state.as_object().unwrap().keys() {
+        assert!(
+            source_key.get(field).is_none(),
+            "exported retired field {field}"
         );
+    }
+    for (field, expected) in key_state.as_object().unwrap() {
+        if field == "status_snapshot" {
+            assert_eq!(source_key[field]["quota"], expected["quota"]);
+            assert_eq!(source_key[field]["oauth"], expected["oauth"]);
+            for retired_field in legacy_snapshot_learning_state.as_object().unwrap().keys() {
+                assert!(
+                    source_key[field].get(retired_field).is_none(),
+                    "exported retired status snapshot field {retired_field}"
+                );
+            }
+        } else {
+            assert_eq!(
+                &source_key[field], expected,
+                "missing exported key field {field}"
+            );
+        }
     }
     let (target, target_pool, _target_file) =
         backup_gateway("target-admin", "target-password", "target-encryption").await;
@@ -573,7 +619,8 @@ async fn full_backup_preserves_provider_key_metadata_usage_and_state() {
         ("total_tokens", json!(u64::MAX)),
         ("total_cost_usd", json!(-1)),
         ("upstream_metadata", json!("invalid object")),
-        ("adjustment_history", json!({"invalid": "array"})),
+        ("rpm_limit", json!(0)),
+        ("rpm_limit", json!(10_001)),
     ] {
         let mut invalid = backup.clone();
         invalid["merge_mode"] = json!("overwrite");
@@ -593,8 +640,31 @@ async fn full_backup_preserves_provider_key_metadata_usage_and_state() {
         );
     }
     for mode in ["skip", "overwrite"] {
+        if mode == "overwrite" {
+            sqlx::query(
+                "UPDATE provider_api_keys SET learned_rpm_limit = 11, concurrent_429_count = 1, rpm_429_count = 1, adjustment_history = '[{\"target\":\"stale\"}]', utilization_samples = '[0.25]' WHERE id = 'oauth-a'",
+            )
+            .execute(&target_pool)
+            .await
+            .unwrap();
+        }
         let mut request = backup.clone();
         request["merge_mode"] = json!(mode);
+        let imported_key = request["config_data"]["providers"][0]["api_keys"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|key| key["id"] == "oauth-a")
+            .unwrap();
+        for (field, value) in legacy_learning_state.as_object().unwrap() {
+            imported_key[field] = value.clone();
+        }
+        for (field, value) in legacy_snapshot_learning_state.as_object().unwrap() {
+            imported_key["status_snapshot"][field] = value.clone();
+        }
+        if mode == "overwrite" {
+            imported_key["adjustment_history"] = json!({"invalid": "array"});
+        }
         let (status, response) = backup_request(
             &target,
             http::Method::POST,
@@ -618,12 +688,61 @@ async fn full_backup_preserves_provider_key_metadata_usage_and_state() {
             .iter()
             .find(|key| key["id"] == "oauth-a")
             .unwrap();
-        for (field, expected) in key_state.as_object().unwrap() {
-            assert_eq!(
-                &restored_key[field], expected,
-                "{mode}: lost key field {field}"
+        for field in legacy_learning_state.as_object().unwrap().keys() {
+            assert!(
+                restored_key.get(field).is_none(),
+                "{mode}: exported retired field {field}"
             );
         }
+        for (field, expected) in key_state.as_object().unwrap() {
+            if field == "status_snapshot" {
+                assert_eq!(restored_key[field]["quota"], expected["quota"]);
+                assert_eq!(restored_key[field]["oauth"], expected["oauth"]);
+                for retired_field in legacy_snapshot_learning_state.as_object().unwrap().keys() {
+                    assert!(
+                        restored_key[field].get(retired_field).is_none(),
+                        "{mode}: exported retired status snapshot field {retired_field}"
+                    );
+                }
+            } else {
+                assert_eq!(
+                    &restored_key[field], expected,
+                    "{mode}: lost key field {field}"
+                );
+            }
+        }
+        let persisted_status_snapshot: String = sqlx::query_scalar(
+            "SELECT status_snapshot FROM provider_api_keys WHERE id = 'oauth-a'",
+        )
+        .fetch_one(&target_pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&persisted_status_snapshot).unwrap(),
+            json!({
+                "quota": {"remaining": 23},
+                "oauth": {"account_id": "synthetic-oauth-account"}
+            })
+        );
+        let legacy_state_after_import: (Option<i64>, i64, i64, Option<String>, Option<String>) =
+            sqlx::query_as(
+                "SELECT learned_rpm_limit, concurrent_429_count, rpm_429_count, adjustment_history, utilization_samples FROM provider_api_keys WHERE id = 'oauth-a'",
+            )
+            .fetch_one(&target_pool)
+            .await
+            .unwrap();
+        let expected_legacy_state = if mode == "overwrite" {
+            (
+                Some(11),
+                1,
+                1,
+                Some("[{\"target\":\"stale\"}]".to_string()),
+                Some("[0.25]".to_string()),
+            )
+        } else {
+            (None, 0, 0, None, None)
+        };
+        assert_eq!(legacy_state_after_import, expected_legacy_state, "{mode}");
         assert_eq!(restored_key["api_key"], "access-a");
         assert_eq!(restored_key["auth_config"]["refresh_token"], "refresh-a");
         let config: String =

@@ -5,12 +5,13 @@ use serde_json::{json, Map, Value};
 use super::AdminAppState;
 use crate::api::ai::admin_endpoint_signature_parts;
 use crate::handlers::admin::provider::write::normalize::{
-    normalize_auth_type_by_format,
-    normalize_default_rate_multiplier, normalize_internal_priority,
+    normalize_auth_type_by_format, normalize_default_rate_multiplier, normalize_internal_priority,
     normalize_max_probe_interval_minutes, normalize_rate_multipliers,
 };
 use crate::handlers::admin::shared::normalize_json_object;
-use crate::handlers::shared::normalize_optional_api_key_concurrent_limit;
+use crate::handlers::shared::{
+    normalize_optional_api_key_concurrent_limit, normalize_optional_provider_key_rpm_limit,
+};
 
 pub(super) fn matches_imported_key_credentials(
     state: &AdminAppState<'_>,
@@ -92,20 +93,11 @@ pub(super) fn validate_imported_provider_key(
         normalize_json_object(value.clone(), field)?;
     }
     normalize_rate_multipliers(key.rate_multipliers.clone())?;
-    for (field, value) in [
-        ("adjustment_history", &key.adjustment_history),
-        ("utilization_samples", &key.utilization_samples),
-    ] {
-        if value.as_ref().is_some_and(|value| !value.is_array()) {
-            return Err(format!("渠道 Key {field} 必须是数组"));
-        }
-    }
+    normalize_optional_provider_key_rpm_limit(key.rpm_limit)?;
     if key
         .total_cost_usd
         .is_some_and(|cost| !cost.is_finite() || cost < 0.0)
         || [
-            key.last_429_at_unix_secs,
-            key.last_probe_increase_at_unix_secs,
             key.total_tokens,
             key.total_response_time_ms,
             key.last_used_at_unix_secs,
@@ -144,33 +136,6 @@ pub(super) fn apply_imported_provider_key_state(
     key: &AdminSystemConfigProviderKey,
     raw: &Map<String, Value>,
 ) {
-    if raw.contains_key("learned_rpm_limit") {
-        record.learned_rpm_limit = key.learned_rpm_limit;
-    }
-    if raw.contains_key("concurrent_429_count") {
-        record.concurrent_429_count = key.concurrent_429_count;
-    }
-    if raw.contains_key("rpm_429_count") {
-        record.rpm_429_count = key.rpm_429_count;
-    }
-    if raw.contains_key("last_429_at_unix_secs") {
-        record.last_429_at_unix_secs = key.last_429_at_unix_secs;
-    }
-    if raw.contains_key("last_429_type") {
-        record.last_429_type = key.last_429_type.clone();
-    }
-    if raw.contains_key("adjustment_history") {
-        record.adjustment_history = key.adjustment_history.clone();
-    }
-    if raw.contains_key("utilization_samples") {
-        record.utilization_samples = key.utilization_samples.clone();
-    }
-    if raw.contains_key("last_probe_increase_at_unix_secs") {
-        record.last_probe_increase_at_unix_secs = key.last_probe_increase_at_unix_secs;
-    }
-    if raw.contains_key("last_rpm_peak") {
-        record.last_rpm_peak = key.last_rpm_peak;
-    }
     if raw.contains_key("request_count") {
         record.request_count = key.request_count;
     }

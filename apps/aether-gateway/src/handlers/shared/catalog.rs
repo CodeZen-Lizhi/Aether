@@ -2250,12 +2250,6 @@ pub(crate) fn build_admin_provider_key_response(
         .values()
         .find(|value| provider_key_circuit_payload_is_active_open_at(value, now_unix_secs))
         .or_else(|| circuit_by_format.values().next());
-    let is_adaptive = key.rpm_limit.is_none();
-    let effective_limit = if is_adaptive {
-        key.learned_rpm_limit
-    } else {
-        key.rpm_limit
-    };
     let mut payload = serde_json::Map::new();
     payload.insert("id".to_string(), json!(key.id));
     payload.insert("provider_id".to_string(), json!(key.provider_id));
@@ -2416,32 +2410,6 @@ pub(crate) fn build_admin_provider_key_response(
         json!(avg_response_time_ms),
     );
     payload.insert("is_active".to_string(), json!(key.is_active));
-    payload.insert("is_adaptive".to_string(), json!(is_adaptive));
-    payload.insert(
-        "learned_rpm_limit".to_string(),
-        json!(key.learned_rpm_limit),
-    );
-    payload.insert("effective_limit".to_string(), json!(effective_limit));
-    payload.insert(
-        "utilization_samples".to_string(),
-        json!(key.utilization_samples),
-    );
-    payload.insert(
-        "last_probe_increase_at".to_string(),
-        json!(key
-            .last_probe_increase_at_unix_secs
-            .and_then(unix_secs_to_rfc3339)),
-    );
-    payload.insert(
-        "concurrent_429_count".to_string(),
-        json!(key.concurrent_429_count),
-    );
-    payload.insert("rpm_429_count".to_string(), json!(key.rpm_429_count));
-    payload.insert(
-        "last_429_at".to_string(),
-        json!(key.last_429_at_unix_secs.and_then(unix_secs_to_rfc3339)),
-    );
-    payload.insert("last_429_type".to_string(), json!(key.last_429_type));
     payload.insert("note".to_string(), json!(key.note));
     payload.insert(
         "auto_fetch_models".to_string(),

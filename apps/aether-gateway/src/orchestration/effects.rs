@@ -6,13 +6,11 @@ use std::time::Duration;
 use aether_cache::ExpiringMap;
 use aether_contracts::{ExecutionPlan, ExecutionTelemetry};
 use aether_data_contracts::repository::provider_catalog::{
-    ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyAdaptiveStateUpdate,
     ProviderCatalogKeyHealthStateUpdate, StoredProviderCatalogKey,
 };
 use aether_scheduler_core::{
     build_scheduler_affinity_cache_key_for_api_key_id_with_client_session_and_scope,
-    count_recent_rpm_requests_for_provider_key, is_provider_key_circuit_open,
-    ClientSessionAffinity, SchedulerAffinityTarget,
+    is_provider_key_circuit_open, ClientSessionAffinity, SchedulerAffinityTarget,
 };
 use aether_usage_runtime::{
     build_stream_terminal_usage_outcome, build_sync_terminal_usage_outcome,
@@ -25,8 +23,7 @@ use tracing::warn;
 
 use super::{
     chat_health_policy_applies, circuit_ramp_active, classify_chat_failure,
-    classify_failure_disposition, local_failover_error_message, project_local_adaptive_rate_limit,
-    project_local_adaptive_success, project_local_circuit_open_health,
+    classify_failure_disposition, local_failover_error_message, project_local_circuit_open_health,
     project_local_failure_health, project_local_key_circuit_closed_with_ramp,
     project_local_key_circuit_failure_with_success_rate, project_local_key_circuit_open,
     project_local_ramp_success_health, project_local_rate_limit_cooldown,
@@ -46,13 +43,9 @@ use crate::scheduler::config::{read_scheduler_ordering_config, SchedulerScheduli
 use crate::AppState;
 
 const HEALTH_SUCCESS_PERSIST_GATE_MAX_ENTRIES: usize = 50_000;
-const ADAPTIVE_SUCCESS_PERSIST_GATE_MAX_ENTRIES: usize = 50_000;
 const HEALTH_SUCCESS_PERSIST_MIN_INTERVAL_ENV: &str =
     "AETHER_GATEWAY_PROVIDER_KEY_HEALTH_SUCCESS_PERSIST_MIN_INTERVAL_SECS";
-const ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL_ENV: &str =
-    "AETHER_GATEWAY_PROVIDER_KEY_ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL_SECS";
 const DEFAULT_HEALTH_SUCCESS_PERSIST_MIN_INTERVAL_SECS: u64 = 5;
-const DEFAULT_ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL_SECS: u64 = 5;
 const PROVIDER_KEY_EFFECT_LOCK_PRUNE_THRESHOLD: usize = 8_192;
 // Same-process writers are serialized by the per-key lock. Keep remote-writer
 // retries bounded so request/report completion cannot accumulate a long DB tail.
@@ -323,9 +316,6 @@ static POOL_SCORE_FEEDBACK_GATE: LazyLock<ExpiringMap<String, ()>> =
     LazyLock::new(ExpiringMap::new);
 static HEALTH_SUCCESS_PERSIST_GATE: LazyLock<ExpiringMap<String, ()>> =
     LazyLock::new(ExpiringMap::new);
-static ADAPTIVE_SUCCESS_PERSIST_GATE: LazyLock<ExpiringMap<String, u64>> =
-    LazyLock::new(ExpiringMap::new);
-static ADAPTIVE_SUCCESS_PERSIST_GATE_NEXT_TOKEN: AtomicU64 = AtomicU64::new(1);
 static PROVIDER_KEY_EFFECT_LOCKS: LazyLock<ProviderKeyEffectLockPool> =
     LazyLock::new(ProviderKeyEffectLockPool::default);
 static HEALTH_SUCCESS_PERSIST_MIN_INTERVAL: LazyLock<Duration> = LazyLock::new(|| {
@@ -334,13 +324,6 @@ static HEALTH_SUCCESS_PERSIST_MIN_INTERVAL: LazyLock<Duration> = LazyLock::new(|
         DEFAULT_HEALTH_SUCCESS_PERSIST_MIN_INTERVAL_SECS,
     )
 });
-static ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL: LazyLock<Duration> = LazyLock::new(|| {
-    effect_min_interval_from_env(
-        ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL_ENV,
-        DEFAULT_ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL_SECS,
-    )
-});
-
 fn effect_min_interval_from_env(key: &str, default_secs: u64) -> Duration {
     let parsed = std::env::var(key)
         .ok()
@@ -362,13 +345,6 @@ pub(crate) struct LocalAttemptFailureEffect {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct LocalAdaptiveRateLimitEffect<'a> {
-    pub(crate) status_code: u16,
-    pub(crate) classification: LocalFailoverClassification,
-    pub(crate) headers: Option<&'a BTreeMap<String, String>>,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub(crate) struct LocalHealthFailureEffect {
     pub(crate) status_code: u16,
     pub(crate) classification: LocalFailoverClassification,
@@ -381,16 +357,12 @@ pub(crate) struct LocalHealthFailureEffect {
 pub(crate) struct LocalHealthSuccessEffect;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct LocalAdaptiveSuccessEffect;
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum LocalExecutionEffect<'a> {
+/// 本地 attempt 结算时需要投射的失败、健康状态和成功效果。
+pub(crate) enum LocalExecutionEffect {
     AttemptFailure(LocalAttemptFailureEffect),
-    AdaptiveRateLimit(LocalAdaptiveRateLimitEffect<'a>),
     HealthFailure(LocalHealthFailureEffect),
     ClassifiedHealthFailure(LocalHealthFailureEffect, ChatFailureFact),
     HealthSuccess(LocalHealthSuccessEffect),
-    AdaptiveSuccess(LocalAdaptiveSuccessEffect),
 }
 
 /// Inputs for the terminal effects of a failed streaming attempt.
@@ -399,7 +371,7 @@ pub(crate) enum LocalExecutionEffect<'a> {
 /// a WebSocket terminal event may carry its own status and error body, while a
 /// normal stream failure gets them from the HTTP response. Keeping this type at
 /// the orchestration boundary prevents each transport from rebuilding the
-/// health and adaptive effect sequence independently.
+/// health effect sequence independently.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LocalStreamFailureEffect<'a> {
     pub(crate) status_code: u16,
@@ -443,20 +415,16 @@ impl LocalExecutionAuthConfigFence {
     }
 }
 
-const ADAPTIVE_RPM_RECENT_CANDIDATE_LIMIT: usize = 512;
 const LOCAL_EXECUTION_SCHEDULER_AFFINITY_MAX_ENTRIES: usize = 10_000;
 
 pub(crate) async fn apply_local_execution_effect(
     state: &AppState,
     context: LocalExecutionEffectContext<'_>,
-    effect: LocalExecutionEffect<'_>,
+    effect: LocalExecutionEffect,
 ) {
     match effect {
         LocalExecutionEffect::AttemptFailure(effect) => {
             record_attempt_failure_effect(state, context, effect).await;
-        }
-        LocalExecutionEffect::AdaptiveRateLimit(effect) => {
-            record_adaptive_rate_limit_effect(state, context, effect).await;
         }
         LocalExecutionEffect::HealthFailure(effect) => {
             record_health_failure_effect(state, context, effect).await;
@@ -471,16 +439,12 @@ pub(crate) async fn apply_local_execution_effect(
         LocalExecutionEffect::HealthSuccess(effect) => {
             record_health_success_effect(state, context, effect).await;
         }
-        LocalExecutionEffect::AdaptiveSuccess(effect) => {
-            record_adaptive_success_effect(state, context, effect).await;
-        }
     }
 }
 
 /// Apply the provider/key effects shared by every successful streaming
 /// transport. Usage persistence and request-candidate terminal status remain
-/// owned by the report layer; this helper only projects execution health,
-/// adaptive state.
+/// owned by the report layer; this helper only projects execution health.
 pub(crate) async fn apply_local_stream_success_effects(
     state: &AppState,
     context: LocalExecutionEffectContext<'_>,
@@ -490,12 +454,6 @@ pub(crate) async fn apply_local_stream_success_effects(
         state,
         context,
         LocalExecutionEffect::HealthSuccess(LocalHealthSuccessEffect),
-    )
-    .await;
-    apply_local_execution_effect(
-        state,
-        context,
-        LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
     )
     .await;
 }
@@ -524,16 +482,6 @@ pub(crate) async fn apply_local_stream_failure_effects(
         LocalExecutionEffect::AttemptFailure(LocalAttemptFailureEffect {
             status_code: effect.status_code,
             classification: analysis.classification,
-        }),
-    )
-    .await;
-    apply_local_execution_effect(
-        state,
-        context,
-        LocalExecutionEffect::AdaptiveRateLimit(LocalAdaptiveRateLimitEffect {
-            status_code: effect.status_code,
-            classification: analysis.classification,
-            headers: Some(effect.headers),
         }),
     )
     .await;
@@ -1018,294 +966,6 @@ async fn record_credential_dead_circuit_effect(
     );
 }
 
-async fn record_adaptive_rate_limit_effect(
-    state: &AppState,
-    context: LocalExecutionEffectContext<'_>,
-    effect: LocalAdaptiveRateLimitEffect<'_>,
-) {
-    if !local_candidate_failure_should_apply_key_effects(
-        &context.plan.provider_api_format,
-        effect.classification,
-        effect.status_code,
-    ) {
-        return;
-    }
-    let Some(auth_config_fence) =
-        capture_local_execution_auth_config_fence(state, context.plan).await
-    else {
-        return;
-    };
-    let effect_lock = PROVIDER_KEY_EFFECT_LOCKS.lock_for(&context.plan.key_id);
-    let _effect_guard = effect_lock.lock().await;
-    let observed_at_unix_secs = current_unix_secs();
-    let current_rpm = state
-        .read_recent_request_candidates(ADAPTIVE_RPM_RECENT_CANDIDATE_LIMIT)
-        .await
-        .ok()
-        .map(|recent_candidates| {
-            count_recent_rpm_requests_for_provider_key(
-                &recent_candidates,
-                &context.plan.key_id,
-                observed_at_unix_secs,
-            ) as u32
-        });
-
-    for _ in 0..PROVIDER_KEY_STATE_CAS_MAX_ATTEMPTS {
-        let Some(current_key) = state
-            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&context.plan.key_id))
-            .await
-            .ok()
-            .and_then(|mut keys| keys.drain(..).next())
-        else {
-            return;
-        };
-        if auth_config_fence
-            .encrypted_auth_config()
-            .is_some_and(|expected| current_key.encrypted_auth_config.as_deref() != Some(expected))
-        {
-            return;
-        }
-        let Some(projection) = project_local_adaptive_rate_limit(
-            &current_key,
-            effect.classification,
-            effect.status_code,
-            current_rpm,
-            effect.headers,
-            observed_at_unix_secs,
-        ) else {
-            return;
-        };
-        let expected = ProviderCatalogKeyAdaptiveState::from(&current_key);
-        let mut next = expected.clone();
-        next.rpm_429_count = Some(projection.rpm_429_count);
-        next.learned_rpm_limit = projection.learned_rpm_limit;
-        next.last_429_at_unix_secs = Some(projection.last_429_at_unix_secs);
-        next.last_429_type = Some(projection.last_429_type);
-        next.adjustment_history = projection.adjustment_history;
-        next.utilization_samples = projection.utilization_samples;
-        next.last_probe_increase_at_unix_secs = projection.last_probe_increase_at_unix_secs;
-        next.last_rpm_peak = projection.last_rpm_peak;
-        let update = ProviderCatalogKeyAdaptiveStateUpdate {
-            key_id: context.plan.key_id.clone(),
-            expected_encrypted_auth_config: auth_config_fence
-                .encrypted_auth_config()
-                .map(ToOwned::to_owned),
-            expected,
-            next,
-            status_snapshot_patch: adaptive_status_snapshot_patch(&projection.status_snapshot),
-            updated_at_unix_secs: Some(observed_at_unix_secs),
-        };
-        provider_key_adaptive_success_persist_gate_reset(&context.plan.key_id);
-        match state
-            .compare_and_update_provider_catalog_key_adaptive_state(&update)
-            .await
-        {
-            Ok(true) => return,
-            Ok(false) => tokio::task::yield_now().await,
-            Err(err) => {
-                warn!(
-                    "gateway orchestration effects: failed to persist adaptive rate-limit projection for provider {} endpoint {} key {}: {:?}",
-                    context.plan.provider_id, context.plan.endpoint_id, context.plan.key_id, err
-                );
-                return;
-            }
-        }
-    }
-    warn!(
-        "gateway orchestration effects: adaptive rate-limit CAS retries exhausted for provider {} endpoint {} key {}",
-        context.plan.provider_id, context.plan.endpoint_id, context.plan.key_id
-    );
-}
-
-fn adaptive_status_snapshot_patch(status_snapshot: &Value) -> Value {
-    const OWNED_FIELDS: [&str; 6] = [
-        "observation_count",
-        "header_observation_count",
-        "latest_upstream_limit",
-        "learning_confidence",
-        "enforcement_active",
-        "known_boundary",
-    ];
-    let Some(snapshot) = status_snapshot.as_object() else {
-        return serde_json::json!({});
-    };
-    Value::Object(
-        OWNED_FIELDS
-            .into_iter()
-            .filter_map(|field| {
-                snapshot
-                    .get(field)
-                    .cloned()
-                    .map(|value| (field.to_string(), value))
-            })
-            .collect(),
-    )
-}
-
-async fn record_adaptive_success_effect(
-    state: &AppState,
-    context: LocalExecutionEffectContext<'_>,
-    _effect: LocalAdaptiveSuccessEffect,
-) {
-    let Some(auth_config_fence) =
-        capture_local_execution_auth_config_fence(state, context.plan).await
-    else {
-        return;
-    };
-    let observed_at_unix_secs = current_unix_secs();
-    let Some(current_key) = state
-        .read_provider_catalog_keys_by_ids(std::slice::from_ref(&context.plan.key_id))
-        .await
-        .ok()
-        .and_then(|mut keys| keys.drain(..).next())
-    else {
-        return;
-    };
-    if auth_config_fence
-        .encrypted_auth_config()
-        .is_some_and(|expected| current_key.encrypted_auth_config.as_deref() != Some(expected))
-    {
-        return;
-    }
-    if current_key.rpm_limit.is_some()
-        || current_key
-            .learned_rpm_limit
-            .filter(|value| *value > 0)
-            .is_none()
-    {
-        return;
-    }
-    let Some(gate_token) = provider_key_adaptive_success_persist_gate_admit(&context.plan.key_id)
-    else {
-        return;
-    };
-
-    let effect_lock = PROVIDER_KEY_EFFECT_LOCKS.lock_for(&context.plan.key_id);
-    let _effect_guard = effect_lock.lock().await;
-    if !provider_key_adaptive_success_persist_gate_admission_is_current(
-        &context.plan.key_id,
-        gate_token,
-    ) {
-        return;
-    }
-    let Some(recent_candidates) = state
-        .read_recent_request_candidates(ADAPTIVE_RPM_RECENT_CANDIDATE_LIMIT)
-        .await
-        .ok()
-    else {
-        return;
-    };
-    let current_rpm = count_recent_rpm_requests_for_provider_key(
-        &recent_candidates,
-        &context.plan.key_id,
-        observed_at_unix_secs,
-    ) as u32;
-
-    for _ in 0..PROVIDER_KEY_STATE_CAS_MAX_ATTEMPTS {
-        let Some(current_key) = state
-            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&context.plan.key_id))
-            .await
-            .ok()
-            .and_then(|mut keys| keys.drain(..).next())
-        else {
-            return;
-        };
-        if auth_config_fence
-            .encrypted_auth_config()
-            .is_some_and(|expected| current_key.encrypted_auth_config.as_deref() != Some(expected))
-        {
-            return;
-        }
-        if current_key.rpm_limit.is_some()
-            || current_key
-                .learned_rpm_limit
-                .filter(|value| *value > 0)
-                .is_none()
-        {
-            return;
-        }
-        let Some(projection) =
-            project_local_adaptive_success(&current_key, current_rpm, observed_at_unix_secs)
-        else {
-            return;
-        };
-        let expected = ProviderCatalogKeyAdaptiveState::from(&current_key);
-        let mut next = expected.clone();
-        next.learned_rpm_limit = projection.learned_rpm_limit;
-        next.adjustment_history = projection.adjustment_history;
-        next.utilization_samples = projection.utilization_samples;
-        next.last_probe_increase_at_unix_secs = projection.last_probe_increase_at_unix_secs;
-        let update = ProviderCatalogKeyAdaptiveStateUpdate {
-            key_id: context.plan.key_id.clone(),
-            expected_encrypted_auth_config: auth_config_fence
-                .encrypted_auth_config()
-                .map(ToOwned::to_owned),
-            expected,
-            next,
-            status_snapshot_patch: adaptive_status_snapshot_patch(&projection.status_snapshot),
-            updated_at_unix_secs: Some(observed_at_unix_secs),
-        };
-        match state
-            .compare_and_update_provider_catalog_key_adaptive_state(&update)
-            .await
-        {
-            Ok(true) => return,
-            Ok(false) => tokio::task::yield_now().await,
-            Err(err) => {
-                warn!(
-                    "gateway orchestration effects: failed to persist adaptive success projection for provider {} endpoint {} key {}: {:?}",
-                    context.plan.provider_id, context.plan.endpoint_id, context.plan.key_id, err
-                );
-                return;
-            }
-        }
-    }
-    warn!(
-        "gateway orchestration effects: adaptive success CAS retries exhausted for provider {} endpoint {} key {}",
-        context.plan.provider_id, context.plan.endpoint_id, context.plan.key_id
-    );
-}
-
-fn provider_key_adaptive_success_persist_gate_admit(key_id: &str) -> Option<u64> {
-    if cfg!(test) {
-        return Some(0);
-    }
-    let interval = *ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL;
-    if interval.is_zero() {
-        return Some(0);
-    }
-    let token = ADAPTIVE_SUCCESS_PERSIST_GATE_NEXT_TOKEN.fetch_add(1, Ordering::Relaxed);
-    ADAPTIVE_SUCCESS_PERSIST_GATE
-        .insert_if_absent_fresh(
-            provider_key_adaptive_success_persist_gate_key(key_id),
-            token,
-            interval,
-            ADAPTIVE_SUCCESS_PERSIST_GATE_MAX_ENTRIES,
-        )
-        .then_some(token)
-}
-
-fn provider_key_adaptive_success_persist_gate_admission_is_current(
-    key_id: &str,
-    token: u64,
-) -> bool {
-    if cfg!(test) || ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL.is_zero() {
-        return true;
-    }
-    ADAPTIVE_SUCCESS_PERSIST_GATE.get_fresh(
-        &provider_key_adaptive_success_persist_gate_key(key_id),
-        *ADAPTIVE_SUCCESS_PERSIST_MIN_INTERVAL,
-    ) == Some(token)
-}
-
-fn provider_key_adaptive_success_persist_gate_reset(key_id: &str) {
-    ADAPTIVE_SUCCESS_PERSIST_GATE.remove(&provider_key_adaptive_success_persist_gate_key(key_id));
-}
-
-fn provider_key_adaptive_success_persist_gate_key(key_id: &str) -> String {
-    format!("adaptive-success:{key_id}")
-}
-
 async fn record_health_failure_effect(
     state: &AppState,
     context: LocalExecutionEffectContext<'_>,
@@ -1680,14 +1340,10 @@ fn local_candidate_failure_should_apply_key_effects(
 mod tests {
     use aether_contracts::{ExecutionPlan, RequestBody};
     use aether_crypto::{encrypt_python_fernet_plaintext, DEVELOPMENT_ENCRYPTION_KEY};
-    use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
     use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
-    use aether_data_contracts::repository::candidates::{
-        RequestCandidateStatus, StoredRequestCandidate,
-    };
     use aether_data_contracts::repository::provider_catalog::{
-        ProviderCatalogKeyAdaptiveState, ProviderCatalogKeyHealthStateUpdate,
-        StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,
+        ProviderCatalogKeyHealthStateUpdate, StoredProviderCatalogEndpoint,
+        StoredProviderCatalogKey, StoredProviderCatalogProvider,
     };
     use aether_test_support::ManagedRedisServer;
     use aether_usage_runtime::GatewaySyncReportRequest;
@@ -1696,10 +1352,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        local_candidate_failure_should_apply_key_effects, LocalAdaptiveRateLimitEffect,
-        LocalAdaptiveSuccessEffect, LocalAttemptFailureEffect, LocalExecutionEffect,
-        LocalExecutionEffectContext, LocalHealthFailureEffect, LocalHealthSuccessEffect,
-        LocalStreamFailureEffect,
+        local_candidate_failure_should_apply_key_effects, LocalAttemptFailureEffect,
+        LocalExecutionEffect, LocalExecutionEffectContext, LocalHealthFailureEffect,
+        LocalHealthSuccessEffect, LocalStreamFailureEffect,
     };
     use crate::data::{GatewayDataConfig, GatewayDataState};
     use crate::orchestration::{
@@ -1747,7 +1402,7 @@ mod tests {
     async fn apply_local_execution_effect(
         state: &AppState,
         context: LocalExecutionEffectContext<'_>,
-        effect: LocalExecutionEffect<'_>,
+        effect: LocalExecutionEffect,
     ) {
         let report = attempt_context(state, context).await;
         super::apply_local_execution_effect(
@@ -2313,46 +1968,6 @@ mod tests {
             .expect("gateway state should build")
             .with_data_state_for_tests(
                 GatewayDataState::with_provider_catalog_repository_for_tests(repository)
-                    .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
-            )
-    }
-    fn sample_adaptive_key() -> StoredProviderCatalogKey {
-        let mut key = sample_health_key();
-        key.name = "adaptive".to_string();
-        key.rpm_limit = None;
-        key.learned_rpm_limit = Some(12);
-        key.rpm_429_count = Some(1);
-        key
-    }
-    fn adaptive_state() -> AppState {
-        let repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-            vec![sample_health_provider()],
-            vec![sample_health_endpoint()],
-            vec![sample_adaptive_key()],
-        ));
-        AppState::new()
-            .expect("gateway state should build")
-            .with_data_state_for_tests(
-                GatewayDataState::with_provider_catalog_repository_for_tests(repository)
-                    .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
-            )
-    }
-    fn adaptive_state_with_request_candidates(
-        key: StoredProviderCatalogKey,
-        request_candidates: Vec<StoredRequestCandidate>,
-    ) -> AppState {
-        let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
-            vec![sample_health_provider()],
-            vec![sample_health_endpoint()],
-            vec![key],
-        ));
-        let request_candidates =
-            Arc::new(InMemoryRequestCandidateRepository::seed(request_candidates));
-        AppState::new()
-            .expect("gateway state should build")
-            .with_data_state_for_tests(
-                GatewayDataState::with_provider_catalog_repository_for_tests(provider_catalog)
-                    .with_request_candidate_reader(request_candidates)
                     .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
             )
     }
@@ -3589,272 +3204,6 @@ mod tests {
                 .and_then(|entry| entry.get("ok"))
                 .and_then(Value::as_bool),
             Some(true)
-        );
-    }
-    #[tokio::test]
-    async fn adaptive_rate_limit_effect_updates_adaptive_key_observation() {
-        let state = adaptive_state();
-        let plan = sample_plan();
-        let cache_key =
-            build_scheduler_affinity_cache_key_for_api_key_id("api-key-1", "openai:chat", "gpt-5")
-                .expect("scheduler affinity cache key should build");
-        let target = SchedulerAffinityTarget {
-            provider_id: plan.provider_id.clone(),
-            endpoint_id: plan.endpoint_id.clone(),
-            key_id: plan.key_id.clone(),
-        };
-        state.remember_scheduler_affinity_target(
-            &cache_key,
-            target.clone(),
-            SCHEDULER_AFFINITY_TTL,
-            16,
-        );
-        let initial_epoch = state.scheduler_affinity_epoch();
-
-        apply_local_execution_effect(
-            &state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: None,
-            },
-            LocalExecutionEffect::AdaptiveRateLimit(LocalAdaptiveRateLimitEffect {
-                status_code: 429,
-                classification: LocalFailoverClassification::RetryUpstreamFailure,
-                headers: Some(&BTreeMap::from([(
-                    "x-ratelimit-limit-requests".to_string(),
-                    "42".to_string(),
-                )])),
-            }),
-        )
-        .await;
-
-        let stored_key = state
-            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&plan.key_id))
-            .await
-            .expect("provider catalog keys should load")
-            .into_iter()
-            .next()
-            .expect("stored key should exist");
-        assert_eq!(stored_key.rpm_429_count, Some(2));
-        assert_eq!(stored_key.last_429_type.as_deref(), Some("rpm"));
-        assert!(stored_key.last_429_at_unix_secs.is_some());
-        assert_eq!(
-            stored_key
-                .status_snapshot
-                .as_ref()
-                .and_then(|value| value.get("observation_count")),
-            Some(&json!(1))
-        );
-        assert_eq!(
-            stored_key
-                .status_snapshot
-                .as_ref()
-                .and_then(|value| value.get("header_observation_count")),
-            Some(&json!(1))
-        );
-        assert_eq!(
-            stored_key
-                .status_snapshot
-                .as_ref()
-                .and_then(|value| value.get("latest_upstream_limit")),
-            Some(&json!(42))
-        );
-        assert_eq!(
-            stored_key
-                .status_snapshot
-                .as_ref()
-                .and_then(|value| value.get("learning_confidence")),
-            Some(&json!(0.3))
-        );
-        assert_eq!(
-            stored_key
-                .status_snapshot
-                .as_ref()
-                .and_then(|value| value.get("enforcement_active")),
-            Some(&json!(false))
-        );
-        assert_eq!(state.scheduler_affinity_epoch(), initial_epoch);
-        assert_eq!(
-            state.read_scheduler_affinity_target(cache_key.as_str(), SCHEDULER_AFFINITY_TTL),
-            Some(target)
-        );
-    }
-    #[tokio::test]
-    async fn adaptive_rate_limit_effect_ignores_fixed_limit_key() {
-        let state = fixed_limit_state();
-        let plan = sample_plan();
-
-        apply_local_execution_effect(
-            &state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: None,
-            },
-            LocalExecutionEffect::AdaptiveRateLimit(LocalAdaptiveRateLimitEffect {
-                status_code: 429,
-                classification: LocalFailoverClassification::RetryUpstreamFailure,
-                headers: Some(&BTreeMap::from([(
-                    "x-ratelimit-limit-requests".to_string(),
-                    "42".to_string(),
-                )])),
-            }),
-        )
-        .await;
-
-        let stored_key = state
-            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&plan.key_id))
-            .await
-            .expect("provider catalog keys should load")
-            .into_iter()
-            .next()
-            .expect("stored key should exist");
-        assert_eq!(stored_key.rpm_429_count, None);
-        assert_eq!(stored_key.last_429_at_unix_secs, None);
-        assert_eq!(stored_key.last_429_type, None);
-    }
-    #[tokio::test]
-    async fn adaptive_rate_limit_effect_records_429_as_rpm_observation() {
-        let mut key = sample_health_key();
-        key.rpm_limit = None;
-        key.learned_rpm_limit = Some(20);
-        let state = adaptive_state_with_request_candidates(key, Vec::new());
-        let plan = sample_plan();
-
-        apply_local_execution_effect(
-            &state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: None,
-            },
-            LocalExecutionEffect::AdaptiveRateLimit(LocalAdaptiveRateLimitEffect {
-                status_code: 429,
-                classification: LocalFailoverClassification::RetryStatusCode,
-                headers: None,
-            }),
-        )
-        .await;
-
-        let stored_key = state
-            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&plan.key_id))
-            .await
-            .expect("provider catalog keys should load")
-            .into_iter()
-            .next()
-            .expect("stored key should exist");
-        assert_eq!(stored_key.rpm_429_count, Some(1));
-        assert_eq!(stored_key.learned_rpm_limit, Some(20));
-        assert_eq!(stored_key.last_429_type.as_deref(), Some("rpm"));
-    }
-    #[tokio::test]
-    async fn adaptive_success_effect_expands_limit_from_recent_rpm_usage() {
-        let now_unix_secs = chrono::Utc::now().timestamp().max(0) as u64;
-        let mut key = sample_adaptive_key();
-        key.learned_rpm_limit = Some(20);
-        key.last_rpm_peak = Some(25);
-        key.last_429_at_unix_secs = Some(now_unix_secs.saturating_sub(600));
-        key.adjustment_history = Some(json!([
-            {
-                "timestamp": "2026-04-19T00:00:00Z",
-                "old_limit": 0,
-                "new_limit": 20,
-                "reason": "rpm_429",
-                "confidence": 0.8
-            }
-        ]));
-        key.utilization_samples = Some(json!([
-            {"ts": now_unix_secs.saturating_sub(40), "util": 0.90},
-            {"ts": now_unix_secs.saturating_sub(30), "util": 0.95},
-            {"ts": now_unix_secs.saturating_sub(20), "util": 0.85},
-            {"ts": now_unix_secs.saturating_sub(10), "util": 0.80}
-        ]));
-        let state = adaptive_state_with_request_candidates(
-            key,
-            vec![StoredRequestCandidate::new(
-                "candidate-1".to_string(),
-                "req-1".to_string(),
-                None,
-                None,
-                None,
-                None,
-                0,
-                0,
-                Some("prov-1".to_string()),
-                Some("ep-1".to_string()),
-                Some("key-1".to_string()),
-                RequestCandidateStatus::Success,
-                None,
-                false,
-                Some(200),
-                None,
-                None,
-                Some(10),
-                Some(19),
-                None,
-                None,
-                i64::try_from(now_unix_secs.saturating_sub(30) * 1000)
-                    .expect("candidate created_at should fit i64"),
-                Some(
-                    i64::try_from(now_unix_secs.saturating_sub(30) * 1000)
-                        .expect("candidate started_at should fit i64"),
-                ),
-                Some(
-                    i64::try_from(now_unix_secs.saturating_sub(29) * 1000)
-                        .expect("candidate finished_at should fit i64"),
-                ),
-            )
-            .expect("request candidate should build")],
-        );
-        let plan = sample_plan();
-        let cache_key =
-            build_scheduler_affinity_cache_key_for_api_key_id("api-key-1", "openai:chat", "gpt-5")
-                .expect("scheduler affinity cache key should build");
-        let target = SchedulerAffinityTarget {
-            provider_id: plan.provider_id.clone(),
-            endpoint_id: plan.endpoint_id.clone(),
-            key_id: plan.key_id.clone(),
-        };
-        state.remember_scheduler_affinity_target(
-            &cache_key,
-            target.clone(),
-            SCHEDULER_AFFINITY_TTL,
-            16,
-        );
-        let initial_epoch = state.scheduler_affinity_epoch();
-
-        apply_local_execution_effect(
-            &state,
-            LocalExecutionEffectContext {
-                plan: &plan,
-                report_context: None,
-            },
-            LocalExecutionEffect::AdaptiveSuccess(LocalAdaptiveSuccessEffect),
-        )
-        .await;
-
-        let stored_key = state
-            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&plan.key_id))
-            .await
-            .expect("provider catalog keys should load")
-            .into_iter()
-            .next()
-            .expect("stored key should exist");
-        assert_eq!(stored_key.learned_rpm_limit, Some(25));
-        assert_eq!(stored_key.utilization_samples, Some(json!([])));
-        assert_eq!(
-            stored_key
-                .adjustment_history
-                .as_ref()
-                .and_then(Value::as_array)
-                .and_then(|items| items.last())
-                .and_then(Value::as_object)
-                .and_then(|record| record.get("reason"))
-                .and_then(Value::as_str),
-            Some("high_utilization")
-        );
-        assert_eq!(state.scheduler_affinity_epoch(), initial_epoch);
-        assert_eq!(
-            state.read_scheduler_affinity_target(cache_key.as_str(), SCHEDULER_AFFINITY_TTL),
-            Some(target)
         );
     }
 }

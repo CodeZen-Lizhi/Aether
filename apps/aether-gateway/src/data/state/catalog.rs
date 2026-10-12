@@ -1,14 +1,14 @@
 use super::{
     ApiKeyLastUsedDelta, DataLayerError, GatewayDataState, GeminiFileMappingListQuery,
-    GeminiFileMappingStats, ProviderCatalogKeyAdaptiveStateUpdate,
-    ProviderCatalogKeyAdminCasUpdate, ProviderCatalogKeyHealthStateUpdate,
-    ProviderCatalogKeyListQuery, ProviderCatalogKeyOAuthCredentialCasDelete,
-    ProviderCatalogKeyOAuthRuntimeStateCasUpdate, ProviderCatalogKeyRuntimeMetadataUpdate,
-    ProviderCatalogKeyStatusSnapshotUpdate, PublicHealthStatusCount, PublicHealthTimelineBucket,
-    StoredGeminiFileMapping, StoredGeminiFileMappingListPage, StoredProviderCatalogEndpoint,
-    StoredProviderCatalogKey, StoredProviderCatalogKeyMaintenanceSummary,
-    StoredProviderCatalogKeyPage, StoredProviderCatalogKeyStats, StoredProviderCatalogProvider,
-    StoredRequestCandidate, UpsertGeminiFileMappingRecord, UpsertRequestCandidateRecord,
+    GeminiFileMappingStats, KeyAttemptUsage, ProviderCatalogKeyAdminCasUpdate,
+    ProviderCatalogKeyHealthStateUpdate, ProviderCatalogKeyListQuery,
+    ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthRuntimeStateCasUpdate,
+    ProviderCatalogKeyRuntimeMetadataUpdate, ProviderCatalogKeyStatusSnapshotUpdate,
+    PublicHealthStatusCount, PublicHealthTimelineBucket, StoredGeminiFileMapping,
+    StoredGeminiFileMappingListPage, StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
+    StoredProviderCatalogKeyMaintenanceSummary, StoredProviderCatalogKeyPage,
+    StoredProviderCatalogKeyStats, StoredProviderCatalogProvider, StoredRequestCandidate,
+    UpsertGeminiFileMappingRecord, UpsertRequestCandidateRecord,
 };
 
 impl GatewayDataState {
@@ -49,6 +49,20 @@ impl GatewayDataState {
     ) -> Result<Vec<StoredRequestCandidate>, DataLayerError> {
         match &self.request_candidate_reader {
             Some(repository) => repository.list_recent(limit).await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    pub(crate) async fn aggregate_attempted_request_candidate_usage_by_key_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &std::collections::BTreeMap<String, u64>,
+    ) -> Result<Vec<KeyAttemptUsage>, DataLayerError> {
+        match &self.request_candidate_reader {
+            Some(repository) => {
+                repository
+                    .aggregate_attempted_by_key_ids_since(min_observed_at_unix_secs_by_key)
+                    .await
+            }
             None => Ok(Vec::new()),
         }
     }
@@ -782,22 +796,6 @@ impl GatewayDataState {
         if updated {
             self.clear_provider_catalog_cache();
         }
-        Ok(updated)
-    }
-
-    pub(crate) async fn compare_and_update_provider_catalog_key_adaptive_state(
-        &self,
-        update: &ProviderCatalogKeyAdaptiveStateUpdate,
-    ) -> Result<bool, DataLayerError> {
-        let Some(repository) = &self.provider_catalog_writer else {
-            return Ok(false);
-        };
-        let updated = repository
-            .compare_and_update_key_adaptive_state(update)
-            .await?;
-        // A false CAS result normally means another instance won the write. Drop the
-        // five-second read cache before the caller reloads and retries.
-        self.clear_provider_catalog_cache();
         Ok(updated)
     }
 

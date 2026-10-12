@@ -270,14 +270,14 @@
                   type="number"
                   min="1"
                   max="10000"
-                  :placeholder="legacyT('自适应')"
+                  :placeholder="legacyT('无限制')"
                   size="sm"
                   class="h-9 font-mono tabular-nums"
                   @update:model-value="(v) => form.rpm_limit = parseNullableNumberInput(v, { min: 1, max: 10000 })"
                 />
               </div>
               <p class="mt-1 text-xs text-muted-foreground">
-                {{ legacyT('留空自适应') }}
+                {{ legacyT('留空表示无限制') }}
               </p>
             </div>
 
@@ -715,7 +715,7 @@ const form = ref({
   default_rate_multiplier: 1 as number,  // Key 级成本倍率
   multiplier_source: 'manual' as 'manual' | 'upstream',
   internal_priority: 1,
-  rpm_limit: undefined as number | null | undefined,  // RPM 限制（null=自适应，undefined=保持原值）
+  rpm_limit: undefined as number | null | undefined,  // RPM 限制（null=无限制，undefined=保持原值）
   concurrent_limit: undefined as number | null | undefined,  // 并发请求上限（null/0=不限制，undefined=保持原值）
   cache_ttl_minutes: 5,
   max_probe_interval_minutes: 32,
@@ -729,7 +729,7 @@ const form = ref({
 const rpmLimitSummary = computed(() => {
   const value = form.value.rpm_limit
   return value == null
-    ? `RPM ${legacyT('自适应')}`
+    ? legacyT('无限制 RPM')
     : `RPM ${value}`
 })
 
@@ -885,7 +885,7 @@ function loadKeyData() {
     default_rate_multiplier: props.editingKey.default_rate_multiplier ?? 1,
     multiplier_source: props.editingKey.multiplier_sync?.source === 'upstream' ? 'upstream' : 'manual',
     internal_priority: props.editingKey.internal_priority ?? 10,
-    // 保留原始的 null/undefined 状态，null 表示自适应模式
+    // null 与缺省值都表示无限制；undefined 可避免编辑时意外覆盖原值
     rpm_limit: props.editingKey.rpm_limit ?? undefined,
     concurrent_limit: props.editingKey.concurrent_limit ?? undefined,
     cache_ttl_minutes: props.editingKey.cache_ttl_minutes ?? 5,
@@ -978,7 +978,7 @@ async function handleSave() {
     if (props.editingKey) {
       const shouldClearAllowedModels = !!props.editingKey.auto_fetch_models && !form.value.auto_fetch_models
       // 更新模式
-      // 注意：rpm_limit 使用 null 表示自适应模式
+      // rpm_limit 使用 null 表示无限制
       // undefined 表示"保持原值不变"（会在 JSON 序列化时被忽略）
       const updateData: EndpointAPIKeyUpdate = {
         api_formats: form.value.api_formats,

@@ -510,7 +510,7 @@ pub(super) async fn relay_bound_connection(
                     let retry_turn = bound.turn_state.detach_attempt();
                     // 先结算旧 attempt 并等它落地，再规划下一个 attempt。两个理由：
                     //
-                    // 1. 规划要读 health / adaptive / pool 状态，而这些正是旧
+                    // 1. 规划要读 health / pool 状态，而这些正是旧
                     //    attempt 结算时才投射的。普通的新 turn 早就在 client.rs 里
                     //    用 await_pending_turn_finalization 挡住了「基于陈旧状态
                     //    规划」，透明重试这条路径原先漏了这一步。

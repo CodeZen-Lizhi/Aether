@@ -1231,7 +1231,7 @@ async fn gateway_handles_admin_key_rpm_locally_with_trusted_admin_principal() {
         )],
         vec![
             sample_key("key-openai", "provider-openai", "openai:chat", "sk-test")
-                .with_rate_limit_fields(Some(60), None, None, None, None, None, None, None, None),
+                .with_rate_limits(Some(60), None),
         ],
     ));
     let now_unix_secs = SystemTime::now()
@@ -1318,7 +1318,7 @@ async fn gateway_resets_admin_key_rpm_locally_with_trusted_admin_principal() {
         )],
         vec![
             sample_key("key-openai", "provider-openai", "openai:chat", "sk-test")
-                .with_rate_limit_fields(Some(60), None, None, None, None, None, None, None, None),
+                .with_rate_limits(Some(60), None),
         ],
     ));
     let now_unix_secs = SystemTime::now()

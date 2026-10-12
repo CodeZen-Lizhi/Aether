@@ -250,7 +250,7 @@ export interface EndpointAPIKey {
     /** 可展示的失败原因，不包含密钥。 */
     error?: string | null
   }
-  rpm_limit?: number | null  // RPM 速率限制 (1-10000)，null 表示自适应模式
+  rpm_limit?: number | null  // RPM 速率限制 (1-10000)，null 表示无限制
   concurrent_limit?: number | null  // 并发请求上限，null/0 表示不限制
   allowed_models?: AllowedModels  // 允许使用的模型列表（null=不限制）
   capabilities?: Record<string, boolean> | null  // 能力标签配置（如 cache_1h, context_1m）
@@ -275,17 +275,6 @@ export interface EndpointAPIKey {
   last_used_at?: string
   created_at: string
   updated_at: string
-  // 自适应 RPM 字段
-  is_adaptive?: boolean  // 是否为自适应模式（rpm_limit=NULL）
-  effective_limit?: number | null  // 当前有效 RPM 限制（自适应使用学习值，固定使用配置值，未学习时为 null）
-  learned_rpm_limit?: number | null  // 学习到的 RPM 限制
-  // 滑动窗口利用率采样
-  utilization_samples?: Array<{ ts: number; util: number }>  // 利用率采样窗口
-  last_probe_increase_at?: string  // 上次探测性扩容时间
-  concurrent_429_count?: number
-  rpm_429_count?: number
-  last_429_at?: string
-  last_429_type?: string
   // 单格式场景的熔断器字段
   circuit_breaker_open_at?: string
   next_probe_at?: string
@@ -346,7 +335,7 @@ export interface EndpointAPIKeyUpdate {
   rate_multipliers?: Record<string, number> | null  // 遗留字段：传 null 清空存量覆盖值；计费已不读取
   internal_priority?: number  // 同一供应商内调度优先级，数值越小越优先
   default_rate_multiplier?: number  // Key 级成本倍率（该密钥所有请求按此计费）
-  rpm_limit?: number | null  // RPM 速率限制 (1-10000)，null 表示切换为自适应模式
+  rpm_limit?: number | null  // RPM 速率限制 (1-10000)，null 表示无限制
   concurrent_limit?: number | null  // 并发请求上限，null/0 表示不限制
   allowed_models?: AllowedModels
   capabilities?: Record<string, boolean> | null
@@ -661,21 +650,3 @@ export interface ProviderModelMapping {
 
 // 保留别名以保持向后兼容
 export type ProviderModelAlias = ProviderModelMapping
-
-export interface AdaptiveStatsResponse {
-  adaptive_mode: boolean
-  current_limit: number | null
-  learned_limit: number | null
-  concurrent_429_count: number
-  rpm_429_count: number
-  last_429_at: string | null
-  last_429_type: string | null
-  adjustment_count: number
-  recent_adjustments: Array<{
-    timestamp: string
-    old_limit: number
-    new_limit: number
-    reason: string
-    [key: string]: unknown
-  }>
-}

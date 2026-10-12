@@ -282,7 +282,7 @@ export interface ProviderKeyExport {
   default_rate_multiplier?: number | null
   auth_type_by_format?: Record<string, 'api_key' | 'bearer'> | null
   allow_auth_channel_mismatch_formats?: string[] | null
-  rpm_limit?: number | null
+  rpm_limit?: number | null // null 表示不限制 RPM
   concurrent_limit?: number | null
   expires_at_unix_secs?: number | null
   allowed_models?: string[] | null
@@ -296,15 +296,6 @@ export interface ProviderKeyExport {
   is_active: boolean
   proxy?: Record<string, unknown> | null
   fingerprint?: Record<string, unknown> | null
-  learned_rpm_limit?: number | null
-  concurrent_429_count?: number | null
-  rpm_429_count?: number | null
-  last_429_at_unix_secs?: number | null
-  last_429_type?: string | null
-  adjustment_history?: unknown[] | null
-  utilization_samples?: unknown[] | null
-  last_probe_increase_at_unix_secs?: number | null
-  last_rpm_peak?: number | null
   request_count?: number | null
   total_tokens?: number | null
   total_cost_usd?: number | null

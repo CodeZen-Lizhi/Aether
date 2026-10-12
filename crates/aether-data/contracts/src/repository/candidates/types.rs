@@ -73,6 +73,17 @@ pub struct StoredRequestCandidate {
     pub finished_at_unix_ms: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// 单个供应商 Key 在 RPM 窗口内的已发起请求数和最大并发快照。
+pub struct KeyAttemptUsage {
+    /// 供应商 Key 标识。
+    pub key_id: String,
+    /// 窗口内已发起的候选请求总数。
+    pub attempted_count: u64,
+    /// 窗口内记录到的最大并发请求数。
+    pub max_concurrent_requests: u64,
+}
+
 impl StoredRequestCandidate {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -457,6 +468,12 @@ pub trait RequestCandidateReadRepository: Send + Sync {
         &self,
         limit: usize,
     ) -> Result<Vec<StoredRequestCandidate>, crate::DataLayerError>;
+
+    /// 按每个 Key 的时间下界聚合已发起候选，避免受全局最近记录条数限制。
+    async fn aggregate_attempted_by_key_ids_since(
+        &self,
+        min_observed_at_unix_secs_by_key: &BTreeMap<String, u64>,
+    ) -> Result<Vec<KeyAttemptUsage>, crate::DataLayerError>;
 
     async fn list_by_provider_id(
         &self,

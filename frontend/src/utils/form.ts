@@ -55,13 +55,11 @@ export function parseNumberInput(
 }
 
 /**
- * Parse number input value for nullable fields (like rpm_limit)
- * Returns `null` when empty (to signal "use adaptive/default mode")
- * Returns `undefined` when not provided (to signal "keep original value")
+ * 解析可空数值输入：空值返回 `null`，未提供的值返回 `undefined`。
  *
- * @param value - Input value (string or number)
- * @param options - Parse options
- * @returns Parsed number, null (for empty/adaptive), or undefined
+ * @param value 输入值（字符串或数字）。
+ * @param options 数值解析和边界选项。
+ * @returns 解析后的数字、空值 `null`，或表示未提供的 `undefined`。
  */
 export function parseNullableNumberInput(
   value: string | number | null | undefined,
@@ -73,7 +71,7 @@ export function parseNullableNumberInput(
 ): number | null | undefined {
   const { allowFloat = false, min, max } = options
 
-  // Empty string means "null" (adaptive mode)
+  // 空输入表示没有配置该限制。
   if (value === '') {
     return null
   }
@@ -88,7 +86,7 @@ export function parseNullableNumberInput(
     ? (allowFloat ? parseFloat(value) : parseInt(value, 10))
     : value
 
-  // Handle NaN - treat as null (adaptive mode)
+  // 非法数字按清空可空字段处理。
   if (isNaN(num)) {
     return null
   }

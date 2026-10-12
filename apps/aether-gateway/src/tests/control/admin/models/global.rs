@@ -781,7 +781,6 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
             primary_key.name = "primary".to_string();
             primary_key.allowed_models = Some(json!(["gpt-5"]));
             primary_key.rpm_limit = None;
-            primary_key.learned_rpm_limit = Some(77);
             primary_key.cache_ttl_minutes = 9;
             primary_key.health_by_format = Some(json!({
                 "openai:chat": {"health_score": 0.66}
@@ -895,8 +894,9 @@ async fn gateway_handles_admin_global_model_routing_locally_with_trusted_admin_p
     assert_eq!(openai_keys.len(), 1);
     assert_eq!(openai_keys[0]["name"], "primary");
     assert_eq!(openai_keys[0]["masked_key"], "sk-opena***1234");
-    assert_eq!(openai_keys[0]["is_adaptive"], true);
-    assert_eq!(openai_keys[0]["effective_rpm"], 77);
+    assert_eq!(openai_keys[0]["rpm_limit"], serde_json::Value::Null);
+    assert!(openai_keys[0].get("is_adaptive").is_none());
+    assert!(openai_keys[0].get("effective_rpm").is_none());
     assert_eq!(openai_keys[0]["allowed_models"], json!(["gpt-5"]));
     assert_eq!(openai_keys[0]["circuit_breaker_open"], true);
     assert_eq!(
