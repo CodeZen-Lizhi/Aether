@@ -9,6 +9,7 @@ import { createApp, h, ref } from 'vue'
 import KeyMultiplierControl from '/src/features/providers/components/KeyMultiplierControl.vue'
 import client from '/src/api/client'
 import { createI18n } from '/src/i18n'
+import ToastContainer from '/src/components/ToastContainer.vue'
 import '/src/style.css'
 
 // 隔离数据只驻留内存，所有操作均拦截，不访问用户站点或数据库。
@@ -20,13 +21,23 @@ client.post = async (_url, body) => {
   // 首次跟随上游故意延迟，让加载态在真实浏览器里可见；可用 ?slow=0 关闭。
   const delay = new URLSearchParams(location.search).get('slow') === '0' ? 0 : (mode === 'upstream' ? 1200 : 0)
   if (delay) await new Promise(resolve => setTimeout(resolve, delay))
-  if (mode === 'upstream' && new URLSearchParams(location.search).has('fail')) key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'manual', status: 'failed', error: '上游倍率查询失败' } }
+  if (new URLSearchParams(location.search).has('fail')) key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: mode === 'upstream' ? 'manual' : 'upstream', status: 'failed', error: '上游倍率查询失败' } }
   else if (mode === 'manual') key.value = { ...key.value, multiplier_sync: { source: 'manual', status: 'manual' } }
   else if (writes === 1) key.value = { ...key.value, default_rate_multiplier: 0.3, multiplier_sync: { source: 'upstream', status: 'success', group_name: '测试分组', last_success_at: '2026-10-09T08:00:00Z' } }
   else if (mode === 'upstream') key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'manual', status: 'failed', error: '上游未返回该分组的有效倍率' } }
   else key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'upstream', status: 'failed', error: '上游未返回该分组的有效倍率' } }
   return { data: { status: 'success', data: { failed: key.value.multiplier_sync.status === 'failed' ? 1 : 0 } } }
 }
-createApp({ setup() { return () => h('main', { style: 'max-width:600px;padding:24px' }, [h('h1', { style: 'font-size:20px' }, '密钥倍率'), h(KeyMultiplierControl, { apiKey: key.value, providerId: 'fixture-provider' }), h('output', String(key.value.default_rate_multiplier))]) } }).use(createI18n()).mount('#fixture')
+createApp({ setup() {
+  const shortcut = new URLSearchParams(location.search).has('shortcut')
+  return () => h('main', { style: 'max-width:600px;padding:24px' }, [
+    h('h1', { style: 'font-size:20px' }, '密钥倍率'),
+    h(KeyMultiplierControl, shortcut
+      ? { apiKey: { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'upstream' } }, providerId: 'fixture-provider', actionOnly: true }
+      : { apiKey: key.value, providerId: 'fixture-provider' }),
+    h('output', String(key.value.default_rate_multiplier)),
+    h(ToastContainer),
+  ])
+} }).use(createI18n()).mount('#fixture')
 </script>
 </body></html>

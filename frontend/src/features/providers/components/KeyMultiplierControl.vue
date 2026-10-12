@@ -157,6 +157,14 @@ const statusText = computed(() => legacyT(
   pendingMode.value === 'upstream' ? '正在查询上游倍率…' : '正在保存倍率…',
 ))
 
+/**
+ * 失败只提示一次：行内模式由当前行显示错误，缺少行内错误区域的快捷入口才用全局弹窗。
+ */
+function reportFailure(message: string) {
+  errorMessage.value = message
+  if (props.actionOnly) showError(message)
+}
+
 watch(
   () => [props.apiKey.multiplier_sync?.source, props.apiKey.default_rate_multiplier] as const,
   ([nextSource, nextValue]) => {
@@ -198,8 +206,7 @@ async function saveManual() {
   if (busy.value || !editing.value) return
   const value = Number(draftValue.value)
   if (draftValue.value === '' || !Number.isFinite(value) || value < 0) {
-    errorMessage.value = legacyT('请输入大于或等于 0 的有效倍率')
-    showError(errorMessage.value)
+    reportFailure(legacyT('请输入大于或等于 0 的有效倍率'))
     return
   }
   await runSync('manual', value, true)
@@ -222,8 +229,7 @@ async function runSync(mode?: MultiplierSource, multiplier?: number, closeOnSucc
         : ''
 
     if (failureMessage) {
-      errorMessage.value = failureMessage
-      showError(failureMessage)
+      reportFailure(failureMessage)
       return
     }
 
@@ -238,9 +244,7 @@ async function runSync(mode?: MultiplierSource, multiplier?: number, closeOnSucc
       editing.value = false
     }
   } catch {
-    const failureMessage = legacyT('倍率操作失败，请检查网络后重试')
-    errorMessage.value = failureMessage
-    showError(failureMessage)
+    reportFailure(legacyT('倍率操作失败，请检查网络后重试'))
   } finally {
     busy.value = false
     pendingMode.value = null

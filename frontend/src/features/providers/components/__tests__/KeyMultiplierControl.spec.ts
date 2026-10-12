@@ -245,7 +245,7 @@ describe('列表内倍率交互', () => {
     expect(root.textContent).toContain('0.3')
   })
 
-  it('手动保存失败时保留倍率草稿并显示行内错误', async () => {
+  it('手动保存失败时只保留行内错误，不重复弹出全局提示', async () => {
     mocks.sync.mockResolvedValue({ status: 'error', message: '服务暂不可用' })
     const root = mountControl()
 
@@ -254,7 +254,7 @@ describe('列表内倍率交互', () => {
     const input = await editAndBlur(root, '0.7')
 
     const alert = root.querySelector('[role="alert"]') as HTMLElement
-    expect(mocks.error).toHaveBeenCalledWith('服务暂不可用')
+    expect(mocks.error).not.toHaveBeenCalled()
     expect(input.value).toBe('0.7')
     expect(root.querySelector('input[type="number"]')).not.toBeNull()
     expect(alert.textContent).toContain('服务暂不可用')
@@ -272,13 +272,13 @@ describe('列表内倍率交互', () => {
     expect(root.querySelector('button[aria-label^="倍率设置"]')?.textContent).toContain('0.3')
   })
 
-  it('自动倍率不可用时恢复手动状态并显示当前行错误', async () => {
+  it('自动倍率不可用时恢复手动状态，只在当前行显示错误', async () => {
     mocks.sync.mockResolvedValue({ status: 'not_configured', message: '请先配置用户认证' })
     const root = mountControl()
 
     await selectSource(root, 'upstream')
 
-    expect(mocks.error).toHaveBeenCalledWith('请先配置用户认证')
+    expect(mocks.error).not.toHaveBeenCalled()
     expect(root.querySelector('[data-multiplier-source="manual"]')).not.toBeNull()
     const alert = root.querySelector('[role="alert"]') as HTMLElement
     expect(alert.textContent).toContain('请先配置用户认证')
