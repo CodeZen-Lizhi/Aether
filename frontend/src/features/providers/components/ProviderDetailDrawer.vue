@@ -160,7 +160,12 @@
                             />
                           </template>
                           <template #after-recover>
-                            <KeyMultiplierControl :api-key="key" :provider-id="provider.id" action-only @refresh="loadProviderKeys" />
+                            <KeyMultiplierControl
+                              :api-key="key"
+                              :provider-id="provider.id"
+                              action-only
+                              @refresh="loadProviderKeys"
+                            />
                           </template>
                         </ProviderKeyActionCluster>
                       </div>
@@ -176,7 +181,11 @@
                     </p>
                     <!-- 第二行：API 格式（展开显示） + 统计信息 -->
                     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mt-3 text-[11px] text-muted-foreground">
-                      <KeyMultiplierControl :api-key="key" :provider-id="provider.id" @refresh="loadProviderKeys" @settings-open="multiplierSettingsOpen = $event" />
+                      <KeyMultiplierControl
+                        :api-key="key"
+                        :provider-id="provider.id"
+                        @refresh="loadProviderKeys"
+                      />
                       <!-- 自动获取模型状态 -->
                       <template v-if="key.auto_fetch_models">
                         <span class="text-muted-foreground/40">|</span>
@@ -541,12 +550,8 @@ const savingProviderProxy = ref(false)
 const savingProxyKeyId = ref<string | null>(null)
 const proxyPopoverOpenKeyId = ref<string | null>(null)
 
-// 倍率弹窗打开期间保留供应商抽屉。
-const multiplierSettingsOpen = ref(false)
-
 // 任意模态窗口打开时,阻止抽屉被误关闭
 const hasBlockingDialogOpen = computed(() =>
-  multiplierSettingsOpen.value ||
   endpointDialogOpen.value ||
   keyFormDialogOpen.value ||
   keyPermissionsDialogOpen.value ||
@@ -659,7 +664,6 @@ function resetProviderDetailState() {
   revealedKeys.value.clear()
   providerProxyPopoverOpen.value = false
   proxyPopoverOpenKeyId.value = null
-  multiplierSettingsOpen.value = false
 }
 
 // 合并监听 providerId 和 open，避免同一 tick 内两个 watcher 都触发导致重复请求

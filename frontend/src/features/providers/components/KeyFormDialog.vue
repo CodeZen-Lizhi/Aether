@@ -162,10 +162,10 @@
         </div>
       </div>
 
-      <!-- 成本倍率与来源 -->
+      <!-- 倍率来源与优先级 -->
       <div class="dialog-grid-2 gap-px rounded-lg border border-border/70 bg-border/70">
-        <div class="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-3 bg-background px-3 py-2.5">
-          <div class="min-w-0">
+        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
+          <div class="min-w-0 flex-1">
             <Label for="default_rate_multiplier">{{ legacyT('倍率') }}</Label>
             <p
               id="default-rate-multiplier-help"
@@ -174,29 +174,41 @@
               {{ legacyT(form.multiplier_source === 'upstream' ? '随余额监控周期同步' : '默认 1，按当前值固定') }}
             </p>
           </div>
-          <div class="flex w-full min-w-0 items-center gap-2">
-            <div class="flex flex-1 rounded-md bg-muted/60 p-0.5" role="group" :aria-label="legacyT('倍率来源')">
-              <button type="button" class="flex-1 rounded px-2 py-1.5 text-xs transition-colors" :class="form.multiplier_source === 'manual' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground'" @click="form.multiplier_source = 'manual'">{{ legacyT('手动') }}</button>
-              <button type="button" class="flex-1 rounded px-2 py-1.5 text-xs transition-colors" :class="form.multiplier_source === 'upstream' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground'" @click="form.multiplier_source = 'upstream'">{{ legacyT('跟随上游') }}</button>
-            </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <Select v-model="form.multiplier_source">
+              <SelectTrigger
+                class="h-9 w-24 shrink-0 px-2.5 text-xs"
+                :aria-label="legacyT('倍率来源')"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent :searchable="false">
+                <SelectItem value="manual">
+                  {{ legacyT('手动') }}
+                </SelectItem>
+                <SelectItem value="upstream">
+                  {{ legacyT('跟随上游') }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <div class="w-20 shrink-0">
-            <Input
-              id="default_rate_multiplier"
-              v-model.number="form.default_rate_multiplier"
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              :disabled="form.multiplier_source === 'upstream'"
-              size="sm"
-              class="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              aria-describedby="default-rate-multiplier-help"
-            />
+              <Input
+                id="default_rate_multiplier"
+                v-model.number="form.default_rate_multiplier"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                :disabled="form.multiplier_source === 'upstream'"
+                size="sm"
+                class="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                aria-describedby="default-rate-multiplier-help"
+              />
             </div>
           </div>
         </div>
         <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
-          <div class="min-w-0">
+          <div class="min-w-0 flex-1">
             <Label for="internal_priority">{{ legacyT('优先级') }}</Label>
             <p
               id="internal-priority-help"
@@ -205,17 +217,19 @@
               {{ legacyT('越小越优先') }}
             </p>
           </div>
-          <div class="w-24 shrink-0">
-            <Input
-              id="internal_priority"
-              v-model.number="form.internal_priority"
-              type="number"
-              min="0"
-              step="1"
-              size="sm"
-              class="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              aria-describedby="internal-priority-help"
-            />
+          <div class="flex shrink-0 items-center gap-2">
+            <div class="w-20 shrink-0">
+              <Input
+                id="internal_priority"
+                v-model.number="form.internal_priority"
+                type="number"
+                min="0"
+                step="1"
+                size="sm"
+                class="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                aria-describedby="internal-priority-help"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -403,6 +417,11 @@ import {
   CollapsibleTrigger,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Switch,
 } from '@/components/ui'
 import { ChevronDown, Key, SquarePen, CircleHelp } from 'lucide-vue-next'
