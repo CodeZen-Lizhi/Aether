@@ -1,11 +1,16 @@
 // 使用真实控件与隔离 API 数据验证来源下拉、倍率编辑、失败保留值和窄屏布局。
 async function pickSource(page, value) {
-  await page.getByLabel('倍率来源').first().click()
-  await page.getByRole('option', { name: value, exact: true }).click()
+  await page.getByLabel(/倍率来源|Multiplier source/).first().click()
+  const optionName = value === '跟随上游' ? /跟随上游|Follow upstream/ : /手动|Manual/
+  await page.getByRole('option', { name: optionName, exact: true }).click()
 }
 
 async (page) => {
+  // 切换来源后接口有延迟，必须先看到查询状态，再看到来源生效或失败原因。
   await pickSource(page, '跟随上游')
+  await page.getByText(/正在查询上游倍率|Querying the upstream multiplier/, { exact: false }).first().waitFor({ state: 'visible' })
+  const disabledDuringQuery = await page.getByLabel(/倍率来源|Multiplier source/).first().isDisabled()
+  if (!disabledDuringQuery) throw new Error('查询期间来源下拉仍可操作')
   await page.getByText('测试分组', { exact: false }).waitFor()
   if (await page.locator('output').textContent() !== '0.3') throw new Error('上游倍率未更新')
   await page.getByRole('button', { name: '同步上游倍率', exact: true }).click()

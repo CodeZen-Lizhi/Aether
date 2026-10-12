@@ -162,6 +162,45 @@ async function selectSource(root: HTMLElement, value: string) {
 }
 
 describe('列表内倍率交互', () => {
+  it('切到上游时先显示查询状态，接口返回后才切来源', async () => {
+    let resolveSync: (value: unknown) => void = () => {}
+    mocks.sync.mockReturnValue(new Promise((resolve) => { resolveSync = resolve }))
+    const root = mountControl()
+
+    const trigger = root.querySelector('button[aria-label="倍率来源"]') as HTMLButtonElement
+    trigger.click()
+    await settle()
+    ;(root.querySelector('[data-select-item="upstream"]') as HTMLButtonElement).click()
+    await settle()
+
+    const status = root.querySelector('[role="status"]') as HTMLElement
+    expect(status.textContent).toContain('正在查询上游倍率…')
+    expect((root.querySelector('button[aria-label="倍率来源"]') as HTMLButtonElement | null)?.disabled).toBe(true)
+    // 接口返回前不宣称已生效，来源仍为手动。
+    expect(root.querySelector('[data-multiplier-source="manual"]')).not.toBeNull()
+
+    resolveSync({ status: 'success', data: { failed: 0 } })
+    await settle()
+
+    expect(root.querySelector('[role="status"]')).toBeNull()
+    expect(root.querySelector('[data-multiplier-source="upstream"]')).not.toBeNull()
+  })
+
+  it('查询失败时回到手动并给出错误提示', async () => {
+    mocks.sync.mockResolvedValue({ status: 'error', message: '上游倍率查询失败' })
+    const root = mountControl()
+
+    const trigger = root.querySelector('button[aria-label="倍率来源"]') as HTMLButtonElement
+    trigger.click()
+    await settle()
+    ;(root.querySelector('[data-select-item="upstream"]') as HTMLButtonElement).click()
+    await settle()
+
+    expect(root.querySelector('[role="status"]')).toBeNull()
+    expect(root.querySelector('[data-multiplier-source="manual"]')).not.toBeNull()
+    expect((root.querySelector('[role="alert"]') as HTMLElement).textContent).toContain('上游倍率查询失败')
+  })
+
   it('点击倍率后可在列表内提交手动值', async () => {
     mocks.sync.mockResolvedValue({ status: 'success', data: { failed: 0 } })
     const root = mountControl()

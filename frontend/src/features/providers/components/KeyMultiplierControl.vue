@@ -68,6 +68,7 @@
         :aria-label="legacyT('倍率来源')"
         :aria-describedby="errorMessage ? `multiplier-error-${apiKey.id}` : undefined"
         :disabled="busy"
+        :aria-busy="busy"
       >
         <SelectValue />
       </SelectTrigger>
@@ -94,11 +95,21 @@
     >
       {{ errorMessage }}
     </p>
+    <!-- 等待文案与错误提示同位置：等待中说明在查接口，失败后立即被红色原因替换。 -->
+    <p
+      v-else-if="busy"
+      :data-multiplier-busy="pendingMode ?? 'sync'"
+      class="inline-flex basis-full items-center gap-1 px-1 pt-0.5 text-xs leading-4 text-muted-foreground"
+      role="status"
+    >
+      <Loader2 class="h-3 w-3 shrink-0 animate-spin" />
+      {{ statusText }}
+    </p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { BadgePercent, Loader2 } from 'lucide-vue-next'
 import {
   Input,
@@ -129,6 +140,8 @@ const emit = defineEmits<{
 const { legacyT } = useI18n()
 const { error: showError, success } = useToast()
 const busy = ref(false)
+/** 本次请求要切换到的来源；仅在切来源时非空，用于区分查询上游与保存手动。 */
+const pendingMode = ref<MultiplierSource | null>(null)
 const editing = ref(false)
 const draftValue = ref<string | number>(1)
 const errorMessage = ref('')
@@ -138,6 +151,11 @@ const modes: Array<{ value: MultiplierSource, label: string }> = [
   { value: 'manual', label: '手动' },
   { value: 'upstream', label: '跟随上游' },
 ]
+
+/** 等待文案区分正在查上游和正在保存手动倍率，让用户知道当前在等哪一步接口。 */
+const statusText = computed(() => legacyT(
+  pendingMode.value === 'upstream' ? '正在查询上游倍率…' : '正在保存倍率…',
+))
 
 watch(
   () => [props.apiKey.multiplier_sync?.source, props.apiKey.default_rate_multiplier] as const,
@@ -191,6 +209,7 @@ async function saveManual() {
 async function runSync(mode?: MultiplierSource, multiplier?: number, closeOnSuccess = false) {
   if (busy.value) return
   busy.value = true
+  pendingMode.value = mode ?? null
   errorMessage.value = ''
 
   try {
@@ -224,6 +243,7 @@ async function runSync(mode?: MultiplierSource, multiplier?: number, closeOnSucc
     showError(failureMessage)
   } finally {
     busy.value = false
+    pendingMode.value = null
     emit('refresh')
   }
 }

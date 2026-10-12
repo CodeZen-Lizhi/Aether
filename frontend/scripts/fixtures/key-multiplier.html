@@ -17,8 +17,13 @@ let writes = 0
 client.post = async (_url, body) => {
   writes++
   const mode = body.config.mode
-  if (mode === 'manual') key.value = { ...key.value, multiplier_sync: { source: 'manual', status: 'manual' } }
+  // 首次跟随上游故意延迟，让加载态在真实浏览器里可见；可用 ?slow=0 关闭。
+  const delay = new URLSearchParams(location.search).get('slow') === '0' ? 0 : (mode === 'upstream' ? 1200 : 0)
+  if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+  if (mode === 'upstream' && new URLSearchParams(location.search).has('fail')) key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'manual', status: 'failed', error: '上游倍率查询失败' } }
+  else if (mode === 'manual') key.value = { ...key.value, multiplier_sync: { source: 'manual', status: 'manual' } }
   else if (writes === 1) key.value = { ...key.value, default_rate_multiplier: 0.3, multiplier_sync: { source: 'upstream', status: 'success', group_name: '测试分组', last_success_at: '2026-10-09T08:00:00Z' } }
+  else if (mode === 'upstream') key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'manual', status: 'failed', error: '上游未返回该分组的有效倍率' } }
   else key.value = { ...key.value, multiplier_sync: { ...key.value.multiplier_sync, source: 'upstream', status: 'failed', error: '上游未返回该分组的有效倍率' } }
   return { data: { status: 'success', data: { failed: key.value.multiplier_sync.status === 'failed' ? 1 : 0 } } }
 }

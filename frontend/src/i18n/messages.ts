@@ -522,6 +522,8 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '默认 1×。保存后固定使用你填写的倍率。': 'Defaults to 1×. Uses your saved multiplier until you change it.',
   '请输入大于或等于 0 的有效倍率': 'Enter a valid multiplier greater than or equal to 0',
   '同步失败，已保留当前倍率': 'Sync failed. The current multiplier is unchanged.',
+  '正在查询上游倍率…': 'Querying the upstream multiplier…',
+  '正在保存倍率…': 'Saving the multiplier…',
   '倍率操作失败，请检查网络后重试': 'Could not update the multiplier. Check your connection and retry.',
   '倍率操作失败，请稍后重试': 'Could not update the multiplier. Please retry later.',
   '打开导航菜单': 'Open navigation menu',
