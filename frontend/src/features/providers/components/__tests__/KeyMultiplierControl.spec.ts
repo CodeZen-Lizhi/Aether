@@ -103,10 +103,7 @@ vi.mock('lucide-vue-next', async () => {
   const Icon = defineComponent({ setup: () => () => h('span') })
   return {
     BadgePercent: Icon,
-    Check: Icon,
-    ChevronDown: Icon,
     Loader2: Icon,
-    X: Icon,
   }
 })
 
@@ -142,6 +139,28 @@ function openEditor(root: HTMLElement) {
   trigger!.click()
 }
 
+/** 聚焦倍率输入框并写入新值，随后触发失焦保存。 */
+async function editAndBlur(root: HTMLElement, value: string) {
+  const input = root.querySelector('input[type="number"]') as HTMLInputElement
+  input.focus()
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await settle()
+  input.blur()
+  await settle()
+  return input
+}
+
+/** 通过来源下拉选择切换倍率来源。 */
+async function selectSource(root: HTMLElement, value: string) {
+  const trigger = root.querySelector('button[aria-label="倍率来源"]') as HTMLButtonElement
+  trigger.click()
+  await settle()
+  const option = root.querySelector(`[data-select-item="${value}"]`) as HTMLButtonElement
+  option.click()
+  await settle()
+}
+
 describe('列表内倍率交互', () => {
   it('点击倍率后可在列表内提交手动值', async () => {
     mocks.sync.mockResolvedValue({ status: 'success', data: { failed: 0 } })
@@ -150,38 +169,41 @@ describe('列表内倍率交互', () => {
     openEditor(root)
     await settle()
     const input = root.querySelector('input[type="number"]') as HTMLInputElement
+    input.focus()
     input.value = '0.7'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await settle()
-    input.blur()
-    await settle()
     expect(mocks.sync).not.toHaveBeenCalled()
 
-    const save = root.querySelector('button[aria-label="保存倍率"]') as HTMLButtonElement | null
-    expect(save).toBeTruthy()
-    save!.click()
+    input.blur()
     await settle()
 
     expect(mocks.sync).toHaveBeenCalledWith('provider', 'key', 'manual', 0.7)
     expect(root.querySelector('button[aria-label^="倍率设置"]')).not.toBeNull()
-    expect(root.querySelector('button[aria-label="保存倍率"]')).toBeNull()
     expect(root.querySelector('button[aria-label^="倍率设置"]')?.textContent).toContain('0.7')
   })
 
-  it('切换上游立即提交并在成功后禁用倍率输入', async () => {
+  it('切换上游立即提交并直接生效', async () => {
     mocks.sync.mockResolvedValue({ status: 'success', data: { failed: 0 } })
     const root = mountControl()
 
-    openEditor(root)
-    await settle()
-    const upstream = root.querySelector('[data-select-item="upstream"]') as HTMLButtonElement
-    upstream.click()
-    await settle()
+    await selectSource(root, 'upstream')
 
     expect(mocks.sync).toHaveBeenCalledWith('provider', 'key', 'upstream', undefined)
-    expect(root.querySelector('button[aria-label^="倍率设置"]')?.textContent).toContain('跟随上游')
-    expect(root.querySelector('[data-select-value="upstream"]')).toBeNull()
-    expect(root.querySelector('section')).toBeNull()
+    expect(root.querySelector('input[type="number"]')).toBeNull()
+    expect(root.querySelector('[data-multiplier-source="upstream"]')).not.toBeNull()
+    expect(root.querySelector('button[aria-label^="倍率设置"]')).toBeNull()
+    expect(root.textContent).toContain('0.3')
+  })
+
+  it('跟随上游时倍率不可点击编辑', async () => {
+    mocks.sync.mockResolvedValue({ status: 'success', data: { failed: 0 } })
+    const root = mountControl('upstream')
+    await settle()
+
+    expect(root.querySelector('button[aria-label^="倍率设置"]')).toBeNull()
+    expect(root.querySelector('input[type="number"]')).toBeNull()
+    expect(root.textContent).toContain('0.3')
   })
 
   it('手动保存失败时保留倍率草稿并显示行内错误', async () => {
@@ -190,51 +212,38 @@ describe('列表内倍率交互', () => {
 
     openEditor(root)
     await settle()
-    const input = root.querySelector('input[type="number"]') as HTMLInputElement
-    input.value = '0.7'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    await settle()
-    const save = root.querySelector('button[aria-label="保存倍率"]') as HTMLButtonElement
-    save.click()
-    await settle()
+    const input = await editAndBlur(root, '0.7')
 
     const alert = root.querySelector('[role="alert"]') as HTMLElement
     expect(mocks.error).toHaveBeenCalledWith('服务暂不可用')
     expect(input.value).toBe('0.7')
+    expect(root.querySelector('input[type="number"]')).not.toBeNull()
     expect(alert.textContent).toContain('服务暂不可用')
     expect(input.getAttribute('aria-describedby')).toBe(alert.id)
   })
 
-  it('从上游切回手动立即提交当前倍率', async () => {
+  it('从上游切回手动立即按当前倍率提交', async () => {
     mocks.sync.mockResolvedValue({ status: 'success', data: { failed: 0 } })
     const root = mountControl('upstream')
 
-    openEditor(root)
-    await settle()
-    const manual = root.querySelector('[data-select-item="manual"]') as HTMLButtonElement
-    manual.click()
-    await settle()
+    await selectSource(root, 'manual')
 
     expect(mocks.sync).toHaveBeenCalledWith('provider', 'key', 'manual', 0.3)
-    expect(root.querySelector('button[aria-label^="倍率设置"]')?.textContent).toContain('手动')
+    expect(root.querySelector('[data-multiplier-source="manual"]')).not.toBeNull()
+    expect(root.querySelector('button[aria-label^="倍率设置"]')?.textContent).toContain('0.3')
   })
 
   it('自动倍率不可用时恢复手动状态并显示当前行错误', async () => {
     mocks.sync.mockResolvedValue({ status: 'not_configured', message: '请先配置用户认证' })
     const root = mountControl()
 
-    openEditor(root)
-    await settle()
-    const upstream = root.querySelector('[data-select-item="upstream"]') as HTMLButtonElement
-    upstream.click()
-    await settle()
+    await selectSource(root, 'upstream')
 
     expect(mocks.error).toHaveBeenCalledWith('请先配置用户认证')
-    expect(root.querySelector('[data-select-value="manual"]')).not.toBeNull()
+    expect(root.querySelector('[data-multiplier-source="manual"]')).not.toBeNull()
     const alert = root.querySelector('[role="alert"]') as HTMLElement
     expect(alert.textContent).toContain('请先配置用户认证')
     expect(root.querySelector('button[aria-label="倍率来源"]')?.getAttribute('aria-describedby')).toBe(alert.id)
-    expect(root.querySelector('section')).toBeNull()
   })
 
   it('单密钥同步展示处理后的失败原因', async () => {

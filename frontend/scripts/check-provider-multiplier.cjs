@@ -1,6 +1,7 @@
 // 验证实际供应商抽屉中的逐密钥同步入口和响应式布局。
 async (page) => {
-  await page.getByLabel('倍率来源').first().selectOption('upstream')
+  await page.getByLabel('倍率来源').first().click()
+  await page.getByRole('option', { name: '跟随上游', exact: true }).first().click()
   await page.getByText('fixture group', { exact: false }).first().waitFor()
   await page.getByRole('button', { name: '同步上游倍率', exact: true }).first().click()
   for (const width of [900, 1280]) {

@@ -22,100 +22,74 @@
     v-else-if="!actionOnly"
     class="inline-flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-1"
   >
+    <Input
+      v-if="editing"
+      v-model="draftValue"
+      type="number"
+      min="0"
+      step="any"
+      :disabled="busy"
+      :aria-label="legacyT('倍率')"
+      :aria-describedby="errorMessage ? `multiplier-error-${apiKey.id}` : undefined"
+      :autofocus="true"
+      class="h-7 w-[4.5rem] px-1.5 text-xs font-semibold tabular-nums"
+      @blur="saveManual"
+      @keydown.enter.prevent="saveManual"
+      @keydown.esc.prevent="cancelEditing"
+    />
+
     <button
-      v-if="!editing"
+      v-else-if="source === 'manual'"
       type="button"
       :aria-label="`${legacyT('倍率设置')} · ${apiKey.name}`"
-      class="inline-flex min-w-0 items-center gap-2 rounded-md bg-muted/60 px-2.5 py-1 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+      :title="legacyT('点击修改倍率')"
+      class="min-h-7 shrink-0 rounded-md bg-transparent px-2 text-xs font-semibold tabular-nums text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
       :disabled="busy"
       @click="startEditing"
     >
-      <span class="font-semibold tabular-nums text-foreground">{{ displayValue }}</span>
-      <span
-        class="h-1.5 w-1.5 shrink-0 rounded-full"
-        :class="source === 'upstream' ? 'bg-primary' : 'bg-muted-foreground/50'"
-        aria-hidden="true"
-      />
-      <span :class="source === 'upstream' ? 'text-primary' : 'text-muted-foreground'">
-        {{ legacyT(source === 'upstream' ? '跟随上游' : '手动') }}
-      </span>
-      <ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
+      {{ displayValue }}
     </button>
 
-    <div
+    <span
       v-else
-      class="inline-flex min-w-0 items-center gap-1 rounded-md border border-primary/30 bg-background p-0.5 shadow-sm"
+      class="inline-flex min-h-7 shrink-0 items-center rounded-md px-2 text-xs font-semibold tabular-nums text-muted-foreground"
+      :title="legacyT('跟随上游时倍率由上游决定')"
     >
-      <Input
-        v-model="draftValue"
-        type="number"
-        min="0"
-        step="any"
-        :disabled="busy || draftSource === 'upstream'"
-        :aria-label="legacyT('倍率')"
+      {{ displayValue }}
+    </span>
+
+    <Select
+      :model-value="source"
+      @update:model-value="handleSourceChange"
+    >
+      <SelectTrigger
+        class="h-7 min-h-7 w-auto shrink-0 justify-start gap-1.5 rounded-md border-0 bg-[color-mix(in_srgb,var(--muted)_70%,transparent)] px-2 text-xs font-medium text-foreground shadow-none backdrop-blur-none transition-colors hover:bg-muted focus:border-0 focus:ring-2 focus:ring-ring [&>span]:truncate-none [&>svg]:h-3 [&>svg]:w-3 [&>svg]:shrink-0 [&>svg]:text-muted-foreground"
+        :data-multiplier-source="source"
+        :aria-label="legacyT('倍率来源')"
         :aria-describedby="errorMessage ? `multiplier-error-${apiKey.id}` : undefined"
-        :autofocus="true"
-        class="h-7 w-[4.5rem] border-0 bg-transparent px-1.5 text-xs font-semibold tabular-nums shadow-none focus-visible:ring-1 focus-visible:ring-primary/40"
-        @keydown.enter.prevent="saveManual"
-        @keydown.esc.prevent="cancelEditing"
-      />
-
-      <Select
-        :model-value="draftSource"
-        @update:model-value="handleSourceChange"
+        :disabled="busy"
       >
-        <SelectTrigger
-          class="h-7 w-[5.5rem] shrink-0 rounded-md border-0 bg-transparent px-1.5 text-xs shadow-none focus:ring-1 focus:ring-primary/40"
-          :aria-label="legacyT('倍率来源')"
-          :aria-describedby="errorMessage ? `multiplier-error-${apiKey.id}` : undefined"
-          :disabled="busy"
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent
+        :searchable="false"
+        class="min-w-[6.5rem] rounded-xl p-0.5"
+      >
+        <SelectItem
+          v-for="mode in modes"
+          :key="mode.value"
+          :value="mode.value"
+          class="rounded-lg py-1 pl-7 pr-2 text-xs font-medium"
         >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent :searchable="false">
-          <SelectItem
-            v-for="mode in modes"
-            :key="mode.value"
-            :value="mode.value"
-          >
-            {{ legacyT(mode.label) }}
-          </SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        class="h-7 w-7 rounded-md text-primary hover:bg-primary/10"
-        :disabled="busy"
-        :aria-label="legacyT(draftSource === 'manual' ? (busy ? '保存中…' : '保存倍率') : '完成编辑')"
-        @click="commitEditing"
-      >
-        <Loader2
-          v-if="busy"
-          class="h-3.5 w-3.5 animate-spin"
-        />
-        <Check
-          v-else
-          class="h-3.5 w-3.5"
-        />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        class="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-        :disabled="busy"
-        :aria-label="legacyT('取消')"
-        @click="cancelEditing"
-      >
-        <X class="h-3.5 w-3.5" />
-      </Button>
-    </div>
+          {{ legacyT(mode.label) }}
+        </SelectItem>
+      </SelectContent>
+    </Select>
 
     <p
       v-if="errorMessage"
       :id="`multiplier-error-${apiKey.id}`"
-      class="basis-full rounded-md border border-destructive/20 bg-destructive/5 px-2 py-1.5 text-xs leading-4 text-destructive"
+      class="basis-full px-1 pt-0.5 text-xs leading-4 text-destructive"
       role="alert"
     >
       {{ errorMessage }}
@@ -125,9 +99,8 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { BadgePercent, Check, ChevronDown, Loader2, X } from 'lucide-vue-next'
+import { BadgePercent, Loader2 } from 'lucide-vue-next'
 import {
-  Button,
   Input,
   Select,
   SelectContent,
@@ -157,7 +130,6 @@ const { legacyT } = useI18n()
 const { error: showError, success } = useToast()
 const busy = ref(false)
 const editing = ref(false)
-const draftSource = ref<MultiplierSource>('manual')
 const draftValue = ref<string | number>(1)
 const errorMessage = ref('')
 const source = ref<MultiplierSource>(props.apiKey.multiplier_sync?.source === 'upstream' ? 'upstream' : 'manual')
@@ -173,17 +145,15 @@ watch(
     source.value = nextSource === 'upstream' ? 'upstream' : 'manual'
     displayValue.value = nextValue ?? 1
     if (!editing.value) {
-      draftSource.value = source.value
       draftValue.value = displayValue.value
     }
   }
 )
 
-/** 从列表展示态进入编辑态，并以服务端当前值初始化草稿。 */
+/** 点击倍率数字进入编辑态，并以服务端当前值初始化草稿。 */
 function startEditing() {
   if (busy.value) return
   errorMessage.value = ''
-  draftSource.value = source.value
   draftValue.value = displayValue.value
   editing.value = true
 }
@@ -192,41 +162,22 @@ function cancelEditing() {
   if (busy.value) return
   editing.value = false
   errorMessage.value = ''
+  draftValue.value = displayValue.value
 }
 
-function commitEditing() {
-  if (draftSource.value === 'upstream') {
-    editing.value = false
-    errorMessage.value = ''
-    return
-  }
-  void saveManual()
-}
-
-/** 来源切换立即提交；手动倍率数值仍通过 Enter 或确认按钮提交。 */
+/** 来源切换点一下即生效：切到上游立即同步，切回手动沿用当前倍率数值。 */
 function handleSourceChange(value: string) {
   const nextSource: MultiplierSource = value === 'upstream' ? 'upstream' : 'manual'
-  if (busy.value || nextSource === draftSource.value) return
-  draftSource.value = nextSource
+  if (busy.value || nextSource === source.value) return
   errorMessage.value = ''
 
-  if (nextSource === 'manual') {
-    const value = Number(draftValue.value)
-    if (!Number.isFinite(value) || value < 0) {
-      errorMessage.value = legacyT('请输入大于或等于 0 的有效倍率')
-      draftSource.value = source.value
-      showError(errorMessage.value)
-      return
-    }
-    void runSync('manual', value, true)
-    return
-  }
-
-  void runSync('upstream', undefined, true)
+  if (nextSource === 'upstream') void runSync('upstream', undefined, true)
+  else void runSync('manual', editing.value ? Number(draftValue.value) : displayValue.value, true)
 }
 
+/** 失焦或回车保存草稿倍率；失败时保留输入框，便于直接改正后重试。 */
 async function saveManual() {
-  if (busy.value) return
+  if (busy.value || !editing.value) return
   const value = Number(draftValue.value)
   if (draftValue.value === '' || !Number.isFinite(value) || value < 0) {
     errorMessage.value = legacyT('请输入大于或等于 0 的有效倍率')
@@ -253,7 +204,6 @@ async function runSync(mode?: MultiplierSource, multiplier?: number, closeOnSucc
 
     if (failureMessage) {
       errorMessage.value = failureMessage
-      draftSource.value = source.value
       showError(failureMessage)
       return
     }
@@ -271,7 +221,6 @@ async function runSync(mode?: MultiplierSource, multiplier?: number, closeOnSucc
   } catch {
     const failureMessage = legacyT('倍率操作失败，请检查网络后重试')
     errorMessage.value = failureMessage
-    draftSource.value = source.value
     showError(failureMessage)
   } finally {
     busy.value = false
