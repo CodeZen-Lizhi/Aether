@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>使用记录筛选验收</title></head><body>
+<div id="header-actions-right"></div><button id="finish">结束活跃请求</button><div id="app"></div>
+<script type="module">
+import {createApp} from 'vue';
+import {createPinia} from 'pinia';
+import Usage from '/src/views/shared/Usage.vue';
+import {usageApi} from '/src/api/usage.ts';
+import '/src/style.css';
+// 固定接口数据挂载真实使用记录页；此入口只证明 UI 与轮询，不证明真实后端。
+const now=new Date().toISOString();
+const rows=[['stream','completed',true],['standard','completed',false],['failed','failed',true],['pending','pending',true],['streaming','streaming',true]].map(([id,status,stream])=>({id,model:id,provider:'fixture',api_format:'openai:responses',is_stream:stream,upstream_is_stream:stream,client_requested_stream:stream,status,input_tokens:1,output_tokens:1,total_tokens:2,cost:0,created_at:now,updated_at:now,first_byte_time_ms:status==='streaming'?10:null}));
+// 保留查询参数，核对下拉事件是否实际触发分页请求。
+window.fixtureRequests=[];
+usageApi.getAllUsageRecords=async params=>{
+ window.fixtureRequests.push({...params});
+ const result=rows.filter(row=> params.status==='stream'?row.status==='completed'&&row.is_stream:params.status==='standard'?row.status==='completed'&&!row.is_stream:params.status==='active'?['pending','streaming'].includes(row.status):true);
+ return {records:structuredClone(result),total:result.length,total_is_estimated:false};
+};
+usageApi.getActiveRequests=async ids=>({requests:structuredClone(rows.filter(row=>ids?ids.includes(row.id):['pending','streaming'].includes(row.status)))});
+usageApi.getUsageStats=async()=>({});
+usageApi.getUsageByModel=async()=>[];
+usageApi.getUsageByProvider=async()=>[];
+usageApi.getUsageByApiFormat=async()=>[];
+document.querySelector('#finish').onclick=()=>{for(const row of rows){if(['pending','streaming'].includes(row.status)){row.status='completed';row.updated_at=new Date().toISOString();}}};
+createApp(Usage).use(createPinia()).mount('#app');
+</script></body></html>

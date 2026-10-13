@@ -4,10 +4,9 @@ import {
   hasUsageFallback,
   hasUsageRetry,
   isUsageRecordFailed,
-  isUsageUpstreamStream,
   isUsageWebSocket,
-  resolveDisplayRequestStatus,
 } from '../utils/status'
+import { matchesUsageLiveTypeFilter } from '../utils/recordFilterPolicy'
 
 export interface UseUsageFiltersOptions {
   /** 所有记录的响应式引用 */
@@ -16,6 +15,7 @@ export interface UseUsageFiltersOptions {
   onFilterChange?: () => void
 }
 
+/** 管理本地筛选状态，类型判断与管理员分页列表的实时过滤保持一致。 */
 export function useUsageFilters(options: UseUsageFiltersOptions) {
   const { allRecords, onFilterChange } = options
 
@@ -72,23 +72,8 @@ export function useUsageFilters(options: UseUsageFiltersOptions) {
     if (filterStatus.value !== '__all__') {
       if (filterStatus.value === 'websocket') {
         records = records.filter(record => isUsageWebSocket(record))
-      } else if (filterStatus.value === 'stream') {
-        records = records.filter(record =>
-          isUsageUpstreamStream(record)
-          && !isUsageWebSocket(record)
-          && !isUsageRecordFailed(record)
-        )
-      } else if (filterStatus.value === 'standard') {
-        records = records.filter(record =>
-          !isUsageUpstreamStream(record)
-          && !isUsageWebSocket(record)
-          && !isUsageRecordFailed(record)
-        )
-      } else if (filterStatus.value === 'active') {
-        records = records.filter(record =>
-          resolveDisplayRequestStatus(record) === 'pending' ||
-          resolveDisplayRequestStatus(record) === 'streaming'
-        )
+      } else if (['stream', 'standard', 'active'].includes(filterStatus.value)) {
+        records = records.filter(record => matchesUsageLiveTypeFilter(record, filterStatus.value))
       } else if (filterStatus.value === 'failed') {
         records = records.filter(record => isUsageRecordFailed(record))
       } else if (filterStatus.value === 'cancelled') {

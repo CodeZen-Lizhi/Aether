@@ -81,6 +81,7 @@ import {
   getDateRangeFromPeriod
 } from '@/features/usage/composables'
 import { reconcileActiveRequestDiscovery } from '@/features/usage/utils/activeRequestDiscovery'
+import { matchesUsageLiveTypeFilter } from '@/features/usage/utils/recordFilterPolicy'
 import {
   mergeUsageRecordErrorMessage,
   mergeUsageRecordFirstByteTimeMs,
@@ -217,11 +218,12 @@ function hasUnknownModelOrProvider(record: UsageRecord): boolean {
   return false
 }
 
-// 隐藏 unknown 的开关对管理员当前页生效。
+// 轮询更新后继续应用类型条件，避免活跃行终结后仍留在筛选结果里。
 const filteredRecords = computed(() => {
-  return hideUnknownRecords.value
-    ? currentRecords.value.filter(record => !hasUnknownModelOrProvider(record))
-    : [...currentRecords.value]
+  return currentRecords.value.filter(record =>
+    (!hideUnknownRecords.value || !hasUnknownModelOrProvider(record))
+    && matchesUsageLiveTypeFilter(record, filterStatus.value)
+  )
 })
 
 // 获取活跃请求的 ID 列表
@@ -259,6 +261,7 @@ async function loadActiveRequestUpdates(ids?: string[]) {
   return usageApi.getActiveRequests(ids, timeRange.value)
 }
 
+/** 同步当前页活跃请求；终态使活跃筛选失效时重取分页及总数。 */
 async function pollActiveRequests() {
   if (!isPageVisible.value) return
   if (!hasActiveRequests.value) return
@@ -444,8 +447,15 @@ async function pollActiveRequests() {
       }
     }
 
-    // 不再因活跃请求完成而全表刷新，字段已在上方就地更新
-    // 未知请求（shouldRefresh 由 !record 触发）理论上不应出现在已知 ID 轮询中，忽略即可
+    if (filterStatus.value === 'active' && currentRecords.value.some(record =>
+      !matchesUsageLiveTypeFilter(record, 'active')
+    )) {
+      await loadRecords(
+        { page: currentPage.value, pageSize: pageSize.value },
+        getCurrentFilters(),
+        timeRange.value,
+      )
+    }
   } catch (error) {
     log.error('轮询活跃请求状态失败:', error)
   } finally {

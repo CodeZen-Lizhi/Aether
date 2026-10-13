@@ -1627,6 +1627,74 @@ async fn gateway_handles_admin_usage_records_locally_with_trusted_admin_principa
     upstream_handle.abort();
 }
 
+/// 通过真实 HTTP 验证类型筛选、分页总数及终态与活跃状态的隔离。
+#[tokio::test]
+async fn gateway_filters_admin_usage_records_by_visible_type() {
+    let mut rows = Vec::new();
+    for (id, status, stream) in [
+        ("stream", "completed", true),
+        ("standard", "completed", false),
+        ("failed-stream", "failed", true),
+        ("failed-standard", "failed", false),
+        ("cancelled", "cancelled", true),
+        ("pending", "pending", false),
+        ("streaming", "streaming", true),
+    ] {
+        let mut row = sample_usage_row(
+            id,
+            id,
+            Some("user-1"),
+            None,
+            None,
+            "OpenAI",
+            "gpt-5",
+            status,
+            10,
+            0,
+            0.0,
+            0.0,
+            DAY_2_UNIX_SECS,
+        );
+        row.is_stream = stream;
+        rows.push(row);
+    }
+    let usage = Arc::new(InMemoryUsageReadRepository::seed(rows));
+    let state = AppState::new()
+        .expect("gateway should build")
+        .with_data_state_for_tests(GatewayDataState::with_usage_reader_for_tests(usage));
+    let (gateway_url, handle) = start_server(build_router_with_state(state)).await;
+    for (filter, expected) in [
+        ("stream", vec!["stream"]),
+        ("standard", vec!["standard"]),
+        ("active", vec!["pending", "streaming"]),
+    ] {
+        for total_only in [false, true] {
+            let response = admin_request(reqwest::Client::new().get(format!(
+                "{gateway_url}/api/admin/usage/records?start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0&status={filter}&include_total=true&total_only={total_only}"
+            ))).send().await.expect("HTTP request should succeed");
+            assert_eq!(response.status(), StatusCode::OK);
+            let body: serde_json::Value = response.json().await.expect("JSON response");
+            assert_eq!(body["total"].as_u64(), Some(expected.len() as u64));
+            let mut ids = body["records"]
+                .as_array()
+                .expect("records")
+                .iter()
+                .map(|row| row["id"].as_str().expect("id"))
+                .collect::<Vec<_>>();
+            ids.sort_unstable();
+            assert_eq!(
+                ids,
+                if total_only {
+                    Vec::new()
+                } else {
+                    expected.clone()
+                }
+            );
+        }
+    }
+    handle.abort();
+}
+
 #[tokio::test]
 async fn gateway_filters_admin_usage_records_with_unknown_model_or_provider() {
     let (upstream_url, upstream_hits, upstream_handle) =

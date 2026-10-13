@@ -49,6 +49,7 @@ fn sort_usage_newest_first(items: &mut [StoredRequestUsageAudit]) {
     });
 }
 
+/// 将类型筛选映射为分页和计数共用的查询；HTTP 类型只包含已完成记录。
 fn apply_admin_usage_status_filter(query: &mut UsageAuditListQuery, status: Option<&str>) {
     let Some(status) = status
         .map(str::trim)
@@ -62,10 +63,12 @@ fn apply_admin_usage_status_filter(query: &mut UsageAuditListQuery, status: Opti
         "stream" => {
             query.is_stream = Some(true);
             query.is_websocket = Some(false);
+            query.statuses = Some(vec!["completed".to_string()]);
         }
         "standard" => {
             query.is_stream = Some(false);
             query.is_websocket = Some(false);
+            query.statuses = Some(vec!["completed".to_string()]);
         }
         "websocket" | "ws" => query.is_websocket = Some(true),
         "error" | "failed" => query.error_only = true,
@@ -1226,6 +1229,7 @@ mod tests {
                 build_admin_usage_records_query(100, 200, Some(&raw_query), None, None);
             assert_eq!(list_query.is_stream, Some(expected_stream));
             assert_eq!(list_query.is_websocket, Some(false));
+            assert_eq!(list_query.statuses, Some(vec!["completed".to_string()]));
 
             let keyword_query = build_admin_usage_keyword_search_query(
                 &list_query,
@@ -1239,6 +1243,7 @@ mod tests {
             );
             assert_eq!(keyword_query.is_stream, Some(expected_stream));
             assert_eq!(keyword_query.is_websocket, Some(false));
+            assert_eq!(keyword_query.statuses, Some(vec!["completed".to_string()]));
         }
     }
 }
