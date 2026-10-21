@@ -4,6 +4,7 @@ use super::{
 };
 use serde_json::{json, Map, Value};
 
+/// API Key 查询余额和倍率；可选账号凭据用于读取密钥所属分组名。
 pub(super) fn spec() -> ProviderOpsArchitectureSpec {
     let credentials_schema = json!({
         "type": "object",
@@ -12,6 +13,13 @@ pub(super) fn spec() -> ProviderOpsArchitectureSpec {
                 "type": "string",
                 "title": "API Key",
                 "description": "提供商签发的 API Key",
+                "x-sensitive": true,
+                "x-input-type": "password"
+            },
+            "refresh_token": {
+                "type": "string",
+                "title": "Refresh Token（分组名同步，可选）",
+                "description": "SUB2API 账号的 Refresh Token；填写后同步倍率时同时读取密钥所属分组名，不填写则仅同步倍率",
                 "x-sensitive": true,
                 "x-input-type": "password"
             },
@@ -27,7 +35,8 @@ pub(super) fn spec() -> ProviderOpsArchitectureSpec {
         "x-currency": "USD",
         "x-field-groups": [
             { "fields": ["base_url"] },
-            { "fields": ["api_key"] }
+            { "fields": ["api_key"] },
+            { "fields": ["refresh_token"] }
         ],
         "x-validation": [
             {

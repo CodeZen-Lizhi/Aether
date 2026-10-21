@@ -34,6 +34,90 @@ use crate::data::{GatewayDataConfig, GatewayDataState};
 
 const PROVIDER_OPS_TEST_STACK_BYTES: usize = 16 * 1024 * 1024;
 
+/// API Key 模板有账号凭据时同时同步分组名，倍率仍取计费接口的实际值。
+#[test]
+fn gateway_usage_api_group_name_roundtrip() {
+    run_provider_ops_test("usage_api_group_name", usage_api_group_name_roundtrip);
+}
+
+/// 真实 HTTP 覆盖旧模板存量凭据、续期缓存、同账号精确匹配和失败保留。
+async fn usage_api_group_name_roundtrip() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let available = Arc::new(AtomicBool::new(true));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let gate = available.clone();
+    let counter = refreshes.clone();
+    let upstream = Router::new()
+        .route("/api/v1/auth/refresh", post(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async { Json(json!({"code":0,"data":{"access_token":"account-token","refresh_token":"rotated-token","expires_in":3600}})) }
+        }))
+        .route("/api/v1/groups/rates", get(|| async { Json(json!({"code":0,"data":{}})) }))
+        .route("/api/v1/groups/available", get(|| async { Json(json!({"code":0,"data":[{"id":1,"name":"实际高缓分组","rate_multiplier":0.5}]})) }))
+        .route("/api/v1/keys", get(move || { let gate = gate.clone(); async move {
+            Json(if gate.load(Ordering::SeqCst) {
+                json!({"code":0,"data":{"total":2,"items":[{"key":"other-key","group_id":2,"name":"其他密钥"},{"key":"sk-local-secret","group_id":1,"name":"上游密钥名称"}]}})
+            } else { json!({"code":1,"message":"账号查询失败"}) })
+        }}))
+        .route("/v1/sub2api/billing", get(|| async { Json(json!({"effective_rate_multiplier":0.14})) }));
+    let (base, upstream_handle) = start_server(upstream).await;
+    let mut provider = sample_provider("usage-group", "openai", 10);
+    provider.config = Some(
+        json!({"provider_ops":{"architecture_id":"usage_api","base_url":base,"connector":{"auth_type":"api_key","config":{},"credentials":{"api_key":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"sk-local-secret").unwrap(),"refresh_token":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"original-token").unwrap()}},"actions":{}}}),
+    );
+    let mut key = super::super::sample_key(
+        "usage-group-key",
+        "usage-group",
+        "openai:chat",
+        "sk-local-secret",
+    );
+    key.name = "旧名称".to_string();
+    key.upstream_metadata = Some(json!({"multiplier":{"source":"upstream"}}));
+    let repo = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider],
+        vec![],
+        vec![key],
+    ));
+    let state = AppState::new().unwrap().with_data_state_for_tests(
+        GatewayDataState::with_provider_catalog_repository_for_tests(repo.clone())
+            .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+    );
+    let (url, gateway_handle) = start_server(build_router_with_state(state)).await;
+    let client = reqwest::Client::new();
+    for attempt in 0..3 {
+        let response = client
+            .post(format!(
+                "{url}/api/admin/provider-ops/providers/usage-group/actions/sync_multiplier"
+            ))
+            .header(GATEWAY_HEADER, "rust-phase3b")
+            .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+            .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+            .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+            .json(&json!({"config":{"key_id":"usage-group-key"}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: serde_json::Value = response.json().await.unwrap();
+        let stored = repo
+            .list_keys_by_provider_ids(&["usage-group".to_string()])
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(stored.name, "实际高缓分组", "{payload}");
+        assert_eq!(stored.default_rate_multiplier, 0.14);
+        if attempt == 2 {
+            assert_eq!(payload["data"]["failed"], 1);
+        }
+        if attempt == 1 {
+            available.store(false, Ordering::SeqCst);
+        }
+    }
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    gateway_handle.abort();
+    upstream_handle.abort();
+}
+
 /// 通过真实 HTTP 验证 New API、API Key 计费查询及 auto 分组拒绝切换。
 #[test]
 fn gateway_multiplier_templates_roundtrip() {

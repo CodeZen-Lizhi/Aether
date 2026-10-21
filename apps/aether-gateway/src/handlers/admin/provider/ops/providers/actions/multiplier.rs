@@ -68,7 +68,7 @@ pub(super) async fn sync_multiplier(
     }
 }
 
-/// 条件同步倍率及 SUB2API 分组名；匹配失败保留倍率和名称并记录失败状态。
+/// 条件同步倍率及账号可查询的 SUB2API 分组名；匹配失败保留倍率和名称。
 async fn run_sync(
     state: &AdminAppState<'_>,
     provider: &StoredProviderCatalogProvider,
@@ -177,8 +177,15 @@ async fn run_sync(
         .as_ref()
         .and_then(|value| value.get("provider_ops"))
         .cloned();
+    // API Key 计费接口不含分组名；有账号凭据时复用账号查询，但保留计费接口倍率。
+    let sync_group_name = architecture == "sub2api"
+        || (architecture == "usage_api"
+            && credentials
+                .get("refresh_token")
+                .and_then(Value::as_str)
+                .is_some_and(|token| !token.trim().is_empty()));
     let upstream_request = async {
-        if architecture != "sub2api" {
+        if !sync_group_name {
             return Ok((Vec::new(), Vec::new(), Map::new()));
         }
         let (token, updated, _) =
@@ -262,32 +269,42 @@ async fn run_sync(
     let resolved_keys = futures_util::stream::iter(keys.into_iter().map(|key| {
         let upstream = &upstream;
         async move {
-            let resolved = if architecture != "sub2api" {
-                if let Some(secret) = key
+            let resolved = async {
+                let secret = key
                     .encrypted_api_key
                     .as_deref()
                     .and_then(|value| state.decrypt_catalog_secret_with_fallbacks(value))
-                {
-                    resolve_other_multiplier(state, architecture, base, credentials, proxy, &secret)
-                        .await
+                    .ok_or_else(|| "本地密钥无法解密".to_string())?;
+                let group = if sync_group_name {
+                    let (upstream_keys, groups, rates) = upstream.as_ref().map_err(Clone::clone)?;
+                    Some(resolve_sub2api_key_multiplier(
+                        &secret,
+                        upstream_keys,
+                        groups,
+                        rates,
+                    )?)
                 } else {
-                    Err("本地密钥无法解密".to_string())
+                    None
+                };
+                if architecture == "sub2api" {
+                    return group.ok_or_else(|| "未取得上游分组".to_string());
                 }
-            } else {
-                match &upstream {
-                    Ok((upstream_keys, groups, rates)) => key
-                        .encrypted_api_key
-                        .as_deref()
-                        .and_then(|ciphertext| {
-                            state.decrypt_catalog_secret_with_fallbacks(ciphertext)
-                        })
-                        .ok_or_else(|| "本地密钥无法解密".to_string())
-                        .and_then(|secret| {
-                            resolve_sub2api_key_multiplier(&secret, upstream_keys, groups, rates)
-                        }),
-                    Err(error) => Err(error.clone()),
+                let mut value = resolve_other_multiplier(
+                    state,
+                    architecture,
+                    base,
+                    credentials,
+                    proxy,
+                    &secret,
+                )
+                .await?;
+                if let Some(group) = group {
+                    value.group_id = group.group_id;
+                    value.group_name = group.group_name;
                 }
-            };
+                Ok(value)
+            }
+            .await;
             (key, resolved)
         }
     }))
@@ -319,7 +336,7 @@ async fn run_sync(
         let mut name = None;
         let multiplier = match resolved {
             Ok(value) => {
-                if architecture == "sub2api" {
+                if sync_group_name {
                     name = value.group_name.clone();
                 }
                 metadata.insert("source".to_string(), json!("upstream"));
