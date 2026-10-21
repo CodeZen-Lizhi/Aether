@@ -68,7 +68,7 @@ pub(super) async fn sync_multiplier(
     }
 }
 
-/// 读取上游后逐项条件写入；匹配失败保留倍率并持久化失败状态。
+/// 条件同步倍率及 SUB2API 分组名；匹配失败保留倍率和名称并记录失败状态。
 async fn run_sync(
     state: &AdminAppState<'_>,
     provider: &StoredProviderCatalogProvider,
@@ -133,6 +133,7 @@ async fn run_sync(
                     expected_provider_ops: None,
                     metadata,
                     multiplier: manual_multiplier.and_then(Value::as_f64),
+                    name: None,
                 },
             )
             .await
@@ -315,8 +316,12 @@ async fn run_sync(
             "generation".to_string(),
             json!(uuid::Uuid::new_v4().to_string()),
         );
+        let mut name = None;
         let multiplier = match resolved {
             Ok(value) => {
+                if architecture == "sub2api" {
+                    name = value.group_name.clone();
+                }
                 metadata.insert("source".to_string(), json!("upstream"));
                 metadata.insert("status".to_string(), json!("success"));
                 metadata.insert("error".to_string(), Value::Null);
@@ -340,6 +345,7 @@ async fn run_sync(
                     expected_provider_ops: expected_provider_ops.clone(),
                     metadata: Value::Object(metadata.clone()),
                     multiplier,
+                    name: name.clone(),
                 },
             )
             .await
@@ -348,7 +354,9 @@ async fn run_sync(
             failed += 1;
             results.push(json!({"key_id":key.id,"status":"conflict","error":"密钥配置或同步结果已变化，请重试"}));
         } else if let Some(value) = multiplier {
-            if value == key.default_rate_multiplier {
+            if value == key.default_rate_multiplier
+                && name.as_ref().is_none_or(|name| name == &key.name)
+            {
                 unchanged += 1;
             } else {
                 updated += 1;

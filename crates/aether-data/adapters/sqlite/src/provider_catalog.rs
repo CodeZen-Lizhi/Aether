@@ -2005,7 +2005,7 @@ WHERE id = ?
         Ok(rows_affected > 0)
     }
 
-    /// 条件写入倍率和来源元数据；凭据或来源变化时拒绝旧结果。
+    /// 条件写入倍率、可选名称和元数据；凭据、来源或待改名称基线变化时拒绝旧结果。
     pub async fn compare_and_update_key_multiplier(
         &self,
         update: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyMultiplierUpdate,
@@ -2036,10 +2036,11 @@ WHERE id = ?
             .map(serde_json::to_string)
             .transpose()
             .map_err(|error| DataLayerError::UnexpectedValue(error.to_string()))?;
-        let rows = sqlx::query("UPDATE provider_api_keys SET upstream_metadata = json_set(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier', json(?)), default_rate_multiplier = COALESCE(?, default_rate_multiplier), updated_at = ? WHERE id = ? AND provider_id = ? AND auth_type = ? AND api_key IS ? AND default_rate_multiplier = ? AND json_type(COALESCE(NULLIF(upstream_metadata, ''), '{}')) = 'object' AND json_extract(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier') IS json_extract(json_object('value', json(?)), '$.value') AND (? IS NULL OR EXISTS (SELECT 1 FROM providers p WHERE p.id = provider_api_keys.provider_id AND json_extract(p.config, '$.provider_ops') IS json_extract(json_object('value', json(?)), '$.value')))")
-            .bind(metadata).bind(update.multiplier).bind(current_unix_secs() as i64)
+        let rows = sqlx::query("UPDATE provider_api_keys SET upstream_metadata = json_set(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier', json(?)), default_rate_multiplier = COALESCE(?, default_rate_multiplier), name = COALESCE(?, name), updated_at = ? WHERE id = ? AND provider_id = ? AND auth_type = ? AND api_key IS ? AND default_rate_multiplier = ? AND json_type(COALESCE(NULLIF(upstream_metadata, ''), '{}')) = 'object' AND json_extract(COALESCE(NULLIF(upstream_metadata, ''), '{}'), '$.multiplier') IS json_extract(json_object('value', json(?)), '$.value') AND (? IS NULL OR EXISTS (SELECT 1 FROM providers p WHERE p.id = provider_api_keys.provider_id AND json_extract(p.config, '$.provider_ops') IS json_extract(json_object('value', json(?)), '$.value'))) AND (? IS NULL OR name = ?)")
+            .bind(metadata).bind(update.multiplier).bind(update.name.as_deref()).bind(current_unix_secs() as i64)
             .bind(&expected.id).bind(&expected.provider_id).bind(&expected.auth_type)
             .bind(expected.encrypted_api_key.as_deref()).bind(expected.default_rate_multiplier).bind(previous).bind(expected_ops.as_deref()).bind(expected_ops.as_deref())
+            .bind(update.name.as_deref()).bind(&expected.name)
             .execute(&mut *self.source.acquire().await.map_sql_err()?).await.map_sql_err()?.rows_affected();
         Ok(rows > 0)
     }
@@ -3635,6 +3636,7 @@ mod tests {
             expected_key: key.clone(),
             metadata: json!({"source":"upstream","generation":"v2","status":"success"}),
             multiplier: Some(0.3),
+            name: Some("分组名称".to_string()),
         };
         assert!(repository
             .compare_and_update_key_multiplier(&stale)
@@ -3650,6 +3652,16 @@ mod tests {
             .unwrap()
             .remove(0);
         assert_eq!(current.default_rate_multiplier, 0.3);
+        assert_eq!(current.name, "分组名称");
+        let mut wrong_name = current.clone();
+        wrong_name.name = "过期名称".to_string();
+        assert!(!repository
+            .compare_and_update_key_multiplier(&ProviderCatalogKeyMultiplierUpdate {
+                expected_key: wrong_name,
+                ..stale.clone()
+            })
+            .await
+            .unwrap());
         assert_eq!(
             current.upstream_metadata.as_ref().unwrap()["other"]["keep"],
             true
@@ -3666,6 +3678,7 @@ mod tests {
             expected_provider_ops: Some(ops.clone()),
             metadata: json!({"source":"upstream"}),
             multiplier: Some(0.8),
+            name: None,
         };
         assert!(!repository
             .compare_and_update_key_multiplier(&guarded)
@@ -3696,6 +3709,7 @@ mod tests {
                 expected_key: current,
                 metadata: json!({"source":"upstream","generation":"failed","status":"failed","error":"认证失败"}),
                 multiplier: None,
+                name: None,
             })
             .await
             .unwrap());
@@ -3705,6 +3719,7 @@ mod tests {
             .unwrap()
             .remove(0);
         assert_eq!(current.default_rate_multiplier, 0.3);
+        assert_eq!(current.name, "分组名称");
         assert_eq!(
             current.upstream_metadata.as_ref().unwrap()["multiplier"]["source"],
             "upstream"
@@ -3718,6 +3733,7 @@ mod tests {
             expected_key: current.clone(),
             metadata: json!({"source":"manual","generation":"v3"}),
             multiplier: None,
+            name: None,
         };
         assert!(repository
             .compare_and_update_key_multiplier(&manual)

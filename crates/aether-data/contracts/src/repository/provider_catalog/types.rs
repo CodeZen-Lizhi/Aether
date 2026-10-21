@@ -35,6 +35,8 @@ pub struct ProviderCatalogKeyMultiplierUpdate {
     pub metadata: serde_json::Value,
     /// 成功时写入生效倍率；失败或切换模式时为空，保留现值。
     pub multiplier: Option<f64>,
+    /// 成功同步时可选的新名称；None 保留现名，写入时核对名称基线。
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

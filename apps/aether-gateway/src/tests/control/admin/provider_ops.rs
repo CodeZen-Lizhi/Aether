@@ -423,12 +423,12 @@ fn gateway_sub2api_multiplier_sync_roundtrip() {
     );
 }
 
-/// 使用隔离账号和上游响应，验证仅处理本地跟随上游密钥。
+/// 使用隔离账号验证分组名同步，手动和失败密钥保留原名。
 async fn multiplier_sync_roundtrip() {
     let upstream = Router::new()
         .route("/api/v1/groups/rates", get(|| async { Json(json!({"code":0,"data":{"1":0.0}})) }))
         .route("/api/v1/groups/available", get(|| async { Json(json!({"code":0,"data":[{"id":1,"name":"test","rate_multiplier":0.5}]})) }))
-        .route("/api/v1/keys", get(|| async { Json(json!({"code":0,"data":{"total":3,"items":[{"key":"follow","group_id":1},{"key":"manual","group_id":1},{"key":"not-local","group_id":1}]}})) }))
+        .route("/api/v1/keys", get(|| async { Json(json!({"code":0,"data":{"total":3,"items":[{"key":"follow","name":"upstream-key-name","group_id":1},{"key":"manual","group_id":1},{"key":"not-local","group_id":1}]}})) }))
         .route("/api/v1/auth/me", get(|| async { Json(json!({"code":0,"data":{"balance":8.5,"points":0}})) }))
         .route("/api/v1/subscriptions/summary", get(|| async { Json(json!({"code":0,"data":{}})) }));
     let (upstream_url, upstream_handle) = start_server(upstream).await;
@@ -440,6 +440,7 @@ async fn multiplier_sync_roundtrip() {
         super::super::sample_key("follow-key", "multiplier-provider", "openai:chat", "follow");
     follow.upstream_metadata =
         Some(json!({"multiplier":{"source":"upstream","generation":"original"}}));
+    follow.name = "原本地名称".to_string();
     let mut missing = super::super::sample_key(
         "missing-key",
         "multiplier-provider",
@@ -449,6 +450,8 @@ async fn multiplier_sync_roundtrip() {
     missing.upstream_metadata = Some(json!({"multiplier":{"source":"upstream"}}));
     let manual =
         super::super::sample_key("manual-key", "multiplier-provider", "openai:chat", "manual");
+    let manual_name = manual.name.clone();
+    let missing_name = missing.name.clone();
     let repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
         vec![provider],
         vec![],
@@ -489,6 +492,18 @@ async fn multiplier_sync_roundtrip() {
     assert_eq!(keys.len(), 3);
     let follow = keys.iter().find(|key| key.id == "follow-key").unwrap();
     assert_eq!(follow.default_rate_multiplier, 0.0);
+    assert_eq!(follow.name, "test");
+    assert_eq!(
+        keys.iter().find(|key| key.id == "manual-key").unwrap().name,
+        manual_name
+    );
+    assert_eq!(
+        keys.iter()
+            .find(|key| key.id == "missing-key")
+            .unwrap()
+            .name,
+        missing_name
+    );
     assert_eq!(
         follow.upstream_metadata.as_ref().unwrap()["multiplier"]["source"],
         "manual"

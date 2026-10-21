@@ -1223,7 +1223,7 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
         Ok(true)
     }
 
-    /// 在同一写锁内核对倍率基线并合并命名空间，保留其他运行状态。
+    /// 同一写锁内核对倍率及可选名称基线并更新，保留其他运行状态。
     async fn compare_and_update_key_multiplier(
         &self,
         update: &aether_data_contracts::repository::provider_catalog::ProviderCatalogKeyMultiplierUpdate,
@@ -1257,6 +1257,7 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
             return Ok(false);
         };
         if key.provider_id != expected.provider_id
+            || (update.name.is_some() && key.name != expected.name)
             || key.auth_type != expected.auth_type
             || key.encrypted_api_key != expected.encrypted_api_key
             || key.default_rate_multiplier != expected.default_rate_multiplier
@@ -1279,6 +1280,9 @@ impl ProviderCatalogWriteRepository for InMemoryProviderCatalogReadRepository {
         key.upstream_metadata = Some(Value::Object(metadata));
         if let Some(multiplier) = update.multiplier {
             key.default_rate_multiplier = multiplier;
+        }
+        if let Some(name) = &update.name {
+            key.name = name.clone();
         }
         key.updated_at_unix_secs = Some(current_unix_secs());
         Ok(true)

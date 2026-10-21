@@ -11,7 +11,7 @@ pub struct Sub2ApiKeyMultiplier {
     pub multiplier: f64,
 }
 
-/// 按完整密钥匹配并解析倍率；列表及专属倍率必须来自同一站点和账号。
+/// 按完整密钥匹配并解析倍率及非空分组名；列表及专属倍率须来自同一站点和账号。
 pub fn resolve_sub2api_key_multiplier(
     secret: &str,
     keys: &[Value],
@@ -58,6 +58,17 @@ pub fn resolve_sub2api_key_multiplier(
         group_name: group
             .and_then(|group| group.get("name"))
             .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .or_else(|| {
+                groups
+                    .iter()
+                    .find(|group| group.get("id").and_then(Value::as_i64) == Some(group_id))
+                    .and_then(|group| group.get("name"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+            })
             .map(ToOwned::to_owned),
         multiplier,
     })
@@ -67,6 +78,25 @@ pub fn resolve_sub2api_key_multiplier(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// 分组名优先使用嵌套对象，空白时回退同 ID 列表，绝不使用密钥名。
+    #[test]
+    fn group_name_uses_group_only_and_ignores_blank_names() {
+        for (nested, listed, expected) in [
+            (" 分组甲 ", "分组乙", Some("分组甲")),
+            ("  ", " 分组乙 ", Some("分组乙")),
+            ("", "  ", None),
+        ] {
+            let keys = vec![
+                json!({"key":"secret","name":"密钥名称","group_id":1,"group":{"name":nested,"rate_multiplier":0.5}}),
+            ];
+            let groups = vec![json!({"id":1,"name":listed})];
+            let result =
+                resolve_sub2api_key_multiplier("secret", &keys, &groups, &serde_json::Map::new())
+                    .unwrap();
+            assert_eq!(result.group_name.as_deref(), expected);
+        }
+    }
 
     /// 验证专属零倍率覆盖默认值，并且只匹配指定密钥。
     #[test]
