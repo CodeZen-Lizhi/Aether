@@ -15,3 +15,5 @@
 实际验证：门禁 3 项共 5 个测试通过，耗时 158.649 秒。真实本地 HTTP 验证分组名而非上游密钥名、手动/未匹配保留；SQLite 验证名称与倍率写后读取、过期名称基线拒绝及失败保留；解析验证空白名称和同分组列表回退。证据：`.cache/delivery/sub2api-name/evidence/result.json`。独立 reviewer 零发现，verifier 确认所有进程结束、无零测试。已执行 cargo fmt 和 git diff --check。
 
 限制：未连接真实 SUB2API 账号，未做浏览器/桌面页面或安装包验证；当前结果证明后端隔离 HTTP 与 SQLite 行为，不代表已安装桌面应用已更新。既有 dispatch/refs.rs unreachable pattern 编译警告与本次无关。
+
+后续交付：用户授权提交、push 和打包。功能提交 `8170656f2` 已推送 `codex/tauri-macos`；构建 `0.1.58` Apple Silicon APP/DMG，build:verified 四项门禁通过，实际包内网关验证桌面会话、管理页面资源、代理、持久化及退出。证据 `.cache/delivery/sub2api-package/evidence/result.json`。版本递增导致外层构建前指纹失效，已按构建后快照重新关联有效门禁，未重复构建。未安装替换、未操作真实账号或原生窗口；使用本地 ad-hoc 签名，无 Apple 公证。
