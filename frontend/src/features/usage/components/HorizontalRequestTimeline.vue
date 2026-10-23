@@ -28,9 +28,8 @@
       <Card>
         <div
           class="trace-card"
-          @keydown="handlePagerKeydown"
         >
-          <!-- 概览信息 -->
+          <!-- 链路概览 -->
           <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
             <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h4 class="text-sm font-semibold whitespace-nowrap">
@@ -48,20 +47,106 @@
                 {{ getFinalStatusLabel(computedFinalStatus) }}
               </span>
             </div>
-            <div class="text-sm text-muted-foreground">
-              {{ formatLatency(totalTraceLatency) }}
-            </div>
+                <div
+                  class="trace-latency"
+                  data-trace-latency
+                >
+                  {{ formatLatency(totalTraceLatency) }}
+                </div>
           </div>
 
-          <!-- 选中详情面板 -->
-          <Transition name="slide-up">
+          <!-- 执行路径：供应商按轮次纵向排列，同一轮的 Key 保持实际尝试顺序。 -->
+          <div class="route-heading">
+            <div>
+              <h5 class="route-title">
+                执行路径
+              </h5>
+              <p class="route-description">
+                选择供应商查看首个 Key，或直接切换到同一供应商的其他 Key。
+              </p>
+            </div>
+            <span class="route-total">{{ providerRounds.length }} 个供应商 · {{ timeline.length }} 次尝试</span>
+          </div>
+          <div
+            class="route-map"
+            role="list"
+            aria-label="供应商与 Key 执行路径"
+          >
             <div
-              v-if="currentAttempt"
-              class="detail-panel"
-              :data-attempt-id="currentAttempt.id"
+              v-for="(round, roundIndex) in providerRounds"
+              :key="round.providerId"
+              class="provider-lane"
+              :class="{ 'is-selected': detailOpen && selectedRoundIndex === roundIndex }"
+              role="listitem"
             >
+              <button
+                type="button"
+                class="provider-lane-head"
+                :data-provider-id="round.providerId"
+                :aria-pressed="detailOpen && selectedRoundIndex === roundIndex && selectedAttemptIndex === round.firstAttemptIndex"
+                @click="selectProviderRound(round)"
+              >
+                <span
+                  class="title-dot"
+                  :class="getStatusColorClass(round.displayStatus)"
+                  aria-hidden="true"
+                />
+                <span class="provider-copy">
+                  <strong>{{ round.providerName }}</strong>
+                  <small>第 {{ roundIndex + 1 }} 轮 · {{ round.attempts.length }} 个 Key</small>
+                </span>
+                <span
+                  class="lane-status"
+                  :class="getStatusColorClass(round.displayStatus)"
+                >{{ getRoundStatusLabel(round) }}</span>
+              </button>
+              <div
+                class="attempt-track"
+                role="group"
+                :aria-label="`${round.providerName} 的 Key 尝试`"
+              >
+                <button
+                  v-for="(attempt, keyIndex) in round.attempts"
+                  :key="attempt.id"
+                  type="button"
+                  class="attempt-node"
+                  :data-attempt-id="attempt.id"
+                  :class="[
+                    getStatusColorClass(getDisplayStatus(attempt)),
+                    { 'is-selected': detailOpen && selectedAttemptIndex === round.attemptIndexes[keyIndex] },
+                  ]"
+                  :aria-pressed="detailOpen && selectedAttemptIndex === round.attemptIndexes[keyIndex]"
+                  :aria-label="`查看 ${round.providerName} 的 ${getAttemptKeyDisplay(attempt)}，${getStatusLabel(getDisplayStatus(attempt))}`"
+                  @click="selectAttempt(round.attemptIndexes[keyIndex])"
+                >
+                  <span class="attempt-sequence">{{ String(round.attemptIndexes[keyIndex] + 1).padStart(2, '0') }}</span>
+                  <span class="attempt-copy">
+                    <strong>{{ getAttemptKeyDisplay(attempt) }}</strong>
+                    <small>{{ getAttemptResultLabel(attempt) }}</small>
+                  </span>
+                  <span class="attempt-meta">{{ formatLatency(attempt.latency_ms) }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p
+            class="request-conclusion"
+            data-request-conclusion
+          >
+            {{ requestConclusion }}
+          </p>
+
+          <!-- 尝试详情只在用户选择供应商或 Key 后出现。 -->
+          <div
+            v-if="detailOpen && currentAttempt"
+            class="detail-panel"
+            :data-attempt-id="currentAttempt.id"
+          >
               <div class="panel-header">
-                <div class="panel-title">
+                <div
+                  class="panel-title"
+                  aria-live="polite"
+                >
                   <span
                     class="title-dot"
                     :class="getStatusColorClass(currentAttemptDisplayStatus)"
@@ -77,22 +162,36 @@
                   >
                     <ExternalLink class="w-3 h-3" />
                   </a>
+                  <span class="attempt-key-inline">{{ currentAttemptKeyDisplay }} · 第 {{ selectedAttemptIndex + 1 }} 次尝试</span>
                   <span
                     class="status-tag"
                     :class="getStatusColorClass(currentAttemptDisplayStatus)"
                   >
                     {{ getStatusLabel(currentAttemptDisplayStatus) }}
                     <span
-                      v-if="currentAttempt.status_code != null && currentAttemptDisplayStatus !== 'skipped'"
+                      v-if="currentAttemptDisplayStatus !== 'skipped' && (currentAttempt.status_code != null || currentAttemptDisplayStatus === 'success')"
                       class="attempt-http"
-                    >HTTP {{ currentAttempt.status_code }}</span>
+                    >HTTP {{ currentAttempt.status_code ?? 200 }}</span>
                   </span>
                 </div>
-                <span class="attempt-latency">{{ formatLatency(currentAttempt.latency_ms) }}</span>
+                <button
+                  type="button"
+                  class="detail-close"
+                  aria-label="收起当前尝试详情"
+                  @click="closeAttemptDetail"
+                >
+                  <ChevronLeft class="h-4 w-4 -rotate-90" />
+                </button>
               </div>
 
               <div class="panel-body">
-                <!-- 核心信息网格 -->
+                <p
+                  class="attempt-cause"
+                  :class="`is-${attemptCause.tone}`"
+                >
+                  {{ attemptCause.title }}<span v-if="attemptCause.detail">。{{ attemptCause.detail }}</span>
+                </p>
+                <!-- 首层只保留排查最常用的字段，技术详情和扩展字段默认收起。 -->
                 <div class="info-grid">
                   <div
                     v-if="currentAttemptTimeRange"
@@ -116,24 +215,6 @@
                     <span class="info-value mono">{{ formatLatency(currentAttempt.extra_data.first_byte_time_ms) }}</span>
                   </div>
                   <div
-                    v-if="currentAttemptFormatDisplay"
-                    class="info-item"
-                  >
-                    <span class="info-label">格式</span>
-                    <span class="info-value">
-                      <code class="format-code">{{ currentAttemptFormatDisplay }}</code>
-                    </span>
-                  </div>
-                  <div
-                    v-if="currentAttemptRequestPathDisplay"
-                    class="info-item"
-                  >
-                    <span class="info-label">请求路径</span>
-                    <span class="info-value">
-                      <code class="format-code request-path-code">{{ currentAttemptRequestPathDisplay }}</code>
-                    </span>
-                  </div>
-                  <div
                     v-if="currentAttemptKeyDisplay"
                     class="info-item"
                   >
@@ -152,48 +233,9 @@
                       >{{ currentAttempt.key_preview }}</code>
                     </span>
                   </div>
-                  <div
-                    v-if="currentAttemptKeyFormatsDisplay"
-                    class="info-item"
-                  >
-                    <span class="info-label">支持端点</span>
-                    <span class="info-value info-value-stacked">
-                      <code class="format-code">{{ currentAttemptKeyFormatsDisplay }}</code>
-                      <span class="text-xs text-muted-foreground">
-                        Key 声明的可用 endpoint 格式
-                      </span>
-                    </span>
-                  </div>
-                  <div
-                    v-if="currentAttempt.extra_data?.proxy"
-                    class="info-item"
-                  >
-                    <span class="info-label">代理</span>
-                    <span class="info-value info-value-stacked">
-                      <span class="proxy-name">
-                        {{ currentAttempt.extra_data.proxy.node_name || currentAttempt.extra_data.proxy.url || '未知' }}
-                        <span
-                          v-if="currentAttempt.extra_data.proxy.source === 'system'"
-                          class="text-xs text-muted-foreground ml-1"
-                        >(系统)</span>
-                      </span>
-                      <span class="proxy-detail">
-                        <span
-                          v-if="currentAttempt.extra_data.proxy.ttfb_ms != null"
-                          class="text-xs text-muted-foreground"
-                        >{{ formatLatency(currentAttempt.extra_data.proxy.ttfb_ms) }}</span>
-                        <span
-                          v-if="currentAttempt.extra_data.proxy.timing"
-                          class="text-xs text-muted-foreground"
-                        >(<!--
-                          -->{{ proxyTimingBreakdown(currentAttempt.extra_data.proxy) }}<!--
-                        -->)</span>
-                      </span>
-                      <code
-                        v-if="typeof currentAttempt.extra_data.proxy.node_id === 'string' && currentAttempt.extra_data.proxy.node_id"
-                        class="text-xs font-mono text-muted-foreground"
-                      >节点 Key {{ currentAttempt.extra_data.proxy.node_id }}</code>
-                    </span>
+                  <div class="info-item">
+                    <span class="info-label">耗时</span>
+                    <span class="info-value mono">{{ formatLatency(currentAttempt.latency_ms) }}</span>
                   </div>
                 </div>
 
@@ -316,56 +358,97 @@
                   </span>
                 </div>
 
-                <RequestAttemptErrorPanel
-                  v-if="currentAttemptRequestError"
-                  :key="currentAttempt.id"
-                  :error="currentAttemptRequestError"
-                  :is-dark="isDark"
-                />
-
-                <!-- 额外数据 -->
+                <!-- 原始错误、响应和扩展字段是排查入口，首层不重复叙述。 -->
                 <details
-                  v-if="currentAttemptExtraDataDisplay"
-                  class="extra-block"
+                  v-if="currentAttemptRequestError || currentAttemptExtraDataDisplay"
+                  class="diagnostic-block"
                 >
-                  <summary class="extra-toggle">
-                    额外信息
+                  <summary class="diagnostic-toggle">
+                    <span>技术详情与原始数据</span>
+                    <span class="diagnostic-summary">{{ currentAttempt.status_code != null ? `HTTP ${currentAttempt.status_code}` : '查看诊断' }}</span>
                   </summary>
+                  <RequestAttemptErrorPanel
+                    v-if="currentAttemptRequestError"
+                    :key="currentAttempt.id"
+                    :error="currentAttemptRequestError"
+                    :is-dark="isDark"
+                  />
                   <JsonContentPanel
+                    v-if="currentAttemptExtraDataDisplay"
                     class="extra-json-panel"
                     :data="currentAttemptExtraDataDisplay"
                     :is-dark="isDark"
+                    title="扩展字段"
                     empty-message="无额外信息"
                   />
                 </details>
+
+                <details
+                  v-if="currentAttempt ? currentAttemptFormatDisplay || currentAttemptRequestPathDisplay || currentAttemptKeyFormatsDisplay || currentAttempt.extra_data?.proxy : false"
+                  class="extended-block"
+                >
+                  <summary class="diagnostic-toggle">
+                    <span>更多字段</span>
+                    <span class="diagnostic-summary">格式、端点与代理</span>
+                  </summary>
+                  <div class="info-grid extended-grid">
+                    <div
+                      v-if="currentAttemptFormatDisplay"
+                      class="info-item"
+                    >
+                      <span class="info-label">格式</span>
+                      <span class="info-value"><code class="format-code">{{ currentAttemptFormatDisplay }}</code></span>
+                    </div>
+                    <div
+                      v-if="currentAttemptRequestPathDisplay"
+                      class="info-item"
+                    >
+                      <span class="info-label">请求路径</span>
+                      <span class="info-value"><code class="format-code request-path-code">{{ currentAttemptRequestPathDisplay }}</code></span>
+                    </div>
+                    <div
+                      v-if="currentAttemptKeyFormatsDisplay"
+                      class="info-item"
+                    >
+                      <span class="info-label">支持端点</span>
+                      <span class="info-value info-value-stacked">
+                        <code class="format-code">{{ currentAttemptKeyFormatsDisplay }}</code>
+                        <span class="text-xs text-muted-foreground">Key 声明的可用 endpoint 格式</span>
+                      </span>
+                    </div>
+                    <div
+                      v-if="currentAttempt.extra_data?.proxy"
+                      class="info-item"
+                    >
+                      <span class="info-label">代理</span>
+                      <span class="info-value info-value-stacked">
+                        <span class="proxy-name">
+                          {{ currentAttempt.extra_data.proxy.node_name || currentAttempt.extra_data.proxy.url || '未知' }}
+                          <span
+                            v-if="currentAttempt.extra_data.proxy.source === 'system'"
+                            class="text-xs text-muted-foreground ml-1"
+                          >(系统)</span>
+                        </span>
+                        <span class="proxy-detail">
+                          <span
+                            v-if="currentAttempt.extra_data.proxy.ttfb_ms != null"
+                            class="text-xs text-muted-foreground"
+                          >{{ formatLatency(currentAttempt.extra_data.proxy.ttfb_ms) }}</span>
+                          <span
+                            v-if="currentAttempt.extra_data.proxy.timing"
+                            class="text-xs text-muted-foreground"
+                          >{{ proxyTimingBreakdown(currentAttempt.extra_data.proxy) }}</span>
+                        </span>
+                        <code
+                          v-if="typeof currentAttempt.extra_data.proxy.node_id === 'string' && currentAttempt.extra_data.proxy.node_id"
+                          class="text-xs font-mono text-muted-foreground"
+                        >节点 Key {{ currentAttempt.extra_data.proxy.node_id }}</code>
+                      </span>
+                    </div>
+                  </div>
+                </details>
+
               </div>
-            </div>
-          </Transition>
-          <template v-if="timeline.length > 1">
-            <button
-              type="button"
-              class="trace-edge trace-edge-prev"
-              aria-label="上一条尝试"
-              @click="navigateAttempt(-1)"
-            >
-              <span><ChevronLeft class="h-6 w-6" /></span>
-            </button>
-            <button
-              type="button"
-              class="trace-edge trace-edge-next"
-              aria-label="下一条尝试"
-              @click="navigateAttempt(1)"
-            >
-              <span><ChevronRight class="h-6 w-6" /></span>
-            </button>
-          </template>
-          <div
-            v-if="timeline.length"
-            class="trace-pagination"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            {{ selectedAttemptIndex + 1 }} / {{ timeline.length }}
           </div>
         </div>
       </Card>
@@ -392,7 +475,7 @@ import Card from '@/components/ui/card.vue'
 import Skeleton from '@/components/ui/skeleton.vue'
 import JsonContentPanel from './JsonContentPanel.vue'
 import RequestAttemptErrorPanel from './RequestAttemptErrorPanel.vue'
-import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-vue-next'
+import { ChevronLeft, ExternalLink } from 'lucide-vue-next'
 import { requestTraceApi, type RequestTrace, type CandidateRecord, type ImageProgress } from '@/api/requestTrace'
 import { log } from '@/utils/logger'
 import { parseApiError } from '@/utils/errorParser'
@@ -406,6 +489,23 @@ interface AttemptTimeRange {
   startIso: string
   endIso?: string
   durationLabel?: string
+}
+
+/** 单个供应商在执行路径中的一轮 Key 尝试及其调度位置。 */
+interface ProviderRound {
+  providerId: string
+  providerName: string
+  attempts: CandidateRecord[]
+  attemptIndexes: number[]
+  firstAttemptIndex: number
+  displayStatus: string
+}
+
+/** 当前尝试首层的中性短原因；原始错误和诊断只在技术详情中展开。 */
+interface AttemptCause {
+  title: string
+  detail: string
+  tone: 'neutral' | 'success' | 'warning' | 'danger'
 }
 
 // 用量数据类型
@@ -489,7 +589,9 @@ const internalTrace = ref<RequestTrace | null>(null)
 const { isDark } = useDarkMode()
 const trace = computed(() => props.traceData ?? internalTrace.value)
 const selectedAttemptIndex = ref(0)
+const detailOpen = ref(false)
 const selectionPinnedByUser = ref(false)
+const selectedAttemptId = ref<string | null>(null)
 const traceLoadStarted = ref(false)
 let tracePollTimer: ReturnType<typeof setTimeout> | null = null
 let traceLoadInFlight: Promise<void> | null = null
@@ -612,6 +714,51 @@ const rawTimeline = computed<CandidateRecord[]>(() => {
 
 const timeline = computed<CandidateRecord[]>(() => rawTimeline.value)
 
+// 保留 trace 中的实际调度顺序，并将同一供应商的连续尝试聚合为一行。
+const providerRounds = computed<ProviderRound[]>(() => {
+  const rounds: ProviderRound[] = []
+  const indexesByProvider = new Map<string, number>()
+
+  timeline.value.forEach((attempt, attemptIndex) => {
+    const providerId = String(attempt.provider_id || attempt.provider_name || '__unknown__')
+    const existingIndex = indexesByProvider.get(providerId)
+    if (existingIndex != null) {
+      const round = rounds[existingIndex]
+      round.attempts.push(attempt)
+      round.attemptIndexes.push(attemptIndex)
+      return
+    }
+
+    indexesByProvider.set(providerId, rounds.length)
+    rounds.push({
+      providerId,
+      providerName: getProviderDisplayName(attempt),
+      attempts: [attempt],
+      attemptIndexes: [attemptIndex],
+      firstAttemptIndex: attemptIndex,
+      displayStatus: getDisplayStatus(attempt),
+    })
+  })
+
+  return rounds.map((round) => {
+    const statuses = round.attempts.map(getDisplayStatus)
+    const successfulAttempt = round.attempts.find(attempt => getDisplayStatus(attempt) === 'success')
+    const activeAttempt = round.attempts.find(attempt => ['pending', 'streaming'].includes(getDisplayStatus(attempt)))
+    const failedAttempt = round.attempts.find(attempt => ['failed', 'stream_interrupted'].includes(getDisplayStatus(attempt)))
+    const representativeAttempt = successfulAttempt ?? activeAttempt ?? failedAttempt ?? round.attempts[round.attempts.length - 1]
+    const displayStatus = getDisplayStatus(representativeAttempt)
+    return {
+      ...round,
+      displayStatus,
+    }
+  })
+})
+
+// 供应商行与 Key 的位置来自同一实际调度索引，避免聚合后详情错位。
+const selectedRoundIndex = computed(() => {
+  return providerRounds.value.findIndex(round => round.attemptIndexes.includes(selectedAttemptIndex.value))
+})
+
 const getProviderDisplayName = (attempt: CandidateRecord | null | undefined): string => {
   if (!attempt) return '未知'
   const providerName = String(attempt.provider_name || '').trim()
@@ -619,8 +766,28 @@ const getProviderDisplayName = (attempt: CandidateRecord | null | undefined): st
   return '未知'
 }
 
-// The trace aggregate includes every attempted candidate, including failed
-// failover attempts. Per-candidate latency remains provider-scoped.
+/** 返回当前 Key 的名称；账号标签优先于内部名称，缺失时回退到 Key ID。 */
+const getAttemptKeyDisplay = (attempt: CandidateRecord): string => {
+  return attempt.key_account_label || attempt.key_name || attempt.key_id || '未知 Key'
+}
+
+/** 将真实尝试状态转换为路径节点上的短结果，不根据错误文本猜测未发送。 */
+const getAttemptResultLabel = (attempt: CandidateRecord): string => {
+  const displayStatus = getDisplayStatus(attempt)
+  if (attempt.skip_reason === 'key_circuit_open') {
+    return getAttemptCooldownDeadline(attempt) ? `冷却至 ${getAttemptCooldownDeadline(attempt)}` : '本地冷却中'
+  }
+  if (attempt.status_code != null) return `HTTP ${attempt.status_code}`
+  return getStatusLabel(displayStatus)
+}
+
+/** 供应商轮次状态优先展示冷却语义，旧记录仍沿用真实候选状态标签。 */
+function getRoundStatusLabel(round: ProviderRound): string {
+  if (round.displayStatus === 'skipped' && round.attempts.some(attempt => attempt.skip_reason === 'key_circuit_open')) return '冷却'
+  return getStatusLabel(round.displayStatus)
+}
+
+// 总耗时优先取 trace 聚合值，包含本次请求的所有失败切换；单条候选耗时仍只描述该 Key。
 const totalTraceLatency = computed(() => {
   if (!rawTimeline.value || rawTimeline.value.length === 0) return 0
 
@@ -663,7 +830,39 @@ const totalTraceLatency = computed(() => {
   return 0
 })
 
-// One page per recorded candidate / Key attempt, in scheduling order.
+/** 用一句话说明请求最终结果；失败数量只聚合，不逐项堆叠供应商名称。 */
+const requestConclusion = computed(() => {
+  const attempts = timeline.value
+  const successAttempt = attempts.find(attempt => getDisplayStatus(attempt) === 'success')
+  const failedCount = attempts.filter(attempt => ['failed', 'stream_interrupted'].includes(getDisplayStatus(attempt))).length
+  const cooldownCount = attempts.filter(attempt => attempt.skip_reason === 'key_circuit_open').length
+
+  if (computedFinalStatus.value === 'success' && successAttempt) {
+    if (failedCount === 0 && cooldownCount === 0) {
+      return `${getAttemptKeyDisplay(successAttempt)} 返回有效响应，请求已完成。`
+    }
+    const skippedContext = failedCount > 0
+      ? `经历 ${failedCount} 次失败尝试后`
+      : cooldownCount > 0
+        ? `跳过 ${cooldownCount} 个本地冷却中的 Key 后`
+        : '切换候选后'
+    return `${skippedContext}，${getAttemptKeyDisplay(successAttempt)} 返回有效响应，请求已完成。`
+  }
+  if (computedFinalStatus.value === 'cancelled') return '请求已取消，未继续等待上游响应。'
+  if (computedFinalStatus.value === 'pending' || computedFinalStatus.value === 'streaming') {
+    return '请求仍在执行，正在等待或接收上游响应。'
+  }
+  if (attempts.length > 0 && attempts.every(attempt => attempt.status === 'skipped' && attempt.skip_reason === 'key_circuit_open')) {
+    return `发送前有 ${cooldownCount} 个 Key 处于本地限流冷却，请求没有到达上游。`
+  }
+  const lastHttpAttempt = [...attempts].reverse().find(attempt => attempt.status_code != null)
+  if (lastHttpAttempt?.status_code != null) {
+    return `所有候选均未完成请求，最终上游返回 HTTP ${lastHttpAttempt.status_code}。`
+  }
+  return '所有候选均未完成请求，具体原因见每次尝试记录。'
+})
+
+// 当前选择始终指向一条实际候选记录，供应商行与 Key 节点共享这个调度索引。
 const currentAttempt = computed(() => timeline.value[selectedAttemptIndex.value] ?? null)
 
 const currentAttemptTimeRange = computed<AttemptTimeRange | null>(() => {
@@ -673,6 +872,9 @@ const currentAttemptTimeRange = computed<AttemptTimeRange | null>(() => {
 const currentAttemptDisplayStatus = computed(() => getDisplayStatus(currentAttempt.value))
 
 watch(currentAttempt, (attempt) => {
+  if (!selectionPinnedByUser.value || !selectedAttemptId.value) {
+    selectedAttemptId.value = attempt?.id ?? null
+  }
   emit('selectAttempt', attempt ?? null)
 }, { immediate: true })
 
@@ -982,6 +1184,12 @@ const currentAttemptSkipReasonDisplay = computed(() => {
     return skipReasonLabel
   }
 
+  if (attempt.skip_reason === 'key_circuit_open') {
+    return getAttemptCooldownDeadline(attempt)
+      ? `本地冷却至 ${getAttemptCooldownDeadline(attempt)}`
+      : '本地冷却中'
+  }
+
   if (attempt.skip_reason !== 'transport_unsupported') {
     return attempt.skip_reason
   }
@@ -994,6 +1202,27 @@ const currentAttemptSkipReasonDisplay = computed(() => {
 
   return detailedReason || attempt.skip_reason
 })
+
+/**
+ * 从 trace 已带回的诊断字段读取 Key 冷却截止时间。
+ * 时间戳统一按 Unix 秒转换为本地时刻；字段缺失或越界时返回空字符串，避免猜造恢复时间。
+ */
+function getAttemptCooldownDeadline(attempt: CandidateRecord): string {
+  const extra = extractObject(attempt.extra_data)
+  const candidates = [
+    extra?.rate_limit_cooldown_until_unix_secs,
+    extra?.cooldown_until_unix_secs,
+    extra?.retry_after_until_unix_secs,
+  ]
+  const raw = candidates.find(value => typeof value === 'number' && Number.isFinite(value) && value > 0)
+  if (typeof raw !== 'number') return ''
+  return new Date(raw * 1000).toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
 
 const currentAttemptFailureDiagnostic = computed<{
   path: string
@@ -1017,6 +1246,63 @@ const currentAttemptFailureDiagnostic = computed<{
     path: path || '$',
     message: formatAttemptErrorMessage(message) || message || '请求体转换失败',
   }
+})
+
+/** 将当前尝试转换成一句可信原因，未知上游错误保留真实 HTTP 状态。 */
+const attemptCause = computed<AttemptCause>(() => {
+  const attempt = currentAttempt.value
+  if (!attempt) return { title: '没有可展示的尝试记录', detail: '', tone: 'neutral' }
+  const status = getDisplayStatus(attempt)
+  const deadline = getAttemptCooldownDeadline(attempt)
+  if (attempt.skip_reason === 'key_circuit_open') {
+    return {
+      title: deadline ? `Key 正在本地限流冷却，预计 ${deadline} 恢复` : 'Key 正在本地限流冷却',
+      detail: '请求未发送到上游',
+      tone: 'warning',
+    }
+  }
+  if (attempt.skip_reason) {
+    return {
+      title: currentAttemptSkipReasonDisplay.value || '当前候选未发送请求',
+      detail: currentAttemptFailureDiagnostic.value?.message || '请求未发送到上游',
+      tone: 'warning',
+    }
+  }
+  if (status === 'success') {
+    return { title: '上游返回成功响应', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'success' }
+  }
+  if (status === 'pending' || status === 'streaming') {
+    return { title: '等待上游返回响应', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'neutral' }
+  }
+  const diagnostic = currentAttemptFailureDiagnostic.value
+  if (diagnostic) {
+    return { title: diagnostic.message, detail: `字段 ${diagnostic.path}`, tone: 'danger' }
+  }
+  const raw = attempt.error_message?.trim() || ''
+  const extra = extractObject(attempt.extra_data)
+  const upstream = extractObject(extra?.upstream_response)
+  const upstreamStatus = readNumberField(upstream ?? {}, 'status_code')
+  const source = `${attempt.error_type || ''}\n${raw}`.toLowerCase()
+  if (/cuda out of memory|gpu\s*(memory|显存)|显存不足|out of memory/.test(source)) {
+    return { title: 'GPU 显存不足', detail: '由上游错误返回', tone: 'danger' }
+  }
+  if (/first[-_ ]byte[^\n]*timeout|首字[^\n]*超时/.test(source)) {
+    return { title: '上游未在时限内返回首字', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'warning' }
+  }
+  if (/timed?\s*out|timeout|超时/.test(source)) {
+    return { title: '请求等待上游超时', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'warning' }
+  }
+  if (attempt.status_code === 429) {
+    return { title: '上游触发限流', detail: raw || 'HTTP 429', tone: 'warning' }
+  }
+  if (attempt.status_code === 401 || attempt.status_code === 403) {
+    return { title: '上游鉴权失败', detail: raw || `HTTP ${attempt.status_code}`, tone: 'danger' }
+  }
+  const displayedStatus = attempt.status_code ?? upstreamStatus
+  if (displayedStatus != null) {
+    return { title: `上游返回 HTTP ${displayedStatus}`, detail: '', tone: 'warning' }
+  }
+  return { title: raw || '请求处理失败', detail: '', tone: 'danger' }
 })
 
 const isGenericExecutionRuntimeStatusMessage = (message: string): boolean =>
@@ -1472,19 +1758,25 @@ const selectMostRelevantAttempt = (attempts: CandidateRecord[]) => {
   selectedAttemptIndex.value = success >= 0 ? success : active >= 0 ? active : Math.max(terminal, 0)
 }
 
-const navigateAttempt = (direction: number) => {
-  const count = timeline.value.length
-  if (count < 2) return
+/** 点击供应商时展开其本轮第一个 Key，保持供应商与 Key 详情一一对应。 */
+function selectProviderRound(round: ProviderRound): void {
+  selectedAttemptIndex.value = round.firstAttemptIndex
+  selectedAttemptId.value = round.attempts[0]?.id ?? null
   selectionPinnedByUser.value = true
-  selectedAttemptIndex.value = (selectedAttemptIndex.value + direction + count) % count
+  detailOpen.value = true
 }
 
-const handlePagerKeydown = (event: KeyboardEvent) => {
-  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-  const target = event.target as HTMLElement | null
-  if (target?.closest('input, textarea, select, [contenteditable="true"], pre, code')) return
-  event.preventDefault()
-  navigateAttempt(event.key === 'ArrowLeft' ? -1 : 1)
+/** 点击具体 Key 时切换该次尝试并展开详情。 */
+function selectAttempt(index: number): void {
+  selectedAttemptIndex.value = index
+  selectedAttemptId.value = timeline.value[index]?.id ?? null
+  selectionPinnedByUser.value = true
+  detailOpen.value = true
+}
+
+/** 关闭详情时保留选择位置，再次点击同一供应商或 Key 可恢复到原尝试。 */
+function closeAttemptDetail(): void {
+  detailOpen.value = false
 }
 
 // 加载请求追踪数据
@@ -1570,8 +1862,9 @@ const scheduleTracePolling = () => {
 watch(timeline, (attempts, previous) => {
   const previousAttempt = previous?.[selectedAttemptIndex.value]
   const sameRequest = previousAttempt?.request_id === attempts[0]?.request_id
-  if (selectionPinnedByUser.value && sameRequest && previousAttempt) {
-    const index = attempts.findIndex(attempt => attempt.id === previousAttempt.id)
+  if (selectionPinnedByUser.value && sameRequest && (selectedAttemptId.value || previousAttempt)) {
+    const selectedId = selectedAttemptId.value ?? previousAttempt?.id
+    const index = attempts.findIndex(attempt => attempt.id === selectedId)
     if (index >= 0) {
       selectedAttemptIndex.value = index
       return
@@ -1589,6 +1882,8 @@ watch(
       traceLoadInFlight = null
       if (requestId !== previous?.[0]) {
         selectionPinnedByUser.value = false
+        selectedAttemptId.value = null
+        detailOpen.value = false
         internalTrace.value = null
       }
     }
@@ -1829,17 +2124,66 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .final-status.status-failed { color: #dc414c; }
 .attempt-latency { margin-left: auto; color: var(--muted-foreground); font-size: 0.75rem; }
 .trace-card { position: relative; padding: 1.125rem 2.75rem 0.75rem; }
-.trace-pagination { text-align: center; color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; padding-top: 0.75rem; }
-.trace-edge { position: absolute; top: 3.25rem; bottom: 2.5rem; width: 44px; display: flex; align-items: center; justify-content: center; background: transparent; border: 0; cursor: pointer; }
-.trace-edge-prev { left: 0; }
-.trace-edge-next { right: 0; }
-.trace-edge span { display: grid; place-items: center; width: 32px; height: 62px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--muted-foreground); box-shadow: 0 4px 14px #26395410; opacity: 0; transition: opacity 150ms, color 150ms; }
-.trace-edge:hover span, .trace-edge:focus-visible span { opacity: 1; color: var(--primary); }
-.trace-edge:focus-visible { outline: none; }
-.trace-edge:focus-visible span { outline: 2px solid var(--primary); outline-offset: 2px; }
-@media (hover: none), (pointer: coarse) { .trace-edge span { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .trace-edge span { transition: none; } }
-@media (max-width: 640px) { .trace-card { padding-inline: 2.75rem; } }
+.trace-latency { color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.request-conclusion { margin: -0.25rem 0 0.9rem; color: var(--muted-foreground); font-size: 0.76rem; line-height: 1.6; overflow-wrap: anywhere; }
+.request-conclusion.is-failed { color: var(--foreground); }
+
+.route-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.route-title { margin: 0; font-size: 0.875rem; font-weight: 600; }
+.route-description { margin: 0.2rem 0 0; color: var(--muted-foreground); font-size: 0.72rem; line-height: 1.5; }
+.route-total { flex: none; color: var(--muted-foreground); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.route-map { display: grid; max-height: 19rem; gap: 0.45rem; overflow: auto; overscroll-behavior: contain; padding: 1px; }
+.provider-lane { display: grid; min-width: 0; grid-template-columns: minmax(8.75rem, 0.72fr) minmax(0, 1.28fr); overflow: hidden; border: 1px solid hsl(var(--border) / 0.8); border-radius: 10px; background: hsl(var(--background) / 0.34); }
+.provider-lane.is-selected { border-color: hsl(var(--primary) / 0.45); background: hsl(var(--primary) / 0.05); }
+.provider-lane-head { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.25rem 0.5rem; padding: 0.65rem 0.75rem; border: 0; border-right: 1px solid hsl(var(--border) / 0.7); background: transparent; text-align: left; }
+.provider-lane-head:hover, .provider-lane-head:focus-visible { background: hsl(var(--muted) / 0.6); outline: none; }
+.provider-copy { display: grid; min-width: 0; gap: 0.15rem; }
+.provider-copy strong { overflow-wrap: anywhere; font-size: 0.76rem; line-height: 1.35; }
+.provider-copy small, .lane-status { color: var(--muted-foreground); font-size: 0.65rem; }
+.lane-status { grid-column: 2; width: fit-content; padding: 0.08rem 0.38rem; border: 1px solid hsl(var(--border)); border-radius: 99px; }
+.lane-status.status-success { color: #15803d; background: #22c55e12; }
+.lane-status.status-failed, .lane-status.status-skipped { color: #b91c1c; background: #ef444410; }
+.lane-status.status-pending { color: #2563eb; background: #3b82f610; }
+.attempt-track { display: flex; min-width: 0; align-items: stretch; gap: 0.4rem; overflow-x: auto; padding: 0.4rem; }
+.attempt-track::-webkit-scrollbar,
+.route-map::-webkit-scrollbar { display: block; width: 4px; height: 4px; }
+.attempt-track::-webkit-scrollbar-thumb,
+.route-map::-webkit-scrollbar-thumb { border-radius: 99px; background: hsl(var(--muted-foreground) / 0.3); }
+.attempt-node { display: grid; min-width: 9.5rem; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.18rem 0.45rem; padding: 0.45rem 0.6rem; border: 1px solid hsl(var(--border) / 0.75); border-radius: 7px; background: hsl(var(--card) / 0.78); text-align: left; }
+.attempt-node:hover, .attempt-node:focus-visible { border-color: hsl(var(--primary) / 0.5); background: hsl(var(--muted) / 0.65); outline: none; }
+.attempt-node.is-selected { border-color: hsl(var(--primary) / 0.6); box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.2); }
+.attempt-sequence { grid-row: span 2; align-self: start; color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.62rem; }
+.attempt-copy { display: grid; min-width: 0; gap: 0.14rem; }
+.attempt-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; font-weight: 600; }
+.attempt-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 0.63rem; }
+.attempt-meta { grid-column: 2; color: var(--muted-foreground); font-size: 0.62rem; font-variant-numeric: tabular-nums; }
+.detail-close { display: grid; flex: none; place-items: center; width: 30px; height: 30px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: transparent; color: var(--muted-foreground); }
+.detail-close:hover, .detail-close:focus-visible { border-color: hsl(var(--primary) / 0.45); color: var(--foreground); outline: none; }
+.attempt-key-inline { color: var(--muted-foreground); font-size: 0.72rem; }
+.attempt-cause { margin: 0 0 0.75rem; color: var(--muted-foreground); font-size: 0.78rem; line-height: 1.65; overflow-wrap: anywhere; }
+.attempt-cause.is-danger { color: var(--foreground); }
+.attempt-cause.is-warning { color: #a16207; }
+.attempt-cause.is-success { color: #15803d; }
+.dark .attempt-cause.is-warning { color: #fcd34d; }
+.dark .attempt-cause.is-success { color: #86efac; }
+.diagnostic-block, .extended-block { margin-top: 0.75rem; border-top: 1px solid hsl(var(--border) / 0.7); }
+.diagnostic-toggle { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.65rem 0; color: var(--muted-foreground); cursor: pointer; list-style: none; font-size: 0.72rem; }
+.diagnostic-toggle::-webkit-details-marker { display: none; }
+.diagnostic-toggle:hover { color: var(--foreground); }
+.diagnostic-summary { opacity: 0.72; }
+.extended-grid { padding-bottom: 0.5rem; }
+@container (max-width: 540px) {
+  .provider-lane { grid-template-columns: 1fr; }
+  .provider-lane-head { border-right: 0; border-bottom: 1px solid hsl(var(--border) / 0.7); }
+  .route-heading { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
+}
 
 @container (max-width: 560px) {
   .info-grid { grid-template-columns: minmax(0, 1fr) !important; }

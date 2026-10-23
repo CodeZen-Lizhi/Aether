@@ -189,13 +189,13 @@ const leftPriority = providerPriorities[a.id] ?? UNCONFIGURED_PROVIDER_PRIORITY
 
 ## Convention: 请求详情首屏与尝试分页
 
-**Layout**: `RequestDetailDrawer.vue` 保留模型/等级、HTTP 标识、ID、时间及回放/刷新/关闭，头部不显示用户。四项概览分别为费用、端到端总耗时、输出速率、端到端首字耗时；速率仍按候选响应时长计算。计费明细默认折叠，保留全部定价/Token/缓存/媒体明细和不可用、未计价语义。
+**Layout**: `RequestDetailDrawer.vue` 保留模型/等级、HTTP 标识、ID、时间及回放/刷新/关闭，头部不显示用户。五项概览分别为费用、端到端总耗时、输出 Token、输出速率、端到端首字耗时；速率仍按候选响应时长计算。计费明细默认折叠，保留全部定价/Token/缓存/媒体明细和不可用、未计价语义。
 
-**Trace**: `HorizontalRequestTimeline.vue` 以调度序号和重试序号排列实际返回记录；所有供应商和 Key 共用单条详情面板。两侧 44px 热区循环导航（末条下一页到首条，首条上一页到末条），页码位于底部；仅一条时隐藏箭头。桌面悬停和键盘聚焦显示箭头，触屏常显。方向键不得劫持输入、代码/JSON 内部操作。刷新按记录 ID 保留手动选择；新请求使旧取数结果失效。
+**Trace**: `HorizontalRequestTimeline.vue` 先给出一句最终请求结论，再按调度顺序将记录聚合为供应商轮次；同一供应商的多个 Key 在同一轮内按实际尝试顺序排列。执行路径使用固定高度容器，供应商纵向滚动、Key 在轮次内横向滚动，长链路不得把所有供应商和尝试同时向下铺开。尝试详情默认收起：点击供应商选中其第一个 Key，点击 Key 切换详情，提供明确收起入口。没有已发送或已跳过记录的供应商不得展示误导性的 HTTP 结果。刷新按记录 ID 保留手动选择；新请求使旧取数结果失效。
 
-**Errors**: 整体结果与当前尝试状态分开。只有真实 skipped 记录称为“未发送”，不可根据 HTTP 503 或错误文本猜测未发送。原因位于当前记录信息下方，中性背景、轻量文字状态；技术详情保留原始错误、上游响应和诊断。
+**Errors**: 整体结果与当前尝试状态分开。默认尝试详情先显示一句从当前记录可靠推导出的具体原因，未知原因明确显示上游 HTTP 状态，不得编造设备、网络、账号或限流原因。只有真实 skipped 记录称为“未发送”，不可根据 HTTP 503 或错误文本猜测未发送；`key_circuit_open` 的 skipped 记录表达为本地冷却中，有可靠恢复时间才显示时刻。中性背景、轻量文字状态；技术详情保留原始错误、上游响应和诊断，原始请求/响应/元数据入口默认收起且继续支持既有复制、对比与视图切换。
 
-**Verification**: `HorizontalRequestTimeline.spec.ts` 覆盖跨供应商/Key 循环、单记录、手选刷新、快速切换请求的过期响应及成功/流式/失败状态；`RequestDetailDrawer.pricing.spec.ts` 验证折叠仍可访问定价明细与原计算口径。浏览器 fixture `/scripts/fixtures/request-detail-layout.html` 支持 count、status、theme、locale、long 参数，使用真实组件与模拟接口；该证据不代表真实供应商调用测试。
+**Verification**: `HorizontalRequestTimeline.spec.ts` 覆盖供应商/Key 聚合、点击与收起、刷新保留手动选择、快速切换请求的过期响应及成功/流式/失败/冷却状态；`RequestDetailDrawer.pricing.spec.ts` 验证五项概览、折叠仍可访问定价明细与原计算口径。浏览器 fixture `/scripts/fixtures/request-detail-layout.html` 支持 count、status、theme、locale、long 参数，使用真实组件与模拟接口；该证据不代表真实供应商调用测试。
 
 
 实现、请求状态与最小验证参见 [前端质量规范](quality-guidelines.md)。

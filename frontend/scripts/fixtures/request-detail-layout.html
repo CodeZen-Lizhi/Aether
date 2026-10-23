@@ -20,7 +20,10 @@ const retryGap = scenario === 'retry-gap'
 const retryStarted = scenario === 'retry-started'
 const finalFailed = scenario === 'final-failed'
 const finalSuccess = scenario === 'final-success'
+const upstreamFailure = scenario === 'upstream-failure'
+const cooldownFailure = scenario === 'cooldown'
 const lifecycleFixture = retryGap || retryStarted || finalFailed || finalSuccess
+const terminalFailure = upstreamFailure || cooldownFailure
 const count = retryGap ? 1 : lifecycleFixture ? 2 : Number(params.get('count') || 4)
 const success = scenario === 'success' || finalSuccess
 const pending = scenario === 'pending' || retryGap || retryStarted
@@ -35,11 +38,11 @@ const detail = {
   model: 'gpt-6-astra', reasoning_effort: 'high', api_format: 'openai:responses',
   user: { id: 'fixture-user', username: 'must-not-appear' },
   api_key: { id: 'fixture-key', name: 'local', display: 'local' },
-  provider: 'Input', status: pending ? activeStatus : success ? 'completed' : 'failed', status_code: retryGap || finalFailed ? 504 : pending ? null : success ? 200 : 503,
-  request_type: lifecycleFixture ? 'compact' : 'chat', is_stream: pending || lifecycleFixture,
+  provider: 'Input', status: terminalFailure ? 'failed' : pending ? activeStatus : success ? 'completed' : 'failed', status_code: retryGap || finalFailed ? 504 : upstreamFailure ? 500 : pending ? null : success ? 200 : 503,
+  request_type: lifecycleFixture || upstreamFailure || cooldownFailure ? 'compact' : 'chat', is_stream: pending || lifecycleFixture || upstreamFailure || cooldownFailure,
   created_at: iso(0), updated_at: iso(totalMs), response_time_updated_at: iso(totalMs), response_time_ms: totalMs,
   end_to_end_time_ms: pending ? null : totalMs, first_byte_time_ms: success || pending && activeStatus === 'streaming' ? 10 : null,
-  error_message: retryGap ? 'First response timeout' : finalFailed ? 'Streaming request total timeout' : undefined,
+  error_message: retryGap ? 'First response timeout' : finalFailed ? 'Streaming request total timeout' : upstreamFailure ? 'Failed to load model: CUDA out of memory' : undefined,
   tokens: { input: success ? 100 : 0, output: success ? 50 : 0, total: success ? 150 : 0 },
   cost: { input: 0, output: 0, total: 0 },
   request_headers: { 'Content-Type': 'application/json' },
@@ -47,7 +50,29 @@ const detail = {
   request_body: { model: 'gpt-6-astra', input: 'hello' },
   response_body: success ? { output: 'hello' } : { error: { code: 'all_candidates_skipped' } },
 }
-const candidates = Array.from({ length: count }, (_, index) => ({
+const candidates = upstreamFailure || cooldownFailure ? [{
+  id: upstreamFailure ? 'attempt-upstream-500' : 'attempt-cooldown-1', request_id: detail.request_id, candidate_index: 0, retry_index: 0,
+  provider_id: 'provider-a', provider_name: 'Magpie', key_id: 'key-a', key_name: 'Magpie 主账号', key_account_label: 'Magpie 主账号',
+  key_preview: 'sk-••••8a2f', endpoint_id: 'endpoint-a', endpoint_name: 'openai:responses',
+  status: upstreamFailure ? 'failed' : 'skipped', status_code: upstreamFailure ? 500 : undefined,
+  error_message: upstreamFailure ? 'Failed to load model: CUDA out of memory' : undefined,
+  skip_reason: cooldownFailure ? 'key_circuit_open' : undefined,
+  is_cached: false, latency_ms: upstreamFailure ? 1590 : 4,
+  created_at: iso(0), started_at: iso(0), finished_at: iso(upstreamFailure ? 1590 : 4),
+  extra_data: {
+    first_byte_time_ms: upstreamFailure ? 920 : null,
+    provider_api_format: 'openai:responses', client_api_format: 'openai:responses', needs_conversion: false,
+    rate_limit_cooldown_until_unix_secs: cooldownFailure ? Math.floor(Date.now() / 1000) + 600 : null,
+    upstream_response: upstreamFailure ? { status_code: 500, headers: { 'content-type': 'application/json' }, body: { error: { code: 'model_load_failed', message: 'Failed to load model: CUDA out of memory', type: 'server_error' } } } : undefined,
+  },
+}, ...(upstreamFailure || cooldownFailure ? [{
+  id: upstreamFailure ? 'attempt-upstream-500-key-b' : 'attempt-cooldown-2', request_id: detail.request_id, candidate_index: 1, retry_index: 0,
+  provider_id: 'provider-a', provider_name: 'Magpie', key_id: 'key-b', key_name: 'Magpie 备用账号', key_account_label: 'Magpie 备用账号',
+  key_preview: 'sk-••••6c19', endpoint_id: 'endpoint-a', endpoint_name: 'openai:responses',
+  status: 'skipped', skip_reason: 'key_circuit_open', is_cached: false, latency_ms: 5,
+  created_at: iso(1600), started_at: iso(1600), finished_at: iso(1605),
+  extra_data: { provider_api_format: 'openai:responses', client_api_format: 'openai:responses', rate_limit_cooldown_until_unix_secs: Math.floor(Date.now() / 1000) + 540 },
+}] : [])] : Array.from({ length: count }, (_, index) => ({
   id: `attempt-${index}`, request_id: detail.request_id, candidate_index: lifecycleFixture ? 0 : index, retry_index: lifecycleFixture ? index : 0,
   provider_id: `provider-${Math.floor(index / 2)}`, provider_name: index < 2 ? 'Input · 国际线路' : 'Input · 备用线路',
   key_id: `key-${index}`, key_name: `Key ${String.fromCharCode(65 + index)} · 余额`,
@@ -62,7 +87,7 @@ const candidates = Array.from({ length: count }, (_, index) => ({
   extra_data: { ...(long ? { note: 'diagnostic-'.repeat(100) } : {}), provider_api_format: 'openai:responses' },
 }))
 dashboardApi.getRequestDetail = async () => structuredClone(detail)
-requestTraceApi.getRequestTrace = async () => ({ request_id: detail.request_id, candidates: structuredClone(candidates), total_candidates: count, final_status: pending ? activeStatus : success ? 'success' : 'failed', total_latency_ms: totalMs })
+requestTraceApi.getRequestTrace = async () => ({ request_id: detail.request_id, candidates: structuredClone(candidates), total_candidates: candidates.length, final_status: pending ? activeStatus : success ? 'success' : 'failed', total_latency_ms: totalMs })
 const open = ref(false)
 const row = ref({ ...detail, cost: 0, input_tokens: detail.tokens.input, output_tokens: detail.tokens.output, total_tokens: detail.tokens.total })
 createApp({ render: () => [

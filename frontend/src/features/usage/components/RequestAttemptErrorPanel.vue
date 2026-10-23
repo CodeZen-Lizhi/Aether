@@ -135,9 +135,11 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 
   if (error.skipReason === 'key_circuit_open') {
     return {
-      title: error.skipped ? '密钥熔断，未发送请求' : '密钥熔断保护生效',
-      description: '当前 Key 暂停接收请求。',
-      guidance: '可查看密钥健康度及熔断恢复状态。',
+      title: error.skipped ? 'Key 处于本地限流冷却，请求未发送' : 'Key 的本地冷却保护已生效',
+      description: error.skipped
+        ? '调度器在发送前跳过了当前 Key，上游没有收到这次请求。'
+        : '当前 Key 的请求未能完成，诊断记录保留了本地冷却原因。',
+      guidance: '可查看 Key 健康度与恢复时间；技术详情保留原始跳过原因。',
       tone: 'warning',
     }
   }

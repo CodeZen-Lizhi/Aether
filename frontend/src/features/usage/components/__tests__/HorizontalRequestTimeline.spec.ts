@@ -126,9 +126,22 @@ async function flushPendingUpdates() {
   await nextTick()
 }
 
+/** 等待 Vue 过渡类在下一宏任务中移除，避免把离场节点误判为仍在展示。 */
+async function waitForTransitions() {
+  await flushPendingUpdates()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  await nextTick()
+}
+
+/** 通过真实 Key 节点选择一次尝试，覆盖用户可操作路径。 */
+function clickAttempt(root: HTMLElement, id: string) {
+  root.querySelector<HTMLButtonElement>(`.attempt-node[data-attempt-id="${id}"]`)?.click()
+}
+
 function mountTimeline(
   traceData: RequestTrace,
   extraProps: Record<string, unknown> = {},
+  options: { autoOpenDetail?: boolean } = {},
 ) {
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -139,6 +152,19 @@ function mountTimeline(
   })
   app.mount(root)
   mountedApps.push({ app, root })
+  if (options.autoOpenDetail !== false) {
+    const candidates = [...traceData.candidates].sort((a, b) => (
+      a.candidate_index - b.candidate_index || a.retry_index - b.retry_index
+    ))
+    const active = candidates.find(candidate => candidate.status === 'streaming'
+      || (candidate.status === 'pending' && Boolean(candidate.started_at)))
+    const success = candidates.find(candidate => candidate.status === 'success')
+    const terminal = [...candidates].reverse().find(candidate => ['failed', 'cancelled', 'stream_interrupted'].includes(candidate.status))
+    const target = success ?? active ?? terminal ?? candidates[0]
+    if (target) {
+      root.querySelector<HTMLButtonElement>(`.attempt-node[data-attempt-id="${target.id}"]`)?.click()
+    }
+  }
   return root
 }
 
@@ -222,7 +248,7 @@ describe('HorizontalRequestTimeline', () => {
     expect(displayedLatency).not.toBe('626ms')
   })
 
-  it('paginates all recorded provider keys with one shared layout and cyclic navigation', async () => {
+  it('groups providers and keys while keeping attempt details collapsed until selection', async () => {
     const trace = buildTrace([
       buildCandidate({
         id: 'provider-a-key-1',
@@ -262,25 +288,25 @@ describe('HorizontalRequestTimeline', () => {
       }),
     ])
 
-    const root = mountTimeline(trace)
+    const root = mountTimeline(trace, {}, { autoOpenDetail: false })
     await nextTick()
 
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('4 / 4')
-    expect(root.querySelector('.detail-panel')?.textContent).toContain('Key B2')
-    const next = root.querySelector<HTMLButtonElement>('[aria-label="下一条尝试"]')!
-    const prev = root.querySelector<HTMLButtonElement>('[aria-label="上一条尝试"]')!
-    for (const key of ['Key A1', 'Key A2', 'Key B1', 'Key B2']) {
-      next.click()
-      await nextTick()
-      expect(root.querySelectorAll('.detail-panel')).toHaveLength(1)
-      expect(root.querySelector('.detail-panel')?.textContent).toContain(key)
-    }
-    next.click()
-    await nextTick()
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('1 / 4')
-    prev.click()
-    await nextTick()
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('4 / 4')
+    expect(root.querySelectorAll('.provider-lane')).toHaveLength(2)
+    expect(root.querySelectorAll('.provider-lane')[0]?.textContent).toContain('Key A1')
+    expect(root.querySelectorAll('.provider-lane')[0]?.textContent).toContain('Key A2')
+    expect(root.querySelectorAll('.provider-lane')[1]?.textContent).toContain('Key B1')
+    expect(root.querySelectorAll('.provider-lane')[1]?.textContent).toContain('Key B2')
+    expect(root.querySelector('.detail-panel')).toBeNull()
+
+    root.querySelector<HTMLButtonElement>('[data-provider-id="provider-a"]')!.click()
+    await flushPendingUpdates()
+    expect(root.querySelector('.detail-panel')?.textContent).toContain('Key A1')
+    root.querySelector<HTMLButtonElement>('[data-attempt-id="provider-a-key-2"]')!.click()
+    await flushPendingUpdates()
+    expect(root.querySelector('.detail-panel')?.textContent).toContain('Key A2')
+    root.querySelector<HTMLButtonElement>('[aria-label="收起当前尝试详情"]')!.click()
+    await waitForTransitions()
+    expect(root.querySelector('.detail-panel')).toBeNull()
   })
 
   it('orders visible candidates by scheduling index and includes unattempted candidates', async () => {
@@ -345,17 +371,12 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    const labels: string[] = []
-    const next = root.querySelector<HTMLButtonElement>('[aria-label="下一条尝试"]')!
-    for (let index = 0; index < 5; index++) {
-      next.click()
-      await nextTick()
-      labels.push(root.querySelector('.title-text')?.textContent?.trim() ?? '')
-      if (index === 0) expect(root.querySelector('.status-tag')?.textContent).toContain('可用未尝试')
-      if (index === 1) expect(root.querySelector('.status-tag')?.textContent).toContain('未发送')
-      if (index === 2) expect(root.querySelector('.status-tag')?.textContent).toContain('进行中')
-    }
+    const labels = [...root.querySelectorAll('.provider-copy strong')].map(element => element.textContent?.trim())
     expect(labels).toEqual(['Provider Available', 'Provider Skipped', 'Provider Pending', 'Provider Failed', 'Provider Success'])
+    const nodes = [...root.querySelectorAll('.attempt-node')]
+    expect(nodes.map(node => node.getAttribute('data-attempt-id'))).toEqual([
+      'cand-available', 'cand-skipped', 'cand-pending-unstarted', 'cand-failed', 'cand-success',
+    ])
   })
 
   it('keeps successful runtime pool key visible when only pool_key_index is recorded', async () => {
@@ -387,10 +408,8 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.querySelector('.title-text')?.textContent).toBe('CodexFree2')
-    expect(root.querySelector('.detail-panel')?.textContent).toContain('Success Key')
-    expect(root.querySelector('.status-tag')?.textContent).toContain('成功')
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('2 / 2')
+    expect(root.querySelector('.provider-lane')?.textContent).toContain('Success Key')
+    expect(root.querySelector('.attempt-node[data-attempt-id="pool-success"]')?.className).toContain('status-success')
   })
 
   it('uses candidate terminal status for node colors instead of overriding with HTTP code', async () => {
@@ -420,9 +439,8 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.querySelector('.status-tag')?.textContent).toContain('成功')
-    root.querySelector<HTMLButtonElement>('[aria-label="上一条尝试"]')!.click()
-    await nextTick()
+    clickAttempt(root, 'cand-body-error')
+    await flushPendingUpdates()
     expect(root.querySelector('.status-tag')?.textContent).toContain('失败')
     expect(root.querySelector('.status-tag')?.textContent).toContain('HTTP 200')
     expect(root.querySelector('.panel-title .title-dot')?.classList.contains('status-failed')).toBe(true)
@@ -644,7 +662,7 @@ describe('HorizontalRequestTimeline', () => {
     expect(upstreamResponse?.textContent).not.toContain('"body_ref"')
     expect(upstreamResponse?.textContent).not.toContain('"body_state"')
     expect(root.textContent).not.toContain('上游真实响应')
-    expect(root.textContent).not.toContain('execution runtime stream returned non-success status 400')
+    expect(root.querySelector('.attempt-cause')?.textContent).not.toContain('execution runtime stream returned non-success status 400')
     expect(root.textContent).not.toContain('真实请求错误')
     expect(root.textContent).not.toContain('返回客户端响应')
     expect(root.textContent).not.toContain('默认处理')
@@ -932,11 +950,9 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(buildTrace([buildCandidate({ status: 'skipped', skip_reason: 'key_circuit_open', started_at: undefined, status_code: 503 })]))
     await nextTick()
     expect(root.querySelectorAll('.detail-panel')).toHaveLength(1)
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('1 / 1')
-    expect(root.querySelector('[aria-label="下一条尝试"]')).toBeNull()
+    expect(root.querySelectorAll('.attempt-node')).toHaveLength(1)
     expect(root.querySelector('.status-tag')?.textContent).toContain('未发送')
     expect(root.querySelector('.status-tag')?.textContent).not.toContain('HTTP')
-    expect(root.querySelector('.error-title')?.textContent).toContain('密钥熔断，未发送请求')
     expect(root.textContent).not.toContain('上游服务暂时不可用')
   })
 
@@ -944,8 +960,6 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(buildTrace([buildCandidate({ status: 'failed', skip_reason: 'key_circuit_open', status_code: 503 })]))
     await nextTick()
     expect(root.querySelector('.status-tag')?.textContent).toContain('失败')
-    expect(root.querySelector('.error-title')?.textContent).toContain('密钥熔断保护生效')
-    expect(root.querySelector('.error-title')?.textContent).not.toContain('未发送')
   })
 
   it('preserves the manually selected attempt by identity when external data inserts earlier records', async () => {
@@ -957,19 +971,20 @@ describe('HorizontalRequestTimeline', () => {
     const app = createApp(defineComponent({ setup: () => () => h(HorizontalRequestTimeline, { traceData: data.value, requestId: data.value.request_id }) }))
     app.mount(root)
     mountedApps.push({ app, root })
-    await nextTick()
-    root.querySelector<HTMLButtonElement>('[aria-label="下一条尝试"]')!.click()
-    await nextTick()
+    await flushPendingUpdates()
+    clickAttempt(root, 'first')
+    await flushPendingUpdates()
     expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
     data.value = buildTrace([buildCandidate({ id: 'inserted', candidate_index: 0 }), { ...first, key_name: 'Updated First Key' }, second])
     await flushPendingUpdates()
     expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
     expect(root.querySelector('.detail-panel')?.textContent).toContain('Updated First Key')
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('2 / 3')
+    expect(root.querySelectorAll('.attempt-node')).toHaveLength(3)
     data.value = { ...buildTrace([buildCandidate({ id: 'other', request_id: 'req-2' })]), request_id: 'req-2' }
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('other')
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('1 / 1')
+    expect(root.querySelectorAll('.provider-lane')).toHaveLength(1)
+    expect(root.querySelector('.attempt-node')?.getAttribute('data-attempt-id')).toBe('other')
+    expect(root.querySelector('.detail-panel')).toBeNull()
   })
 
   it('ignores an old response when switching requests during a trace load', async () => {
@@ -985,11 +1000,12 @@ describe('HorizontalRequestTimeline', () => {
     mountedApps.push({ app, root })
     requestId.value = 'req-2'
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('new-attempt')
+    expect(root.querySelector('.attempt-node')?.getAttribute('data-attempt-id')).toBe('new-attempt')
+    expect(root.querySelector('.detail-panel')).toBeNull()
     finishOld(buildTrace([buildCandidate({ id: 'old-attempt' })]))
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('new-attempt')
-    expect(root.querySelector('.trace-pagination')?.textContent).toContain('1 / 1')
+    expect(root.querySelector('.attempt-node')?.getAttribute('data-attempt-id')).toBe('new-attempt')
+    expect(root.querySelector('.detail-panel')).toBeNull()
   })
 
   it('keeps manual selection during API refresh and supports keyboard cycling', async () => {
@@ -998,16 +1014,15 @@ describe('HorizontalRequestTimeline', () => {
     requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(buildTrace([first, second]))
     const { root, refresh } = mountTimelineFromApi('req-1')
     await flushPendingUpdates()
-    const next = root.querySelector<HTMLButtonElement>('[aria-label="下一条尝试"]')!
-    next.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-    await nextTick()
+    clickAttempt(root, 'first')
+    await flushPendingUpdates()
     expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
     requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(buildTrace([{ ...first, key_name: 'Updated Key' }, second]))
     await refresh()
     expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
     expect(root.querySelector('.detail-panel')?.textContent).toContain('Updated Key')
-    next.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
-    await nextTick()
+    clickAttempt(root, 'second')
+    await flushPendingUpdates()
     expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('second')
   })
 
@@ -1060,11 +1075,15 @@ describe('HorizontalRequestTimeline', () => {
     })
     await flushPendingUpdates()
 
+    clickAttempt(root, 'cand-available-a')
+    await flushPendingUpdates()
     expect(root.querySelector('.detail-panel')?.textContent).toContain('Available Key')
 
     requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(activeTrace)
     await refresh()
 
+    clickAttempt(root, 'cand-streaming-b')
+    await flushPendingUpdates()
     const detailText = root.querySelector('.detail-panel')?.textContent ?? ''
     expect(detailText).toContain('Streaming Key')
     expect(detailText).toContain('进行中')

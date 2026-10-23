@@ -154,7 +154,7 @@ describe('RequestDetailDrawer request lifecycle', () => {
     await nextTick()
     await vi.waitFor(() => {
       expect(apiMocks.getRequestTrace).toHaveBeenCalled()
-      expect(document.body.querySelector('.panel-title .title-dot')?.classList.contains('status-failed')).toBe(true)
+      expect(document.body.querySelector('.attempt-node[data-attempt-id="failed-attempt"]')).not.toBeNull()
     })
     const states = onRequestState.mock.calls.map(([state]) => state)
     expect(states.length).toBeGreaterThan(0)

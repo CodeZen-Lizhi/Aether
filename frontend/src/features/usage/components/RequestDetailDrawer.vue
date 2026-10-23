@@ -168,10 +168,10 @@
               v-else-if="detail"
               class="space-y-4"
             >
-              <!-- 费用与性能概览 -->
+              <!-- 请求概览：保留费用、端到端耗时、输出、速度和首字的完整语义。 -->
               <section aria-label="费用与性能概览">
                 <div
-                  class="grid grid-cols-2 gap-3 sm:grid-cols-4"
+                  class="grid grid-cols-2 gap-2.5 sm:grid-cols-5"
                   data-request-detail-overview
                 >
                   <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
@@ -191,6 +191,17 @@
                     </div>
                     <div class="mt-1 text-xs text-muted-foreground">
                       总耗时
+                    </div>
+                  </div>
+                  <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                    <div
+                      class="text-base font-semibold tabular-nums"
+                      data-request-detail-output-tokens
+                    >
+                      {{ formatNumber(detailOutputTokens) }}
+                    </div>
+                    <div class="mt-1 text-xs text-muted-foreground">
+                      输出 Token
                     </div>
                   </div>
                   <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
@@ -588,7 +599,39 @@
                 </details>
               </section>
 
-              <!-- 请求链路追踪卡片 -->
+              <!-- API 格式、端点与代理属于补充上下文，保留在前端抽屉的次级层。 -->
+              <details
+                v-if="detail"
+                class="rounded-xl border border-border/60 bg-card/60"
+                data-request-detail-context
+              >
+                <summary class="cursor-pointer px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4">
+                  请求上下文
+                  <span class="ml-2 opacity-65">API 格式、端点与代理</span>
+                </summary>
+                <div class="grid gap-x-5 gap-y-3 border-t border-border/60 px-3 py-3 text-xs sm:grid-cols-2 sm:px-4">
+                  <div class="min-w-0">
+                    <div class="text-muted-foreground">客户端 → 上游格式</div>
+                    <div class="mt-1 break-words font-mono text-foreground">
+                      {{ formatApiFormat(detail.api_format) }} → {{ formatApiFormat(detail.endpoint_api_format) }}
+                    </div>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-muted-foreground">端点</div>
+                    <div class="mt-1 break-words font-mono text-foreground">{{ getNestedString(asRecord(detail.metadata ?? null), 'endpoint_name') || formatApiFormat(detail.endpoint_api_format) }}</div>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-muted-foreground">密钥</div>
+                    <div class="mt-1 break-words text-foreground">{{ detail.api_key?.name || detail.api_key?.display || detail.api_key?.id || '-' }}</div>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-muted-foreground">代理</div>
+                    <div class="mt-1 break-words text-foreground">{{ traceRequestMetadata?.proxy_name || traceRequestMetadata?.proxy_node_name || '未记录' }}</div>
+                  </div>
+                </div>
+              </details>
+
+              <!-- 执行路径与按需展开的单次尝试详情。 -->
               <div>
                 <HorizontalRequestTimeline
                   v-if="showTimeline && traceTimelineRequestId"
@@ -602,9 +645,17 @@
                 />
               </div>
 
-              <!-- Tabs 区域 -->
-              <Card>
-                <div class="p-3 sm:p-4">
+              <!-- 原始请求、响应和元数据集中为次级排查入口，避免首屏重复铺开。 -->
+              <details
+                v-if="visibleTabs.length"
+                class="rounded-xl border border-border/60 bg-card/60"
+                data-request-detail-raw-data
+              >
+                <summary class="cursor-pointer px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4">
+                  更多字段与原始数据
+                  <span class="ml-2 opacity-65">请求头、正文、响应与元数据</span>
+                </summary>
+                <div class="border-t border-border/60 p-3 sm:p-4">
                   <Tabs
                     v-model="activeTab"
                     :default-value="activeTab"
@@ -851,7 +902,7 @@
                     </JsonContentPanel>
                   </Tabs>
                 </div>
-              </Card>
+              </details>
             </div>
           </div>
         </Card>
