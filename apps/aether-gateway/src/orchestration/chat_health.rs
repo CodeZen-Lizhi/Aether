@@ -55,6 +55,7 @@ fn current_streak(payload: &Map<String, Value>) -> u64 {
     }
 }
 
+/// 按聊天失败事实投影健康状态；限流冷却独立记录起点并限制为最多 600 秒。
 pub(crate) fn project_chat_failure(
     health: Option<&Value>,
     circuit: Option<&Value>,
@@ -116,6 +117,10 @@ pub(crate) fn project_chat_failure(
     next_health.insert("rate_limit_probe_until_unix_secs".into(), Value::Null);
     next_health.remove("rate_limit_probe_lease");
     if fact.rate_limited || retry_after_secs.is_some() {
+        next_health.insert(
+            "rate_limit_cooldown_started_at_unix_secs".into(),
+            json!(observed_at),
+        );
         let previous = Some(aether_scheduler_core::ProviderKeyRateLimitCooldown {
             until_unix_secs: next_health
                 .get("rate_limit_cooldown_until_unix_secs")
@@ -184,6 +189,7 @@ pub(crate) fn project_chat_failure(
     })
 }
 
+/// 投影聊天成功恢复状态，并清除对应格式的限流冷却。
 pub(crate) fn project_chat_success(
     health: Option<&Value>,
     circuit: Option<&Value>,
@@ -215,6 +221,10 @@ pub(crate) fn project_chat_success(
     next_health.insert("consecutive_failures".into(), json!(0));
     next_health.insert("last_failure_at".into(), Value::Null);
     next_health.insert("rate_limit_cooldown_until_unix_secs".into(), Value::Null);
+    next_health.insert(
+        "rate_limit_cooldown_started_at_unix_secs".into(),
+        Value::Null,
+    );
     next_health.insert("rate_limit_probe_until_unix_secs".into(), Value::Null);
     next_health.remove("rate_limit_probe_lease");
     next_health.insert("consecutive_rate_limits".into(), json!(0));
@@ -339,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn rate_limit_counts_and_preserves_long_provider_deadline() {
+    fn rate_limit_counts_and_caps_long_provider_deadline() {
         let fact = classify_chat_failure(429, None, ChatFailureSource::UpstreamResponse, false);
         let first =
             project_chat_failure(None, None, "openai:chat", fact, 100, Some(3600), 32).unwrap();
@@ -359,7 +369,45 @@ mod tests {
         );
         assert_eq!(
             next.health_by_format["openai:chat"]["rate_limit_cooldown_until_unix_secs"],
-            json!(3700)
+            json!(700)
+        );
+        assert_eq!(
+            next.health_by_format["openai:chat"]["rate_limit_cooldown_started_at_unix_secs"],
+            json!(101)
+        );
+    }
+
+    #[test]
+    fn unrelated_failure_does_not_extend_rate_limit_cooldown() {
+        let limited = project_chat_failure(
+            None,
+            None,
+            "openai:chat",
+            classify_chat_failure(429, None, ChatFailureSource::UpstreamResponse, false),
+            100,
+            Some(3600),
+            32,
+        )
+        .unwrap();
+        let later_failure = project_chat_failure(
+            Some(&limited.health_by_format),
+            Some(&limited.circuit_breaker_by_format),
+            "openai:chat",
+            classify_chat_failure(500, None, ChatFailureSource::UpstreamResponse, false),
+            500,
+            None,
+            32,
+        )
+        .unwrap();
+        let cooldown = aether_scheduler_core::ProviderKeyRateLimitCooldown::from_health_payload(
+            &later_failure.health_by_format["openai:chat"],
+        )
+        .unwrap();
+        assert_eq!(cooldown.until_unix_secs, 700);
+        assert_eq!(
+            later_failure.health_by_format["openai:chat"]
+                ["rate_limit_cooldown_started_at_unix_secs"],
+            json!(100)
         );
     }
 

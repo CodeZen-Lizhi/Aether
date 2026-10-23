@@ -100,6 +100,7 @@ fn request_result_window_success_rate_breached(window: &[Value], now_unix_secs: 
         && (successes as f64 / samples as f64) < SUCCESS_RATE_WINDOW_THRESHOLD
 }
 
+/// 投影非聊天失败健康度，同时保留原有限流冷却及其独立起点。
 pub(crate) fn project_local_failure_health(
     current_health_by_format: Option<&Value>,
     api_format: &str,
@@ -173,6 +174,7 @@ pub(crate) fn project_local_failure_health(
     // reset the rate-limit backoff ladder or clear an active cooldown window.
     for field in [
         "rate_limit_cooldown_until_unix_secs",
+        "rate_limit_cooldown_started_at_unix_secs",
         "consecutive_rate_limits",
         "rate_limit_probe_until_unix_secs",
     ] {
@@ -216,6 +218,7 @@ pub(crate) fn project_local_circuit_open_health(
     Some(Value::Object(health_by_format))
 }
 
+/// 投影成功健康恢复，并清除该格式的限流冷却状态。
 pub(crate) fn project_local_success_health(
     current_health_by_format: Option<&Value>,
     api_format: &str,
@@ -260,18 +263,18 @@ pub(crate) fn project_local_success_health(
         "rate_limit_cooldown_until_unix_secs".to_string(),
         Value::Null,
     );
+    payload.insert(
+        "rate_limit_cooldown_started_at_unix_secs".to_string(),
+        Value::Null,
+    );
     payload.insert("consecutive_rate_limits".to_string(), json!(0));
     payload.insert("rate_limit_probe_until_unix_secs".to_string(), Value::Null);
     health_by_format.insert(api_format.to_string(), Value::Object(payload));
     Some(Value::Object(health_by_format))
 }
 
-/// Project a 429 into the per-format rate-limit cooldown (P0-2).
-///
-/// Writes `rate_limit_cooldown_until_unix_secs` / `consecutive_rate_limits`
-/// into the key's `health_by_format` payload. Returns `None` (no write) when
-/// the projected cooldown barely moved, so a 429 storm does not turn into a
-/// per-request DB write (anti write-amplification, 5s threshold).
+/// 将 429 投影到指定格式的冷却状态，并写入独立起点与最多 600 秒的有效截止。
+/// 冷却变化不超过 5 秒时跳过写入，避免限流风暴造成逐请求数据库写入。
 pub(crate) fn project_local_rate_limit_cooldown(
     current_health_by_format: Option<&Value>,
     api_format: &str,
@@ -336,6 +339,10 @@ pub(crate) fn project_local_rate_limit_cooldown(
     projected.insert(
         "rate_limit_cooldown_until_unix_secs".to_string(),
         json!(cooldown.until_unix_secs),
+    );
+    projected.insert(
+        "rate_limit_cooldown_started_at_unix_secs".to_string(),
+        json!(observed_at_unix_secs),
     );
     projected.insert(
         "consecutive_rate_limits".to_string(),
@@ -646,12 +653,7 @@ pub(crate) fn project_local_key_circuit_failure_with_success_rate(
     Some(Value::Object(circuit_by_format))
 }
 
-/// P1-7: success projection during the recovery ramp. Health climbs from the
-/// ramp's initial 0.25 toward 1.0 (linear per remaining success), and the
-/// ramp counter on the circuit payload counts down; the circuit-side
-/// decrement happens in project_local_key_circuit_closed_with_ramp when the
-/// caller re-projects the closed circuit. Kept side-effect-free: this only
-/// writes the health payload.
+/// 投影熔断恢复期的成功状态并清除限流冷却；熔断计数由调用方另行更新。
 pub(crate) fn project_local_ramp_success_health(
     current_health_by_format: Option<&Value>,
     current_circuit_by_format: Option<&Value>,
@@ -702,6 +704,10 @@ pub(crate) fn project_local_ramp_success_health(
     // A success during the ramp clears any lingering rate-limit cooldown.
     payload.insert(
         "rate_limit_cooldown_until_unix_secs".to_string(),
+        Value::Null,
+    );
+    payload.insert(
+        "rate_limit_cooldown_started_at_unix_secs".to_string(),
         Value::Null,
     );
     payload.insert("consecutive_rate_limits".to_string(), json!(0));
@@ -1292,6 +1298,7 @@ mod p0_failure_class_tests {
                     "health_score": 0.9,
                     "consecutive_failures": 2,
                     "rate_limit_cooldown_until_unix_secs": NOW + 30,
+                    "rate_limit_cooldown_started_at_unix_secs": NOW - 20,
                     "consecutive_rate_limits": 1,
                     "rate_limit_probe_until_unix_secs": NOW + 60
                 }
@@ -1308,6 +1315,10 @@ mod p0_failure_class_tests {
             entry["rate_limit_cooldown_until_unix_secs"],
             json!(NOW + 30)
         );
+        assert_eq!(
+            entry["rate_limit_cooldown_started_at_unix_secs"],
+            json!(NOW - 20)
+        );
         assert_eq!(entry["consecutive_rate_limits"], json!(1));
         assert_eq!(entry["rate_limit_probe_until_unix_secs"], json!(NOW + 60));
     }
@@ -1320,6 +1331,7 @@ mod p0_failure_class_tests {
                     "health_score": 0.5,
                     "consecutive_failures": 5,
                     "rate_limit_cooldown_until_unix_secs": NOW + 60,
+                    "rate_limit_cooldown_started_at_unix_secs": NOW,
                     "consecutive_rate_limits": 2,
                     "rate_limit_probe_until_unix_secs": NOW + 60
                 }
@@ -1331,6 +1343,10 @@ mod p0_failure_class_tests {
         assert_eq!(entry["health_score"], json!(0.625));
         assert_eq!(entry["consecutive_failures"], json!(4));
         assert_eq!(entry["rate_limit_cooldown_until_unix_secs"], Value::Null);
+        assert_eq!(
+            entry["rate_limit_cooldown_started_at_unix_secs"],
+            Value::Null
+        );
         assert_eq!(entry["consecutive_rate_limits"], json!(0));
         assert_eq!(entry["rate_limit_probe_until_unix_secs"], Value::Null);
     }

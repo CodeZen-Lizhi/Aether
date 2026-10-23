@@ -352,11 +352,9 @@ impl UpstreamFailureClass {
 
 /// Per-format rate-limit cooldown state stored inside `health_by_format` (P0-2).
 ///
-/// A 429 sets `rate_limit_cooldown_until_unix_secs`; until then the key is
-/// skipped by selection. `consecutive_rate_limits` drives the exponential
-/// fallback (30s → 1m → 2m → 4m, capped at 10m) when the upstream omits
-/// `Retry-After`. A successful outcome resets the ladder; unrelated failures
-/// preserve it so they cannot erase an active backoff window.
+/// 429 设置按格式独立的冷却截止；冷却期内调度会跳过此 Key。`consecutive_rate_limits` 在
+/// 上游未提供 `Retry-After` 时驱动 30 秒起始的指数退避；本地退避和上游建议都最多 10 分钟。
+/// 成功会重置退避计数，其他失败保留冷却状态，避免意外提前恢复。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderKeyRateLimitCooldown {
     pub until_unix_secs: u64,
@@ -371,7 +369,7 @@ pub const RATE_LIMIT_COOLDOWN_MAX_SECS: u64 = 600;
 pub const RATE_LIMIT_PROBE_RESERVATION_SECS: u64 = 60;
 
 impl ProviderKeyRateLimitCooldown {
-    /// Chat policy keeps provider deadlines intact; only the local fallback is capped.
+    /// 聊天请求采用上游 Retry-After 或本地退避，并限制冷却不超过最近一次限流后 10 分钟。
     pub fn project_chat(
         current: Option<Self>,
         observed_at_unix_secs: u64,
@@ -383,11 +381,15 @@ impl ProviderKeyRateLimitCooldown {
         });
         let consecutive = previous.consecutive_rate_limits.saturating_add(1);
         let shift = consecutive.saturating_sub(1).min(6) as u32;
-        let seconds = retry_after_secs.unwrap_or_else(|| (1u64 << shift).min(60));
+        let seconds = retry_after_secs
+            .unwrap_or_else(|| (1u64 << shift).min(60))
+            .min(RATE_LIMIT_COOLDOWN_MAX_SECS);
+        let latest_allowed_until =
+            observed_at_unix_secs.saturating_add(RATE_LIMIT_COOLDOWN_MAX_SECS);
         Self {
             until_unix_secs: observed_at_unix_secs
                 .saturating_add(seconds)
-                .max(previous.until_unix_secs),
+                .max(previous.until_unix_secs.min(latest_allowed_until)),
             consecutive_rate_limits: consecutive,
         }
     }
@@ -422,12 +424,25 @@ impl ProviderKeyRateLimitCooldown {
         }
     }
 
+    /// 解析 Key 冷却状态；优先使用独立冷却起点，旧数据回退 `last_failure_at` 并限制为 10 分钟。
     pub fn from_health_payload(payload: &serde_json::Value) -> Option<Self> {
         let payload = payload.as_object()?;
-        let until = payload
+        let stored_until = payload
             .get("rate_limit_cooldown_until_unix_secs")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
+        let latest_allowed_until = payload
+            .get("rate_limit_cooldown_started_at_unix_secs")
+            .and_then(serde_json::Value::as_u64)
+            .or_else(|| {
+                payload
+                    .get("last_failure_at")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                    .and_then(|value| u64::try_from(value.timestamp()).ok())
+            })
+            .map(|started_at| started_at.saturating_add(RATE_LIMIT_COOLDOWN_MAX_SECS));
+        let until = latest_allowed_until.map_or(stored_until, |maximum| stored_until.min(maximum));
         let consecutive = payload
             .get("consecutive_rate_limits")
             .and_then(serde_json::Value::as_u64)
@@ -449,7 +464,7 @@ impl ProviderKeyRateLimitCooldown {
     }
 }
 
-/// True while the key's per-format rate-limit cooldown is still active (P0-2).
+/// 判断 Key 在指定格式上的限流冷却是否仍有效，并将历史截止限制在最近一次失败后 10 分钟内。
 pub fn provider_key_rate_limit_cooldown_active_at(
     key: &StoredProviderCatalogKey,
     api_format: &str,
@@ -463,7 +478,7 @@ pub fn provider_key_rate_limit_cooldown_active_at(
         .is_some_and(|cooldown| now_unix_secs < cooldown.until_unix_secs)
 }
 
-/// Read the current per-format rate-limit cooldown snapshot (P0-2).
+/// 读取 Key 在指定格式上的有效限流冷却状态。
 pub fn provider_key_rate_limit_cooldown(
     key: &StoredProviderCatalogKey,
     api_format: &str,
@@ -1193,7 +1208,7 @@ mod rate_limit_cooldown_tests {
     use aether_data_contracts::repository::provider_catalog::StoredProviderCatalogKey;
 
     #[test]
-    fn chat_cooldown_starts_at_one_second_and_keeps_provider_deadlines() {
+    fn chat_cooldown_starts_at_one_second_and_caps_provider_deadlines() {
         let mut previous = None;
         for expected in [1, 2, 4, 8, 16, 32, 60, 60] {
             let cooldown = ProviderKeyRateLimitCooldown::project_chat(previous, 100, None);
@@ -1201,10 +1216,10 @@ mod rate_limit_cooldown_tests {
             previous = Some(cooldown);
         }
         let long = ProviderKeyRateLimitCooldown::project_chat(None, 100, Some(3600));
-        assert_eq!(long.until_unix_secs, 3700);
+        assert_eq!(long.until_unix_secs, 100 + RATE_LIMIT_COOLDOWN_MAX_SECS);
         assert_eq!(
             ProviderKeyRateLimitCooldown::project_chat(Some(long), 101, None).until_unix_secs,
-            3700
+            100 + RATE_LIMIT_COOLDOWN_MAX_SECS
         );
         assert_eq!(
             ProviderKeyRateLimitCooldown::project_chat(None, 100, Some(0)).until_unix_secs,
@@ -1353,6 +1368,40 @@ mod rate_limit_cooldown_tests {
             provider_key_rate_limit_cooldown_payload(&json!({"consecutive_rate_limits": 3})),
             None
         );
+    }
+
+    #[test]
+    fn legacy_chat_deadline_is_capped_from_last_failure_time() {
+        let cooldown = ProviderKeyRateLimitCooldown::from_health_payload(&json!({
+            "rate_limit_cooldown_until_unix_secs": 99_999,
+            "rate_limit_cooldown_started_at_unix_secs": 1_000,
+            "consecutive_rate_limits": 1,
+            "last_failure_at": "1970-01-01T01:23:20Z"
+        }))
+        .expect("legacy cooldown should parse");
+        assert_eq!(
+            cooldown.until_unix_secs,
+            1_000 + RATE_LIMIT_COOLDOWN_MAX_SECS
+        );
+
+        let mut key = key_with_cooldown("openai:chat", 99_999);
+        key.health_by_format = Some(json!({
+            "openai:chat": {
+                "rate_limit_cooldown_until_unix_secs": 99_999,
+                "consecutive_rate_limits": 1,
+                "last_failure_at": "1970-01-01T00:16:40Z"
+            }
+        }));
+        assert!(provider_key_rate_limit_cooldown_active_at(
+            &key,
+            "openai:chat",
+            1_599
+        ));
+        assert!(!provider_key_rate_limit_cooldown_active_at(
+            &key,
+            "openai:chat",
+            1_600
+        ));
     }
 
     #[test]

@@ -201,7 +201,7 @@ fn short_retry_after_retries_same_key_and_long_cooldown_survives_next_request() 
             90_000,
             [
                 vec![
-                    Reply::Error(StatusCode::TOO_MANY_REQUESTS, Some("30")),
+                    Reply::Error(StatusCode::TOO_MANY_REQUESTS, Some("3600")),
                     Reply::Success,
                 ],
                 vec![Reply::Success, Reply::Success],
@@ -213,6 +213,20 @@ fn short_retry_after_retries_same_key_and_long_cooldown_survives_next_request() 
         assert!(started.elapsed() < Duration::from_secs(3));
         assert_eq!(long.targets(), [0, 1]);
         long.assert_health(0, 0.9).await;
+        let key = long.key(0).await;
+        let cooldown_until = key.health_by_format.as_ref().unwrap()["openai:chat"]
+            ["rate_limit_cooldown_until_unix_secs"]
+            .as_u64()
+            .unwrap();
+        let last_failure_at = chrono::DateTime::parse_from_rfc3339(
+            key.health_by_format.as_ref().unwrap()["openai:chat"]["last_failure_at"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap()
+        .timestamp() as u64;
+        assert!(cooldown_until <= last_failure_at + 600);
+        assert!(cooldown_until > last_failure_at);
         tokio::time::sleep(Duration::from_millis(2100)).await;
         assert_success(long.request(false).await).await;
         assert_eq!(

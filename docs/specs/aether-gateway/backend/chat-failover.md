@@ -97,9 +97,13 @@ write an individual attempt's error, status code or latency back as the whole
 request result.
 
 For one logical request and K+format, additional retry waiting totals at most
-2 seconds. Preserve the full valid Retry-After deadline across later requests,
-including non-429 failures. A long deadline skips this K for the current request.
-Do not hold an execution permit or probe while waiting to retry.
+2 seconds. A cooldown from Retry-After is capped at 600 seconds from the most
+recent rate-limit failure. Store that origin in
+`rate_limit_cooldown_started_at_unix_secs`, which unrelated failures must
+preserve and a valid success clears. Legacy deadlines without this field fall
+back to `last_failure_at`; a long upstream deadline is never preserved beyond
+the local maximum. A long effective deadline skips this K for the current
+request. Do not hold an execution permit or probe while waiting to retry.
 
 The three modes own both the initial order and fallback order:
 
@@ -179,7 +183,7 @@ and physical binding; never remove the reference to manufacture a fallback.
 Use local scripted upstreams through real authenticated gateway routes, and
 read authoritative health/bindings afterward. Keep these suites meaningful:
 
-- `tests::scheduler_failover`: actual counts/order, all three modes, full
+- `tests::scheduler_failover`: actual counts/order, all three modes, capped
   Retry-After, shared deadline, output then disconnect, typed transport errors,
   continuation rejection, due probe and cancellation.
 - `responses::route_smoke`: real WS K1/K1/K2 and separate health settlement.
