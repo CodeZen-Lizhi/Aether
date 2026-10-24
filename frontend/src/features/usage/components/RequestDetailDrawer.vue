@@ -40,8 +40,8 @@
                   -
                 </div>
                 <Badge
-                  v-if="detail?.status_code === 200"
-                  variant="success"
+                  v-if="detail?.status_code != null && detail.status_code >= 200 && detail.status_code < 300"
+                  variant="success-semantic"
                   data-request-lifecycle-status
                 >
                   {{ detail.status_code }}
@@ -637,7 +637,7 @@
                 </div>
               </RequestDetailSection>
 
-              <!-- 执行路径：纵向瀑布按实际时间定位 Key 调用，详情在所选行下方展开。 -->
+              <!-- 执行路径：横向展示真实发出的供应商与 Key，详情在整条路径下方展开。 -->
               <div>
                 <HorizontalRequestTimeline
                   v-if="showTimeline && traceTimelineRequestId"

@@ -26,6 +26,8 @@ const badgeVariants = cva(
         'outline-transparent': 'text-foreground border-border bg-transparent',
         success:
           'border-[#bfdbfe] bg-[#f5f9ff] text-[#1d4ed8] dark:border-[#1e40af]/40 dark:bg-[#1e3a8a]/25 dark:text-[#93c5fd]',
+        'success-semantic':
+          'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d] dark:border-[#166534]/60 dark:bg-[#14532d]/30 dark:text-[#86efac]',
         warning:
           'border-[#fde68a] bg-[#fffbeb] text-[#b45309] dark:border-[#78350f]/50 dark:bg-[#78350f]/25 dark:text-[#fcd34d]',
         dark: 'border-transparent bg-foreground text-background hover:bg-foreground/80',
@@ -38,7 +40,8 @@ const badgeVariants = cva(
 )
 
 interface Props {
-  variant?: 'default' | 'secondary' | 'destructive' | 'outline' | 'outline-transparent' | 'success' | 'warning' | 'dark'
+  /** 徽章语义；success-semantic 仅用于明确表达成功结果的请求状态。 */
+  variant?: 'default' | 'secondary' | 'destructive' | 'outline' | 'outline-transparent' | 'success' | 'success-semantic' | 'warning' | 'dark'
   class?: string
 }
 

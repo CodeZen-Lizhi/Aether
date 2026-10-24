@@ -1,6 +1,6 @@
 <template>
   <div class="minimal-request-timeline" :class="{ 'is-dark': isDark }">
-    <!-- 执行瀑布：每行表达一次 Key 调用，横轴表示相对时间，详情只在所选行下方展开。 -->
+    <!-- 执行路径：按真实调度顺序横向展开请求入口、供应商 Key 和请求结果。 -->
     <div
       v-if="loading"
       class="execution-waterfall execution-waterfall--loading"
@@ -17,218 +17,224 @@
     </div>
 
     <section
-      v-else-if="trace && trace.candidates.length > 0"
+      v-else-if="trace && providerRounds.length > 0"
       class="execution-waterfall"
       data-request-trace-waterfall
     >
-      <header class="waterfall-header">
-        <div class="waterfall-heading">
-          <h4 class="waterfall-title">
-            执行路径
-          </h4>
-          <span class="waterfall-duration" data-trace-latency>{{ formatLatency(totalTraceLatency) }}</span>
-        </div>
-        <p
-          class="waterfall-summary"
-          data-route-summary
+      <div class="path-scroll" data-request-path-scroll>
+        <div
+          class="path-stage"
+          :class="`path-stage--${responseState}`"
+          :style="{ gridTemplateColumns: pathGridTemplate }"
         >
-          <span>{{ providerRounds.length }} 家供应商</span>
-          <span>{{ attemptedCallCount }} 次上游请求</span>
-          <span v-if="cooledDownKeyCount > 0">{{ cooledDownKeyCount }} 次冷却跳过</span>
-        </p>
-      </header>
+          <section
+            class="path-node path-entry"
+            data-request-path-entry
+            aria-label="请求入口"
+          >
+            <span class="path-node-kicker">请求入口</span>
+            <span class="path-entry-line">
+              <span class="path-method">POST</span>
+              <span class="path-endpoint" :title="requestPath">{{ requestPath }}</span>
+            </span>
+          </section>
 
-      <div
-        class="waterfall-axis"
-        aria-hidden="true"
-      >
-        <span>Key</span>
-        <span class="waterfall-axis-track">
-          <span>0</span>
-          <span>{{ formatLatency(totalTraceLatency / 4) }}</span>
-          <span>{{ formatLatency(totalTraceLatency / 2) }}</span>
-          <span>{{ formatLatency(totalTraceLatency * 3 / 4) }}</span>
-          <span>{{ formatLatency(totalTraceLatency) }}</span>
-        </span>
-      </div>
+          <span class="path-link path-link--in" aria-hidden="true" />
 
-      <div class="waterfall-groups">
-        <section
-          v-for="(round, roundIndex) in providerRounds"
-          :key="round.providerId"
-          class="waterfall-provider provider-record"
-          :data-provider-id="round.providerId"
-        >
-          <header class="waterfall-provider-header">
-            <span class="waterfall-provider-order">{{ String(roundIndex + 1).padStart(2, '0') }}</span>
-            <span class="waterfall-provider-name provider-record-name">{{ round.providerName }}</span>
-            <span class="waterfall-provider-meta provider-record-count">{{ formatWaterfallProviderMeta(round) }}</span>
-          </header>
+          <template v-for="(round, roundIndex) in providerRounds" :key="round.nodeKey">
+            <span
+              v-if="roundIndex > 0"
+              class="path-link path-link--provider"
+              aria-hidden="true"
+            />
 
-          <div class="waterfall-rows" role="list" :aria-label="`${round.providerName} 的 Key 调用`">
-            <div
-              v-for="(attempt, keyIndex) in round.attempts"
-              :key="attempt.id"
-              class="waterfall-item"
-              :class="{ 'is-open': openedAttemptId === attempt.id }"
-              role="listitem"
-              :data-attempt-id="attempt.id"
-              :data-status="getTraceLineStatus(attempt)"
+            <section
+              class="path-provider provider-record"
+              :data-provider-id="round.providerId"
+              :aria-label="`供应商 ${round.order} ${round.providerName}`"
             >
-              <button
-                type="button"
-                class="waterfall-row attempt-stop key-record"
-                :class="getStatusColorClass(getDisplayStatus(attempt))"
-                :aria-expanded="openedAttemptId === attempt.id"
-                :aria-label="`${getAttemptKeyDisplay(attempt)}，${formatAttemptOutcome(attempt)}，查看详情`"
-                @click="selectAttempt(attempt)"
+              <header class="path-provider-label">
+                <span class="waterfall-provider-order">{{ round.order }}</span>
+                <span class="waterfall-provider-name provider-record-name">{{ round.providerName }}</span>
+              </header>
+
+              <div
+                class="path-key-stack"
+                role="list"
+                :aria-label="`${round.providerName} 的 Key 调用`"
               >
-                <span class="waterfall-label">
+                <template v-for="(attempt, keyIndex) in round.attempts" :key="attempt.id">
                   <span
-                    class="waterfall-status-mark"
+                    v-if="keyIndex > 0"
+                    class="path-key-hop"
                     aria-hidden="true"
                   />
-                  <span class="waterfall-key">{{ getAttemptKeyDisplay(attempt) }}</span>
-                  <span
-                    v-if="getAttemptTraceDescription(attempt)"
-                    class="waterfall-row-note"
-                  >{{ getAttemptTraceDescription(attempt) }}</span>
-                </span>
 
-                <span class="waterfall-track">
-                  <span
-                    v-if="getDisplayStatus(attempt) === 'skipped'"
-                    class="waterfall-not-sent"
-                    :style="{ left: getWaterfallPositionPercent(attempt, 0) }"
-                  >{{ attempt.skip_reason === 'key_circuit_open' ? '冷却跳过' : '未发送' }}</span>
-                  <span
-                    v-else
-                    class="waterfall-bar"
-                    :class="getStatusColorClass(getDisplayStatus(attempt))"
-                    :style="getWaterfallBarStyle(attempt)"
-                  />
-                      <span
-                        v-if="getDisplayStatus(attempt) !== 'skipped'"
-                        class="waterfall-row-duration"
-                        :class="{ 'is-inside': Number.parseFloat(getWaterfallEndPercent(attempt)) >= 86 }"
-                        :style="{ left: getWaterfallEndPercent(attempt) }"
-                        :data-tone="getTraceLineStatus(attempt)"
-                      >{{ formatLatency(attempt.latency_ms) }}</span>
-                </span>
-              </button>
-
-              <section
-                v-if="openedAttemptId === attempt.id"
-                class="waterfall-detail"
-                :data-execution-detail="attempt.id"
-                :data-execution-inspector="attempt.id"
-                :data-attempt-id="attempt.id"
-                :data-status="getTraceLineStatus(attempt)"
-                aria-live="polite"
-              >
-                <div class="waterfall-detail-heading">
-                  <div class="waterfall-detail-identity">
-                    <span class="waterfall-detail-provider">{{ getProviderDisplayName(attempt) }}</span>
-                    <strong class="waterfall-detail-key">{{ getAttemptKeyDisplay(attempt) }}</strong>
-                  </div>
-                  <dl class="waterfall-detail-facts">
-                    <div v-if="getDisplayStatus(attempt) !== 'skipped'">
-                      <dt>HTTP</dt>
-                      <dd class="mono" data-attempt-http-status>{{ attempt.status_code ?? (getDisplayStatus(attempt) === 'success' ? 200 : '-') }}</dd>
-                    </div>
-                    <div>
-                      <dt>耗时</dt>
-                      <dd class="mono">{{ getAttemptTimeRange(attempt)?.durationLabel || formatLatency(attempt.latency_ms) }}</dd>
-                    </div>
-                    <div v-if="getAttemptTimeRange(attempt)" class="waterfall-detail-time">
-                      <dt>时间</dt>
-                      <dd class="mono">
-                        {{ formatTime(getAttemptTimeRange(attempt)!.startIso) }}
-                        <span class="waterfall-time-arrow">→</span>
-                        {{ getAttemptTimeRange(attempt)?.endIso ? formatTime(getAttemptTimeRange(attempt)!.endIso!) : '进行中' }}
-                      </dd>
-                    </div>
-                    <div v-if="attempt.key_preview">
-                      <dt>标识</dt>
-                      <dd class="mono">{{ attempt.key_preview }}</dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div v-if="currentDetailImageProgress" class="image-progress-block">
-                  <div class="image-progress-header">
-                    <span class="image-progress-title">图片生成进度</span>
-                    <span class="image-progress-phase" :class="imageProgressPhaseClass(currentDetailImageProgress.phase)">
-                      {{ formatImageProgressPhase(currentDetailImageProgress.phase) }}
+                  <button
+                    type="button"
+                    class="waterfall-item attempt-stop key-record path-key"
+                    :class="[
+                      `path-key--${getTraceLineStatus(attempt) ?? 'available'}`,
+                      { 'is-open': openedAttemptId === attempt.id },
+                    ]"
+                    :data-attempt-id="attempt.id"
+                    :data-status="getTraceLineStatus(attempt)"
+                    :aria-expanded="openedAttemptId === attempt.id"
+                    :aria-label="`${getAttemptKeyDisplay(attempt)}，${formatAttemptOutcome(attempt)}，${getAttemptCardReason(attempt)}，查看详情`"
+                    @click="selectAttempt(attempt)"
+                  >
+                    <span class="path-key-head">
+                      <span class="path-key-http">
+                        {{ getAttemptStateSymbol(attempt) }} {{ getAttemptHttpLabel(attempt) }}
+                      </span>
+                      <span class="path-key-order">{{ getAttemptOrder(attempt) }}</span>
                     </span>
-                  </div>
-                  <div class="image-progress-grid">
-                    <div class="image-progress-item">
-                      <span class="image-progress-label">上游 TTFB</span>
-                      <span class="image-progress-value mono">{{ formatLatency(currentDetailImageProgress.upstream_ttfb_ms) }}</span>
-                    </div>
-                    <div class="image-progress-item">
-                      <span class="image-progress-label">SSE 帧数</span>
-                      <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.upstream_sse_frame_count) }}</span>
-                    </div>
-                    <div class="image-progress-item">
-                      <span class="image-progress-label">Partial 图片</span>
-                      <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.partial_image_count) }}</span>
-                    </div>
-                    <div class="image-progress-item">
-                      <span class="image-progress-label">最后帧</span>
-                      <span class="image-progress-value mono">{{ formatProgressFrameTime(currentDetailImageProgress.last_upstream_frame_at_unix_ms) }}</span>
-                    </div>
-                    <template v-if="hasDetailDownstreamHeartbeatProgress">
-                      <div class="image-progress-item">
-                        <span class="image-progress-label">下游心跳</span>
-                        <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.downstream_heartbeat_count) }}</span>
-                      </div>
-                      <div class="image-progress-item">
-                        <span class="image-progress-label">心跳间隔</span>
-                        <span class="image-progress-value mono">{{ formatLatency(currentDetailImageProgress.downstream_heartbeat_interval_ms) }}</span>
-                      </div>
-                      <div class="image-progress-item">
-                        <span class="image-progress-label">最后心跳</span>
-                        <span class="image-progress-value mono">{{ formatProgressFrameTime(currentDetailImageProgress.last_downstream_heartbeat_at_unix_ms) }}</span>
-                      </div>
-                    </template>
-                    <div v-if="currentDetailImageProgress.last_upstream_event" class="image-progress-item full-width">
-                      <span class="image-progress-label">上游事件</span>
-                      <code class="image-progress-code">{{ currentDetailImageProgress.last_upstream_event }}</code>
-                    </div>
-                    <div v-if="currentDetailImageProgress.last_client_visible_event" class="image-progress-item full-width">
-                      <span class="image-progress-label">客户端可见事件</span>
-                      <code class="image-progress-code">{{ currentDetailImageProgress.last_client_visible_event }}</code>
-                    </div>
-                  </div>
-                </div>
+                    <span class="path-key-name">
+                      <span>Key</span>
+                        <strong
+                          class="waterfall-key"
+                          :title="getAttemptKeyDisplay(attempt)"
+                        >{{ getAttemptKeyDisplay(attempt) }}</strong>
+                    </span>
+                    <span class="path-key-meta">
+                      <b>{{ formatLatency(attempt.latency_ms) }}</b>
+                      <span
+                        class="path-key-reason"
+                        :title="getAttemptCardReason(attempt)"
+                      >{{ getAttemptCardReason(attempt) }}</span>
+                    </span>
+                  </button>
+                </template>
+              </div>
+            </section>
+          </template>
 
-                <div v-if="attempt.status === 'success' && usageData" class="usage-section">
-                  <span class="usage-label">输入 {{ formatNumber(usageData.tokens.input) }}</span>
-                  <span class="usage-label">输出 {{ formatNumber(usageData.tokens.output) }}</span>
-                  <span class="usage-label">缓存创建 {{ formatNumber(usageData.tokens.cache_creation || 0) }}</span>
-                  <span class="usage-label">缓存读取 {{ formatNumber(usageData.tokens.cache_read || 0) }}</span>
-                </div>
+          <span class="path-link path-link--out" aria-hidden="true" />
 
-                <RequestAttemptErrorPanel
-                  v-if="getAttemptError(attempt)"
-                  :key="attempt.id"
-                  :error="getAttemptError(attempt)!"
-                  :is-dark="isDark"
-                />
-              </section>
+          <section
+            class="path-node path-response"
+            :class="`path-response--${responseState}`"
+            data-request-path-response
+            aria-label="请求结果"
+          >
+            <span class="path-response-head">
+              <span class="path-node-kicker">请求结果</span>
+              <span class="path-response-status">{{ responseStatusText }}</span>
+            </span>
+            <span class="path-response-total">
+              总耗时
+              <b data-trace-latency>{{ formatLatency(totalTraceLatency) }}</b>
+            </span>
+          </section>
+        </div>
+      </div>
+
+      <span class="sr-only" data-route-summary>
+        {{ attemptedProviderCount }} 家供应商，{{ attemptedCallCount }} 次上游请求
+      </span>
+
+      <section
+        v-if="openedAttempt"
+        class="waterfall-detail path-detail"
+        :data-execution-detail="openedAttempt.id"
+        :data-execution-inspector="openedAttempt.id"
+        :data-attempt-id="openedAttempt.id"
+        :data-status="getTraceLineStatus(openedAttempt)"
+        aria-live="polite"
+      >
+        <dl class="waterfall-detail-facts">
+          <div>
+            <dt>HTTP</dt>
+            <dd class="mono" data-attempt-http-status>{{ openedAttempt.status_code ?? (getDisplayStatus(openedAttempt) === 'success' ? 200 : '-') }}</dd>
+          </div>
+          <div>
+            <dt>耗时</dt>
+            <dd class="mono">{{ getAttemptTimeRange(openedAttempt)?.durationLabel || formatLatency(openedAttempt.latency_ms) }}</dd>
+          </div>
+          <div v-if="getAttemptTimeRange(openedAttempt)" class="waterfall-detail-time">
+            <dt>时间</dt>
+            <dd class="mono">
+              {{ formatTime(getAttemptTimeRange(openedAttempt)!.startIso) }}
+              <span class="waterfall-time-arrow">→</span>
+              {{ getAttemptTimeRange(openedAttempt)?.endIso ? formatTime(getAttemptTimeRange(openedAttempt)!.endIso!) : '进行中' }}
+            </dd>
+          </div>
+          <div v-if="openedAttempt.key_preview">
+            <dt>凭据</dt>
+            <dd class="mono">{{ openedAttempt.key_preview }}</dd>
+          </div>
+        </dl>
+
+        <div v-if="currentDetailImageProgress" class="image-progress-block">
+          <div class="image-progress-header">
+            <span class="image-progress-title">图片生成进度</span>
+            <span class="image-progress-phase" :class="imageProgressPhaseClass(currentDetailImageProgress.phase)">
+              {{ formatImageProgressPhase(currentDetailImageProgress.phase) }}
+            </span>
+          </div>
+          <div class="image-progress-grid">
+            <div class="image-progress-item">
+              <span class="image-progress-label">上游 TTFB</span>
+              <span class="image-progress-value mono">{{ formatLatency(currentDetailImageProgress.upstream_ttfb_ms) }}</span>
+            </div>
+            <div class="image-progress-item">
+              <span class="image-progress-label">SSE 帧数</span>
+              <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.upstream_sse_frame_count) }}</span>
+            </div>
+            <div class="image-progress-item">
+              <span class="image-progress-label">Partial 图片</span>
+              <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.partial_image_count) }}</span>
+            </div>
+            <div class="image-progress-item">
+              <span class="image-progress-label">最后帧</span>
+              <span class="image-progress-value mono">{{ formatProgressFrameTime(currentDetailImageProgress.last_upstream_frame_at_unix_ms) }}</span>
+            </div>
+            <template v-if="hasDetailDownstreamHeartbeatProgress">
+              <div class="image-progress-item">
+                <span class="image-progress-label">下游心跳</span>
+                <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.downstream_heartbeat_count) }}</span>
+              </div>
+              <div class="image-progress-item">
+                <span class="image-progress-label">心跳间隔</span>
+                <span class="image-progress-value mono">{{ formatLatency(currentDetailImageProgress.downstream_heartbeat_interval_ms) }}</span>
+              </div>
+              <div class="image-progress-item">
+                <span class="image-progress-label">最后心跳</span>
+                <span class="image-progress-value mono">{{ formatProgressFrameTime(currentDetailImageProgress.last_downstream_heartbeat_at_unix_ms) }}</span>
+              </div>
+            </template>
+            <div v-if="currentDetailImageProgress.last_upstream_event" class="image-progress-item full-width">
+              <span class="image-progress-label">上游事件</span>
+              <code class="image-progress-code">{{ currentDetailImageProgress.last_upstream_event }}</code>
+            </div>
+            <div v-if="currentDetailImageProgress.last_client_visible_event" class="image-progress-item full-width">
+              <span class="image-progress-label">客户端可见事件</span>
+              <code class="image-progress-code">{{ currentDetailImageProgress.last_client_visible_event }}</code>
             </div>
           </div>
-        </section>
-      </div>
+        </div>
+
+        <div v-if="openedAttempt.status === 'success' && usageData" class="usage-section">
+          <span class="usage-label">输入 {{ formatNumber(usageData.tokens.input) }}</span>
+          <span class="usage-label">输出 {{ formatNumber(usageData.tokens.output) }}</span>
+          <span class="usage-label">缓存创建 {{ formatNumber(usageData.tokens.cache_creation || 0) }}</span>
+          <span class="usage-label">缓存读取 {{ formatNumber(usageData.tokens.cache_read || 0) }}</span>
+        </div>
+
+        <RequestAttemptErrorPanel
+          v-if="getAttemptError(openedAttempt)"
+          :key="openedAttempt.id"
+          :error="getAttemptError(openedAttempt)!"
+          :is-dark="isDark"
+        />
+      </section>
     </section>
 
     <div
       v-else
       class="execution-waterfall execution-waterfall--empty"
     >
-      暂无追踪数据
+      没有已发送的上游请求
     </div>
   </div>
 </template>
@@ -245,7 +251,7 @@ import { formatTokens } from '@/utils/format'
 import { formatApiFormat } from '@/api/endpoints/types/api-format'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { resolveTimelineFinalStatus } from '../utils/status'
-import { TIMELINE_STATUS } from '../utils/timelineCandidates'
+import { isAttemptedCandidate, TIMELINE_STATUS } from '../utils/timelineCandidates'
 
 interface AttemptTimeRange {
   startIso: string
@@ -255,7 +261,12 @@ interface AttemptTimeRange {
 
 /** 同一供应商的 Key 调用分组及其在整体调度顺序中的位置。 */
 interface ProviderRound {
+  /** 供应商的稳定身份，用于分组和节点定位。 */
   providerId: string
+  /** 本次调度节点的唯一身份；供应商重访时仍保持独立节点。 */
+  nodeKey: string
+  /** 供应商标题中展示的稳定两位序号。 */
+  order: string
   providerName: string
   attempts: CandidateRecord[]
   attemptIndexes: number[]
@@ -329,8 +340,6 @@ const trace = computed(() => props.traceData ?? internalTrace.value)
 const selectedAttemptIndex = ref(0)
 /** 当前展开详情的记录 ID；刷新或重排时跟随记录身份，默认保持收起。 */
 const openedAttemptId = ref<string | null>(null)
-const selectionPinnedByUser = ref(false)
-const selectedAttemptId = ref<string | null>(null)
 const traceLoadStarted = ref(false)
 let tracePollTimer: ReturnType<typeof setTimeout> | null = null
 let traceLoadInFlight: Promise<void> | null = null
@@ -383,24 +392,31 @@ const rawTimeline = computed<CandidateRecord[]>(() => {
 
 const timeline = computed<CandidateRecord[]>(() => rawTimeline.value)
 
-// 保留 trace 中的实际调度顺序，并将同一供应商的所有 Key 调用聚合为一行。
+/** 真实发出的上游调用；未尝试、未使用和冷却跳过不进入请求路径。 */
+const pathTimeline = computed<CandidateRecord[]>(() => (
+  timeline.value.filter(isAttemptedCandidate)
+))
+
+// 只合并连续的同供应商调用；供应商再次出现时另起节点，保持真实调度顺序。
 const providerRounds = computed<ProviderRound[]>(() => {
   const rounds: ProviderRound[] = []
-  const indexesByProvider = new Map<string, number>()
+  let activeProviderId: string | null = null
 
-  timeline.value.forEach((attempt, attemptIndex) => {
+  pathTimeline.value.forEach((attempt, attemptIndex) => {
     const providerId = String(attempt.provider_id || attempt.provider_name || '__unknown__')
-    const existingIndex = indexesByProvider.get(providerId)
-    if (existingIndex != null) {
-      const round = rounds[existingIndex]
+    const activeRound = rounds[rounds.length - 1]
+    if (activeRound && activeProviderId === providerId) {
+      const round = activeRound
       round.attempts.push(attempt)
       round.attemptIndexes.push(attemptIndex)
       return
     }
 
-    indexesByProvider.set(providerId, rounds.length)
+    activeProviderId = providerId
     rounds.push({
       providerId,
+      nodeKey: `${providerId}@${rounds.length}`,
+      order: String(rounds.length + 1).padStart(2, '0'),
       providerName: getProviderDisplayName(attempt),
       attempts: [attempt],
       attemptIndexes: [attemptIndex],
@@ -413,21 +429,22 @@ const providerRounds = computed<ProviderRound[]>(() => {
 
 /** 实际发出的上游调用数；本地冷却跳过项没有调用上游，不计入。 */
 const attemptedCallCount = computed(() => (
-  timeline.value.filter(attempt => attempt.status !== 'skipped').length
+  pathTimeline.value.length
 ))
 
-/** 本地冷却跳过的 Key 数，与实际调用数分开以免把未发送节点算成请求。 */
-const cooledDownKeyCount = computed(() => (
-  timeline.value.filter(attempt => attempt.skip_reason === 'key_circuit_open').length
+/** 路径可能因 A → B → A 产生多个节点，但摘要里的供应商数仍按真实身份去重。 */
+const attemptedProviderCount = computed(() => (
+  new Set(pathTimeline.value.map(attempt => String(
+    attempt.provider_id || attempt.provider_name || '__unknown__',
+  ))).size
 ))
 
-/** Key 节点展示统一结果措辞；冷却中的未发送 Key 不再使用“尝试”描述。 */
+/** Key 节点展示统一结果措辞，供无障碍标签说明真实的单次调用结果。 */
 function formatAttemptOutcome(attempt: CandidateRecord): string {
-  if (attempt.skip_reason === 'key_circuit_open') return '冷却跳过，未发送'
   return getStatusLabel(getDisplayStatus(attempt))
 }
 
-/** 将现有候选状态映射为 shadcn TraceLine 的状态，不把业务状态文本塞进行内。 */
+/** 将候选状态归一为路径节点的成功、失败、跳过或进行中语义。 */
 function getTraceLineStatus(attempt: CandidateRecord): 'failed' | 'success' | 'skipped' | 'pending' | undefined {
   const status = getDisplayStatus(attempt)
   if (status === 'failed' || status === 'cancelled' || status === 'stream_interrupted') return 'failed'
@@ -435,12 +452,6 @@ function getTraceLineStatus(attempt: CandidateRecord): 'failed' | 'success' | 's
   if (status === 'skipped') return 'skipped'
   if (isLiveCandidate(attempt)) return 'pending'
   return undefined
-}
-
-/** 只把冷却截止时间作为 TraceLine 的次要说明，不重复调用结果。 */
-function getAttemptTraceDescription(attempt: CandidateRecord): string | undefined {
-  const deadline = getAttemptCooldownDeadline(attempt)
-  return deadline ? `冷却至 ${deadline}` : undefined
 }
 
 // 供应商行与 Key 的位置来自同一实际调度索引，避免聚合后详情错位。
@@ -502,39 +513,77 @@ const totalTraceLatency = computed(() => {
 // 当前选择始终指向一条实际候选记录，供应商行与 Key 节点共享这个调度索引。
 const currentAttempt = computed(() => timeline.value[selectedAttemptIndex.value] ?? null)
 
-/** 瀑布横轴统一使用 trace 聚合耗时；每条记录的相对起点和长度再由时间戳计算。 */
-function getWaterfallPositionPercent(attempt: CandidateRecord, offsetMs = 0): string {
-  const wallClockStart = rawTimeline.value
-    .map(candidate => parseTimestampMs(candidate.started_at))
-    .filter((value): value is number => value != null)
-  const originMs = wallClockStart.length > 0 ? Math.min(...wallClockStart) : null
-  const startMs = parseTimestampMs(attempt.started_at)
-  const duration = totalTraceLatency.value
-  if (originMs == null || startMs == null || duration <= 0) return '0%'
-  return `${Math.max(0, Math.min(100, ((startMs - originMs + offsetMs) / duration) * 100))}%`
+/** 当前展开详情始终读取对应记录，刷新重排时由记录 ID 保持身份。 */
+const openedAttempt = computed(() => (
+  openedAttemptId.value
+    ? pathTimeline.value.find(attempt => attempt.id === openedAttemptId.value) ?? null
+    : null
+))
+
+/** 请求入口优先使用后端记录的真实路径，缺失时才展示通用 Responses 路由。 */
+const requestPath = computed(() => (
+  trace.value?.request_path?.trim() || '/v1/responses'
+))
+
+/** 请求结果优先使用请求级终态，避免用最后一个 Key 的 HTTP 替代整体结论。 */
+const responseState = computed<'success' | 'failed' | 'pending'>(() => {
+  const status = computedFinalStatus.value
+  if (status === 'success') return 'success'
+  if (status === 'pending' || status === 'streaming') return 'pending'
+  return 'failed'
+})
+
+/** 请求结果状态码来自请求终态或最后一个真实 Key，未知时保留横杠。 */
+const responseStatusText = computed(() => {
+  const status = computedFinalStatus.value
+  if (status === 'pending' || status === 'streaming') return '进行中'
+  if (status === 'success') {
+    return String(props.overrideStatusCode ?? pathTimeline.value.find(attempt => getDisplayStatus(attempt) === 'success')?.status_code ?? '-')
+  }
+  const lastAttempt = pathTimeline.value[pathTimeline.value.length - 1]
+  return String(props.overrideStatusCode ?? lastAttempt?.status_code ?? '-')
+})
+
+/** 方框与连线使用不同比例列，单个/两个供应商优先铺满，更多供应商才内部滚动。 */
+const pathGridTemplate = computed(() => {
+  const providerColumns = providerRounds.value.flatMap(() => (
+    'minmax(24px, 0.32fr) minmax(180px, 1fr)'
+  ))
+  return [
+    'minmax(140px, 0.8fr)',
+    ...providerColumns,
+    'minmax(24px, 0.32fr)',
+    'minmax(140px, 0.8fr)',
+  ].join(' ')
+})
+
+/** Key 卡片只显示真实 HTTP 状态；未知状态使用横杠而非伪造成功码。 */
+function getAttemptHttpLabel(attempt: CandidateRecord): string {
+  if (typeof attempt.status_code === 'number') return String(attempt.status_code)
+  return '-'
 }
 
-/** 将一次真实调用映射为瀑布条；缺少时间戳的回退到调度序号，不伪造精确时序。 */
-function getWaterfallBarStyle(attempt: CandidateRecord): Record<string, string> {
-  const duration = Math.max(0, normalizeLatencyMs(attempt.latency_ms) ?? 0)
-  const total = totalTraceLatency.value
-  const left = getWaterfallPositionPercent(attempt)
-  const width = total > 0 ? Math.max(0.7, Math.min(100, (duration / total) * 100)) : 0.7
-  return { left, width: `${width}%` }
+/** Key 卡片使用极简结果符号，与成功/失败语义色共同区分状态。 */
+function getAttemptStateSymbol(attempt: CandidateRecord): string {
+  const status = getTraceLineStatus(attempt)
+  if (status === 'success') return '✓'
+  if (status === 'failed') return '✕'
+  return '…'
 }
 
-function getWaterfallEndPercent(attempt: CandidateRecord): string {
-  const total = totalTraceLatency.value
-  const duration = Math.max(0, normalizeLatencyMs(attempt.latency_ms) ?? 0)
-  if (total <= 0) return '0%'
-  const start = Number.parseFloat(getWaterfallPositionPercent(attempt))
-  return `${Math.min(97, start + (duration / total) * 100)}%`
+/** 同一供应商内按真实调用次序编号，避免与供应商序号混淆。 */
+function getAttemptOrder(attempt: CandidateRecord): string {
+  const round = providerRounds.value.find(candidate => candidate.attempts.some(item => item.id === attempt.id))
+  const index = round?.attempts.findIndex(item => item.id === attempt.id) ?? 0
+  return String(index + 1).padStart(2, '0')
 }
 
-/** 供应商分组摘要只陈述 Key 数和实际发送数。 */
-function formatWaterfallProviderMeta(round: ProviderRound): string {
-  const attempted = round.attempts.filter(attempt => getDisplayStatus(attempt) !== 'skipped').length
-  return `${round.attempts.length} 个 Key · ${attempted} 次发送`
+/** Key 卡片只展示一行真实原因；完整文本保留在 title 中，不撑高固定卡片。 */
+function getAttemptCardReason(attempt: CandidateRecord): string {
+  const error = getAttemptError(attempt)
+  if (error?.message) return error.message
+  if (!isLiveCandidate(attempt)) return getStatusLabel(getDisplayStatus(attempt))
+  return attempt.status === 'streaming' ? '传输中' : '进行中'
 }
 
 /** 展开行读取自身记录的时间范围，不受导航选择下标变化影响。 */
@@ -542,11 +591,9 @@ function getAttemptTimeRange(attempt: CandidateRecord): AttemptTimeRange | null 
   return resolveAttemptTimeRange(attempt)
 }
 
-watch(currentAttempt, (attempt) => {
-  if (!selectionPinnedByUser.value || !selectedAttemptId.value) {
-    selectedAttemptId.value = attempt?.id ?? null
-  }
-  emit('selectAttempt', attempt ?? null)
+// 只有展开的 Key 才对外成为当前尝试；路径加载不会隐式选中未展开记录。
+watch(openedAttempt, (attempt) => {
+  emit('selectAttempt', attempt)
 }, { immediate: true })
 
 const extractObject = (value: unknown): Record<string, unknown> | null => {
@@ -598,13 +645,6 @@ const normalizeImageProgress = (value: unknown): ImageProgress | null => {
   return Object.values(progress).some(value => value !== undefined && value !== null && value !== '') ? progress : null
 }
 
-const currentImageProgress = computed<ImageProgress | null>(() => {
-  const attempt = currentAttempt.value
-  if (!attempt) return null
-  return normalizeImageProgress(attempt.image_progress)
-    ?? normalizeImageProgress(extractObject(attempt.extra_data)?.image_progress)
-})
-
 /** 展开行使用各自的图片进度，不读取另一个 Key 的活动状态。 */
 function getAttemptImageProgress(attempt: CandidateRecord): ImageProgress | null {
   return normalizeImageProgress(attempt.image_progress)
@@ -612,7 +652,7 @@ function getAttemptImageProgress(attempt: CandidateRecord): ImageProgress | null
 }
 
 const currentDetailImageProgress = computed<ImageProgress | null>(() => (
-  currentAttempt.value ? getAttemptImageProgress(currentAttempt.value) : null
+  openedAttempt.value ? getAttemptImageProgress(openedAttempt.value) : null
 ))
 
 const formatImageProgressPhase = (phase?: string | null): string => {
@@ -768,12 +808,6 @@ const resolveTransportDiagnostics = (attempt: CandidateRecord): Record<string, u
   return extractObject(extra?.transport_diagnostics)
 }
 
-const currentAttemptKeyDisplay = computed(() => {
-  const attempt = currentAttempt.value
-  if (!attempt) return ''
-  return attempt.key_account_label || attempt.key_name || attempt.key_id || ''
-})
-
 const SKIP_REASON_LABELS: Record<string, string> = {
   auth_api_key_concurrency_limit_reached: '调用方 API Key 并发已达上限',
   api_key_concurrency_limit_reached: '调用方 API Key 并发已达上限',
@@ -782,34 +816,6 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   provider_request_body_build_failed: '上游请求体转换失败',
   provider_request_body_missing: '无法构建上游请求体',
 }
-const currentAttemptSkipReasonDisplay = computed(() => {
-  const attempt = currentAttempt.value
-  if (!attempt?.skip_reason) return ''
-
-  const skipReasonLabel = SKIP_REASON_LABELS[attempt.skip_reason]
-  if (skipReasonLabel) {
-    return skipReasonLabel
-  }
-
-  if (attempt.skip_reason === 'key_circuit_open') {
-    return getAttemptCooldownDeadline(attempt)
-      ? `本地冷却至 ${getAttemptCooldownDeadline(attempt)}`
-      : '本地冷却中'
-  }
-
-  if (attempt.skip_reason !== 'transport_unsupported') {
-    return attempt.skip_reason
-  }
-
-  const transportDiagnostics = resolveTransportDiagnostics(attempt)
-  const requestPair = extractObject(transportDiagnostics?.request_pair)
-  const detailedReason = typeof requestPair?.transport_unsupported_reason === 'string'
-    ? requestPair.transport_unsupported_reason.trim()
-    : ''
-
-  return detailedReason || attempt.skip_reason
-})
-
 /**
  * 从 trace 已带回的诊断字段读取 Key 冷却截止时间。
  * 时间戳统一按 Unix 秒转换为本地时刻；字段缺失或越界时返回空字符串，避免猜造恢复时间。
@@ -1096,17 +1102,6 @@ function getAttemptError(attempt: CandidateRecord): AttemptRequestErrorDisplay |
   return resolveAttemptRequestError(attempt)
 }
 
-const currentAttemptRequestError = computed<{
-  message: string
-  technicalMessage: string
-  presentationSource: string
-  statusCode?: number
-  upstreamResponse: Record<string, unknown> | null
-  skipReason?: string
-  skipReasonLabel?: string
-  skipped?: boolean
-} | null>(() => currentAttempt.value ? resolveAttemptRequestError(currentAttempt.value) : null)
-
 const hasActiveImageProgress = computed(() => {
   return rawTimeline.value.some((candidate) => {
     const progress = normalizeImageProgress(candidate.image_progress)
@@ -1115,23 +1110,6 @@ const hasActiveImageProgress = computed(() => {
     return progress.phase !== 'upstream_completed' && progress.phase !== 'failed'
   })
 })
-
-// 格式化认证类型
-const formatAuthTypeWithPlan = (authType: string): string => {
-  const labels: Record<string, string> = {
-    'bearer': 'Bearer Token',
-  }
-  return labels[authType] || authType
-}
-
-const TERMINAL_ATTEMPT_STATUSES = ['failed', 'cancelled', 'stream_interrupted', 'skipped']
-
-const selectMostRelevantAttempt = (attempts: CandidateRecord[]) => {
-  const success = attempts.findIndex(attempt => getDisplayStatus(attempt) === 'success')
-  const active = attempts.findIndex(isLiveCandidate)
-  const terminal = attempts.map(attempt => TERMINAL_ATTEMPT_STATUSES.includes(getDisplayStatus(attempt))).lastIndexOf(true)
-  selectedAttemptIndex.value = success >= 0 ? success : active >= 0 ? active : Math.max(terminal, 0)
-}
 
 /** 点击 Key 时切换选中记录；再次点击同一 Key 收起其真实详情。 */
 function selectAttempt(attempt: CandidateRecord): void {
@@ -1142,8 +1120,6 @@ function selectAttempt(attempt: CandidateRecord): void {
     return
   }
   selectedAttemptIndex.value = index
-  selectedAttemptId.value = attempt.id
-  selectionPinnedByUser.value = true
   openedAttemptId.value = attempt.id
 }
 
@@ -1225,21 +1201,19 @@ const scheduleTracePolling = () => {
   }, TRACE_POLL_INTERVAL_MS)
 }
 
-// Preserve manually selected identity across refresh/reordering, while automatic
-// selection continues to follow a live or successful attempt.
+// 刷新和重排时按记录身份保持已展开 Key；记录消失则收起旧详情。
 watch(timeline, (attempts, previous) => {
-  const previousAttempt = previous?.[selectedAttemptIndex.value]
-  const sameRequest = previousAttempt?.request_id === attempts[0]?.request_id
-  if (selectionPinnedByUser.value && sameRequest && (selectedAttemptId.value || previousAttempt)) {
-    const selectedId = selectedAttemptId.value ?? previousAttempt?.id
+  const sameRequest = previous?.[0]?.request_id === attempts[0]?.request_id
+  if (openedAttemptId.value && sameRequest) {
+    const selectedId = openedAttemptId.value
     const index = attempts.findIndex(attempt => attempt.id === selectedId)
     if (index >= 0) {
       selectedAttemptIndex.value = index
       return
     }
   }
-  if (!sameRequest) selectionPinnedByUser.value = false
-  selectMostRelevantAttempt(attempts)
+  if (openedAttemptId.value) openedAttemptId.value = null
+  selectedAttemptIndex.value = 0
 }, { immediate: true })
 
 watch(
@@ -1249,9 +1223,8 @@ watch(
       traceLoadVersion += 1
       traceLoadInFlight = null
       if (requestId !== previous?.[0]) {
-        selectionPinnedByUser.value = false
-        selectedAttemptId.value = null
         openedAttemptId.value = null
+        selectedAttemptIndex.value = 0
         internalTrace.value = null
       }
     }
@@ -1376,22 +1349,6 @@ const getStatusLabel = (status: string) => {
   return labels[status] || status
 }
 
-// 获取状态颜色类
-const getStatusColorClass = (status: string) => {
-  const classes: Record<string, string> = {
-    available: 'status-available',
-    unused: 'status-available',
-    pending: 'status-pending',
-    streaming: 'status-pending',
-    stream_interrupted: 'status-failed',
-    success: 'status-success',
-    failed: 'status-failed',
-    cancelled: 'status-cancelled',
-    skipped: 'status-skipped'
-  }
-  return classes[status] || 'status-available'
-}
-
 // 展示状态：进行中态优先（包括 started 但未 finished 的中间态），再按 HTTP 状态码兜底
 function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   if (!attempt) return 'available'
@@ -1433,10 +1390,31 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 <style scoped>
 .minimal-request-timeline {
+  --path-success: #15803d;
+  --path-success-soft: #f0fdf4;
+  --path-success-border: #86efac;
+  --path-failed: #dc2626;
+  --path-failed-soft: #fff1f1;
+  --path-failed-border: #f87171;
+  --path-pending: #2563eb;
+  --path-pending-soft: #eff6ff;
+  --path-pending-border: #93c5fd;
   width: 100%;
   min-width: 0;
   container-type: inline-size;
   font-family: var(--sans-serif);
+}
+
+.is-dark .minimal-request-timeline {
+  --path-success: #4ade80;
+  --path-success-soft: color-mix(in srgb, #166534 42%, hsl(var(--card)));
+  --path-success-border: #22c55e;
+  --path-failed: #f87171;
+  --path-failed-soft: color-mix(in srgb, #991b1b 35%, hsl(var(--card)));
+  --path-failed-border: #ef4444;
+  --path-pending: #60a5fa;
+  --path-pending-soft: color-mix(in srgb, #1e40af 32%, hsl(var(--card)));
+  --path-pending-border: #3b82f6;
 }
 
 .execution-waterfall {
@@ -1450,84 +1428,125 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .execution-waterfall--error { padding: 0.8rem 1rem; color: var(--destructive); font-size: 0.75rem; }
 .execution-waterfall--empty { padding: 1rem; color: var(--muted-foreground); font-size: 0.75rem; text-align: center; }
 
-.waterfall-header {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.55rem 1rem;
-  padding: 0.78rem 0.86rem 0.68rem;
-  border-bottom: 1px solid hsl(var(--border) / 0.52);
+.path-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
 }
-.waterfall-heading { display: flex; min-width: 0; align-items: baseline; gap: 0.55rem; }
-.waterfall-title { margin: 0; font-size: 0.84rem; font-weight: 600; letter-spacing: -0.01em; }
-.waterfall-duration { color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.68rem; }
-.waterfall-summary { display: flex; min-width: 0; flex-wrap: wrap; gap: 0.15rem 0.85rem; margin: 0; color: var(--muted-foreground); font-size: 0.66rem; font-variant-numeric: tabular-nums; }
-.waterfall-summary span + span::before { margin-right: 0.85rem; color: hsl(var(--border) / 0.8); content: '·'; }
-
-.waterfall-axis,
-.waterfall-row {
+.path-scroll::-webkit-scrollbar { height: 6px; }
+.path-scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: color-mix(in srgb, var(--muted-foreground) 28%, transparent); }
+.path-stage {
   display: grid;
-  grid-template-columns: minmax(7.5rem, 9.1rem) minmax(0, 1fr);
-  column-gap: 0.72rem;
+  align-items: center;
+  width: 100%;
+  min-width: max-content;
+  max-width: 100%;
+  padding: 11px 10px 10px;
 }
-.waterfall-axis { padding: 0.56rem 0.86rem 0.38rem; color: hsl(var(--muted-foreground) / 0.82); font-family: var(--monospace); font-size: 0.6rem; }
-.waterfall-axis-track { display: flex; justify-content: space-between; padding: 0 0.25rem; }
-.waterfall-groups { padding: 0 0.86rem 0.58rem; }
-.waterfall-provider { min-width: 0; padding-top: 0.3rem; }
-.waterfall-provider + .waterfall-provider { margin-top: 0.3rem; border-top: 1px solid hsl(var(--border) / 0.48); }
-.waterfall-provider-header { display: flex; min-width: 0; align-items: center; gap: 0.42rem; min-height: 1.74rem; padding: 0 0.2rem; }
+.path-node,
+.path-provider { min-width: 0; }
+.path-node {
+  display: flex;
+  min-height: 64px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 12px;
+  background: hsl(var(--card));
+}
+.path-entry { border-color: color-mix(in srgb, var(--primary) 32%, hsl(var(--border))); }
+.path-stage--success .path-entry { border-color: color-mix(in srgb, var(--path-success) 35%, hsl(var(--border))); }
+.path-stage--failed .path-entry { border-color: color-mix(in srgb, var(--path-failed) 35%, hsl(var(--border))); }
+.path-stage--pending .path-entry { border-color: color-mix(in srgb, var(--path-pending) 35%, hsl(var(--border))); }
+.path-node-kicker { color: var(--muted-foreground); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
+.path-entry-line { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
+.path-method { flex: none; color: var(--primary); font-family: var(--monospace); font-size: 10px; font-weight: 700; }
+.path-stage--success .path-method { color: var(--path-success); }
+.path-stage--failed .path-method { color: var(--path-failed); }
+.path-stage--pending .path-method { color: var(--path-pending); }
+.path-endpoint { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.path-link { position: relative; display: flex; min-width: 28px; align-items: center; align-self: center; justify-content: center; height: 32px; }
+.path-link::before { width: 100%; height: 1.5px; background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 16%, transparent), color-mix(in srgb, var(--foreground) 40%, transparent) 72%, color-mix(in srgb, var(--foreground) 60%, transparent)); content: ''; }
+.path-link::after { position: absolute; right: 0; width: 6px; height: 6px; border-top: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); border-right: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); content: ''; transform: rotate(45deg); }
+.path-link--out::before { background: var(--path-success); box-shadow: 0 0 7px color-mix(in srgb, var(--path-success) 18%, transparent); }
+.path-link--out::after { border-color: var(--path-success); }
+.path-stage--failed .path-link--out::before { background: var(--path-failed); box-shadow: none; }
+.path-stage--failed .path-link--out::after { border-color: var(--path-failed); }
+.path-stage--pending .path-link--out::before { background: var(--path-pending); box-shadow: none; }
+.path-stage--pending .path-link--out::after { border-color: var(--path-pending); }
+.path-provider {
+  position: relative;
+  padding: 20px 6px 6px;
+  border-width: 1.5px;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--primary) 24%, hsl(var(--border)));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--primary) 4%, hsl(var(--card)));
+}
+.path-provider-label { position: absolute; top: -10px; left: 13px; display: inline-flex; max-width: calc(100% - 26px); align-items: baseline; gap: 4px; padding: 0 7px; background: hsl(var(--card)); font-size: 10px; line-height: 1.8; white-space: nowrap; }
+.path-provider-label::after { position: absolute; inset: 1px -1px auto; height: 1px; background: hsl(var(--card)); content: ''; }
 .waterfall-provider-order { color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.61rem; }
 .waterfall-provider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.74rem; font-weight: 600; }
-.waterfall-provider-meta { margin-left: auto; color: var(--muted-foreground); font-size: 0.64rem; white-space: nowrap; }
-
-.waterfall-item { min-width: 0; }
-.waterfall-row {
+.path-key-stack { display: grid; min-width: 0; }
+.path-key {
+  display: block;
   width: 100%;
-  align-items: center;
-  min-height: 2.05rem;
-  padding: 0.32rem 0.24rem;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  height: 88px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 11px;
+  background: hsl(var(--card));
+  box-shadow: 0 3px 10px -8px color-mix(in srgb, var(--foreground) 35%, transparent);
+  contain: inline-size;
   color: var(--foreground);
   text-align: left;
-  transition: color 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
-.waterfall-row:hover .waterfall-key { color: hsl(var(--foreground) / 0.86); }
-.waterfall-row:focus-visible { outline: 1px solid hsl(var(--ring) / 0.44); outline-offset: 2px; }
-.waterfall-item.is-open > .waterfall-row { background: transparent; }
-.waterfall-label { display: grid; min-width: 0; grid-template-columns: 0.58rem minmax(0, 1fr); align-items: center; gap: 0.38rem; }
-.waterfall-status-mark { width: 0.46rem; height: 0.46rem; border: 1.3px solid var(--muted-foreground); border-radius: 50%; }
-.waterfall-row.status-failed .waterfall-status-mark { border-color: #bf565b; }
-.waterfall-row.status-success .waterfall-status-mark { border-color: #71838d; }
-.waterfall-row.status-pending .waterfall-status-mark { border-color: #4d80b8; }
-.waterfall-row.status-cancelled .waterfall-status-mark { border-color: #a97832; }
-.waterfall-row.status-skipped .waterfall-status-mark { border-color: #93a1b3; background: transparent; }
-.waterfall-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; font-weight: 500; }
-.waterfall-row-note { grid-column: 2; color: var(--muted-foreground); font-size: 0.6rem; line-height: 1.25; }
-.waterfall-track { position: relative; display: block; min-width: 0; height: 1.2rem; border-radius: 0.25rem; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), hsl(var(--border) / 0.65) 25%); }
-.waterfall-bar { position: absolute; top: 0.31rem; min-width: 2px; height: 0.58rem; border-radius: 99px; }
-.waterfall-bar.status-failed { background: #efdede; box-shadow: inset 0 0 0 1px #e4c3c5; }
-.waterfall-bar.status-success { background: #dfe5e8; box-shadow: inset 0 0 0 1px #ccd6db; }
-.waterfall-bar.status-pending { background: #dde8f3; box-shadow: inset 0 0 0 1px #bfd4e8; }
-.waterfall-bar.status-cancelled { background: #efe5d5; box-shadow: inset 0 0 0 1px #e1d1b8; }
-/* 耗时标签默认收在条内末端；只有条未接近右边界时才显示在条外，避免遮挡或溢出。 */
-.waterfall-track { overflow: hidden; }
-.waterfall-row-duration { position: absolute; top: 0.29rem; right: 0.18rem; color: hsl(var(--muted-foreground) / 0.95); font-family: var(--monospace); font-size: 0.58rem; white-space: nowrap; }
-.waterfall-row-duration.is-inside { color: hsl(var(--foreground) / 0.72); }
-.waterfall-not-sent { position: absolute; top: 0.3rem; color: var(--muted-foreground); font-size: 0.6rem; white-space: nowrap; }
-.waterfall-detail { min-width: 0; margin: 0 0 0.5rem; padding: 0.68rem 0.24rem 0.68rem 1rem; border-top: 1px solid hsl(var(--border) / 0.48); background: transparent; }
-.waterfall-detail-heading { display: grid; gap: 0.65rem; }
-.waterfall-detail-identity { display: flex; min-width: 0; align-items: baseline; gap: 0.42rem; }
-.waterfall-detail-provider { color: var(--muted-foreground); font-size: 0.66rem; }
-.waterfall-detail-key { min-width: 0; overflow-wrap: anywhere; font-family: var(--monospace); font-size: 0.78rem; font-weight: 600; }
-.waterfall-detail-facts { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem 0.8rem; margin: 0; }
-.waterfall-detail-facts > div { min-width: 0; display: grid; gap: 0.16rem; }
-.waterfall-detail-facts dt { color: var(--muted-foreground); font-size: 0.62rem; }
-.waterfall-detail-facts dd { margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; font-weight: 500; }
-.waterfall-detail-time { grid-column: span 2; }
+.path-key--failed { border-color: var(--path-failed-border); }
+.path-key--success { border-color: var(--path-success-border); box-shadow: 0 0 0 3px color-mix(in srgb, var(--path-success) 8%, transparent); }
+.path-key--pending { border-color: var(--path-pending-border); }
+.path-key:focus-visible { outline: 1.5px solid hsl(var(--ring) / 0.55); outline-offset: 2px; }
+.path-key-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 9px; background: color-mix(in srgb, var(--muted) 62%, transparent); }
+.path-key--failed .path-key-head { background: var(--path-failed-soft); }
+.path-key--success .path-key-head { background: var(--path-success-soft); }
+.path-key--pending .path-key-head { background: var(--path-pending-soft); }
+.path-key-http { font-family: var(--monospace); font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.path-key--failed .path-key-http { color: var(--path-failed); }
+.path-key--success .path-key-http { color: var(--path-success); }
+.path-key--pending .path-key-http { color: var(--path-pending); }
+.path-key-order { color: var(--muted-foreground); font-family: var(--monospace); font-size: 9px; }
+.path-key-name { display: flex; min-width: 0; align-items: baseline; gap: 5px; padding: 8px 10px 0; }
+.path-key-name > span { flex: none; color: var(--muted-foreground); font-size: 9px; }
+.waterfall-key { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.path-key-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; padding: 4px 10px 9px; color: var(--muted-foreground); font-size: 9px; }
+.path-key-meta b { color: var(--foreground); font-family: var(--monospace); font-size: 10px; font-weight: 600; }
+.path-key-reason { min-width: 0; max-width: 100%; flex: 1 1 100%; overflow: hidden; color: var(--muted-foreground); font-family: var(--monospace); text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
+.path-key--failed .path-key-reason { color: var(--path-failed); }
+.path-key--success .path-key-reason { color: var(--path-success); }
+.path-key-hop { position: relative; display: block; min-height: 26px; }
+.path-key-hop::before { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--path-failed); content: ''; }
+.path-key-hop::after { position: absolute; bottom: 0; left: calc(50% - 3px); width: 6px; height: 6px; border-right: 1px solid var(--path-failed); border-bottom: 1px solid var(--path-failed); content: ''; transform: rotate(45deg); }
+.path-response { border-color: color-mix(in srgb, var(--path-success) 35%, hsl(var(--border))); }
+.path-response--failed { border-color: color-mix(in srgb, var(--path-failed) 35%, hsl(var(--border))); }
+.path-response--pending { border-color: color-mix(in srgb, var(--path-pending) 35%, hsl(var(--border))); }
+.path-response-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.path-response-status { flex: none; color: var(--path-success); font-family: var(--monospace); font-size: 11px; font-weight: 700; }
+.path-response--failed .path-response-status { color: var(--path-failed); }
+.path-response--pending .path-response-status { color: var(--path-pending); }
+.path-response-total { display: flex; min-width: 0; align-items: baseline; gap: 4px; color: var(--muted-foreground); font-size: 9px; }
+.path-response-total b { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.waterfall-detail { min-width: 0; margin: 0; padding: 0.72rem 0.9rem 0.8rem; border-top: 1px solid hsl(var(--border) / 0.52); background: transparent; }
+.waterfall-detail-facts { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 0.38rem 1.15rem; margin: 0; }
+.waterfall-detail-facts > div { display: inline-flex; min-width: 0; align-items: baseline; gap: 0.34rem; }
+.waterfall-detail-facts dt { flex: none; color: var(--muted-foreground); font-size: 0.62rem; }
+.waterfall-detail-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; font-weight: 500; }
 .waterfall-time-arrow { margin: 0 0.2rem; color: var(--muted-foreground); }
 
 .image-progress-block { margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid hsl(var(--border) / 0.7); }
@@ -1550,21 +1569,10 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 /* 深色主题通过组件主题类应用同一语义状态色，避免 scoped :global 裁掉后代选择器。 */
 .is-dark .execution-waterfall { background: hsl(var(--card) / 0.7); }
-.is-dark .waterfall-track { background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), hsl(var(--border) / 0.82) 25%); }
-.is-dark .waterfall-bar.status-failed { background: linear-gradient(90deg, #502b2f, #67373b); box-shadow: inset 0 0 0 1px #82494e; }
-.is-dark .waterfall-bar.status-success { background: linear-gradient(90deg, #2b363c, #3a484f); box-shadow: inset 0 0 0 1px #52636c; }
-.is-dark .waterfall-bar.status-pending { background: linear-gradient(90deg, #1c3448, #294a64); box-shadow: inset 0 0 0 1px #3d6484; }
-.is-dark .waterfall-bar.status-cancelled { background: linear-gradient(90deg, #423422, #5b472c); box-shadow: inset 0 0 0 1px #76603e; }
-
-@container (max-width: 420px) {
-  .waterfall-axis, .waterfall-row { grid-template-columns: minmax(6.2rem, 7.9rem) minmax(0, 1fr); column-gap: 0.42rem; }
-  .waterfall-header, .waterfall-axis, .waterfall-groups { padding-inline: 0.56rem; }
-  .waterfall-provider-meta { display: none; }
-  .waterfall-detail { padding-right: 0.18rem; padding-left: 0.88rem; margin-inline: 0; }
-  .waterfall-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .waterfall-detail-time { grid-column: span 2; }
-}
+.is-dark .path-key--failed .path-key-head { background: color-mix(in srgb, #991b1b 35%, hsl(var(--card))); }
+.is-dark .path-key--success .path-key-head { background: color-mix(in srgb, #166534 42%, hsl(var(--card))); }
+.is-dark .path-key--pending .path-key-head { background: color-mix(in srgb, #1e40af 32%, hsl(var(--card))); }
 @media (prefers-reduced-motion: reduce) {
-  .waterfall-row { transition: none; }
+  .path-key { transition: none; }
 }
 </style>

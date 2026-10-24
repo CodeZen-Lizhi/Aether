@@ -121,6 +121,30 @@ function buildFastTierDetail(): RequestDetail {
 }
 
 describe('RequestDetailDrawer request lifecycle', () => {
+  it.each([201, 204])('shows successful HTTP %i as semantic success', async (statusCode) => {
+    apiMocks.getRequestDetail.mockResolvedValue({
+      ...buildEmbeddingDetail(),
+      status_code: statusCode,
+    })
+    const isOpen = ref(false)
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp({ render: () => h(RequestDetailDrawer, {
+      isOpen: isOpen.value,
+      requestId: 'usage-embedding-1',
+    }) })
+    app.mount(root)
+    mountedApps.push({ app, root })
+    isOpen.value = true
+    await nextTick()
+
+    await vi.waitFor(() => {
+      const badge = document.body.querySelector<HTMLElement>('[data-request-lifecycle-status]')
+      expect(badge?.textContent?.trim()).toBe(String(statusCode))
+      expect(badge?.classList.contains('border-[#bbf7d0]')).toBe(true)
+    })
+  })
+
   it.each(['pending', 'failed'] as const)('keeps %s request state and total duration independent of the selected failed attempt', async (status) => {
     const total = status === 'pending' ? 181_000 : 300_008
     const message = status === 'pending' ? 'First response timeout' : 'Streaming request total timeout'
@@ -154,7 +178,7 @@ describe('RequestDetailDrawer request lifecycle', () => {
     await nextTick()
     await vi.waitFor(() => {
       expect(apiMocks.getRequestTrace).toHaveBeenCalled()
-      expect(document.body.querySelector('.waterfall-item[data-attempt-id="failed-attempt"] .attempt-stop')).not.toBeNull()
+      expect(document.body.querySelector('.waterfall-item[data-attempt-id="failed-attempt"]')).not.toBeNull()
     })
     const states = onRequestState.mock.calls.map(([state]) => state)
     expect(states.length).toBeGreaterThan(0)

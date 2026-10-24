@@ -35,6 +35,10 @@ const totalMs = lifecycleFixture ? pending ? 181000 : 300008 : multiProvider ? 1
 const start = lifecycleFixture ? Date.now() - totalMs : Date.parse('2026-09-14T04:36:51.000Z')
 const iso = (elapsed) => new Date(start + elapsed).toISOString()
 const long = params.has('long')
+/** 供浏览器验收区分真实请求路径与组件默认回退路径。 */
+const requestPath = params.get('request_path') || '/v1/images/generations'
+/** 用真实的长错误消息验证 Key 卡片固定高度和单行省略。 */
+const cardErrorMessage = long ? `upstream_response_error: ${'diagnostic-detail-'.repeat(24)}end` : undefined
 localStorage.setItem('theme', params.get('theme') === 'dark' ? 'dark' : 'light')
 const detail = {
   id: 'fixture-usage', request_id: 'fixture-request',
@@ -116,14 +120,14 @@ const candidates = multiProvider ? multiProviderCandidates : upstreamFailure || 
 }] : singleKeyFailure ? [{
   id: 'single-key-429', request_id: detail.request_id, candidate_index: 0, retry_index: 0,
   provider_id: 'provider-429', provider_name: 'Magpie', key_id: 'key-429', key_name: '3425',
-  status: 'failed', status_code: 429, error_message: 'Upstream rate limit exceeded', is_cached: false, latency_ms: 2940,
+  status: 'failed', status_code: 429, error_message: cardErrorMessage || 'Upstream rate limit exceeded', is_cached: false, latency_ms: 2940,
   created_at: iso(0), started_at: iso(0), finished_at: iso(2940),
 }] : Array.from({ length: count }, (_, index) => ({
   id: `attempt-${index}`, request_id: detail.request_id, candidate_index: lifecycleFixture ? 0 : index, retry_index: lifecycleFixture ? index : 0,
   provider_id: `provider-${Math.floor(index / 2)}`, provider_name: index < 2 ? 'Input · 国际线路' : 'Input · 备用线路',
   key_id: `key-${index}`, key_name: `Key ${String.fromCharCode(65 + index)} · 余额`,
   endpoint_id: `endpoint-${Math.floor(index / 2)}`, endpoint_name: 'openai:responses',
-  status: lifecycleFixture ? index === 0 ? 'failed' : retryStarted ? 'pending' : finalSuccess ? 'success' : 'failed' : pending ? 'pending' : success && index === count - 1 ? 'success' : 'skipped',
+  status: lifecycleFixture ? index === 0 ? 'failed' : retryStarted ? 'pending' : finalSuccess ? 'success' : 'failed' : pending ? activeStatus : success && index === count - 1 ? 'success' : 'skipped',
   status_code: lifecycleFixture ? index === 0 || finalFailed ? 504 : finalSuccess ? 200 : undefined : success && index === count - 1 ? 200 : undefined,
   error_message: lifecycleFixture && index === 0 ? 'First response timeout' : finalFailed ? 'Streaming request total timeout' : undefined,
   skip_reason: lifecycleFixture || pending || success && index === count - 1 ? undefined : 'key_circuit_open',
@@ -133,7 +137,14 @@ const candidates = multiProvider ? multiProviderCandidates : upstreamFailure || 
   extra_data: { ...(long ? { note: 'diagnostic-'.repeat(100) } : {}), provider_api_format: 'openai:responses' },
 }))
 dashboardApi.getRequestDetail = async () => structuredClone(detail)
-requestTraceApi.getRequestTrace = async () => ({ request_id: detail.request_id, candidates: structuredClone(candidates), total_candidates: candidates.length, final_status: pending ? activeStatus : success ? 'success' : 'failed', total_latency_ms: totalMs })
+requestTraceApi.getRequestTrace = async () => ({
+  request_id: detail.request_id,
+  request_path: requestPath,
+  candidates: structuredClone(candidates),
+  total_candidates: candidates.length,
+  final_status: pending ? activeStatus : success ? 'success' : 'failed',
+  total_latency_ms: totalMs,
+})
 const open = ref(false)
 const row = ref({ ...detail, cost: 0, input_tokens: detail.tokens.input, output_tokens: detail.tokens.output, total_tokens: detail.tokens.total })
 createApp({ render: () => [
