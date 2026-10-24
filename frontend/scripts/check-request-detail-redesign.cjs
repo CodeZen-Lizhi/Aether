@@ -4,6 +4,11 @@ async (page) => {
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
+  // 所有场景复用调用方打开的夹具 origin，避免参数与实际检查端口不一致。
+  const fixtureOrigin = new URL(page.url()).origin
+  if (!fixtureOrigin.startsWith('http://127.0.0.1:')) {
+    throw new Error(`夹具入口不是本地 HTTP：${fixtureOrigin}`)
+  }
 
   const scenarios = [
     { name: 'success', query: 'status=final-success' },
@@ -18,9 +23,12 @@ async (page) => {
   const layoutChecks = []
   for (const scenario of scenarios) {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`http://127.0.0.1:5173/scripts/fixtures/request-detail-layout.html?${scenario.query}&test_run=${Date.now()}`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${fixtureOrigin}/scripts/fixtures/request-detail-layout.html?${scenario.query}&test_run=${Date.now()}`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => Boolean(document.querySelector('[data-request-trace-waterfall]')), undefined, { timeout: 5000 })
     await page.waitForTimeout(120)
+    if (new URL(page.url()).origin !== fixtureOrigin) {
+      throw new Error(`${scenario.name}: 页面 origin 发生跳转：${page.url()}`)
+    }
 
     const metrics = await page.locator('[data-request-detail-overview]').locator(':scope > div').allTextContents()
     if (metrics.length !== 5) throw new Error(`${scenario.name}: 首屏概览不是 5 项，实际 ${metrics.length}`)
@@ -364,7 +372,7 @@ async (page) => {
     reports.push({ scenario: scenario.name, entry: trace.entryText, summary: trace.summary })
   }
 
-  await page.goto('http://127.0.0.1:5173/scripts/fixtures/request-detail-layout.html?status=multi-provider&theme=dark', { waitUntil: 'domcontentloaded' })
+  await page.goto(`${fixtureOrigin}/scripts/fixtures/request-detail-layout.html?status=multi-provider&theme=dark`, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => Boolean(document.querySelector('[data-request-trace-waterfall]')), undefined, { timeout: 5000 })
   await page.waitForTimeout(320)
   const dark = await page.evaluate(() => {
@@ -383,7 +391,7 @@ async (page) => {
   }
   await page.screenshot({ path: '/tmp/aether-request-detail-dark.png' })
 
-  await page.goto('http://127.0.0.1:5173/scripts/fixtures/request-detail-layout.html?status=pending&lifecycle=streaming&locale=en-US', { waitUntil: 'domcontentloaded' })
+  await page.goto(`${fixtureOrigin}/scripts/fixtures/request-detail-layout.html?status=pending&lifecycle=streaming&locale=en-US`, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => Boolean(document.querySelector('[data-request-trace-waterfall]')), undefined, { timeout: 5000 })
   await page.waitForTimeout(100)
   const englishPending = await page.evaluate(() => ({
@@ -397,7 +405,7 @@ async (page) => {
     throw new Error(`英文界面动态状态未翻译：${JSON.stringify(englishPending)}`)
   }
 
-  await page.goto('http://127.0.0.1:5173/scripts/fixtures/request-detail-layout.html?status=upstream-failure&locale=en-US', { waitUntil: 'domcontentloaded' })
+  await page.goto(`${fixtureOrigin}/scripts/fixtures/request-detail-layout.html?status=upstream-failure&locale=en-US`, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => Boolean(document.querySelector('[data-request-trace-waterfall]')), undefined, { timeout: 5000 })
   await page.locator('.attempt-stop').first().evaluate(element => element.click())
   await page.waitForFunction(() => Boolean(document.querySelector('.waterfall-detail')))
