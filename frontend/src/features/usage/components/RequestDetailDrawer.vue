@@ -252,16 +252,16 @@
                   </span>
                 </div>
 
-                <details
-                  v-if="detailPricingAvailable && (hasTokenCost || perRequestCost > 0 || hasImageBillingDetail || detail.video_billing)"
-                  :key="fullRequestId"
-                  class="mt-3 border-t border-border/60 pt-2"
-                  data-request-billing-details
-                >
-                  <summary class="cursor-pointer rounded py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    计费明细
-                  </summary>
-                  <div class="pt-3">
+              </section>
+
+              <RequestDetailSection
+                v-if="detailPricingAvailable && (hasTokenCost || perRequestCost > 0 || hasImageBillingDetail || detail.video_billing)"
+                :key="fullRequestId"
+                data-request-billing-details
+                title="计费明细"
+                description="价格、Token 与媒体费用"
+              >
+                <div>
                     <!-- ========== 1. Token分阶段成本 ========== -->
                     <div
                       v-if="detailPricingAvailable && hasTokenCost"
@@ -595,21 +595,17 @@
                         </div>
                       </div>
                     </div>
-                  </div>
-                </details>
-              </section>
+                </div>
+              </RequestDetailSection>
 
               <!-- API 格式、端点与代理属于补充上下文，保留在前端抽屉的次级层。 -->
-              <details
+              <RequestDetailSection
                 v-if="detail"
-                class="rounded-xl border border-border/60 bg-card/60"
                 data-request-detail-context
+                title="请求上下文"
+                description="API 格式、端点与代理"
               >
-                <summary class="cursor-pointer px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4">
-                  请求上下文
-                  <span class="ml-2 opacity-65">API 格式、端点与代理</span>
-                </summary>
-                <div class="grid gap-x-5 gap-y-3 border-t border-border/60 px-3 py-3 text-xs sm:grid-cols-2 sm:px-4">
+                <div class="grid gap-x-5 gap-y-3 text-xs sm:grid-cols-2">
                   <div class="min-w-0">
                     <div class="text-muted-foreground">客户端 → 上游格式</div>
                     <div class="mt-1 break-words font-mono text-foreground">
@@ -621,17 +617,27 @@
                     <div class="mt-1 break-words font-mono text-foreground">{{ getNestedString(asRecord(detail.metadata ?? null), 'endpoint_name') || formatApiFormat(detail.endpoint_api_format) }}</div>
                   </div>
                   <div class="min-w-0">
-                    <div class="text-muted-foreground">密钥</div>
-                    <div class="mt-1 break-words text-foreground">{{ detail.api_key?.name || detail.api_key?.display || detail.api_key?.id || '-' }}</div>
-                  </div>
-                  <div class="min-w-0">
                     <div class="text-muted-foreground">代理</div>
                     <div class="mt-1 break-words text-foreground">{{ traceRequestMetadata?.proxy_name || traceRequestMetadata?.proxy_node_name || '未记录' }}</div>
                   </div>
+                  <div class="min-w-0">
+                    <div class="text-muted-foreground">调用密钥</div>
+                    <div
+                      class="mt-1 break-words text-foreground"
+                      data-request-detail-client-key
+                    >{{ detail.api_key?.name || detail.api_key?.display || detail.api_key?.id || '-' }}</div>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-muted-foreground">上游执行 Key</div>
+                    <div
+                      class="mt-1 break-words text-foreground"
+                      data-request-detail-upstream-key
+                    >{{ detailUpstreamKeyName || '未记录' }}</div>
+                  </div>
                 </div>
-              </details>
+              </RequestDetailSection>
 
-              <!-- 执行路径与按需展开的单次尝试详情。 -->
+              <!-- 执行路径：纵向瀑布按实际时间定位 Key 调用，详情在所选行下方展开。 -->
               <div>
                 <HorizontalRequestTimeline
                   v-if="showTimeline && traceTimelineRequestId"
@@ -639,23 +645,17 @@
                   :request-id="traceTimelineRequestId"
                   :override-status-code="detail.status_code"
                   :request-status="detail.status"
-                  :request-api-format="detail.api_format || null"
-                  :request-metadata="traceRequestMetadata"
                   @trace-state="handleTraceState"
                 />
               </div>
 
               <!-- 原始请求、响应和元数据集中为次级排查入口，避免首屏重复铺开。 -->
-              <details
+              <RequestDetailSection
                 v-if="visibleTabs.length"
-                class="rounded-xl border border-border/60 bg-card/60"
                 data-request-detail-raw-data
+                title="更多数据"
               >
-                <summary class="cursor-pointer px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4">
-                  更多字段与原始数据
-                  <span class="ml-2 opacity-65">请求头、正文、响应与元数据</span>
-                </summary>
-                <div class="border-t border-border/60 p-3 sm:p-4">
+                <div>
                   <Tabs
                     v-model="activeTab"
                     :default-value="activeTab"
@@ -902,7 +902,7 @@
                     </JsonContentPanel>
                   </Tabs>
                 </div>
-              </details>
+              </RequestDetailSection>
             </div>
           </div>
         </Card>
@@ -973,6 +973,7 @@ import {
 // 子组件
 import RequestHeadersContent from './RequestDetailDrawer/RequestHeadersContent.vue'
 import JsonContent from './RequestDetailDrawer/JsonContent.vue'
+import RequestDetailSection from './RequestDetailDrawer/RequestDetailSection.vue'
 import JsonContentPanel from './JsonContentPanel.vue'
 import ConversationView from './RequestDetailDrawer/ConversationView.vue'
 import HorizontalRequestTimeline from './HorizontalRequestTimeline.vue'
@@ -1542,6 +1543,11 @@ const traceRequestMetadata = computed<Record<string, unknown> | null>(() => {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null
   return meta as Record<string, unknown>
 })
+
+/** 读取最终候选关联的上游 Key；旧记录未保存路由快照时明确显示未记录。 */
+const detailUpstreamKeyName = computed<string | null>(() =>
+  getNestedString(asRecord(detail.value?.routing ?? null), 'key_name'),
+)
 
 const traceRecord = computed<Record<string, unknown> | null>(() =>
   asRecord(detail.value?.trace ?? null),

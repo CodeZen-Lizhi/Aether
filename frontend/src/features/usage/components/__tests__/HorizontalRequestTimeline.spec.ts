@@ -80,9 +80,9 @@ vi.mock('lucide-vue-next', async () => {
   })
 
   return {
-    ChevronLeft: Icon,
     ChevronRight: Icon,
     ExternalLink: Icon,
+    KeyRound: Icon,
     TriangleAlert: Icon,
   }
 })
@@ -135,7 +135,18 @@ async function waitForTransitions() {
 
 /** 通过真实 Key 节点选择一次尝试，覆盖用户可操作路径。 */
 function clickAttempt(root: HTMLElement, id: string) {
-  root.querySelector<HTMLButtonElement>(`.attempt-node[data-attempt-id="${id}"]`)?.click()
+  const target = root.querySelector<HTMLButtonElement>(`.waterfall-item[data-attempt-id="${id}"] > .attempt-stop`)
+    ?? root.querySelector<HTMLButtonElement>(`.attempt-stop[data-attempt-id="${id}"]`)
+  target?.click()
+}
+
+/** 通过瀑布行的父容器读取真实 Key ID，避免把属性从按钮移到行后丢失身份。 */
+function getAttemptId(node: Element | null): string | null {
+  if (!node) return null
+  return node.getAttribute('data-attempt-id')
+    ?? node.closest('.waterfall-item')?.getAttribute('data-attempt-id')
+    ?? node.querySelector('.waterfall-item')?.getAttribute('data-attempt-id')
+    ?? null
 }
 
 function mountTimeline(
@@ -152,19 +163,16 @@ function mountTimeline(
   })
   app.mount(root)
   mountedApps.push({ app, root })
-  if (options.autoOpenDetail !== false) {
-    const candidates = [...traceData.candidates].sort((a, b) => (
-      a.candidate_index - b.candidate_index || a.retry_index - b.retry_index
-    ))
-    const active = candidates.find(candidate => candidate.status === 'streaming'
-      || (candidate.status === 'pending' && Boolean(candidate.started_at)))
-    const success = candidates.find(candidate => candidate.status === 'success')
-    const terminal = [...candidates].reverse().find(candidate => ['failed', 'cancelled', 'stream_interrupted'].includes(candidate.status))
-    const target = success ?? active ?? terminal ?? candidates[0]
-    if (target) {
-      root.querySelector<HTMLButtonElement>(`.attempt-node[data-attempt-id="${target.id}"]`)?.click()
-    }
-  }
+  // 瀑布默认收起；旧交互测试需要先展开目标 Key，才能查看真实错误或进度。
+  const candidates = [...traceData.candidates].sort((a, b) => (
+    a.candidate_index - b.candidate_index || a.retry_index - b.retry_index
+  ))
+  const success = candidates.find(candidate => candidate.status === 'success')
+  const active = candidates.find(candidate => candidate.status === 'streaming'
+    || (candidate.status === 'pending' && Boolean(candidate.started_at)))
+  const terminal = [...candidates].reverse().find(candidate => ['failed', 'cancelled', 'stream_interrupted', 'skipped'].includes(candidate.status))
+  const target = success ?? active ?? terminal ?? candidates[0]
+  if (target && options.autoOpenDetail !== false) clickAttempt(root, target.id)
   return root
 }
 
@@ -240,15 +248,12 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    const heading = [...root.querySelectorAll('h4')]
-      .find(element => element.textContent?.trim() === '请求链路追踪')
-    const overview = heading?.parentElement?.parentElement
-    const displayedLatency = overview?.lastElementChild?.textContent?.trim()
+    const displayedLatency = root.querySelector('[data-trace-latency]')?.textContent?.trim()
     expect(displayedLatency).toBe('10.63s')
     expect(displayedLatency).not.toBe('626ms')
   })
 
-  it('groups providers and keys while keeping attempt details collapsed until selection', async () => {
+  it('groups providers and keys while switching the inspector by selection', async () => {
     const trace = buildTrace([
       buildCandidate({
         id: 'provider-a-key-1',
@@ -291,22 +296,34 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace, {}, { autoOpenDetail: false })
     await nextTick()
 
-    expect(root.querySelectorAll('.provider-lane')).toHaveLength(2)
-    expect(root.querySelectorAll('.provider-lane')[0]?.textContent).toContain('Key A1')
-    expect(root.querySelectorAll('.provider-lane')[0]?.textContent).toContain('Key A2')
-    expect(root.querySelectorAll('.provider-lane')[1]?.textContent).toContain('Key B1')
-    expect(root.querySelectorAll('.provider-lane')[1]?.textContent).toContain('Key B2')
-    expect(root.querySelector('.detail-panel')).toBeNull()
+    expect(root.querySelectorAll('.provider-record')).toHaveLength(2)
+    expect(root.querySelector('[data-route-summary]')?.textContent?.trim())
+      .toBe('2 家供应商4 次上游请求')
+    expect(root.textContent).not.toContain('选择供应商查看首个 Key')
+    expect(root.textContent).not.toContain('第 1 轮')
+    expect(root.querySelector('[data-request-conclusion]')).toBeNull()
+    expect(root.querySelector('.final-status')).toBeNull()
+    expect(root.querySelector('.lane-status')).toBeNull()
+    expect([...root.querySelectorAll('.waterfall-provider-order')].map(element => element.textContent?.trim())).toEqual(['01', '02'])
+    expect(root.textContent).not.toContain('所有候选均未完成请求')
+    expect(root.querySelectorAll('.provider-record')[0]?.textContent).toContain('Key A1')
+    expect(root.querySelectorAll('.provider-record')[0]?.textContent).toContain('Key A2')
+    expect(root.querySelectorAll('.provider-record')[1]?.textContent).toContain('Key B1')
+    expect(root.querySelectorAll('.provider-record')[1]?.textContent).toContain('Key B2')
+    expect(root.querySelectorAll('.waterfall-status-mark')).toHaveLength(4)
+    expect(root.querySelectorAll('.waterfall-item[data-status="failed"]')).toHaveLength(3)
+    expect(root.querySelectorAll('.waterfall-item[data-status="success"]')).toHaveLength(1)
+    expect(root.querySelectorAll('.waterfall-provider-header')).toHaveLength(2)
+    expect(root.querySelector('.attempt-stop')?.textContent).not.toMatch(/失败|成功|HTTP|[✓✕×–]/)
+    expect(root.querySelector('[data-execution-inspector]')).toBeNull()
 
-    root.querySelector<HTMLButtonElement>('[data-provider-id="provider-a"]')!.click()
+    clickAttempt(root, 'provider-a-key-2')
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.textContent).toContain('Key A1')
-    root.querySelector<HTMLButtonElement>('[data-attempt-id="provider-a-key-2"]')!.click()
+    expect(root.querySelector('[data-execution-inspector]')?.textContent).toContain('Key A2')
+    expect(root.querySelector('.waterfall-item[data-attempt-id="provider-a-key-2"] .attempt-stop')?.getAttribute('aria-expanded')).toBe('true')
+    clickAttempt(root, 'provider-a-key-2')
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.textContent).toContain('Key A2')
-    root.querySelector<HTMLButtonElement>('[aria-label="收起当前尝试详情"]')!.click()
-    await waitForTransitions()
-    expect(root.querySelector('.detail-panel')).toBeNull()
+    expect(root.querySelector('[data-execution-inspector]')).toBeNull()
   })
 
   it('orders visible candidates by scheduling index and includes unattempted candidates', async () => {
@@ -371,10 +388,12 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    const labels = [...root.querySelectorAll('.provider-copy strong')].map(element => element.textContent?.trim())
+    const labels = [...root.querySelectorAll('.provider-record-name')].map(element =>
+      element.textContent?.trim().replace(/^\d+\s*/, ''),
+    )
     expect(labels).toEqual(['Provider Available', 'Provider Skipped', 'Provider Pending', 'Provider Failed', 'Provider Success'])
-    const nodes = [...root.querySelectorAll('.attempt-node')]
-    expect(nodes.map(node => node.getAttribute('data-attempt-id'))).toEqual([
+    const nodes = [...root.querySelectorAll('.attempt-stop')]
+    expect(nodes.map(getAttemptId)).toEqual([
       'cand-available', 'cand-skipped', 'cand-pending-unstarted', 'cand-failed', 'cand-success',
     ])
   })
@@ -408,8 +427,8 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.querySelector('.provider-lane')?.textContent).toContain('Success Key')
-    expect(root.querySelector('.attempt-node[data-attempt-id="pool-success"]')?.className).toContain('status-success')
+    expect(root.querySelector('.provider-record')?.textContent).toContain('Success Key')
+    expect(root.querySelector('.waterfall-item[data-attempt-id="pool-success"] .attempt-stop')?.className).toContain('status-success')
   })
 
   it('uses candidate terminal status for node colors instead of overriding with HTTP code', async () => {
@@ -439,11 +458,34 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
+    expect(root.querySelector('.waterfall-item[data-attempt-id="cand-body-error"] .attempt-stop')?.classList.contains('status-failed')).toBe(true)
+    expect(root.querySelector('.waterfall-item[data-attempt-id="cand-body-error"]')?.getAttribute('data-status')).toBe('failed')
+    expect(root.querySelector('.waterfall-item[data-attempt-id="cand-success"]')?.getAttribute('data-status')).toBe('success')
+    expect(root.querySelector('.waterfall-item[data-attempt-id="cand-body-error"] .attempt-stop')?.textContent).not.toContain('失败')
+    expect(root.querySelector('.waterfall-item[data-attempt-id="cand-body-error"] .attempt-stop')?.textContent).not.toContain('HTTP')
+
     clickAttempt(root, 'cand-body-error')
     await flushPendingUpdates()
-    expect(root.querySelector('.status-tag')?.textContent).toContain('失败')
-    expect(root.querySelector('.status-tag')?.textContent).toContain('HTTP 200')
-    expect(root.querySelector('.panel-title .title-dot')?.classList.contains('status-failed')).toBe(true)
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-status')).toBe('failed')
+    expect(root.querySelector('.status-tag')).toBeNull()
+    expect(root.textContent).not.toContain('所有候选均未完成请求')
+    expect(root.querySelector('[data-attempt-http-status]')?.textContent).toContain('200')
+  })
+
+  it('keeps a stream-interrupted Key red through the shared status class', async () => {
+    const trace = buildTrace([
+      buildCandidate({
+        id: 'cand-stream-interrupted',
+        status: 'stream_interrupted',
+        status_code: 200,
+      }),
+    ])
+
+    const root = mountTimeline(trace)
+    await nextTick()
+
+    const marker = root.querySelector('.waterfall-item[data-attempt-id="cand-stream-interrupted"]')
+    expect(marker?.getAttribute('data-status')).toBe('failed')
   })
 
   it('renders Codex image progress from candidate image_progress', async () => {
@@ -501,9 +543,8 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    const nodeDot = root.querySelector<HTMLElement>('.panel-title .title-dot')
-    expect(nodeDot?.classList.contains('status-failed')).toBe(true)
-    expect(nodeDot?.classList.contains('status-success')).toBe(false)
+    const inspector = root.querySelector<HTMLElement>('[data-execution-inspector]')
+    expect(inspector?.getAttribute('data-status')).toBe('failed')
   })
 
   it.each(['pending', 'streaming'] as const)('keeps the %s request active with only a failed attempt during a retry gap', async (status) => {
@@ -531,7 +572,7 @@ describe('HorizontalRequestTimeline', () => {
     })
     await nextTick()
 
-    expect(root.querySelector('.panel-title .title-dot')?.classList.contains('status-failed')).toBe(true)
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-status')).toBe('failed')
     const lastCall = onTraceState.mock.calls[onTraceState.mock.calls.length - 1]?.[0]
     expect(lastCall).toMatchObject({
       finalStatus: status,
@@ -539,7 +580,7 @@ describe('HorizontalRequestTimeline', () => {
     })
   })
 
-  it('shows request path from request metadata', async () => {
+  it('keeps removed technical fields out of the attempt detail', async () => {
     const trace = buildTrace([
       buildCandidate({
         id: 'cand-path',
@@ -552,20 +593,15 @@ describe('HorizontalRequestTimeline', () => {
       }),
     ])
 
-    const root = mountTimeline(trace, {
-      requestMetadata: {
-        request_path: '/v1beta/models/gemini-2.5-pro:generateContent',
-        request_query_string: 'alt=sse',
-      },
-    })
+    const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.textContent).toContain('请求路径')
-    const requestPathCode = root.querySelector<HTMLElement>('.request-path-code')
-    expect(requestPathCode?.textContent).toContain('/v1beta/models/gemini-2.5-pro:generateContent?alt=sse')
+    expect(root.textContent).not.toContain('请求路径')
+    expect(root.textContent).not.toContain('更多字段')
+    expect(root.querySelector('.request-path-code')).toBeNull()
   })
 
-  it('shows request path from trace payload', async () => {
+  it('does not render a separate extended-fields disclosure', async () => {
     const trace: RequestTrace = {
       ...buildTrace([
         buildCandidate({
@@ -584,9 +620,9 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.textContent).toContain('请求路径')
-    const requestPathCode = root.querySelector<HTMLElement>('.request-path-code')
-    expect(requestPathCode?.textContent).toContain('/v1/images/generations')
+    expect(root.textContent).not.toContain('请求路径')
+    expect(root.textContent).not.toContain('技术详情')
+    expect(root.querySelector('.extended-block')).toBeNull()
   })
 
   it('shows upstream response headers and body in one error envelope', async () => {
@@ -639,8 +675,8 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.textContent).toContain('原因说明')
-    expect(root.textContent).toContain('HTTP 400')
+    expect(root.querySelector('.error-title')?.textContent).toContain(upstreamErrorMessage)
+    expect(root.textContent).not.toContain('原因说明')
     expect(root.textContent).not.toContain('上游返回非成功状态 400')
     const upstreamResponse = root.querySelector<HTMLElement>('.error-upstream-response-json pre')
     expect(upstreamResponse?.dataset.title).toBe('上游响应')
@@ -662,7 +698,7 @@ describe('HorizontalRequestTimeline', () => {
     expect(upstreamResponse?.textContent).not.toContain('"body_ref"')
     expect(upstreamResponse?.textContent).not.toContain('"body_state"')
     expect(root.textContent).not.toContain('上游真实响应')
-    expect(root.querySelector('.attempt-cause')?.textContent).not.toContain('execution runtime stream returned non-success status 400')
+    expect(root.textContent).not.toContain('execution runtime stream returned non-success status 400')
     expect(root.textContent).not.toContain('真实请求错误')
     expect(root.textContent).not.toContain('返回客户端响应')
     expect(root.textContent).not.toContain('默认处理')
@@ -671,7 +707,7 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.textContent).not.toContain('该错误被标记为敏感上游错误')
   })
 
-  it('presents a first-byte timeout as a recoverable warning with collapsed technical details', async () => {
+  it('shows only the timeout reason and collapses the upstream response', async () => {
     const trace = buildTrace([
       buildCandidate({
         id: 'cand-first-byte-timeout',
@@ -695,14 +731,14 @@ describe('HorizontalRequestTimeline', () => {
     expect(errorBlock?.getAttribute('role')).toBe('alert')
     expect(errorBlock?.classList.contains('is-warning')).toBe(true)
     expect(errorBlock?.textContent).toContain('上游服务响应超时')
-    expect(errorBlock?.textContent).toContain('没有返回首个响应')
-    expect(errorBlock?.textContent).toContain('建议稍后重试')
-    expect(errorBlock?.textContent).toContain('HTTP 503')
+    expect(errorBlock?.textContent).not.toContain('建议稍后重试')
+    expect(errorBlock?.textContent).not.toContain('HTTP 503')
 
-    const technicalDetails = errorBlock?.querySelector<HTMLDetailsElement>('.error-details')
-    expect(technicalDetails?.open).toBe(false)
-    expect(technicalDetails?.textContent).toContain('Stream first byte timeout')
-    expect(technicalDetails?.querySelector<HTMLElement>('.error-upstream-response-json pre')?.dataset.title)
+    const upstreamResponse = errorBlock?.querySelector<HTMLDetailsElement>('[data-upstream-response]')
+    expect(upstreamResponse?.open).toBe(false)
+    expect(upstreamResponse?.textContent).toContain('上游响应')
+    expect(upstreamResponse?.textContent).not.toContain('技术详情')
+    expect(upstreamResponse?.querySelector<HTMLElement>('.error-upstream-response-json pre')?.dataset.title)
       .toBe('上游响应')
   })
 
@@ -732,16 +768,15 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.textContent).toContain('原因说明')
-    expect(root.textContent).toContain('HTTP 500')
+    expect(root.querySelector('.attempt-stop')?.textContent).not.toContain('HTTP')
+    expect(root.querySelector('[data-attempt-http-status]')?.textContent).toContain('500')
+    expect(root.textContent).not.toContain('原因说明')
     expect(root.textContent).toContain('流式格式转换失败')
     expect(root.textContent).toContain('上游返回了当前不支持的 stream event')
     expect(root.textContent).toContain('字段 $.type = "response.future.delta"')
-    const diagnosticText = root.querySelector('.error-diagnostic-json')?.textContent ?? ''
-    expect(diagnosticText).toContain('"breakpoint":"$.type"')
-    expect(diagnosticText).toContain('"analysis_hint"')
-    expect(diagnosticText).toContain('"raw"')
-    expect(diagnosticText).toContain('"body_state":"disabled"')
+    expect(root.querySelector('.error-diagnostic-json')).toBeNull()
+    expect(root.textContent).not.toContain('技术详情')
+    expect(root.textContent).not.toContain('更多字段')
     expect(root.querySelector('.error-upstream-response-json')?.textContent).toContain('"header":{"content-type":"application/json"}')
   })
 
@@ -770,13 +805,14 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.textContent).toContain('原因说明')
-    expect(root.textContent).toContain('上游请求体转换失败')
+    expect(root.textContent).not.toContain('原因说明')
     expect(root.textContent).toContain('$.n')
     expect(root.textContent).toContain('格式转换失败')
     expect(root.textContent).toContain('OpenAI Chat → OpenAI Responses')
     expect(root.textContent).toContain('字段 $.n 会丢失信息')
     expect(root.querySelector('.diagnostic-json-panel')).toBeNull()
+    expect(root.textContent).not.toContain('技术详情')
+    expect(root.textContent).not.toContain('更多字段')
   })
 
   it('formats unsupported stream finish reasons with the failing field', async () => {
@@ -800,8 +836,8 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.textContent).toContain('流式格式转换失败')
     expect(root.textContent).toContain('finish reason')
     expect(root.textContent).toContain('字段 $.finish_reason = "future_reason"')
-    const diagnosticText = root.querySelector('.error-diagnostic-json')?.textContent ?? ''
-    expect(diagnosticText).toContain('"breakpoint":"$.finish_reason"')
+    expect(root.querySelector('.error-diagnostic-json')).toBeNull()
+    expect(root.textContent).not.toContain('技术详情')
   })
 
   it('uses conversion messages from error_flow as the diagnostic breakpoint source', async () => {
@@ -836,10 +872,8 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.textContent).toContain('OpenAI Chat → OpenAI Responses')
     expect(root.textContent).toContain('字段 $.n 会丢失信息')
     expect(root.textContent).not.toContain('上游返回非成功状态 500')
-    const diagnosticText = root.querySelector('.error-diagnostic-json')?.textContent ?? ''
-    expect(diagnosticText).toContain('"body_state":"disabled"')
-    expect(diagnosticText).toContain('"breakpoint":"$.n"')
-    expect(diagnosticText).toContain('断点在请求/响应格式转换器')
+    expect(root.querySelector('.error-diagnostic-json')).toBeNull()
+    expect(root.textContent).not.toContain('技术详情')
   })
 
   it('shows failed diagnostic messages even when the only response panel data is diagnostic metadata', async () => {
@@ -867,11 +901,11 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.textContent).toContain('原因说明')
+    expect(root.textContent).not.toContain('原因说明')
     expect(root.textContent).toContain('格式转换失败')
     expect(root.textContent).toContain('OpenAI Responses 不支持字段 $.temperature')
-    const diagnosticText = root.querySelector('.error-diagnostic-json')?.textContent ?? ''
-    expect(diagnosticText).toContain('"breakpoint":"$.temperature"')
+    expect(root.querySelector('.error-diagnostic-json')).toBeNull()
+    expect(root.textContent).not.toContain('技术详情')
   })
 
   it('keeps the failure message when upstream response only records an empty body state', async () => {
@@ -897,7 +931,7 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    expect(root.textContent).toContain('原因说明')
+    expect(root.textContent).not.toContain('原因说明')
     expect(root.textContent).toContain('execution runtime stream ended before provider terminal event')
     expect(root.querySelector('.error-block .error-json')).toBeNull()
     expect(root.textContent).not.toContain('"body_state":"none"')
@@ -921,7 +955,7 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    const detailText = root.querySelector('.detail-panel')?.textContent ?? ''
+    const detailText = root.querySelector('[data-execution-inspector]')?.textContent ?? ''
     expect(detailText).toContain('key-active-id')
     expect(detailText).not.toContain('未知')
   })
@@ -940,26 +974,27 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace)
     await nextTick()
 
-    const detailText = root.querySelector('.detail-panel')?.textContent ?? ''
+    const detailText = root.querySelector('[data-execution-inspector]')?.textContent ?? ''
     expect(detailText).toContain('22.20s')
-    expect(root.querySelector('.time-range-value')?.getAttribute('title')).toBe('22.20s')
-    expect(root.querySelector('.time-range-value')?.textContent).toContain(':22.200')
+    expect([...root.querySelectorAll('.waterfall-detail-facts > div')].some(element => element.textContent?.includes('22.20s'))).toBe(true)
   })
 
   it('keeps a single attempt in the same card without navigation controls', async () => {
     const root = mountTimeline(buildTrace([buildCandidate({ status: 'skipped', skip_reason: 'key_circuit_open', started_at: undefined, status_code: 503 })]))
     await nextTick()
-    expect(root.querySelectorAll('.detail-panel')).toHaveLength(1)
-    expect(root.querySelectorAll('.attempt-node')).toHaveLength(1)
-    expect(root.querySelector('.status-tag')?.textContent).toContain('未发送')
-    expect(root.querySelector('.status-tag')?.textContent).not.toContain('HTTP')
+    expect(root.querySelectorAll('[data-execution-inspector]')).toHaveLength(1)
+    expect(root.querySelectorAll('.attempt-stop')).toHaveLength(1)
+    expect(root.querySelector('.attempt-stop')?.textContent).not.toContain('本地冷却中')
+    expect(root.querySelector('.attempt-stop')?.textContent).not.toContain('HTTP')
+    expect(root.querySelector('.status-tag')).toBeNull()
     expect(root.textContent).not.toContain('上游服务暂时不可用')
   })
 
   it('does not label a failed candidate as unsent based on its circuit reason alone', async () => {
     const root = mountTimeline(buildTrace([buildCandidate({ status: 'failed', skip_reason: 'key_circuit_open', status_code: 503 })]))
     await nextTick()
-    expect(root.querySelector('.status-tag')?.textContent).toContain('失败')
+    expect(root.querySelector('.attempt-stop')?.classList.contains('status-failed')).toBe(true)
+    expect(root.querySelector('.attempt-stop')?.textContent).not.toContain('本地冷却中')
   })
 
   it('preserves the manually selected attempt by identity when external data inserts earlier records', async () => {
@@ -974,17 +1009,17 @@ describe('HorizontalRequestTimeline', () => {
     await flushPendingUpdates()
     clickAttempt(root, 'first')
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('first')
     data.value = buildTrace([buildCandidate({ id: 'inserted', candidate_index: 0 }), { ...first, key_name: 'Updated First Key' }, second])
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
-    expect(root.querySelector('.detail-panel')?.textContent).toContain('Updated First Key')
-    expect(root.querySelectorAll('.attempt-node')).toHaveLength(3)
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('first')
+    expect(root.querySelector('[data-execution-inspector]')?.textContent).toContain('Updated First Key')
+    expect(root.querySelectorAll('.attempt-stop')).toHaveLength(3)
     data.value = { ...buildTrace([buildCandidate({ id: 'other', request_id: 'req-2' })]), request_id: 'req-2' }
     await flushPendingUpdates()
-    expect(root.querySelectorAll('.provider-lane')).toHaveLength(1)
-    expect(root.querySelector('.attempt-node')?.getAttribute('data-attempt-id')).toBe('other')
-    expect(root.querySelector('.detail-panel')).toBeNull()
+    expect(root.querySelectorAll('.provider-record')).toHaveLength(1)
+    expect(getAttemptId(root.querySelector('.attempt-stop'))).toBe('other')
+    expect(root.querySelector('[data-execution-inspector]')).toBeNull()
   })
 
   it('ignores an old response when switching requests during a trace load', async () => {
@@ -1000,12 +1035,12 @@ describe('HorizontalRequestTimeline', () => {
     mountedApps.push({ app, root })
     requestId.value = 'req-2'
     await flushPendingUpdates()
-    expect(root.querySelector('.attempt-node')?.getAttribute('data-attempt-id')).toBe('new-attempt')
-    expect(root.querySelector('.detail-panel')).toBeNull()
+    expect(getAttemptId(root.querySelector('.attempt-stop'))).toBe('new-attempt')
+    expect(root.querySelector('[data-execution-inspector]')).toBeNull()
     finishOld(buildTrace([buildCandidate({ id: 'old-attempt' })]))
     await flushPendingUpdates()
-    expect(root.querySelector('.attempt-node')?.getAttribute('data-attempt-id')).toBe('new-attempt')
-    expect(root.querySelector('.detail-panel')).toBeNull()
+    expect(getAttemptId(root.querySelector('.attempt-stop'))).toBe('new-attempt')
+    expect(root.querySelector('[data-execution-inspector]')).toBeNull()
   })
 
   it('keeps manual selection during API refresh and supports keyboard cycling', async () => {
@@ -1016,14 +1051,14 @@ describe('HorizontalRequestTimeline', () => {
     await flushPendingUpdates()
     clickAttempt(root, 'first')
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('first')
     requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(buildTrace([{ ...first, key_name: 'Updated Key' }, second]))
     await refresh()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('first')
-    expect(root.querySelector('.detail-panel')?.textContent).toContain('Updated Key')
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('first')
+    expect(root.querySelector('[data-execution-inspector]')?.textContent).toContain('Updated Key')
     clickAttempt(root, 'second')
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.getAttribute('data-attempt-id')).toBe('second')
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('second')
   })
 
   it('follows the active key when silent polling updates the trace', async () => {
@@ -1077,14 +1112,14 @@ describe('HorizontalRequestTimeline', () => {
 
     clickAttempt(root, 'cand-available-a')
     await flushPendingUpdates()
-    expect(root.querySelector('.detail-panel')?.textContent).toContain('Available Key')
+    expect(root.querySelector('[data-execution-inspector]')?.textContent).toContain('Available Key')
 
     requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(activeTrace)
     await refresh()
 
     clickAttempt(root, 'cand-streaming-b')
     await flushPendingUpdates()
-    const detailText = root.querySelector('.detail-panel')?.textContent ?? ''
+    const detailText = root.querySelector('[data-execution-inspector]')?.textContent ?? ''
     expect(detailText).toContain('Streaming Key')
     expect(detailText).toContain('进行中')
   })

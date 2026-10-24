@@ -1,481 +1,247 @@
 <template>
-  <div class="minimal-request-timeline">
-    <!-- Loading State -->
+  <div class="minimal-request-timeline" :class="{ 'is-dark': isDark }">
+    <!-- 执行瀑布：每行表达一次 Key 调用，横轴表示相对时间，详情只在所选行下方展开。 -->
     <div
       v-if="loading"
-      class="py-4"
+      class="execution-waterfall execution-waterfall--loading"
     >
-      <Skeleton class="h-32 w-full" />
+      <Skeleton class="h-40 w-full" />
     </div>
 
-    <!-- Error State -->
-    <Card
-      v-else-if="error"
-      class="border-red-200 dark:border-red-800"
-    >
-      <div class="p-4">
-        <p class="text-sm text-red-600 dark:text-red-400">
-          {{ error }}
-        </p>
-      </div>
-    </Card>
-
-    <!-- Timeline Content -->
     <div
-      v-else-if="trace && trace.candidates.length > 0"
-      class="space-y-0"
+      v-else-if="error"
+      class="execution-waterfall execution-waterfall--error"
+      role="alert"
     >
-      <Card>
-        <div
-          class="trace-card"
-        >
-          <!-- 链路概览 -->
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <h4 class="text-sm font-semibold whitespace-nowrap">
-                请求链路追踪
-              </h4>
-              <span
-                class="final-status"
-                :class="getStatusColorClass(computedFinalStatus)"
-              >
-                <span
-                  class="title-dot"
-                  :class="getStatusColorClass(computedFinalStatus)"
-                  aria-hidden="true"
-                />
-                {{ getFinalStatusLabel(computedFinalStatus) }}
-              </span>
-            </div>
-                <div
-                  class="trace-latency"
-                  data-trace-latency
-                >
-                  {{ formatLatency(totalTraceLatency) }}
-                </div>
-          </div>
+      {{ error }}
+    </div>
 
-          <!-- 执行路径：供应商按轮次纵向排列，同一轮的 Key 保持实际尝试顺序。 -->
-          <div class="route-heading">
-            <div>
-              <h5 class="route-title">
-                执行路径
-              </h5>
-              <p class="route-description">
-                选择供应商查看首个 Key，或直接切换到同一供应商的其他 Key。
-              </p>
-            </div>
-            <span class="route-total">{{ providerRounds.length }} 个供应商 · {{ timeline.length }} 次尝试</span>
-          </div>
-          <div
-            class="route-map"
-            role="list"
-            aria-label="供应商与 Key 执行路径"
-          >
+    <section
+      v-else-if="trace && trace.candidates.length > 0"
+      class="execution-waterfall"
+      data-request-trace-waterfall
+    >
+      <header class="waterfall-header">
+        <div class="waterfall-heading">
+          <h4 class="waterfall-title">
+            执行路径
+          </h4>
+          <span class="waterfall-duration" data-trace-latency>{{ formatLatency(totalTraceLatency) }}</span>
+        </div>
+        <p
+          class="waterfall-summary"
+          data-route-summary
+        >
+          <span>{{ providerRounds.length }} 家供应商</span>
+          <span>{{ attemptedCallCount }} 次上游请求</span>
+          <span v-if="cooledDownKeyCount > 0">{{ cooledDownKeyCount }} 次冷却跳过</span>
+        </p>
+      </header>
+
+      <div
+        class="waterfall-axis"
+        aria-hidden="true"
+      >
+        <span>Key</span>
+        <span class="waterfall-axis-track">
+          <span>0</span>
+          <span>{{ formatLatency(totalTraceLatency / 4) }}</span>
+          <span>{{ formatLatency(totalTraceLatency / 2) }}</span>
+          <span>{{ formatLatency(totalTraceLatency * 3 / 4) }}</span>
+          <span>{{ formatLatency(totalTraceLatency) }}</span>
+        </span>
+      </div>
+
+      <div class="waterfall-groups">
+        <section
+          v-for="(round, roundIndex) in providerRounds"
+          :key="round.providerId"
+          class="waterfall-provider provider-record"
+          :data-provider-id="round.providerId"
+        >
+          <header class="waterfall-provider-header">
+            <span class="waterfall-provider-order">{{ String(roundIndex + 1).padStart(2, '0') }}</span>
+            <span class="waterfall-provider-name provider-record-name">{{ round.providerName }}</span>
+            <span class="waterfall-provider-meta provider-record-count">{{ formatWaterfallProviderMeta(round) }}</span>
+          </header>
+
+          <div class="waterfall-rows" role="list" :aria-label="`${round.providerName} 的 Key 调用`">
             <div
-              v-for="(round, roundIndex) in providerRounds"
-              :key="round.providerId"
-              class="provider-lane"
-              :class="{ 'is-selected': detailOpen && selectedRoundIndex === roundIndex }"
+              v-for="(attempt, keyIndex) in round.attempts"
+              :key="attempt.id"
+              class="waterfall-item"
+              :class="{ 'is-open': openedAttemptId === attempt.id }"
               role="listitem"
+              :data-attempt-id="attempt.id"
+              :data-status="getTraceLineStatus(attempt)"
             >
               <button
                 type="button"
-                class="provider-lane-head"
-                :data-provider-id="round.providerId"
-                :aria-pressed="detailOpen && selectedRoundIndex === roundIndex && selectedAttemptIndex === round.firstAttemptIndex"
-                @click="selectProviderRound(round)"
+                class="waterfall-row attempt-stop key-record"
+                :class="getStatusColorClass(getDisplayStatus(attempt))"
+                :aria-expanded="openedAttemptId === attempt.id"
+                :aria-label="`${getAttemptKeyDisplay(attempt)}，${formatAttemptOutcome(attempt)}，查看详情`"
+                @click="selectAttempt(attempt)"
               >
-                <span
-                  class="title-dot"
-                  :class="getStatusColorClass(round.displayStatus)"
-                  aria-hidden="true"
-                />
-                <span class="provider-copy">
-                  <strong>{{ round.providerName }}</strong>
-                  <small>第 {{ roundIndex + 1 }} 轮 · {{ round.attempts.length }} 个 Key</small>
-                </span>
-                <span
-                  class="lane-status"
-                  :class="getStatusColorClass(round.displayStatus)"
-                >{{ getRoundStatusLabel(round) }}</span>
-              </button>
-              <div
-                class="attempt-track"
-                role="group"
-                :aria-label="`${round.providerName} 的 Key 尝试`"
-              >
-                <button
-                  v-for="(attempt, keyIndex) in round.attempts"
-                  :key="attempt.id"
-                  type="button"
-                  class="attempt-node"
-                  :data-attempt-id="attempt.id"
-                  :class="[
-                    getStatusColorClass(getDisplayStatus(attempt)),
-                    { 'is-selected': detailOpen && selectedAttemptIndex === round.attemptIndexes[keyIndex] },
-                  ]"
-                  :aria-pressed="detailOpen && selectedAttemptIndex === round.attemptIndexes[keyIndex]"
-                  :aria-label="`查看 ${round.providerName} 的 ${getAttemptKeyDisplay(attempt)}，${getStatusLabel(getDisplayStatus(attempt))}`"
-                  @click="selectAttempt(round.attemptIndexes[keyIndex])"
-                >
-                  <span class="attempt-sequence">{{ String(round.attemptIndexes[keyIndex] + 1).padStart(2, '0') }}</span>
-                  <span class="attempt-copy">
-                    <strong>{{ getAttemptKeyDisplay(attempt) }}</strong>
-                    <small>{{ getAttemptResultLabel(attempt) }}</small>
-                  </span>
-                  <span class="attempt-meta">{{ formatLatency(attempt.latency_ms) }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-          <p
-            class="request-conclusion"
-            data-request-conclusion
-          >
-            {{ requestConclusion }}
-          </p>
-
-          <!-- 尝试详情只在用户选择供应商或 Key 后出现。 -->
-          <div
-            v-if="detailOpen && currentAttempt"
-            class="detail-panel"
-            :data-attempt-id="currentAttempt.id"
-          >
-              <div class="panel-header">
-                <div
-                  class="panel-title"
-                  aria-live="polite"
-                >
+                <span class="waterfall-label">
                   <span
-                    class="title-dot"
-                    :class="getStatusColorClass(currentAttemptDisplayStatus)"
+                    class="waterfall-status-mark"
+                    aria-hidden="true"
                   />
-                  <span class="title-text">{{ getProviderDisplayName(currentAttempt) }}</span>
-                  <a
-                    v-if="currentAttempt.provider_website"
-                    :href="currentAttempt.provider_website"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="provider-link"
-                    @click.stop
-                  >
-                    <ExternalLink class="w-3 h-3" />
-                  </a>
-                  <span class="attempt-key-inline">{{ currentAttemptKeyDisplay }} · 第 {{ selectedAttemptIndex + 1 }} 次尝试</span>
+                  <span class="waterfall-key">{{ getAttemptKeyDisplay(attempt) }}</span>
                   <span
-                    class="status-tag"
-                    :class="getStatusColorClass(currentAttemptDisplayStatus)"
-                  >
-                    {{ getStatusLabel(currentAttemptDisplayStatus) }}
-                    <span
-                      v-if="currentAttemptDisplayStatus !== 'skipped' && (currentAttempt.status_code != null || currentAttemptDisplayStatus === 'success')"
-                      class="attempt-http"
-                    >HTTP {{ currentAttempt.status_code ?? 200 }}</span>
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="detail-close"
-                  aria-label="收起当前尝试详情"
-                  @click="closeAttemptDetail"
-                >
-                  <ChevronLeft class="h-4 w-4 -rotate-90" />
-                </button>
-              </div>
+                    v-if="getAttemptTraceDescription(attempt)"
+                    class="waterfall-row-note"
+                  >{{ getAttemptTraceDescription(attempt) }}</span>
+                </span>
 
-              <div class="panel-body">
-                <p
-                  class="attempt-cause"
-                  :class="`is-${attemptCause.tone}`"
-                >
-                  {{ attemptCause.title }}<span v-if="attemptCause.detail">。{{ attemptCause.detail }}</span>
-                </p>
-                <!-- 首层只保留排查最常用的字段，技术详情和扩展字段默认收起。 -->
-                <div class="info-grid">
-                  <div
-                    v-if="currentAttemptTimeRange"
-                    class="info-item"
-                  >
-                    <span class="info-label">时间范围</span>
-                    <span
-                      class="info-value mono time-range-value"
-                      :title="currentAttemptTimeRange.durationLabel"
-                    >
-                      {{ formatTime(currentAttemptTimeRange.startIso) }}
-                      <span class="time-arrow">→</span>
-                      {{ currentAttemptTimeRange.endIso ? formatTime(currentAttemptTimeRange.endIso) : '进行中' }}
-                    </span>
+                <span class="waterfall-track">
+                  <span
+                    v-if="getDisplayStatus(attempt) === 'skipped'"
+                    class="waterfall-not-sent"
+                    :style="{ left: getWaterfallPositionPercent(attempt, 0) }"
+                  >{{ attempt.skip_reason === 'key_circuit_open' ? '冷却跳过' : '未发送' }}</span>
+                  <span
+                    v-else
+                    class="waterfall-bar"
+                    :class="getStatusColorClass(getDisplayStatus(attempt))"
+                    :style="getWaterfallBarStyle(attempt)"
+                  />
+                      <span
+                        v-if="getDisplayStatus(attempt) !== 'skipped'"
+                        class="waterfall-row-duration"
+                        :class="{ 'is-inside': Number.parseFloat(getWaterfallEndPercent(attempt)) >= 86 }"
+                        :style="{ left: getWaterfallEndPercent(attempt) }"
+                        :data-tone="getTraceLineStatus(attempt)"
+                      >{{ formatLatency(attempt.latency_ms) }}</span>
+                </span>
+
+                <span class="waterfall-toggle" aria-hidden="true">
+                  {{ openedAttemptId === attempt.id ? '−' : '+' }}
+                </span>
+              </button>
+
+              <section
+                v-if="openedAttemptId === attempt.id"
+                class="waterfall-detail"
+                :data-execution-detail="attempt.id"
+                :data-execution-inspector="attempt.id"
+                :data-attempt-id="attempt.id"
+                :data-status="getTraceLineStatus(attempt)"
+                aria-live="polite"
+              >
+                <div class="waterfall-detail-heading">
+                  <div class="waterfall-detail-identity">
+                    <span class="waterfall-detail-provider">{{ getProviderDisplayName(attempt) }}</span>
+                    <strong class="waterfall-detail-key">{{ getAttemptKeyDisplay(attempt) }}</strong>
                   </div>
-                  <div
-                    v-if="currentAttempt.extra_data?.first_byte_time_ms != null"
-                    class="info-item"
-                  >
-                    <span class="info-label">首字 (TTFB)</span>
-                    <span class="info-value mono">{{ formatLatency(currentAttempt.extra_data.first_byte_time_ms) }}</span>
-                  </div>
-                  <div
-                    v-if="currentAttemptKeyDisplay"
-                    class="info-item"
-                  >
-                    <span class="info-label">密钥</span>
-                    <span class="info-value info-value-stacked">
-                      <span class="key-name">
-                        {{ currentAttemptKeyDisplay }}
-                        <span
-                          v-if="currentAttempt.key_auth_type && currentAttempt.key_auth_type !== 'api_key'"
-                          class="auth-type-tag"
-                        >{{ formatAuthTypeWithPlan(currentAttempt.key_auth_type) }}</span>
-                      </span>
-                      <code
-                        v-if="currentAttempt.key_preview"
-                        class="key-preview"
-                      >{{ currentAttempt.key_preview }}</code>
-                    </span>
-                  </div>
-                  <div class="info-item">
-                    <span class="info-label">耗时</span>
-                    <span class="info-value mono">{{ formatLatency(currentAttempt.latency_ms) }}</span>
-                  </div>
+                  <dl class="waterfall-detail-facts">
+                    <div v-if="getDisplayStatus(attempt) !== 'skipped'">
+                      <dt>HTTP</dt>
+                      <dd class="mono" data-attempt-http-status>{{ attempt.status_code ?? (getDisplayStatus(attempt) === 'success' ? 200 : '-') }}</dd>
+                    </div>
+                    <div>
+                      <dt>耗时</dt>
+                      <dd class="mono">{{ getAttemptTimeRange(attempt)?.durationLabel || formatLatency(attempt.latency_ms) }}</dd>
+                    </div>
+                    <div v-if="getAttemptTimeRange(attempt)" class="waterfall-detail-time">
+                      <dt>时间</dt>
+                      <dd class="mono">
+                        {{ formatTime(getAttemptTimeRange(attempt)!.startIso) }}
+                        <span class="waterfall-time-arrow">→</span>
+                        {{ getAttemptTimeRange(attempt)?.endIso ? formatTime(getAttemptTimeRange(attempt)!.endIso!) : '进行中' }}
+                      </dd>
+                    </div>
+                    <div v-if="attempt.key_preview">
+                      <dt>标识</dt>
+                      <dd class="mono">{{ attempt.key_preview }}</dd>
+                    </div>
+                  </dl>
                 </div>
 
-                <div
-                  v-if="currentImageProgress"
-                  class="image-progress-block"
-                >
+                <div v-if="currentDetailImageProgress" class="image-progress-block">
                   <div class="image-progress-header">
                     <span class="image-progress-title">图片生成进度</span>
-                    <span
-                      class="image-progress-phase"
-                      :class="imageProgressPhaseClass(currentImageProgress.phase)"
-                    >
-                      {{ formatImageProgressPhase(currentImageProgress.phase) }}
+                    <span class="image-progress-phase" :class="imageProgressPhaseClass(currentDetailImageProgress.phase)">
+                      {{ formatImageProgressPhase(currentDetailImageProgress.phase) }}
                     </span>
                   </div>
                   <div class="image-progress-grid">
                     <div class="image-progress-item">
                       <span class="image-progress-label">上游 TTFB</span>
-                      <span class="image-progress-value mono">{{ formatLatency(currentImageProgress.upstream_ttfb_ms) }}</span>
+                      <span class="image-progress-value mono">{{ formatLatency(currentDetailImageProgress.upstream_ttfb_ms) }}</span>
                     </div>
                     <div class="image-progress-item">
                       <span class="image-progress-label">SSE 帧数</span>
-                      <span class="image-progress-value mono">{{ formatProgressCount(currentImageProgress.upstream_sse_frame_count) }}</span>
+                      <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.upstream_sse_frame_count) }}</span>
                     </div>
                     <div class="image-progress-item">
                       <span class="image-progress-label">Partial 图片</span>
-                      <span class="image-progress-value mono">{{ formatProgressCount(currentImageProgress.partial_image_count) }}</span>
+                      <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.partial_image_count) }}</span>
                     </div>
                     <div class="image-progress-item">
                       <span class="image-progress-label">最后帧</span>
-                      <span class="image-progress-value mono">{{ formatProgressFrameTime(currentImageProgress.last_upstream_frame_at_unix_ms) }}</span>
+                      <span class="image-progress-value mono">{{ formatProgressFrameTime(currentDetailImageProgress.last_upstream_frame_at_unix_ms) }}</span>
                     </div>
-                    <template v-if="hasDownstreamHeartbeatProgress">
+                    <template v-if="hasDetailDownstreamHeartbeatProgress">
                       <div class="image-progress-item">
                         <span class="image-progress-label">下游心跳</span>
-                        <span class="image-progress-value mono">{{ formatProgressCount(currentImageProgress.downstream_heartbeat_count) }}</span>
+                        <span class="image-progress-value mono">{{ formatProgressCount(currentDetailImageProgress.downstream_heartbeat_count) }}</span>
                       </div>
                       <div class="image-progress-item">
                         <span class="image-progress-label">心跳间隔</span>
-                        <span class="image-progress-value mono">{{ formatLatency(currentImageProgress.downstream_heartbeat_interval_ms) }}</span>
+                        <span class="image-progress-value mono">{{ formatLatency(currentDetailImageProgress.downstream_heartbeat_interval_ms) }}</span>
                       </div>
                       <div class="image-progress-item">
                         <span class="image-progress-label">最后心跳</span>
-                        <span class="image-progress-value mono">{{ formatProgressFrameTime(currentImageProgress.last_downstream_heartbeat_at_unix_ms) }}</span>
+                        <span class="image-progress-value mono">{{ formatProgressFrameTime(currentDetailImageProgress.last_downstream_heartbeat_at_unix_ms) }}</span>
                       </div>
                     </template>
-                    <div
-                      v-if="currentImageProgress.last_upstream_event"
-                      class="image-progress-item full-width"
-                    >
+                    <div v-if="currentDetailImageProgress.last_upstream_event" class="image-progress-item full-width">
                       <span class="image-progress-label">上游事件</span>
-                      <code class="image-progress-code">{{ currentImageProgress.last_upstream_event }}</code>
+                      <code class="image-progress-code">{{ currentDetailImageProgress.last_upstream_event }}</code>
                     </div>
-                    <div
-                      v-if="currentImageProgress.last_client_visible_event"
-                      class="image-progress-item full-width"
-                    >
+                    <div v-if="currentDetailImageProgress.last_client_visible_event" class="image-progress-item full-width">
                       <span class="image-progress-label">客户端可见事件</span>
-                      <code class="image-progress-code">{{ currentImageProgress.last_client_visible_event }}</code>
+                      <code class="image-progress-code">{{ currentDetailImageProgress.last_client_visible_event }}</code>
                     </div>
                   </div>
                 </div>
 
-                <!-- 用量与费用（仅成功节点显示） -->
-                <div
-                  v-if="currentAttempt.status === 'success' && usageData"
-                  class="usage-section"
-                >
-                  <div class="usage-grid">
-                    <!-- 输入 输出 -->
-                    <div class="usage-row">
-                      <div class="usage-item">
-                        <span class="usage-label">输入</span>
-                        <span class="usage-tokens">{{ formatNumber(usageData.tokens.input) }}</span>
-                        <span class="usage-cost">${{ usageData.cost.input.toFixed(6) }}</span>
-                      </div>
-                      <div class="usage-divider" />
-                      <div class="usage-item">
-                        <span class="usage-label">输出</span>
-                        <span class="usage-tokens">{{ formatNumber(usageData.tokens.output) }}</span>
-                        <span class="usage-cost">${{ usageData.cost.output.toFixed(6) }}</span>
-                      </div>
-                    </div>
-                    <!-- 缓存创建 缓存读取（仅在有缓存数据时显示） -->
-                    <div
-                      v-if="usageData.tokens.cache_creation || usageData.tokens.cache_read"
-                      class="usage-row"
-                    >
-                      <div class="usage-item">
-                        <span class="usage-label">缓存创建</span>
-                        <span class="usage-tokens">{{ formatNumber(usageData.tokens.cache_creation || 0) }}</span>
-                        <span class="usage-cost">${{ (usageData.cost.cache_creation || 0).toFixed(6) }}</span>
-                      </div>
-                      <div class="usage-divider" />
-                      <div class="usage-item">
-                        <span class="usage-label">缓存读取</span>
-                        <span class="usage-tokens">{{ formatNumber(usageData.tokens.cache_read || 0) }}</span>
-                        <span class="usage-cost">${{ (usageData.cost.cache_read || 0).toFixed(6) }}</span>
-                      </div>
-                    </div>
-                  </div>
+                <div v-if="attempt.status === 'success' && usageData" class="usage-section">
+                  <span class="usage-label">输入 {{ formatNumber(usageData.tokens.input) }}</span>
+                  <span class="usage-label">输出 {{ formatNumber(usageData.tokens.output) }}</span>
+                  <span class="usage-label">缓存创建 {{ formatNumber(usageData.tokens.cache_creation || 0) }}</span>
+                  <span class="usage-label">缓存读取 {{ formatNumber(usageData.tokens.cache_read || 0) }}</span>
                 </div>
 
-                <!-- 跳过原因 -->
-                <div
-                  v-if="currentAttemptSkipReasonDisplay && !currentAttemptRequestError"
-                  class="skip-reason"
-                >
-                  <span class="reason-label">跳过原因</span>
-                  <span class="reason-content">
-                    <span class="reason-value">{{ currentAttemptSkipReasonDisplay }}</span>
-                    <span
-                      v-if="currentAttemptFailureDiagnostic"
-                      class="reason-detail"
-                    >
-                      <code>{{ currentAttemptFailureDiagnostic.path }}</code>
-                      {{ currentAttemptFailureDiagnostic.message }}
-                    </span>
-                  </span>
-                </div>
-
-                <!-- 原始错误、响应和扩展字段是排查入口，首层不重复叙述。 -->
-                <details
-                  v-if="currentAttemptRequestError || currentAttemptExtraDataDisplay"
-                  class="diagnostic-block"
-                >
-                  <summary class="diagnostic-toggle">
-                    <span>技术详情与原始数据</span>
-                    <span class="diagnostic-summary">{{ currentAttempt.status_code != null ? `HTTP ${currentAttempt.status_code}` : '查看诊断' }}</span>
-                  </summary>
-                  <RequestAttemptErrorPanel
-                    v-if="currentAttemptRequestError"
-                    :key="currentAttempt.id"
-                    :error="currentAttemptRequestError"
-                    :is-dark="isDark"
-                  />
-                  <JsonContentPanel
-                    v-if="currentAttemptExtraDataDisplay"
-                    class="extra-json-panel"
-                    :data="currentAttemptExtraDataDisplay"
-                    :is-dark="isDark"
-                    title="扩展字段"
-                    empty-message="无额外信息"
-                  />
-                </details>
-
-                <details
-                  v-if="currentAttempt ? currentAttemptFormatDisplay || currentAttemptRequestPathDisplay || currentAttemptKeyFormatsDisplay || currentAttempt.extra_data?.proxy : false"
-                  class="extended-block"
-                >
-                  <summary class="diagnostic-toggle">
-                    <span>更多字段</span>
-                    <span class="diagnostic-summary">格式、端点与代理</span>
-                  </summary>
-                  <div class="info-grid extended-grid">
-                    <div
-                      v-if="currentAttemptFormatDisplay"
-                      class="info-item"
-                    >
-                      <span class="info-label">格式</span>
-                      <span class="info-value"><code class="format-code">{{ currentAttemptFormatDisplay }}</code></span>
-                    </div>
-                    <div
-                      v-if="currentAttemptRequestPathDisplay"
-                      class="info-item"
-                    >
-                      <span class="info-label">请求路径</span>
-                      <span class="info-value"><code class="format-code request-path-code">{{ currentAttemptRequestPathDisplay }}</code></span>
-                    </div>
-                    <div
-                      v-if="currentAttemptKeyFormatsDisplay"
-                      class="info-item"
-                    >
-                      <span class="info-label">支持端点</span>
-                      <span class="info-value info-value-stacked">
-                        <code class="format-code">{{ currentAttemptKeyFormatsDisplay }}</code>
-                        <span class="text-xs text-muted-foreground">Key 声明的可用 endpoint 格式</span>
-                      </span>
-                    </div>
-                    <div
-                      v-if="currentAttempt.extra_data?.proxy"
-                      class="info-item"
-                    >
-                      <span class="info-label">代理</span>
-                      <span class="info-value info-value-stacked">
-                        <span class="proxy-name">
-                          {{ currentAttempt.extra_data.proxy.node_name || currentAttempt.extra_data.proxy.url || '未知' }}
-                          <span
-                            v-if="currentAttempt.extra_data.proxy.source === 'system'"
-                            class="text-xs text-muted-foreground ml-1"
-                          >(系统)</span>
-                        </span>
-                        <span class="proxy-detail">
-                          <span
-                            v-if="currentAttempt.extra_data.proxy.ttfb_ms != null"
-                            class="text-xs text-muted-foreground"
-                          >{{ formatLatency(currentAttempt.extra_data.proxy.ttfb_ms) }}</span>
-                          <span
-                            v-if="currentAttempt.extra_data.proxy.timing"
-                            class="text-xs text-muted-foreground"
-                          >{{ proxyTimingBreakdown(currentAttempt.extra_data.proxy) }}</span>
-                        </span>
-                        <code
-                          v-if="typeof currentAttempt.extra_data.proxy.node_id === 'string' && currentAttempt.extra_data.proxy.node_id"
-                          class="text-xs font-mono text-muted-foreground"
-                        >节点 Key {{ currentAttempt.extra_data.proxy.node_id }}</code>
-                      </span>
-                    </div>
-                  </div>
-                </details>
-
-              </div>
+                <RequestAttemptErrorPanel
+                  v-if="getAttemptError(attempt)"
+                  :key="attempt.id"
+                  :error="getAttemptError(attempt)!"
+                  :is-dark="isDark"
+                />
+              </section>
+            </div>
           </div>
-        </div>
-      </Card>
-    </div>
-
-    <!-- Empty State -->
-    <Card
-      v-else
-      class="border-dashed"
-    >
-      <div class="p-8 text-center">
-        <p class="text-sm text-muted-foreground">
-          暂无追踪数据
-        </p>
+        </section>
       </div>
-    </Card>
+    </section>
+
+    <div
+      v-else
+      class="execution-waterfall execution-waterfall--empty"
+    >
+      暂无追踪数据
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { isAxiosError } from 'axios'
-import Card from '@/components/ui/card.vue'
 import Skeleton from '@/components/ui/skeleton.vue'
-import JsonContentPanel from './JsonContentPanel.vue'
 import RequestAttemptErrorPanel from './RequestAttemptErrorPanel.vue'
-import { ChevronLeft, ExternalLink } from 'lucide-vue-next'
 import { requestTraceApi, type RequestTrace, type CandidateRecord, type ImageProgress } from '@/api/requestTrace'
 import { log } from '@/utils/logger'
 import { parseApiError } from '@/utils/errorParser'
@@ -491,21 +257,13 @@ interface AttemptTimeRange {
   durationLabel?: string
 }
 
-/** 单个供应商在执行路径中的一轮 Key 尝试及其调度位置。 */
+/** 同一供应商的 Key 调用分组及其在整体调度顺序中的位置。 */
 interface ProviderRound {
   providerId: string
   providerName: string
   attempts: CandidateRecord[]
   attemptIndexes: number[]
   firstAttemptIndex: number
-  displayStatus: string
-}
-
-/** 当前尝试首层的中性短原因；原始错误和诊断只在技术详情中展开。 */
-interface AttemptCause {
-  title: string
-  detail: string
-  tone: 'neutral' | 'success' | 'warning' | 'danger'
 }
 
 // 用量数据类型
@@ -540,12 +298,8 @@ const props = defineProps<{
   overrideStatusCode?: number
   /** 外部传入的请求状态，用于识别已失败/取消的终态请求 */
   requestStatus?: string | null
-  /** 请求侧 API 格式（客户端入口格式） */
-  requestApiFormat?: string | null
   /** 用量和费用数据 */
   usageData?: UsageData | null
-  /** 请求元数据（用于请求路径解析） */
-  requestMetadata?: Record<string, unknown> | null
   /** 已获取的追踪数据；传入时不再内部拉取 */
   traceData?: RequestTrace | null
 }>()
@@ -571,25 +325,14 @@ const formatNumber = (num: number): string => {
   return formatTokens(num)
 }
 
-// 获取最终状态标签
-const getFinalStatusLabel = (status: string) => {
-  const labels: Record<string, string> = {
-    success: '请求成功',
-    failed: '请求失败',
-    cancelled: '已取消',
-    streaming: '流式传输中',
-    pending: '进行中'
-  }
-  return labels[status] || status
-}
-
 const loading = ref(false)
 const error = ref<string | null>(null)
 const internalTrace = ref<RequestTrace | null>(null)
 const { isDark } = useDarkMode()
 const trace = computed(() => props.traceData ?? internalTrace.value)
 const selectedAttemptIndex = ref(0)
-const detailOpen = ref(false)
+/** 当前展开详情的记录 ID；刷新或重排时跟随记录身份，默认保持收起。 */
+const openedAttemptId = ref<string | null>(null)
 const selectionPinnedByUser = ref(false)
 const selectedAttemptId = ref<string | null>(null)
 const traceLoadStarted = ref(false)
@@ -605,76 +348,6 @@ const formatLatency = (ms: number | undefined | null): string => {
     return `${(ms / 1000).toFixed(2)}s`
   }
   return `${ms}ms`
-}
-
-// 格式化字节大小
-const formatSize = (bytes: number): string => {
-  if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)}MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KB`
-  return `${bytes}B`
-}
-
-// 代理 timing 分阶段展示
-const proxyTimingBreakdown = (proxy: Record<string, unknown>): string => {
-  const t = proxy.timing as Record<string, number | null | undefined> | undefined
-  if (!t) return ''
-
-  const parts: string[] = []
-
-  // 兼容旧版 timing（含 body_read_ms/decompress_ms）
-  const readDecompress = ((t.body_read_ms as number) || 0) + ((t.decompress_ms as number) || 0)
-  if (readDecompress > 0) {
-    let label = `读取 ${formatLatency(readDecompress)}`
-    if (t.decompress_ms != null && t.decompress_ms > 0 && t.wire_size != null && t.body_size != null && (t.body_size as number) > 0) {
-      const ratio = Math.round((1 - (t.wire_size as number) / (t.body_size as number)) * 100)
-      label += ` ${formatSize(t.wire_size as number)}→${formatSize(t.body_size as number)}`
-      if (ratio > 0) label += ` -${ratio}%`
-    }
-    parts.push(label)
-  }
-
-  const ttfbMs = t.ttfb_ms ?? t.upstream_ms
-  const responseWaitMs = t.response_wait_ms ?? (
-    t.connection_acquire_ms != null && ttfbMs != null
-      ? Math.max(0, (ttfbMs as number) - (t.connection_acquire_ms as number))
-      : null
-  )
-  const legacyWaitMs = t.upstream_processing_ms ?? (
-    ttfbMs != null && t.connect_ms != null && t.tls_ms != null
-      ? Math.max(0, (ttfbMs as number) - (t.connect_ms as number) - (t.tls_ms as number))
-      : null
-  )
-
-  if (t.dns_ms != null && (t.dns_ms as number) > 0) {
-    parts.push(`DNS ${formatLatency(t.dns_ms as number)}`)
-  }
-  if ((t.connection_reused as unknown) === true) {
-    parts.push('复用连接')
-  }
-  if (t.connect_ms != null && (t.connect_ms as number) > 0) {
-    parts.push(`连接 ${formatLatency(t.connect_ms as number)}`)
-  }
-  if (t.tls_ms != null && (t.tls_ms as number) > 0) {
-    parts.push(`TLS ${formatLatency(t.tls_ms as number)}`)
-  }
-  if (ttfbMs != null && (ttfbMs as number) > 0) {
-    parts.push(`TTFB ${formatLatency(ttfbMs as number)}`)
-  }
-  if (responseWaitMs != null && (responseWaitMs as number) > 0) {
-    parts.push(`等待响应头 ${formatLatency(Math.round(responseWaitMs as number))}`)
-  } else if (legacyWaitMs != null && (legacyWaitMs as number) > 0) {
-    parts.push(`等待响应头(旧版估算) ${formatLatency(Math.round(legacyWaitMs as number))}`)
-  }
-
-  // 计算 Aether→代理 之间无法解释的耗时差
-  if (proxy.ttfb_ms != null && t.total_ms != null) {
-    const gap = (proxy.ttfb_ms as number) - (t.total_ms as number)
-    if (gap > 500) {
-      parts.push(`传输 ${formatLatency(Math.round(gap))}`)
-    }
-  }
-
-  return parts.join(' / ')
 }
 
 const isLiveCandidate = (candidate: CandidateRecord): boolean => {
@@ -714,7 +387,7 @@ const rawTimeline = computed<CandidateRecord[]>(() => {
 
 const timeline = computed<CandidateRecord[]>(() => rawTimeline.value)
 
-// 保留 trace 中的实际调度顺序，并将同一供应商的连续尝试聚合为一行。
+// 保留 trace 中的实际调度顺序，并将同一供应商的所有 Key 调用聚合为一行。
 const providerRounds = computed<ProviderRound[]>(() => {
   const rounds: ProviderRound[] = []
   const indexesByProvider = new Map<string, number>()
@@ -736,29 +409,45 @@ const providerRounds = computed<ProviderRound[]>(() => {
       attempts: [attempt],
       attemptIndexes: [attemptIndex],
       firstAttemptIndex: attemptIndex,
-      displayStatus: getDisplayStatus(attempt),
     })
   })
 
-  return rounds.map((round) => {
-    const statuses = round.attempts.map(getDisplayStatus)
-    const successfulAttempt = round.attempts.find(attempt => getDisplayStatus(attempt) === 'success')
-    const activeAttempt = round.attempts.find(attempt => ['pending', 'streaming'].includes(getDisplayStatus(attempt)))
-    const failedAttempt = round.attempts.find(attempt => ['failed', 'stream_interrupted'].includes(getDisplayStatus(attempt)))
-    const representativeAttempt = successfulAttempt ?? activeAttempt ?? failedAttempt ?? round.attempts[round.attempts.length - 1]
-    const displayStatus = getDisplayStatus(representativeAttempt)
-    return {
-      ...round,
-      displayStatus,
-    }
-  })
+  return rounds
 })
+
+/** 实际发出的上游调用数；本地冷却跳过项没有调用上游，不计入。 */
+const attemptedCallCount = computed(() => (
+  timeline.value.filter(attempt => attempt.status !== 'skipped').length
+))
+
+/** 本地冷却跳过的 Key 数，与实际调用数分开以免把未发送节点算成请求。 */
+const cooledDownKeyCount = computed(() => (
+  timeline.value.filter(attempt => attempt.skip_reason === 'key_circuit_open').length
+))
+
+/** Key 节点展示统一结果措辞；冷却中的未发送 Key 不再使用“尝试”描述。 */
+function formatAttemptOutcome(attempt: CandidateRecord): string {
+  if (attempt.skip_reason === 'key_circuit_open') return '冷却跳过，未发送'
+  return getStatusLabel(getDisplayStatus(attempt))
+}
+
+/** 将现有候选状态映射为 shadcn TraceLine 的状态，不把业务状态文本塞进行内。 */
+function getTraceLineStatus(attempt: CandidateRecord): 'failed' | 'success' | 'skipped' | 'pending' | undefined {
+  const status = getDisplayStatus(attempt)
+  if (status === 'failed' || status === 'cancelled' || status === 'stream_interrupted') return 'failed'
+  if (status === 'success') return 'success'
+  if (status === 'skipped') return 'skipped'
+  if (isLiveCandidate(attempt)) return 'pending'
+  return undefined
+}
+
+/** 只把冷却截止时间作为 TraceLine 的次要说明，不重复调用结果。 */
+function getAttemptTraceDescription(attempt: CandidateRecord): string | undefined {
+  const deadline = getAttemptCooldownDeadline(attempt)
+  return deadline ? `冷却至 ${deadline}` : undefined
+}
 
 // 供应商行与 Key 的位置来自同一实际调度索引，避免聚合后详情错位。
-const selectedRoundIndex = computed(() => {
-  return providerRounds.value.findIndex(round => round.attemptIndexes.includes(selectedAttemptIndex.value))
-})
-
 const getProviderDisplayName = (attempt: CandidateRecord | null | undefined): string => {
   if (!attempt) return '未知'
   const providerName = String(attempt.provider_name || '').trim()
@@ -769,22 +458,6 @@ const getProviderDisplayName = (attempt: CandidateRecord | null | undefined): st
 /** 返回当前 Key 的名称；账号标签优先于内部名称，缺失时回退到 Key ID。 */
 const getAttemptKeyDisplay = (attempt: CandidateRecord): string => {
   return attempt.key_account_label || attempt.key_name || attempt.key_id || '未知 Key'
-}
-
-/** 将真实尝试状态转换为路径节点上的短结果，不根据错误文本猜测未发送。 */
-const getAttemptResultLabel = (attempt: CandidateRecord): string => {
-  const displayStatus = getDisplayStatus(attempt)
-  if (attempt.skip_reason === 'key_circuit_open') {
-    return getAttemptCooldownDeadline(attempt) ? `冷却至 ${getAttemptCooldownDeadline(attempt)}` : '本地冷却中'
-  }
-  if (attempt.status_code != null) return `HTTP ${attempt.status_code}`
-  return getStatusLabel(displayStatus)
-}
-
-/** 供应商轮次状态优先展示冷却语义，旧记录仍沿用真实候选状态标签。 */
-function getRoundStatusLabel(round: ProviderRound): string {
-  if (round.displayStatus === 'skipped' && round.attempts.some(attempt => attempt.skip_reason === 'key_circuit_open')) return '冷却'
-  return getStatusLabel(round.displayStatus)
 }
 
 // 总耗时优先取 trace 聚合值，包含本次请求的所有失败切换；单条候选耗时仍只描述该 Key。
@@ -830,46 +503,48 @@ const totalTraceLatency = computed(() => {
   return 0
 })
 
-/** 用一句话说明请求最终结果；失败数量只聚合，不逐项堆叠供应商名称。 */
-const requestConclusion = computed(() => {
-  const attempts = timeline.value
-  const successAttempt = attempts.find(attempt => getDisplayStatus(attempt) === 'success')
-  const failedCount = attempts.filter(attempt => ['failed', 'stream_interrupted'].includes(getDisplayStatus(attempt))).length
-  const cooldownCount = attempts.filter(attempt => attempt.skip_reason === 'key_circuit_open').length
-
-  if (computedFinalStatus.value === 'success' && successAttempt) {
-    if (failedCount === 0 && cooldownCount === 0) {
-      return `${getAttemptKeyDisplay(successAttempt)} 返回有效响应，请求已完成。`
-    }
-    const skippedContext = failedCount > 0
-      ? `经历 ${failedCount} 次失败尝试后`
-      : cooldownCount > 0
-        ? `跳过 ${cooldownCount} 个本地冷却中的 Key 后`
-        : '切换候选后'
-    return `${skippedContext}，${getAttemptKeyDisplay(successAttempt)} 返回有效响应，请求已完成。`
-  }
-  if (computedFinalStatus.value === 'cancelled') return '请求已取消，未继续等待上游响应。'
-  if (computedFinalStatus.value === 'pending' || computedFinalStatus.value === 'streaming') {
-    return '请求仍在执行，正在等待或接收上游响应。'
-  }
-  if (attempts.length > 0 && attempts.every(attempt => attempt.status === 'skipped' && attempt.skip_reason === 'key_circuit_open')) {
-    return `发送前有 ${cooldownCount} 个 Key 处于本地限流冷却，请求没有到达上游。`
-  }
-  const lastHttpAttempt = [...attempts].reverse().find(attempt => attempt.status_code != null)
-  if (lastHttpAttempt?.status_code != null) {
-    return `所有候选均未完成请求，最终上游返回 HTTP ${lastHttpAttempt.status_code}。`
-  }
-  return '所有候选均未完成请求，具体原因见每次尝试记录。'
-})
-
 // 当前选择始终指向一条实际候选记录，供应商行与 Key 节点共享这个调度索引。
 const currentAttempt = computed(() => timeline.value[selectedAttemptIndex.value] ?? null)
 
-const currentAttemptTimeRange = computed<AttemptTimeRange | null>(() => {
-  return resolveAttemptTimeRange(currentAttempt.value)
-})
+/** 瀑布横轴统一使用 trace 聚合耗时；每条记录的相对起点和长度再由时间戳计算。 */
+function getWaterfallPositionPercent(attempt: CandidateRecord, offsetMs = 0): string {
+  const wallClockStart = rawTimeline.value
+    .map(candidate => parseTimestampMs(candidate.started_at))
+    .filter((value): value is number => value != null)
+  const originMs = wallClockStart.length > 0 ? Math.min(...wallClockStart) : null
+  const startMs = parseTimestampMs(attempt.started_at)
+  const duration = totalTraceLatency.value
+  if (originMs == null || startMs == null || duration <= 0) return '0%'
+  return `${Math.max(0, Math.min(100, ((startMs - originMs + offsetMs) / duration) * 100))}%`
+}
 
-const currentAttemptDisplayStatus = computed(() => getDisplayStatus(currentAttempt.value))
+/** 将一次真实调用映射为瀑布条；缺少时间戳的回退到调度序号，不伪造精确时序。 */
+function getWaterfallBarStyle(attempt: CandidateRecord): Record<string, string> {
+  const duration = Math.max(0, normalizeLatencyMs(attempt.latency_ms) ?? 0)
+  const total = totalTraceLatency.value
+  const left = getWaterfallPositionPercent(attempt)
+  const width = total > 0 ? Math.max(0.7, Math.min(100, (duration / total) * 100)) : 0.7
+  return { left, width: `${width}%` }
+}
+
+function getWaterfallEndPercent(attempt: CandidateRecord): string {
+  const total = totalTraceLatency.value
+  const duration = Math.max(0, normalizeLatencyMs(attempt.latency_ms) ?? 0)
+  if (total <= 0) return '0%'
+  const start = Number.parseFloat(getWaterfallPositionPercent(attempt))
+  return `${Math.min(97, start + (duration / total) * 100)}%`
+}
+
+/** 供应商分组摘要只陈述 Key 数和实际发送数。 */
+function formatWaterfallProviderMeta(round: ProviderRound): string {
+  const attempted = round.attempts.filter(attempt => getDisplayStatus(attempt) !== 'skipped').length
+  return `${round.attempts.length} 个 Key · ${attempted} 次发送`
+}
+
+/** 展开行读取自身记录的时间范围，不受导航选择下标变化影响。 */
+function getAttemptTimeRange(attempt: CandidateRecord): AttemptTimeRange | null {
+  return resolveAttemptTimeRange(attempt)
+}
 
 watch(currentAttempt, (attempt) => {
   if (!selectionPinnedByUser.value || !selectedAttemptId.value) {
@@ -877,10 +552,6 @@ watch(currentAttempt, (attempt) => {
   }
   emit('selectAttempt', attempt ?? null)
 }, { immediate: true })
-
-const normalizeFormatSignature = (value: string): string => {
-  return value.trim().toLowerCase()
-}
 
 const extractObject = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -938,6 +609,16 @@ const currentImageProgress = computed<ImageProgress | null>(() => {
     ?? normalizeImageProgress(extractObject(attempt.extra_data)?.image_progress)
 })
 
+/** 展开行使用各自的图片进度，不读取另一个 Key 的活动状态。 */
+function getAttemptImageProgress(attempt: CandidateRecord): ImageProgress | null {
+  return normalizeImageProgress(attempt.image_progress)
+    ?? normalizeImageProgress(extractObject(attempt.extra_data)?.image_progress)
+}
+
+const currentDetailImageProgress = computed<ImageProgress | null>(() => (
+  currentAttempt.value ? getAttemptImageProgress(currentAttempt.value) : null
+))
+
 const formatImageProgressPhase = (phase?: string | null): string => {
   const labels: Record<string, string> = {
     upstream_connecting: '连接上游',
@@ -971,8 +652,8 @@ const formatProgressFrameTime = (value?: number | null): string => {
   return time
 }
 
-const hasDownstreamHeartbeatProgress = computed(() => {
-  const progress = currentImageProgress.value
+const hasDetailDownstreamHeartbeatProgress = computed(() => {
+  const progress = currentDetailImageProgress.value
   return typeof progress?.downstream_heartbeat_count === 'number' ||
     typeof progress?.last_downstream_heartbeat_at_unix_ms === 'number' ||
     typeof progress?.downstream_heartbeat_interval_ms === 'number'
@@ -1049,106 +730,47 @@ const normalizeUpstreamResponseDisplay = (value: unknown): Record<string, unknow
   return data
 }
 
-const extractStringList = (value: unknown): string[] => {
-  if (Array.isArray(value)) {
-    return value
-      .map(item => typeof item === 'string' ? item.trim() : '')
-      .filter(Boolean)
-  }
-  if (typeof value === 'string') {
-    const raw = value.trim()
-    if (!raw) return []
-    try {
-      return extractStringList(JSON.parse(raw))
-    } catch {
-      return [raw]
-    }
-  }
-  return []
+/** 从常见上游错误响应中提取实际消息，不把执行包装状态当作失败原因。 */
+const extractUpstreamErrorDetail = (
+  upstreamResponse: Record<string, unknown> | null,
+): { message: string; type: string } => {
+  const body = extractObject(upstreamResponse?.body)
+  const error = extractObject(body?.error)
+  const detail = extractObject(body?.detail)
+  const firstDetail = Array.isArray(body?.detail) ? extractObject(body.detail[0]) : null
+  const message = readStringField(error ?? {}, 'message')
+    || readStringField(detail ?? {}, 'message')
+    || readStringField(firstDetail ?? {}, 'msg')
+    || readStringField(body ?? {}, 'message')
+    || (typeof body?.detail === 'string' ? body.detail.trim() : '')
+  const type = readStringField(error ?? {}, 'type')
+    || readStringField(detail ?? {}, 'type')
+    || readStringField(body ?? {}, 'type')
+    || ''
+  return { message, type }
 }
 
+/** 用上游 HTTP 语义和原文组成首层原因，避免同一状态显示固定套话。 */
+const formatUpstreamReason = (
+  statusCode: number | undefined,
+  detail: { message: string; type: string },
+): string => {
+  if (!detail.message) return statusCode != null ? `上游返回 HTTP ${statusCode}` : '上游未返回可用的错误说明'
+  const prefix = statusCode === 429
+    ? '上游限流'
+    : statusCode === 401 || statusCode === 403
+      ? '上游鉴权失败'
+      : statusCode != null
+        ? `上游返回 HTTP ${statusCode}`
+        : '上游执行失败'
+  return `${prefix}：${detail.message}`
+}
+
+/** 提取常见的上游错误体消息；只有读取支持的上游返回原文，才用它替换包装错误。 */
 const resolveTransportDiagnostics = (attempt: CandidateRecord): Record<string, unknown> | null => {
   const extra = extractObject(attempt.extra_data)
   return extractObject(extra?.transport_diagnostics)
 }
-
-const currentAttemptFormatDisplay = computed(() => {
-  const attempt = currentAttempt.value
-  if (!attempt) return ''
-  const extra = extractObject(attempt.extra_data) ?? {}
-
-  const providerRaw = typeof extra.provider_api_format === 'string' ? extra.provider_api_format : ''
-  const clientRawFromExtra = typeof extra.client_api_format === 'string' ? extra.client_api_format : ''
-  const requestRaw = clientRawFromExtra || (typeof props.requestApiFormat === 'string' ? props.requestApiFormat : '')
-
-  if (!providerRaw && !requestRaw) return ''
-
-  const providerText = providerRaw ? formatApiFormat(providerRaw) : ''
-  const requestText = requestRaw ? formatApiFormat(requestRaw) : ''
-  const convertedByFlag = extra.needs_conversion === true
-  const convertedByDiff = Boolean(
-    providerRaw &&
-      requestRaw &&
-      normalizeFormatSignature(providerRaw) !== normalizeFormatSignature(requestRaw),
-  )
-
-  if ((convertedByFlag || convertedByDiff) && requestText && providerText) {
-    return `${requestText} -> ${providerText}`
-  }
-
-  return providerText || requestText
-})
-
-const normalizeQueryString = (value: string): string => {
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-  return trimmed.startsWith('?') ? trimmed.slice(1) : trimmed
-}
-
-const resolveRequestPathFromObject = (value: unknown): string => {
-  const object = extractObject(value)
-  if (!object) return ''
-
-  const pathWithQuery = (
-    readStringField(object, 'request_path_and_query')
-    || readStringField(object, 'public_path_and_query')
-    || readStringField(object, 'path_and_query')
-    || readStringField(object, 'request_uri')
-    || readStringField(object, 'public_uri')
-  )
-  if (pathWithQuery) return pathWithQuery
-
-  const path = (
-    readStringField(object, 'request_path')
-    || readStringField(object, 'public_path')
-    || readStringField(object, 'path')
-  )
-  if (!path) return ''
-
-  const query = normalizeQueryString(
-    readStringField(object, 'request_query_string')
-    || readStringField(object, 'public_query_string')
-    || readStringField(object, 'query_string')
-    || readStringField(object, 'query')
-    || '',
-  )
-  if (!query || path.includes('?')) return path
-  return `${path}?${query}`
-}
-
-const currentAttemptRequestPathDisplay = computed(() => {
-  const attempt = currentAttempt.value
-  const fromAttempt = resolveRequestPathFromObject(attempt?.extra_data)
-  if (fromAttempt) return fromAttempt
-
-  const fromTrace = resolveRequestPathFromObject(trace.value)
-  if (fromTrace) return fromTrace
-
-  const fromRequestMetadata = resolveRequestPathFromObject(props.requestMetadata)
-  if (fromRequestMetadata) return fromRequestMetadata
-
-  return ''
-})
 
 const currentAttemptKeyDisplay = computed(() => {
   const attempt = currentAttempt.value
@@ -1156,17 +778,6 @@ const currentAttemptKeyDisplay = computed(() => {
   return attempt.key_account_label || attempt.key_name || attempt.key_id || ''
 })
 
-const currentAttemptKeyFormatsDisplay = computed(() => {
-  const attempt = currentAttempt.value
-  if (!attempt) return ''
-
-  const formats = extractStringList(attempt.key_api_formats)
-  if (!formats.length) return ''
-
-  return formats
-    .map(format => formatApiFormat(format))
-    .join(' / ')
-})
 const SKIP_REASON_LABELS: Record<string, string> = {
   auth_api_key_concurrency_limit_reached: '调用方 API Key 并发已达上限',
   api_key_concurrency_limit_reached: '调用方 API Key 并发已达上限',
@@ -1223,87 +834,6 @@ function getAttemptCooldownDeadline(attempt: CandidateRecord): string {
     second: '2-digit',
   })
 }
-
-const currentAttemptFailureDiagnostic = computed<{
-  path: string
-  message: string
-} | null>(() => {
-  const attempt = currentAttempt.value
-  if (!attempt) return null
-  const extra = extractObject(attempt.extra_data)
-  const failureDiagnostic = extractVisibleFailureDiagnostic(extra)
-  const error = failureDiagnostic
-    ? failureDiagnostic
-    : extractObject(extra?.request_body_build_error)
-  const path = typeof error?.path === 'string' && error.path.trim()
-    ? error.path.trim()
-    : ''
-  const message = typeof error?.message === 'string' && error.message.trim()
-    ? error.message.trim()
-    : ''
-  if (!path && !message) return null
-  return {
-    path: path || '$',
-    message: formatAttemptErrorMessage(message) || message || '请求体转换失败',
-  }
-})
-
-/** 将当前尝试转换成一句可信原因，未知上游错误保留真实 HTTP 状态。 */
-const attemptCause = computed<AttemptCause>(() => {
-  const attempt = currentAttempt.value
-  if (!attempt) return { title: '没有可展示的尝试记录', detail: '', tone: 'neutral' }
-  const status = getDisplayStatus(attempt)
-  const deadline = getAttemptCooldownDeadline(attempt)
-  if (attempt.skip_reason === 'key_circuit_open') {
-    return {
-      title: deadline ? `Key 正在本地限流冷却，预计 ${deadline} 恢复` : 'Key 正在本地限流冷却',
-      detail: '请求未发送到上游',
-      tone: 'warning',
-    }
-  }
-  if (attempt.skip_reason) {
-    return {
-      title: currentAttemptSkipReasonDisplay.value || '当前候选未发送请求',
-      detail: currentAttemptFailureDiagnostic.value?.message || '请求未发送到上游',
-      tone: 'warning',
-    }
-  }
-  if (status === 'success') {
-    return { title: '上游返回成功响应', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'success' }
-  }
-  if (status === 'pending' || status === 'streaming') {
-    return { title: '等待上游返回响应', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'neutral' }
-  }
-  const diagnostic = currentAttemptFailureDiagnostic.value
-  if (diagnostic) {
-    return { title: diagnostic.message, detail: `字段 ${diagnostic.path}`, tone: 'danger' }
-  }
-  const raw = attempt.error_message?.trim() || ''
-  const extra = extractObject(attempt.extra_data)
-  const upstream = extractObject(extra?.upstream_response)
-  const upstreamStatus = readNumberField(upstream ?? {}, 'status_code')
-  const source = `${attempt.error_type || ''}\n${raw}`.toLowerCase()
-  if (/cuda out of memory|gpu\s*(memory|显存)|显存不足|out of memory/.test(source)) {
-    return { title: 'GPU 显存不足', detail: '由上游错误返回', tone: 'danger' }
-  }
-  if (/first[-_ ]byte[^\n]*timeout|首字[^\n]*超时/.test(source)) {
-    return { title: '上游未在时限内返回首字', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'warning' }
-  }
-  if (/timed?\s*out|timeout|超时/.test(source)) {
-    return { title: '请求等待上游超时', detail: attempt.status_code != null ? `HTTP ${attempt.status_code}` : '', tone: 'warning' }
-  }
-  if (attempt.status_code === 429) {
-    return { title: '上游触发限流', detail: raw || 'HTTP 429', tone: 'warning' }
-  }
-  if (attempt.status_code === 401 || attempt.status_code === 403) {
-    return { title: '上游鉴权失败', detail: raw || `HTTP ${attempt.status_code}`, tone: 'danger' }
-  }
-  const displayedStatus = attempt.status_code ?? upstreamStatus
-  if (displayedStatus != null) {
-    return { title: `上游返回 HTTP ${displayedStatus}`, detail: '', tone: 'warning' }
-  }
-  return { title: raw || '请求处理失败', detail: '', tone: 'danger' }
-})
 
 const isGenericExecutionRuntimeStatusMessage = (message: string): boolean =>
   /execution runtime (stream )?returned non-success status \d+/i.test(message)
@@ -1500,19 +1030,21 @@ const shouldShowAttemptMessageWithUpstreamResponse = (
   return !hasBody && bodyState === 'disabled'
 }
 
-const currentAttemptRequestError = computed<{
+interface AttemptRequestErrorDisplay {
   message: string
   technicalMessage: string
   presentationSource: string
   statusCode?: number
   upstreamResponse: Record<string, unknown> | null
-  diagnostic: Record<string, unknown> | null
   skipReason?: string
   skipReasonLabel?: string
   skipped?: boolean
-} | null>(() => {
-  const attempt = currentAttempt.value
-  if (!attempt || !['failed', 'skipped', 'stream_interrupted'].includes(getDisplayStatus(attempt))) return null
+}
+
+/** 解析指定 Key 的真实结果；每个瀑布行只使用自己的记录，不借用当前选中行。 */
+function resolveAttemptRequestError(attempt: CandidateRecord): AttemptRequestErrorDisplay | null {
+  const displayStatus = getDisplayStatus(attempt)
+  if (!['failed', 'skipped', 'stream_interrupted'].includes(displayStatus)) return null
 
   const extra = extractObject(attempt.extra_data)
   const upstreamResponse = extractObject(extra?.upstream_response)
@@ -1522,9 +1054,7 @@ const currentAttemptRequestError = computed<{
     ?? readNumberField(errorFlow ?? {}, 'status_code')
     ?? readNumberField(errorFlow ?? {}, 'statusCode')
     ?? attempt.status_code
-  const flowMessage = errorFlow
-    ? readStringField(errorFlow, 'message')
-    : ''
+  const flowMessage = errorFlow ? readStringField(errorFlow, 'message') : ''
   const fallbackMessage = typeof attempt.error_message === 'string' && attempt.error_message.trim()
     ? attempt.error_message.trim()
     : ''
@@ -1535,202 +1065,51 @@ const currentAttemptRequestError = computed<{
   const rawMessage = chooseAttemptRawErrorMessage(flowMessage || '', fallbackMessage, diagnosticMessage)
   const message = formatAttemptErrorMessage(rawMessage, statusCode) || fallbackType
   const upstreamResponseDisplay = normalizeUpstreamResponseDisplay(extra?.upstream_response)
-  const visibleDiagnosticObjects = extractVisibleDiagnosticObjects(extra)
-  const shouldAttachDiagnostic = Boolean(
-    visibleDiagnosticObjects.length
-      || isLocalSyncFinalizeDiagnostic(rawMessage)
-      || isConversionDiagnosticMessage(rawMessage),
-  )
-  const diagnostic = shouldAttachDiagnostic
-    ? buildAttemptDiagnosticPayload(
-        attempt,
-        message || fallbackType || rawMessage || '未知失败',
-        statusCode,
-        upstreamResponseDisplay,
-        rawMessage,
-      )
-    : null
+  const upstreamDetail = extractUpstreamErrorDetail(upstreamResponseDisplay)
   const upstreamResponseData: Record<string, unknown> = {}
-  const responseHeader = upstreamResponseDisplay?.headers
-  const responseBody = upstreamResponseDisplay?.body
-  if (hasRenderableValue(responseHeader)) upstreamResponseData.header = responseHeader
-  if (hasRenderableValue(responseBody)) upstreamResponseData.body = responseBody
-  const response = Object.keys(upstreamResponseData).length > 0
-    ? upstreamResponseData
-    : null
-  if (
-    !attempt.skip_reason
-    && !message
-    && statusCode == null
-    && !response
-    && !diagnostic
-  ) return null
-  const showMessage = shouldShowAttemptMessageWithUpstreamResponse(
-    rawMessage || fallbackType,
-    upstreamResponseDisplay,
-  )
+  if (hasRenderableValue(upstreamResponseDisplay?.headers)) upstreamResponseData.header = upstreamResponseDisplay?.headers
+  if (hasRenderableValue(upstreamResponseDisplay?.body)) upstreamResponseData.body = upstreamResponseDisplay?.body
+  const response = Object.keys(upstreamResponseData).length > 0 ? upstreamResponseData : null
+  if (!attempt.skip_reason && !message && statusCode == null && !response) return null
+
+  const skipReasonLabel = attempt.skip_reason === 'key_circuit_open'
+    ? getAttemptCooldownDeadline(attempt) ? `本地冷却至 ${getAttemptCooldownDeadline(attempt)}` : '本地冷却中'
+    : SKIP_REASON_LABELS[attempt.skip_reason ?? ''] ?? attempt.skip_reason ?? ''
+  const showMessage = shouldShowAttemptMessageWithUpstreamResponse(rawMessage || fallbackType, upstreamResponseDisplay)
 
   return {
-    message: showMessage ? (message || (attempt.status === 'skipped' ? currentAttemptSkipReasonDisplay.value : '未知错误')) : '',
-    technicalMessage: showMessage ? (rawMessage || fallbackType || attempt.skip_reason || '') : '',
+    message: upstreamDetail.message
+      ? formatUpstreamReason(statusCode, upstreamDetail)
+      : showMessage || upstreamDetail.message
+        ? (message || (attempt.status === 'skipped' ? skipReasonLabel : '未知错误'))
+        : '',
+    technicalMessage: upstreamDetail.message
+      ? upstreamDetail.message
+      : showMessage ? (rawMessage || fallbackType || attempt.skip_reason || '') : '',
     skipReason: attempt.skip_reason,
-    skipReasonLabel: currentAttemptSkipReasonDisplay.value,
+    skipReasonLabel,
     skipped: attempt.status === 'skipped',
-    presentationSource: rawMessage || fallbackType || message,
+    presentationSource: upstreamDetail.message || rawMessage || fallbackType || message,
     statusCode,
     upstreamResponse: response,
-    diagnostic,
   }
-})
-
-const diagnosticPathFromObject = (value: unknown): string => {
-  const object = extractObject(value)
-  if (!object) return ''
-  return readStringField(object, 'path')
-    || readStringField(object, 'field_path')
-    || readStringField(object, 'fieldPath')
-    || readStringField(object, 'field')
-    || ''
 }
 
-const diagnosticFieldPathFromMessage = (message: string): string => {
-  const normalized = message.trim()
-  if (!normalized) return ''
-  const fieldMatch = normalized.match(/field\s+([^;=]+?)\s*(?:=|is unsupported|不支持)/i)
-  if (fieldMatch?.[1]) return normalizeDiagnosticFieldPath(fieldMatch[1])
-  const lossyMatch = normalized.match(/lossy conversion blocked from\s+\S+\s+to\s+\S+\s+at\s+([^:]+):/i)
-  if (lossyMatch?.[1]) return normalizeDiagnosticFieldPath(lossyMatch[1])
-  const invalidTargetMatch = normalized.match(/invalid target field\s+(.+?)\s+for\s+/i)
-  if (invalidTargetMatch?.[1]) return normalizeDiagnosticFieldPath(invalidTargetMatch[1])
-  const unsupportedFieldMatch = normalized.match(/unsupported field\s+(.+?)\s+in\s+/i)
-  if (unsupportedFieldMatch?.[1]) return normalizeDiagnosticFieldPath(unsupportedFieldMatch[1])
-  const invalidEnumMatch = normalized.match(/invalid enum value\s+.+?\s+for\s+.+\.([^.\s]+)$/i)
-  if (invalidEnumMatch?.[1]) return normalizeDiagnosticFieldPath(invalidEnumMatch[1])
-  return ''
+/** 返回瀑布中指定 Key 的错误展示数据；没有真实错误或跳过原因时返回 null。 */
+function getAttemptError(attempt: CandidateRecord): AttemptRequestErrorDisplay | null {
+  return resolveAttemptRequestError(attempt)
 }
 
-function resolveAttemptDiagnosticBreakpoint(attempt: CandidateRecord, rawMessageOverride = ''): string {
-  const extra = extractObject(attempt.extra_data)
-  const failureDiagnostic = extractVisibleFailureDiagnostic(extra)
-  const requestConversionError = extractObject(extra?.request_conversion_error)
-  const requestBodyBuildError = extractObject(extra?.request_body_build_error)
-  const errorFlow = extractObject(extra?.error_flow)
-  const rawMessage = [
-    rawMessageOverride,
-    readStringField(errorFlow ?? {}, 'message') ?? '',
-    readStringField(failureDiagnostic ?? {}, 'message') ?? '',
-    readStringField(requestConversionError ?? {}, 'message') ?? '',
-    readStringField(requestBodyBuildError ?? {}, 'message') ?? '',
-    typeof attempt.error_message === 'string' ? attempt.error_message : '',
-  ].find(item => item.trim()) ?? ''
-
-  return diagnosticPathFromObject(failureDiagnostic)
-    || diagnosticPathFromObject(requestConversionError)
-    || diagnosticPathFromObject(requestBodyBuildError)
-    || diagnosticFieldPathFromMessage(rawMessage)
-    || '$'
-}
-
-function buildAttemptDiagnosticPayload(
-  attempt: CandidateRecord,
-  summaryInput: string,
-  statusCode: number | undefined,
-  upstreamResponseDisplay: Record<string, unknown> | null,
-  rawMessageForBreakpoint = '',
-): Record<string, unknown> | null {
-  const extra = extractObject(attempt.extra_data)
-  const rawFailureDiagnostic = extractVisibleFailureDiagnostic(extra)
-  const rawRequestConversionError = extractObject(extra?.request_conversion_error)
-  const rawRequestBodyBuildError = extractObject(extra?.request_body_build_error)
-  const hasDiagnostic = Boolean(
-    summaryInput
-      || rawFailureDiagnostic
-      || rawRequestConversionError
-      || rawRequestBodyBuildError
-      || attempt.error_message
-      || attempt.error_type
-      || attempt.skip_reason
-      || upstreamResponseDisplay,
-  )
-  if (!hasDiagnostic) return null
-
-  const summary = summaryInput
-    || readStringField(rawFailureDiagnostic ?? {}, 'message')
-    || readStringField(rawRequestConversionError ?? {}, 'message')
-    || readStringField(rawRequestBodyBuildError ?? {}, 'message')
-    || (typeof attempt.error_message === 'string' ? formatAttemptErrorMessage(attempt.error_message, attempt.status_code) : '')
-    || attempt.error_type
-    || currentAttemptSkipReasonDisplay.value
-    || '未知失败'
-  const breakpoint = resolveAttemptDiagnosticBreakpoint(attempt, rawMessageForBreakpoint)
-  const providerFormat = readStringField(extra ?? {}, 'provider_api_format')
-  const clientFormat = readStringField(extra ?? {}, 'client_api_format')
-    || (typeof props.requestApiFormat === 'string' ? props.requestApiFormat : '')
-  const conversionDisplay = clientFormat || providerFormat
-    ? `${clientFormat ? formatApiFormat(clientFormat) : '未知请求格式'} → ${providerFormat ? formatApiFormat(providerFormat) : '未知上游格式'}`
-    : currentAttemptFormatDisplay.value
-  const analysisHint = (() => {
-    const raw = `${summary}\n${rawMessageForBreakpoint}\n${attempt.error_message ?? ''}`.toLowerCase()
-    if (raw.includes('unsupported provider stream event')) {
-      return '断点在上游流式事件解析/转换矩阵：先按 breakpoint 对应字段确认 event type，再决定是补 canonical mapping 还是加入 known noop。'
-    }
-    if (raw.includes('finish reason')) {
-      return '断点在 finish_reason 映射：确认该结束原因是否可等价映射；不能无损映射时保持失败闭合。'
-    }
-    if (raw.includes('lossy conversion') || raw.includes('无损') || raw.includes('丢失信息') || raw.includes('request_conversion')) {
-      return '断点在请求/响应格式转换器：检查 breakpoint 字段是否能被目标格式表达，不能表达就需要拒绝、降级或新增显式映射策略。'
-    }
-    return '先从 breakpoint 字段开始回放；若 breakpoint 为 $，优先查看 raw.failure_diagnostic / raw.error_message 和 upstream_response。'
-  })()
-
-  const payload = {
-    summary,
-    breakpoint,
-    analysis_hint: analysisHint,
-    request: {
-      request_id: trace.value?.request_id ?? attempt.request_id,
-      path: currentAttemptRequestPathDisplay.value || null,
-      format_conversion: conversionDisplay || null,
-      client_api_format: clientFormat || null,
-      provider_api_format: providerFormat || null,
-      needs_conversion: extra?.needs_conversion ?? null,
-      conversion_mode: readStringField(extra ?? {}, 'conversion_mode') ?? null,
-    },
-    node: {
-      candidate_id: attempt.id,
-      candidate_index: attempt.candidate_index,
-      retry_index: attempt.retry_index,
-      provider: attempt.provider_name || attempt.provider_id || null,
-      key: currentAttemptKeyDisplay.value || null,
-      status: attempt.status,
-      status_code: statusCode ?? attempt.status_code ?? null,
-      skip_reason: attempt.skip_reason ?? null,
-      error_type: attempt.error_type ?? null,
-      error_message: attempt.error_message ?? null,
-    },
-    raw: {
-      failure_diagnostic: rawFailureDiagnostic,
-      request_conversion_error: rawRequestConversionError,
-      request_body_build_error: rawRequestBodyBuildError,
-      error_flow: extractObject(extra?.error_flow),
-      upstream_response: upstreamResponseDisplay ?? normalizeUpstreamResponseDisplay(extra?.upstream_response),
-    },
-  }
-  return payload
-}
-
-const currentAttemptExtraDataDisplay = computed<Record<string, unknown> | null>(() => {
-  const extra = extractObject(currentAttempt.value?.extra_data)
-  if (!extra) return null
-
-  const display = { ...extra }
-  delete display.upstream_response
-  delete display.error_flow
-  delete display.client_response
-  delete display.provider_response
-
-  return Object.keys(display).length > 0 ? display : null
-})
+const currentAttemptRequestError = computed<{
+  message: string
+  technicalMessage: string
+  presentationSource: string
+  statusCode?: number
+  upstreamResponse: Record<string, unknown> | null
+  skipReason?: string
+  skipReasonLabel?: string
+  skipped?: boolean
+} | null>(() => currentAttempt.value ? resolveAttemptRequestError(currentAttempt.value) : null)
 
 const hasActiveImageProgress = computed(() => {
   return rawTimeline.value.some((candidate) => {
@@ -1758,25 +1137,18 @@ const selectMostRelevantAttempt = (attempts: CandidateRecord[]) => {
   selectedAttemptIndex.value = success >= 0 ? success : active >= 0 ? active : Math.max(terminal, 0)
 }
 
-/** 点击供应商时展开其本轮第一个 Key，保持供应商与 Key 详情一一对应。 */
-function selectProviderRound(round: ProviderRound): void {
-  selectedAttemptIndex.value = round.firstAttemptIndex
-  selectedAttemptId.value = round.attempts[0]?.id ?? null
-  selectionPinnedByUser.value = true
-  detailOpen.value = true
-}
-
-/** 点击具体 Key 时切换该次尝试并展开详情。 */
-function selectAttempt(index: number): void {
+/** 点击 Key 时切换选中记录；再次点击同一 Key 收起其真实详情。 */
+function selectAttempt(attempt: CandidateRecord): void {
+  const index = timeline.value.findIndex(candidate => candidate.id === attempt.id)
+  if (index < 0) return
+  if (openedAttemptId.value === attempt.id) {
+    openedAttemptId.value = null
+    return
+  }
   selectedAttemptIndex.value = index
-  selectedAttemptId.value = timeline.value[index]?.id ?? null
+  selectedAttemptId.value = attempt.id
   selectionPinnedByUser.value = true
-  detailOpen.value = true
-}
-
-/** 关闭详情时保留选择位置，再次点击同一供应商或 Key 可恢复到原尝试。 */
-function closeAttemptDetail(): void {
-  detailOpen.value = false
+  openedAttemptId.value = attempt.id
 }
 
 // 加载请求追踪数据
@@ -1883,7 +1255,7 @@ watch(
       if (requestId !== previous?.[0]) {
         selectionPinnedByUser.value = false
         selectedAttemptId.value = null
-        detailOpen.value = false
+        openedAttemptId.value = null
         internalTrace.value = null
       }
     }
@@ -2066,525 +1438,138 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 <style scoped>
 .minimal-request-timeline {
   width: 100%;
+  min-width: 0;
   container-type: inline-size;
 }
-/* Nodes and retries reflow together; sequence numbers preserve order across rows. */
-/* 详情面板 */
-.detail-panel {
-  margin-top: 0.5rem;
+
+.execution-waterfall {
   min-width: 0;
-}
-
-.panel-header {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0rem;
-
-}
-
-.panel-title {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.625rem;
-}
-
-.title-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.title-dot.status-success { background: #22c55e; }
-.title-dot.status-failed { background: #ef4444; }
-.title-dot.status-cancelled { background: #f59e0b; }
-.title-dot.status-pending { background: #3b82f6; }
-.title-dot.status-skipped { background: var(--muted-foreground); }
-.title-dot.status-available { background: #d1d5db; }
-
-.title-text {
-  font-weight: 600;
-  font-size: 0.95rem;
-  overflow-wrap: anywhere;
-}
-
-.panel-body {
-  padding: 0.75rem 0rem;
-}
-
-.status-tag { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.75rem; color: var(--muted-foreground); }
-.attempt-http { font-size: 0.7rem; font-variant-numeric: tabular-nums; }
-.final-status { white-space: nowrap; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--muted-foreground); }
-.final-status.status-failed { color: #dc414c; }
-.attempt-latency { margin-left: auto; color: var(--muted-foreground); font-size: 0.75rem; }
-.trace-card { position: relative; padding: 1.125rem 2.75rem 0.75rem; }
-.trace-latency { color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
-.request-conclusion { margin: -0.25rem 0 0.9rem; color: var(--muted-foreground); font-size: 0.76rem; line-height: 1.6; overflow-wrap: anywhere; }
-.request-conclusion.is-failed { color: var(--foreground); }
-
-.route-heading {
-  display: flex;
-  min-width: 0;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-}
-.route-title { margin: 0; font-size: 0.875rem; font-weight: 600; }
-.route-description { margin: 0.2rem 0 0; color: var(--muted-foreground); font-size: 0.72rem; line-height: 1.5; }
-.route-total { flex: none; color: var(--muted-foreground); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
-.route-map { display: grid; max-height: 19rem; gap: 0.45rem; overflow: auto; overscroll-behavior: contain; padding: 1px; }
-.provider-lane { display: grid; min-width: 0; grid-template-columns: minmax(8.75rem, 0.72fr) minmax(0, 1.28fr); overflow: hidden; border: 1px solid hsl(var(--border) / 0.8); border-radius: 10px; background: hsl(var(--background) / 0.34); }
-.provider-lane.is-selected { border-color: hsl(var(--primary) / 0.45); background: hsl(var(--primary) / 0.05); }
-.provider-lane-head { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.25rem 0.5rem; padding: 0.65rem 0.75rem; border: 0; border-right: 1px solid hsl(var(--border) / 0.7); background: transparent; text-align: left; }
-.provider-lane-head:hover, .provider-lane-head:focus-visible { background: hsl(var(--muted) / 0.6); outline: none; }
-.provider-copy { display: grid; min-width: 0; gap: 0.15rem; }
-.provider-copy strong { overflow-wrap: anywhere; font-size: 0.76rem; line-height: 1.35; }
-.provider-copy small, .lane-status { color: var(--muted-foreground); font-size: 0.65rem; }
-.lane-status { grid-column: 2; width: fit-content; padding: 0.08rem 0.38rem; border: 1px solid hsl(var(--border)); border-radius: 99px; }
-.lane-status.status-success { color: #15803d; background: #22c55e12; }
-.lane-status.status-failed, .lane-status.status-skipped { color: #b91c1c; background: #ef444410; }
-.lane-status.status-pending { color: #2563eb; background: #3b82f610; }
-.attempt-track { display: flex; min-width: 0; align-items: stretch; gap: 0.4rem; overflow-x: auto; padding: 0.4rem; }
-.attempt-track::-webkit-scrollbar,
-.route-map::-webkit-scrollbar { display: block; width: 4px; height: 4px; }
-.attempt-track::-webkit-scrollbar-thumb,
-.route-map::-webkit-scrollbar-thumb { border-radius: 99px; background: hsl(var(--muted-foreground) / 0.3); }
-.attempt-node { display: grid; min-width: 9.5rem; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.18rem 0.45rem; padding: 0.45rem 0.6rem; border: 1px solid hsl(var(--border) / 0.75); border-radius: 7px; background: hsl(var(--card) / 0.78); text-align: left; }
-.attempt-node:hover, .attempt-node:focus-visible { border-color: hsl(var(--primary) / 0.5); background: hsl(var(--muted) / 0.65); outline: none; }
-.attempt-node.is-selected { border-color: hsl(var(--primary) / 0.6); box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.2); }
-.attempt-sequence { grid-row: span 2; align-self: start; color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.62rem; }
-.attempt-copy { display: grid; min-width: 0; gap: 0.14rem; }
-.attempt-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; font-weight: 600; }
-.attempt-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 0.63rem; }
-.attempt-meta { grid-column: 2; color: var(--muted-foreground); font-size: 0.62rem; font-variant-numeric: tabular-nums; }
-.detail-close { display: grid; flex: none; place-items: center; width: 30px; height: 30px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: transparent; color: var(--muted-foreground); }
-.detail-close:hover, .detail-close:focus-visible { border-color: hsl(var(--primary) / 0.45); color: var(--foreground); outline: none; }
-.attempt-key-inline { color: var(--muted-foreground); font-size: 0.72rem; }
-.attempt-cause { margin: 0 0 0.75rem; color: var(--muted-foreground); font-size: 0.78rem; line-height: 1.65; overflow-wrap: anywhere; }
-.attempt-cause.is-danger { color: var(--foreground); }
-.attempt-cause.is-warning { color: #a16207; }
-.attempt-cause.is-success { color: #15803d; }
-.dark .attempt-cause.is-warning { color: #fcd34d; }
-.dark .attempt-cause.is-success { color: #86efac; }
-.diagnostic-block, .extended-block { margin-top: 0.75rem; border-top: 1px solid hsl(var(--border) / 0.7); }
-.diagnostic-toggle { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.65rem 0; color: var(--muted-foreground); cursor: pointer; list-style: none; font-size: 0.72rem; }
-.diagnostic-toggle::-webkit-details-marker { display: none; }
-.diagnostic-toggle:hover { color: var(--foreground); }
-.diagnostic-summary { opacity: 0.72; }
-.extended-grid { padding-bottom: 0.5rem; }
-@container (max-width: 540px) {
-  .provider-lane { grid-template-columns: 1fr; }
-  .provider-lane-head { border-right: 0; border-bottom: 1px solid hsl(var(--border) / 0.7); }
-  .route-heading { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
-}
-
-@container (max-width: 560px) {
-  .info-grid { grid-template-columns: minmax(0, 1fr) !important; }
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.625rem 1.25rem;
-}
-
-.info-item {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.info-label {
-  font-size: 0.7rem;
-  color: var(--muted-foreground);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 500;
-}
-
-.info-value {
-  overflow-wrap: anywhere;
-  flex-wrap: wrap;
-  font-size: 0.9rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.info-value.highlight {
-  font-size: 1.1rem;
-  font-weight: 600;
-  font-family: ui-monospace, monospace;
-  color: hsl(var(--primary));
-}
-
-.info-value code {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.375rem;
-  background: hsl(var(--muted));
-  border-radius: 4px;
-  color: var(--muted-foreground);
-  font-family: ui-monospace, monospace;
-}
-
-/* 两行堆叠布局 */
-.info-value-stacked {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2rem;
-}
-
-/* 格式代码 */
-.format-code {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.3rem;
-  background: hsl(var(--muted));
-  border-radius: 3px;
-  color: var(--muted-foreground);
-  font-family: ui-monospace, monospace;
-}
-
-/* Key 信息 */
-.key-name {
-  font-weight: 500;
-}
-
-.key-preview {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.3rem;
-  background: hsl(var(--muted));
-  border-radius: 3px;
-  color: var(--muted-foreground);
-  font-family: ui-monospace, monospace;
-}
-
-/* 认证类型标签 */
-.auth-type-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.1rem 0.35rem;
-  margin-left: 0.375rem;
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: hsl(var(--primary) / 0.8);
-  background: hsl(var(--primary) / 0.08);
-  border: 1px solid hsl(var(--primary) / 0.2);
-  border-radius: 3px;
-}
-
-/* 代理信息 */
-.proxy-name {
-  font-weight: 500;
-}
-
-.proxy-detail {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.image-progress-block {
-  margin-top: 0.875rem;
-  padding: 0.75rem;
-  border: 1px solid hsl(var(--border) / 0.7);
-  border-radius: 8px;
-  background: hsl(var(--background) / 0.72);
-}
-
-.image-progress-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.625rem;
-}
-
-.image-progress-title {
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.image-progress-phase {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  white-space: nowrap;
-  border: 1px solid hsl(var(--border));
-}
-
-.image-progress-phase.phase-connecting,
-.image-progress-phase.phase-streaming {
-  color: #2563eb;
-  background: #3b82f614;
-  border-color: #3b82f633;
-}
-
-.image-progress-phase.phase-completed {
-  color: #16a34a;
-  background: #22c55e14;
-  border-color: #22c55e33;
-}
-
-.image-progress-phase.phase-failed {
-  color: #dc2626;
-  background: #ef444414;
-  border-color: #ef444433;
-}
-
-.image-progress-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.625rem 0.875rem;
-}
-
-.image-progress-item {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.image-progress-item.full-width {
-  grid-column: span 2;
-}
-
-.image-progress-label {
-  font-size: 0.68rem;
-  color: var(--muted-foreground);
-  white-space: nowrap;
-}
-
-.image-progress-value {
-  min-width: 0;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: hsl(var(--foreground));
-}
-
-.image-progress-code {
-  min-width: 0;
-  width: fit-content;
-  max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0.12rem 0.35rem;
-  border-radius: 4px;
-  background: hsl(var(--muted));
-  color: var(--muted-foreground);
-  font-size: 0.72rem;
-  font-family: ui-monospace, monospace;
+  border: 1px solid hsl(var(--border) / 0.6);
+  border-radius: 0.75rem;
+  background: hsl(var(--card) / 0.6);
 }
+.execution-waterfall--loading { padding: 0.7rem; }
+.execution-waterfall--error { padding: 0.8rem 1rem; color: var(--destructive); font-size: 0.75rem; }
+.execution-waterfall--empty { padding: 1rem; color: var(--muted-foreground); font-size: 0.75rem; text-align: center; }
 
-@media (max-width: 768px) {
-  .image-progress-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .image-progress-item.full-width {
-    grid-column: 1 / -1;
-  }
-}
-
-/* Provider 官网链接 */
-.provider-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.25rem;
-  margin-left: 0.25rem;
-  color: var(--muted-foreground);
-  border-radius: 4px;
-  transition: all 0.15s ease;
-}
-
-.provider-link:hover {
-  color: hsl(var(--primary));
-  background: hsl(var(--primary) / 0.1);
-}
-
-/* 时间范围 */
-.time-range {
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px dashed hsl(var(--border));
+.waterfall-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.time-label {
-  font-size: 0.7rem;
-  color: var(--muted-foreground);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 500;
-}
-
-.time-value {
-  font-size: 0.85rem;
-  font-family: ui-monospace, monospace;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.time-arrow {
-  color: var(--muted-foreground);
-}
-
-/* 时间范围值 - 紧凑布局 */
-.time-range-value {
-  gap: 0.25rem !important;
-}
-
-/* 用量区域 */
-.usage-section {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px dashed hsl(var(--border));
-}
-
-.usage-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.5rem 0.75rem;
-  background: hsl(var(--muted) / 0.2);
-  border: 1px solid hsl(var(--border) / 0.5);
-  border-radius: 8px;
-}
-
-.usage-row {
-  display: flex;
-  align-items: center;
-}
-
-.usage-item {
-  display: flex;
-  align-items: center;
-  flex: 1;
-}
-
-.usage-label {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  width: 56px;
-  flex-shrink: 0;
-}
-
-.usage-tokens {
-  font-size: 0.875rem;
-  font-weight: 600;
-  font-family: ui-monospace, monospace;
-  width: 60px;
-  flex-shrink: 0;
-}
-
-.usage-cost {
-  font-size: 0.75rem;
-  color: #16a34a;
-  font-family: ui-monospace, monospace;
-}
-
-.dark .usage-cost {
-  color: #4ade80;
-}
-
-.usage-divider {
-  width: 1px;
-  height: 16px;
-  background: hsl(var(--border));
-  margin: 0 1rem;
-}
-
-/* 跳过原因 */
-.skip-reason {
-  margin-top: 1rem;
-  padding: 0.75rem;
-  background: hsl(var(--muted) / 0.5);
-  border-radius: 8px;
-  display: flex;
-  gap: 0.75rem;
-  font-size: 0.85rem;
-}
-
-.reason-label {
-  color: var(--muted-foreground);
-  flex-shrink: 0;
-}
-
-.reason-value {
-  color: hsl(var(--foreground));
-}
-
-.reason-content {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem 1rem;
+  padding: 0.78rem 0.86rem 0.68rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.52);
 }
+.waterfall-heading { display: flex; min-width: 0; align-items: baseline; gap: 0.55rem; }
+.waterfall-title { margin: 0; font-size: 0.78rem; font-weight: 600; letter-spacing: -0.01em; }
+.waterfall-duration { color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.65rem; }
+.waterfall-summary { display: flex; min-width: 0; flex-wrap: wrap; gap: 0.15rem 0.85rem; margin: 0; color: var(--muted-foreground); font-size: 0.62rem; font-variant-numeric: tabular-nums; }
+.waterfall-summary span + span::before { margin-right: 0.85rem; color: hsl(var(--border) / 0.8); content: '·'; }
 
-.reason-detail {
-  color: var(--muted-foreground);
-  line-height: 1.45;
-  word-break: break-word;
+.waterfall-axis,
+.waterfall-row {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 9.1rem) minmax(0, 1fr) 0.75rem;
+  column-gap: 0.72rem;
 }
+.waterfall-axis { padding: 0.56rem 0.86rem 0.38rem; color: hsl(var(--muted-foreground) / 0.82); font-family: ui-monospace, monospace; font-size: 0.55rem; }
+.waterfall-axis-track { display: flex; justify-content: space-between; padding: 0 0.25rem; }
+.waterfall-groups { padding: 0 0.86rem 0.58rem; }
+.waterfall-provider { min-width: 0; padding-top: 0.3rem; }
+.waterfall-provider + .waterfall-provider { margin-top: 0.3rem; border-top: 1px solid hsl(var(--border) / 0.48); }
+.waterfall-provider-header { display: flex; min-width: 0; align-items: center; gap: 0.42rem; min-height: 1.74rem; padding: 0 0.2rem; }
+.waterfall-provider-order { color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.57rem; }
+.waterfall-provider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; font-weight: 600; }
+.waterfall-provider-meta { margin-left: auto; color: var(--muted-foreground); font-size: 0.59rem; white-space: nowrap; }
 
-.reason-detail code {
-  margin-right: 0.4rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
-  background: hsl(var(--background) / 0.8);
-  color: hsl(var(--foreground));
-  font-size: 0.8rem;
+.waterfall-item { min-width: 0; }
+.waterfall-row {
+  width: 100%;
+  align-items: center;
+  min-height: 2.05rem;
+  padding: 0.3rem 0.24rem;
+  border: 1px solid transparent;
+  border-radius: 0.38rem;
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
+.waterfall-row:hover { background: hsl(var(--muted) / 0.32); }
+.waterfall-row:focus-visible { outline: none; border-color: hsl(var(--ring) / 0.6); box-shadow: 0 0 0 2px hsl(var(--ring) / 0.15); }
+.waterfall-item.is-open > .waterfall-row { border-color: hsl(var(--ring) / 0.3); background: hsl(var(--muted) / 0.22); }
+.waterfall-label { display: grid; min-width: 0; grid-template-columns: 0.58rem minmax(0, 1fr); align-items: center; gap: 0.38rem; }
+.waterfall-status-mark { width: 0.46rem; height: 0.46rem; border: 1.3px solid var(--muted-foreground); border-radius: 50%; }
+.waterfall-row.status-failed .waterfall-status-mark { border-color: #bf565b; }
+.waterfall-row.status-success .waterfall-status-mark { border-color: #348a68; }
+.waterfall-row.status-pending .waterfall-status-mark { border-color: #4d80b8; }
+.waterfall-row.status-cancelled .waterfall-status-mark { border-color: #a97832; }
+.waterfall-row.status-skipped .waterfall-status-mark { border-color: #93a1b3; background: transparent; }
+.waterfall-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.66rem; font-weight: 500; }
+.waterfall-row-note { grid-column: 2; color: var(--muted-foreground); font-size: 0.55rem; line-height: 1.25; }
+.waterfall-track { position: relative; display: block; min-width: 0; height: 1.2rem; border-radius: 0.25rem; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), hsl(var(--border) / 0.65) 25%); }
+.waterfall-bar { position: absolute; top: 0.31rem; min-width: 2px; height: 0.58rem; border-radius: 99px; }
+.waterfall-bar.status-failed { background: #efdede; box-shadow: inset 0 0 0 1px #e4c3c5; }
+.waterfall-bar.status-success { background: #d9ece4; box-shadow: inset 0 0 0 1px #b9dccd; }
+.waterfall-bar.status-pending { background: #dde8f3; box-shadow: inset 0 0 0 1px #bfd4e8; }
+.waterfall-bar.status-cancelled { background: #efe5d5; box-shadow: inset 0 0 0 1px #e1d1b8; }
+/* 耗时标签默认收在条内末端；只有条未接近右边界时才显示在条外，避免遮挡或溢出。 */
+.waterfall-track { overflow: hidden; }
+.waterfall-row-duration { position: absolute; top: 0.29rem; right: 0.18rem; color: hsl(var(--muted-foreground) / 0.95); font-family: ui-monospace, monospace; font-size: 0.53rem; white-space: nowrap; }
+.waterfall-row-duration.is-inside { color: hsl(var(--foreground) / 0.72); }
+.waterfall-not-sent { position: absolute; top: 0.3rem; color: var(--muted-foreground); font-size: 0.56rem; white-space: nowrap; }
+.waterfall-toggle { color: var(--muted-foreground); font-size: 0.8rem; text-align: center; }
 
-/* 额外信息 */
-.extra-block {
-  margin-top: 0.25rem;
-}
+.waterfall-detail { min-width: 0; margin: 0 0.24rem 0.4rem; padding: 0.72rem 0.76rem 0.7rem; border: 1px solid hsl(var(--border) / 0.58); border-top: 0; border-radius: 0 0 0.42rem 0.42rem; background: hsl(var(--muted) / 0.12); }
+.waterfall-detail-heading { display: grid; gap: 0.65rem; }
+.waterfall-detail-identity { display: flex; min-width: 0; align-items: baseline; gap: 0.42rem; }
+.waterfall-detail-provider { color: var(--muted-foreground); font-size: 0.61rem; }
+.waterfall-detail-key { min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 0.77rem; }
+.waterfall-detail-facts { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem 0.8rem; margin: 0; }
+.waterfall-detail-facts > div { min-width: 0; display: grid; gap: 0.16rem; }
+.waterfall-detail-facts dt { color: var(--muted-foreground); font-size: 0.57rem; }
+.waterfall-detail-facts dd { margin: 0; overflow-wrap: anywhere; font-size: 0.68rem; font-weight: 500; }
+.waterfall-detail-time { grid-column: span 2; }
+.waterfall-time-arrow { margin: 0 0.2rem; color: var(--muted-foreground); }
 
-.extra-toggle {
-  font-size: 0.8rem;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  padding: 0.5rem 0;
-  user-select: none;
-}
+.image-progress-block { margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid hsl(var(--border) / 0.7); }
+.image-progress-header { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; margin-bottom: 0.55rem; }
+.image-progress-title { font-size: 0.65rem; font-weight: 600; }
+.image-progress-phase { padding: 0.1rem 0.35rem; border: 1px solid hsl(var(--border)); border-radius: 99px; font-size: 0.58rem; }
+.image-progress-phase.phase-connecting, .image-progress-phase.phase-streaming { color: #3978b8; }
+.image-progress-phase.phase-completed { color: #278461; }
+.image-progress-phase.phase-failed { color: #c14b4b; }
+.image-progress-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.48rem 0.7rem; }
+.image-progress-item { display: grid; min-width: 0; gap: 0.13rem; }
+.image-progress-item.full-width { grid-column: 1 / -1; }
+.image-progress-label { color: var(--muted-foreground); font-size: 0.56rem; }
+.image-progress-value { font-size: 0.65rem; font-weight: 500; }
+.image-progress-code { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.08rem 0.25rem; border-radius: 0.2rem; background: hsl(var(--muted) / 0.65); color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.6rem; }
 
-.extra-toggle:hover {
-  color: hsl(var(--foreground));
-}
+.usage-section { display: flex; flex-wrap: wrap; gap: 0.4rem 0.85rem; margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid hsl(var(--border) / 0.7); }
+.usage-label { color: var(--muted-foreground); font-size: 0.6rem; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-variant-numeric: tabular-nums; }
 
-.extra-json-panel {
-  margin-top: 0.5rem;
-}
+/* 深色主题通过组件主题类应用同一语义状态色，避免 scoped :global 裁掉后代选择器。 */
+.is-dark .execution-waterfall { background: hsl(var(--card) / 0.7); }
+.is-dark .waterfall-track { background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), hsl(var(--border) / 0.82) 25%); }
+.is-dark .waterfall-bar.status-failed { background: linear-gradient(90deg, #502b2f, #67373b); box-shadow: inset 0 0 0 1px #82494e; }
+.is-dark .waterfall-bar.status-success { background: linear-gradient(90deg, #183b2f, #245441); box-shadow: inset 0 0 0 1px #3b715b; }
+.is-dark .waterfall-bar.status-pending { background: linear-gradient(90deg, #1c3448, #294a64); box-shadow: inset 0 0 0 1px #3d6484; }
+.is-dark .waterfall-bar.status-cancelled { background: linear-gradient(90deg, #423422, #5b472c); box-shadow: inset 0 0 0 1px #76603e; }
 
-/* 动画 */
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.slide-up-enter-from,
-.slide-up-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
+@container (max-width: 420px) {
+  .waterfall-axis, .waterfall-row { grid-template-columns: minmax(6.2rem, 7.9rem) minmax(0, 1fr) 0.62rem; column-gap: 0.42rem; }
+  .waterfall-header, .waterfall-axis, .waterfall-groups { padding-inline: 0.56rem; }
+  .waterfall-provider-meta { display: none; }
+  .waterfall-detail { padding-inline: 0.62rem; margin-inline: 0; }
+  .waterfall-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .waterfall-detail-time { grid-column: span 2; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .slide-up-enter-active, .slide-up-leave-active { transition: none; }
+  .waterfall-row { transition: none; }
 }
 </style>

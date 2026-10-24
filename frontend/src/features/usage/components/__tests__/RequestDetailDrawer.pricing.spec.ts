@@ -154,7 +154,7 @@ describe('RequestDetailDrawer request lifecycle', () => {
     await nextTick()
     await vi.waitFor(() => {
       expect(apiMocks.getRequestTrace).toHaveBeenCalled()
-      expect(document.body.querySelector('.attempt-node[data-attempt-id="failed-attempt"]')).not.toBeNull()
+      expect(document.body.querySelector('.waterfall-item[data-attempt-id="failed-attempt"] .attempt-stop')).not.toBeNull()
     })
     const states = onRequestState.mock.calls.map(([state]) => state)
     expect(states.length).toBeGreaterThan(0)
@@ -344,6 +344,19 @@ describe('RequestDetailDrawer settlement pricing', () => {
     const billing = document.querySelector<HTMLDetailsElement>('[data-request-billing-details]')
     expect(billing).not.toBeNull()
     expect(billing?.open).toBe(false)
+    const disclosures = [...document.querySelectorAll<HTMLDetailsElement>('[data-request-detail-disclosure]')]
+    expect(disclosures).toHaveLength(3)
+    expect(disclosures.map(item => item.querySelector('summary')?.textContent?.replace(/\s+/g, ' ').trim()))
+      .toEqual([
+        '计费明细价格、Token 与媒体费用',
+        '请求上下文API 格式、端点与代理',
+        '更多数据',
+      ])
+    expect(disclosures.every(item => !item.open)).toBe(true)
+    disclosures[1]!.querySelector('summary')!.click()
+    expect(disclosures[1]?.open).toBe(true)
+    expect(document.querySelector('[data-request-detail-client-key]')?.textContent?.trim()).toBe('test-key')
+    expect(document.querySelector('[data-request-detail-upstream-key]')?.textContent?.trim()).toBe('未记录')
     billing!.querySelector('summary')!.click()
     expect(billing?.open).toBe(true)
     expect(billing?.textContent).toContain('输入 $0.1/M')
