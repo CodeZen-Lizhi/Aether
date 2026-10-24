@@ -115,10 +115,6 @@
                         :data-tone="getTraceLineStatus(attempt)"
                       >{{ formatLatency(attempt.latency_ms) }}</span>
                 </span>
-
-                <span class="waterfall-toggle" aria-hidden="true">
-                  {{ openedAttemptId === attempt.id ? '−' : '+' }}
-                </span>
               </button>
 
               <section
@@ -1440,6 +1436,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   width: 100%;
   min-width: 0;
   container-type: inline-size;
+  font-family: var(--sans-serif);
 }
 
 .execution-waterfall {
@@ -1464,74 +1461,72 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   border-bottom: 1px solid hsl(var(--border) / 0.52);
 }
 .waterfall-heading { display: flex; min-width: 0; align-items: baseline; gap: 0.55rem; }
-.waterfall-title { margin: 0; font-size: 0.78rem; font-weight: 600; letter-spacing: -0.01em; }
-.waterfall-duration { color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.65rem; }
-.waterfall-summary { display: flex; min-width: 0; flex-wrap: wrap; gap: 0.15rem 0.85rem; margin: 0; color: var(--muted-foreground); font-size: 0.62rem; font-variant-numeric: tabular-nums; }
+.waterfall-title { margin: 0; font-size: 0.84rem; font-weight: 600; letter-spacing: -0.01em; }
+.waterfall-duration { color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.68rem; }
+.waterfall-summary { display: flex; min-width: 0; flex-wrap: wrap; gap: 0.15rem 0.85rem; margin: 0; color: var(--muted-foreground); font-size: 0.66rem; font-variant-numeric: tabular-nums; }
 .waterfall-summary span + span::before { margin-right: 0.85rem; color: hsl(var(--border) / 0.8); content: '·'; }
 
 .waterfall-axis,
 .waterfall-row {
   display: grid;
-  grid-template-columns: minmax(7.5rem, 9.1rem) minmax(0, 1fr) 0.75rem;
+  grid-template-columns: minmax(7.5rem, 9.1rem) minmax(0, 1fr);
   column-gap: 0.72rem;
 }
-.waterfall-axis { padding: 0.56rem 0.86rem 0.38rem; color: hsl(var(--muted-foreground) / 0.82); font-family: ui-monospace, monospace; font-size: 0.55rem; }
+.waterfall-axis { padding: 0.56rem 0.86rem 0.38rem; color: hsl(var(--muted-foreground) / 0.82); font-family: var(--monospace); font-size: 0.6rem; }
 .waterfall-axis-track { display: flex; justify-content: space-between; padding: 0 0.25rem; }
 .waterfall-groups { padding: 0 0.86rem 0.58rem; }
 .waterfall-provider { min-width: 0; padding-top: 0.3rem; }
 .waterfall-provider + .waterfall-provider { margin-top: 0.3rem; border-top: 1px solid hsl(var(--border) / 0.48); }
 .waterfall-provider-header { display: flex; min-width: 0; align-items: center; gap: 0.42rem; min-height: 1.74rem; padding: 0 0.2rem; }
-.waterfall-provider-order { color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.57rem; }
-.waterfall-provider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; font-weight: 600; }
-.waterfall-provider-meta { margin-left: auto; color: var(--muted-foreground); font-size: 0.59rem; white-space: nowrap; }
+.waterfall-provider-order { color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.61rem; }
+.waterfall-provider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.74rem; font-weight: 600; }
+.waterfall-provider-meta { margin-left: auto; color: var(--muted-foreground); font-size: 0.64rem; white-space: nowrap; }
 
 .waterfall-item { min-width: 0; }
 .waterfall-row {
   width: 100%;
   align-items: center;
   min-height: 2.05rem;
-  padding: 0.3rem 0.24rem;
-  border: 1px solid transparent;
-  border-radius: 0.38rem;
+  padding: 0.32rem 0.24rem;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   color: var(--foreground);
   text-align: left;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition: color 150ms ease;
 }
-.waterfall-row:hover { background: hsl(var(--muted) / 0.32); }
-.waterfall-row:focus-visible { outline: none; border-color: hsl(var(--ring) / 0.6); box-shadow: 0 0 0 2px hsl(var(--ring) / 0.15); }
-.waterfall-item.is-open > .waterfall-row { border-color: hsl(var(--ring) / 0.3); background: hsl(var(--muted) / 0.22); }
+.waterfall-row:hover .waterfall-key { color: hsl(var(--foreground) / 0.86); }
+.waterfall-row:focus-visible { outline: 1px solid hsl(var(--ring) / 0.44); outline-offset: 2px; }
+.waterfall-item.is-open > .waterfall-row { background: transparent; }
 .waterfall-label { display: grid; min-width: 0; grid-template-columns: 0.58rem minmax(0, 1fr); align-items: center; gap: 0.38rem; }
 .waterfall-status-mark { width: 0.46rem; height: 0.46rem; border: 1.3px solid var(--muted-foreground); border-radius: 50%; }
 .waterfall-row.status-failed .waterfall-status-mark { border-color: #bf565b; }
-.waterfall-row.status-success .waterfall-status-mark { border-color: #348a68; }
+.waterfall-row.status-success .waterfall-status-mark { border-color: #71838d; }
 .waterfall-row.status-pending .waterfall-status-mark { border-color: #4d80b8; }
 .waterfall-row.status-cancelled .waterfall-status-mark { border-color: #a97832; }
 .waterfall-row.status-skipped .waterfall-status-mark { border-color: #93a1b3; background: transparent; }
-.waterfall-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.66rem; font-weight: 500; }
-.waterfall-row-note { grid-column: 2; color: var(--muted-foreground); font-size: 0.55rem; line-height: 1.25; }
+.waterfall-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; font-weight: 500; }
+.waterfall-row-note { grid-column: 2; color: var(--muted-foreground); font-size: 0.6rem; line-height: 1.25; }
 .waterfall-track { position: relative; display: block; min-width: 0; height: 1.2rem; border-radius: 0.25rem; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), hsl(var(--border) / 0.65) 25%); }
 .waterfall-bar { position: absolute; top: 0.31rem; min-width: 2px; height: 0.58rem; border-radius: 99px; }
 .waterfall-bar.status-failed { background: #efdede; box-shadow: inset 0 0 0 1px #e4c3c5; }
-.waterfall-bar.status-success { background: #d9ece4; box-shadow: inset 0 0 0 1px #b9dccd; }
+.waterfall-bar.status-success { background: #dfe5e8; box-shadow: inset 0 0 0 1px #ccd6db; }
 .waterfall-bar.status-pending { background: #dde8f3; box-shadow: inset 0 0 0 1px #bfd4e8; }
 .waterfall-bar.status-cancelled { background: #efe5d5; box-shadow: inset 0 0 0 1px #e1d1b8; }
 /* 耗时标签默认收在条内末端；只有条未接近右边界时才显示在条外，避免遮挡或溢出。 */
 .waterfall-track { overflow: hidden; }
-.waterfall-row-duration { position: absolute; top: 0.29rem; right: 0.18rem; color: hsl(var(--muted-foreground) / 0.95); font-family: ui-monospace, monospace; font-size: 0.53rem; white-space: nowrap; }
+.waterfall-row-duration { position: absolute; top: 0.29rem; right: 0.18rem; color: hsl(var(--muted-foreground) / 0.95); font-family: var(--monospace); font-size: 0.58rem; white-space: nowrap; }
 .waterfall-row-duration.is-inside { color: hsl(var(--foreground) / 0.72); }
-.waterfall-not-sent { position: absolute; top: 0.3rem; color: var(--muted-foreground); font-size: 0.56rem; white-space: nowrap; }
-.waterfall-toggle { color: var(--muted-foreground); font-size: 0.8rem; text-align: center; }
-
-.waterfall-detail { min-width: 0; margin: 0 0.24rem 0.4rem; padding: 0.72rem 0.76rem 0.7rem; border: 1px solid hsl(var(--border) / 0.58); border-top: 0; border-radius: 0 0 0.42rem 0.42rem; background: hsl(var(--muted) / 0.12); }
+.waterfall-not-sent { position: absolute; top: 0.3rem; color: var(--muted-foreground); font-size: 0.6rem; white-space: nowrap; }
+.waterfall-detail { min-width: 0; margin: 0 0 0.5rem; padding: 0.68rem 0.24rem 0.68rem 1rem; border-top: 1px solid hsl(var(--border) / 0.48); background: transparent; }
 .waterfall-detail-heading { display: grid; gap: 0.65rem; }
 .waterfall-detail-identity { display: flex; min-width: 0; align-items: baseline; gap: 0.42rem; }
-.waterfall-detail-provider { color: var(--muted-foreground); font-size: 0.61rem; }
-.waterfall-detail-key { min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 0.77rem; }
+.waterfall-detail-provider { color: var(--muted-foreground); font-size: 0.66rem; }
+.waterfall-detail-key { min-width: 0; overflow-wrap: anywhere; font-family: var(--monospace); font-size: 0.78rem; font-weight: 600; }
 .waterfall-detail-facts { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem 0.8rem; margin: 0; }
 .waterfall-detail-facts > div { min-width: 0; display: grid; gap: 0.16rem; }
-.waterfall-detail-facts dt { color: var(--muted-foreground); font-size: 0.57rem; }
-.waterfall-detail-facts dd { margin: 0; overflow-wrap: anywhere; font-size: 0.68rem; font-weight: 500; }
+.waterfall-detail-facts dt { color: var(--muted-foreground); font-size: 0.62rem; }
+.waterfall-detail-facts dd { margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; font-weight: 500; }
 .waterfall-detail-time { grid-column: span 2; }
 .waterfall-time-arrow { margin: 0 0.2rem; color: var(--muted-foreground); }
 
@@ -1547,25 +1542,25 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .image-progress-item.full-width { grid-column: 1 / -1; }
 .image-progress-label { color: var(--muted-foreground); font-size: 0.56rem; }
 .image-progress-value { font-size: 0.65rem; font-weight: 500; }
-.image-progress-code { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.08rem 0.25rem; border-radius: 0.2rem; background: hsl(var(--muted) / 0.65); color: var(--muted-foreground); font-family: ui-monospace, monospace; font-size: 0.6rem; }
+.image-progress-code { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.08rem 0.25rem; border-radius: 0.2rem; background: hsl(var(--muted) / 0.65); color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.65rem; }
 
 .usage-section { display: flex; flex-wrap: wrap; gap: 0.4rem 0.85rem; margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid hsl(var(--border) / 0.7); }
 .usage-label { color: var(--muted-foreground); font-size: 0.6rem; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--monospace); font-variant-numeric: tabular-nums; }
 
 /* 深色主题通过组件主题类应用同一语义状态色，避免 scoped :global 裁掉后代选择器。 */
 .is-dark .execution-waterfall { background: hsl(var(--card) / 0.7); }
 .is-dark .waterfall-track { background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), hsl(var(--border) / 0.82) 25%); }
 .is-dark .waterfall-bar.status-failed { background: linear-gradient(90deg, #502b2f, #67373b); box-shadow: inset 0 0 0 1px #82494e; }
-.is-dark .waterfall-bar.status-success { background: linear-gradient(90deg, #183b2f, #245441); box-shadow: inset 0 0 0 1px #3b715b; }
+.is-dark .waterfall-bar.status-success { background: linear-gradient(90deg, #2b363c, #3a484f); box-shadow: inset 0 0 0 1px #52636c; }
 .is-dark .waterfall-bar.status-pending { background: linear-gradient(90deg, #1c3448, #294a64); box-shadow: inset 0 0 0 1px #3d6484; }
 .is-dark .waterfall-bar.status-cancelled { background: linear-gradient(90deg, #423422, #5b472c); box-shadow: inset 0 0 0 1px #76603e; }
 
 @container (max-width: 420px) {
-  .waterfall-axis, .waterfall-row { grid-template-columns: minmax(6.2rem, 7.9rem) minmax(0, 1fr) 0.62rem; column-gap: 0.42rem; }
+  .waterfall-axis, .waterfall-row { grid-template-columns: minmax(6.2rem, 7.9rem) minmax(0, 1fr); column-gap: 0.42rem; }
   .waterfall-header, .waterfall-axis, .waterfall-groups { padding-inline: 0.56rem; }
   .waterfall-provider-meta { display: none; }
-  .waterfall-detail { padding-inline: 0.62rem; margin-inline: 0; }
+  .waterfall-detail { padding-right: 0.18rem; padding-left: 0.88rem; margin-inline: 0; }
   .waterfall-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .waterfall-detail-time { grid-column: span 2; }
 }

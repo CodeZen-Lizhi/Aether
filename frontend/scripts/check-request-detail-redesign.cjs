@@ -46,6 +46,11 @@ async (page) => {
         providerOrder: [...root.querySelectorAll('.waterfall-provider-order')].map(node => node.textContent?.trim() ?? ''),
         rowIds: rows.map(node => node.getAttribute('data-attempt-id')),
         rowLabels: [...root.querySelectorAll('.attempt-stop')].map(node => node.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+        toggleCount: root.querySelectorAll('.waterfall-toggle').length,
+        rowFonts: [...root.querySelectorAll('.attempt-stop')].map(node => ({
+          family: getComputedStyle(node).fontFamily,
+          size: getComputedStyle(node).fontSize,
+        })),
         summary: root.querySelector('[data-route-summary]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
         axisCount: root.querySelectorAll('.waterfall-axis').length,
         axisLabels: [...root.querySelectorAll('.waterfall-axis-track span')].map(node => node.textContent?.trim() ?? ''),
@@ -77,6 +82,12 @@ async (page) => {
     if (trace.rowLabels.some(label => /失败|成功|HTTP|[✓✕×–]/.test(label))) {
       throw new Error(`${scenario.name}: Key 行重复展示状态或符号：${JSON.stringify(trace.rowLabels)}`)
     }
+    if (trace.toggleCount !== 0 || trace.rowLabels.some(label => /[+−]/.test(label))) {
+      throw new Error(`${scenario.name}: Key 行仍有加减号：${JSON.stringify(trace)}`)
+    }
+    if (trace.rowFonts.some(font => !font.family.includes('StyreneA') || font.size !== '16px')) {
+      throw new Error(`${scenario.name}: Key 行未统一项目字体层级：${JSON.stringify(trace.rowFonts)}`)
+    }
     if (trace.skipped.some(item => item.hasBar || !/冷却跳过|未发送/.test(item.text))) {
       throw new Error(`${scenario.name}: 冷却项错误绘制耗时条：${JSON.stringify(trace.skipped)}`)
     }
@@ -102,6 +113,9 @@ async (page) => {
       if (!failedBar || !successBar || failedBar.background === successBar.background) {
         throw new Error(`multi-provider: 成败时间条没有颜色差异：${JSON.stringify(trace.bars)}`)
       }
+      if (successBar.background !== 'rgb(223, 229, 232)' && !successBar.background.startsWith('linear-gradient')) {
+        throw new Error(`multi-provider: 成功时间条仍是浅草绿：${JSON.stringify(successBar)}`)
+      }
     }
 
     if (scenario.name === 'single-key-failure' && (
@@ -112,16 +126,25 @@ async (page) => {
     await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 1)
     const opened = await page.evaluate(() => {
       const row = document.querySelector('.waterfall-item.is-open')
+      const button = row?.querySelector('.attempt-stop')
       const detail = document.querySelector('.waterfall-detail')
       return {
         rowId: row?.getAttribute('data-attempt-id') ?? '',
         detailId: detail?.getAttribute('data-attempt-id') ?? '',
         expanded: row?.querySelector('.attempt-stop')?.getAttribute('aria-expanded'),
         keyText: detail?.querySelector('.waterfall-detail-key')?.textContent?.trim() ?? '',
+        rowBorder: button ? getComputedStyle(button).borderWidth : '',
+        rowBackground: button ? getComputedStyle(button).backgroundColor : '',
+        detailBorderWidth: detail ? getComputedStyle(detail).borderWidth : '',
+        detailBackground: detail ? getComputedStyle(detail).backgroundColor : '',
       }
     })
     if (!opened.rowId || opened.rowId !== opened.detailId || opened.expanded !== 'true' || !opened.keyText) {
       throw new Error(`${scenario.name}: Key 详情未绑定同一记录：${JSON.stringify(opened)}`)
+    }
+    if (opened.rowBorder !== '0px' || opened.rowBackground !== 'rgba(0, 0, 0, 0)'
+      || opened.detailBorderWidth !== '0px' || opened.detailBackground !== 'rgba(0, 0, 0, 0)') {
+      throw new Error(`${scenario.name}: 展开 Key 仍有外框或背景：${JSON.stringify(opened)}`)
     }
     await page.locator('.attempt-stop').first().evaluate(element => element.click())
     await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 0)
