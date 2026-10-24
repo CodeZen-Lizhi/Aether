@@ -611,6 +611,24 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.querySelector('.path-response-status')?.textContent?.trim()).toBe('-')
   })
 
+  it('does not repeat success as the Key reason in visible or accessible text', async () => {
+    const trace = buildTrace([
+      buildCandidate({
+        id: 'success-without-error',
+        key_name: 'Success Key',
+        status: 'success',
+        status_code: 200,
+      }),
+    ])
+
+    const root = mountTimeline(trace, {}, { autoOpenDetail: false })
+    await flushPendingUpdates()
+
+    const key = root.querySelector<HTMLElement>('[data-attempt-id="success-without-error"]')
+    expect(key?.querySelector('.path-key-reason')).toBeNull()
+    expect(key?.getAttribute('aria-label')).toBe('Success Key，成功，查看详情')
+  })
+
   it('keeps a stream-interrupted Key red through the shared status class', async () => {
     const trace = buildTrace([
       buildCandidate({

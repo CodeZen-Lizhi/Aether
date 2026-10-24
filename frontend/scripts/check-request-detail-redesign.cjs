@@ -85,6 +85,12 @@ async (page) => {
         keyHeights: rows.map(node => Math.round(node.getBoundingClientRect().height)),
         keyClasses: rows.map(node => node.className),
         keyTexts: rows.map(node => node.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+        keyReasons: rows.map(node => ({
+          text: node.querySelector('.path-key-reason')?.textContent?.trim() ?? '',
+          present: Boolean(node.querySelector('.path-key-reason')),
+          title: node.querySelector('.path-key-reason')?.getAttribute('title') ?? '',
+          label: node.getAttribute('aria-label') ?? '',
+        })),
         summary: root.querySelector('[data-route-summary]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
         centers: {
           entry: entry ? centerY(entry) : -1,
@@ -201,6 +207,11 @@ async (page) => {
       }
       if (!trace.keyTexts[failedKey]?.includes('500') || !trace.keyTexts[successKey]?.includes('200')) {
         throw new Error(`multi-provider: Key HTTP 状态错误：${JSON.stringify(trace.keyTexts)}`)
+      }
+      const successReason = trace.keyReasons[successKey]
+      if (!successReason || successReason.present || successReason.text || successReason.title
+        || successReason.label.includes('成功，成功')) {
+        throw new Error(`multi-provider: 成功 Key 重复表达状态：${JSON.stringify(successReason)}`)
       }
       if (!trace.responseText.includes('200') || !trace.responseText.includes('110ms')) {
         throw new Error(`multi-provider: 请求结果不是成功 200 或总耗时错误：${JSON.stringify(trace.responseText)}`)

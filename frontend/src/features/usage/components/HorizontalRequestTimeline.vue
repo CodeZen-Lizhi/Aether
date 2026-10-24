@@ -80,7 +80,7 @@
                     :data-attempt-id="attempt.id"
                     :data-status="getTraceLineStatus(attempt)"
                     :aria-expanded="openedAttemptId === attempt.id"
-                    :aria-label="`${getAttemptKeyDisplay(attempt)}，${formatAttemptOutcome(attempt)}，${getAttemptCardReason(attempt)}，查看详情`"
+                    :aria-label="getAttemptAriaLabel(attempt)"
                     @click="selectAttempt(attempt)"
                   >
                     <span class="path-key-head">
@@ -99,6 +99,7 @@
                     <span class="path-key-meta">
                       <b>{{ formatLatency(attempt.latency_ms) }}</b>
                       <span
+                        v-if="getAttemptCardReason(attempt)"
                         class="path-key-reason"
                         :title="getAttemptCardReason(attempt)"
                       >{{ getAttemptCardReason(attempt) }}</span>
@@ -582,8 +583,18 @@ function getAttemptOrder(attempt: CandidateRecord): string {
 function getAttemptCardReason(attempt: CandidateRecord): string {
   const error = getAttemptError(attempt)
   if (error?.message) return error.message
+  if (getTraceLineStatus(attempt) === 'success') return ''
   if (!isLiveCandidate(attempt)) return getStatusLabel(getDisplayStatus(attempt))
   return attempt.status === 'streaming' ? '传输中' : '进行中'
+}
+
+/** 成功状态已由符号和 HTTP 表达，读屏标签不再重复“成功”；失败原因只读一次。 */
+function getAttemptAriaLabel(attempt: CandidateRecord): string {
+  const parts = [getAttemptKeyDisplay(attempt), formatAttemptOutcome(attempt)]
+  const reason = getAttemptCardReason(attempt)
+  if (reason) parts.push(reason)
+  parts.push('查看详情')
+  return parts.join('，')
 }
 
 /** 展开行读取自身记录的时间范围，不受导航选择下标变化影响。 */
