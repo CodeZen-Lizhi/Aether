@@ -407,6 +407,32 @@ describe('provider key concurrent_limit form behavior', () => {
     expect(findInput(root, 'internal_priority').value).toBe('11')
   })
 
+  it('stacks multiplier and priority controls below their help text in each comparison card', async () => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey: null,
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+    })
+    await settle()
+
+    const multiplierCard = findInput(root, 'default_rate_multiplier').closest('.flex-col')
+    const priorityCard = findInput(root, 'internal_priority').closest('.flex-col')
+
+    expect(multiplierCard).not.toBeNull()
+    expect(priorityCard).not.toBeNull()
+    expect(
+      multiplierCard?.querySelector('#default-rate-multiplier-help')
+        ?.compareDocumentPosition(findInput(root, 'default_rate_multiplier')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      priorityCard?.querySelector('#internal-priority-help')
+        ?.compareDocumentPosition(findInput(root, 'internal_priority')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it('starts new provider keys at priority one when no keys exist', async () => {
     const root = mountDialog(KeyFormDialog, {
       open: true,

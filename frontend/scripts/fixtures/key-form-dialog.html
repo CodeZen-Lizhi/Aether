@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>密钥表单布局验收</title>
+</head>
+<body>
+  <div id="fixture"></div>
+  <script type="module">
+    import { createApp, h, ref } from 'vue'
+    import KeyFormDialog from '/src/features/providers/components/KeyFormDialog.vue'
+    import { createI18n, setI18nLocale } from '/src/i18n'
+    import '/src/style.css'
+
+    const params = new URLSearchParams(location.search)
+    setI18nLocale(params.get('locale') === 'en' ? 'en-US' : 'zh-CN')
+    const mode = ref(params.get('mode') === 'edit' ? 'edit' : 'create')
+    const open = ref(params.get('closed') !== '1')
+    const editingKey = {
+      id: 'fixture-key',
+      provider_id: 'fixture-provider',
+      name: 'Fixture key',
+      api_key: '',
+      api_key_masked: 'sk-fixture-***',
+      api_formats: ['openai:responses', 'openai:responses:compact', 'openai:search'],
+      auth_type: 'api_key',
+      rate_multipliers: null,
+      default_rate_multiplier: 1,
+      internal_priority: 4,
+      multiplier_sync: { source: 'manual', status: 'manual' },
+      rpm_limit: null,
+      concurrent_limit: null,
+      cache_ttl_minutes: 5,
+      max_probe_interval_minutes: 32,
+      is_active: true,
+      note: '',
+      auto_fetch_models: false,
+      model_include_patterns: [],
+      model_exclude_patterns: [],
+    }
+
+    // 隔离页面只使用内存数据，不触发真实密钥写入。
+    createApp({
+      render: () => h('main', { class: 'min-h-screen bg-background p-4 text-foreground' }, [
+        h('button', {
+          id: 'open-create',
+          class: 'mr-2 rounded border px-3 py-1',
+          onClick: () => { mode.value = 'create'; open.value = true },
+        }, '新增'),
+        h('button', {
+          id: 'open-edit',
+          class: 'rounded border px-3 py-1',
+          onClick: () => { mode.value = 'edit'; open.value = true },
+        }, '编辑'),
+        h(KeyFormDialog, {
+          open: open.value,
+          endpoint: null,
+          editingKey: mode.value === 'edit' ? editingKey : null,
+          providerId: 'fixture-provider',
+          providerType: 'custom',
+          availableApiFormats: editingKey.api_formats,
+          existingKeys: [],
+          'onUpdate:modelValue': value => { open.value = value },
+          onClose: () => { open.value = false },
+        }),
+      ]),
+    }).use(createI18n()).mount('#fixture')
+  </script>
+</body>
+</html>

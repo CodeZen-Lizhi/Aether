@@ -164,8 +164,8 @@
 
       <!-- 倍率来源与优先级 -->
       <div class="dialog-grid-2 gap-px rounded-lg border border-border/70 bg-border/70">
-        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
-          <div class="min-w-0 flex-1">
+        <div class="flex min-h-[4.5rem] flex-col justify-between gap-2 bg-background px-3 py-2.5">
+          <div class="min-w-0">
             <Label for="default_rate_multiplier">{{ legacyT('倍率') }}</Label>
             <p
               id="default-rate-multiplier-help"
@@ -207,8 +207,8 @@
             </div>
           </div>
         </div>
-        <div class="flex min-h-[4.5rem] items-center justify-between gap-3 bg-background px-3 py-2.5">
-          <div class="min-w-0 flex-1">
+        <div class="flex min-h-[4.5rem] flex-col justify-between gap-2 bg-background px-3 py-2.5">
+          <div class="min-w-0">
             <Label for="internal_priority">{{ legacyT('优先级') }}</Label>
             <p
               id="internal-priority-help"

@@ -43,6 +43,8 @@
 
 复杂表单用 `dialog-grid-2` / `dialog-grid-3` / `dialog-grid-wide`，通过容器查询在窄弹窗内重排；不要恢复固定双栏的 `sm:grid-cols-*`，也不要用 `overflow-x-hidden` 隐藏溢出。
 
+`KeyFormDialog.vue` 的倍率与优先级卡片内部按“标题和说明在上、控件在下”排列；两卡外侧仍使用 `dialog-grid-2`。这样在 900×640 最小窗口下，522px 弹窗中的两张卡各约 234px 时说明区仍有约 210px，不恢复“说明与固定宽控件左右并排”的布局，也不通过缩小控件规避挤压。同一布局同时适用于新增和编辑密钥。
+
 **Verification**: 至少在 900×640、1024×768、1440×900、1920×1080 和 390×844 测量 bounding rect、`scrollWidth <= clientWidth`，并动态缩放已打开弹窗，确认输入和 footer 操作保留。
 
 ---
