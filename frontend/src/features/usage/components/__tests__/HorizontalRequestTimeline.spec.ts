@@ -630,7 +630,34 @@ describe('HorizontalRequestTimeline', () => {
 
     const key = root.querySelector<HTMLElement>('[data-attempt-id="success-without-error"]')
     expect(key?.querySelector('.path-key-reason')).toBeNull()
-    expect(key?.getAttribute('aria-label')).toBe('Success Key，成功，查看详情')
+    expect(key?.querySelector('.path-key-name')?.textContent).toContain('Success Key')
+    expect(key?.querySelector('.path-key-metric')?.textContent).toContain('耗时')
+    expect(key?.querySelector('.path-key-metric')?.textContent).toContain('-')
+    expect(key?.getAttribute('aria-label')).toBe('Success Key，成功，耗时 -，查看详情')
+  })
+
+  it('shows endpoint and first-byte timing in the Key card without replacing its identity', async () => {
+    const trace = buildTrace([
+      buildCandidate({
+        id: 'success-with-timing',
+        key_name: '3425',
+        endpoint_name: 'openai:responses',
+        status: 'success',
+        status_code: 200,
+        latency_ms: 8970,
+        extra_data: { first_byte_time_ms: 2440 },
+      }),
+    ])
+
+    const root = mountTimeline(trace, {}, { autoOpenDetail: false })
+    await flushPendingUpdates()
+
+    const key = root.querySelector<HTMLElement>('[data-attempt-id="success-with-timing"]')
+    expect(key?.querySelector('.waterfall-key')?.textContent?.trim()).toBe('3425')
+    expect(key?.querySelector('.path-key-endpoint')?.textContent?.trim()).toBe('OpenAI Responses')
+    expect([...key?.querySelectorAll('.path-key-metric') ?? []].map(node => node.textContent?.replace(/\s+/g, ' ').trim()))
+      .toEqual(['耗时8.97s', '首字2.44s'])
+    expect(key?.getAttribute('aria-label')).toBe('3425，成功，耗时 8.97s，首字 2.44s，OpenAI Responses，查看详情')
   })
 
   it('keeps a stream-interrupted Key red through the shared status class', async () => {

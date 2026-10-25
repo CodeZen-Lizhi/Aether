@@ -91,21 +91,40 @@
                       </span>
                       <span class="path-key-order">{{ getAttemptOrder(attempt) }}</span>
                     </span>
-                    <span class="path-key-name">
-                      <span>Key</span>
-                        <strong
-                          class="waterfall-key"
-                          :title="getAttemptKeyDisplay(attempt)"
-                        >{{ getAttemptKeyDisplay(attempt) }}</strong>
+                    <span class="path-key-body">
+                      <span class="path-key-identity">
+                        <span class="path-key-name">
+                          <span>Key</span>
+                          <strong
+                            class="waterfall-key"
+                            :title="getAttemptKeyDisplay(attempt)"
+                          >{{ getAttemptKeyDisplay(attempt) }}</strong>
+                        </span>
+                        <span
+                          v-if="getAttemptEndpointLabel(attempt)"
+                          class="path-key-endpoint"
+                          :title="getAttemptEndpointLabel(attempt)"
+                        >{{ getAttemptEndpointLabel(attempt) }}</span>
+                      </span>
+                      <span class="path-key-meta">
+                        <span class="path-key-metric">
+                          <small>耗时</small>
+                          <b>{{ formatLatency(attempt.latency_ms) }}</b>
+                        </span>
+                        <span
+                          v-if="getAttemptFirstByteMs(attempt) !== null"
+                          class="path-key-metric"
+                        >
+                          <small>首字</small>
+                          <b>{{ formatLatency(getAttemptFirstByteMs(attempt)) }}</b>
+                        </span>
+                      </span>
                     </span>
-                    <span class="path-key-meta">
-                      <b>{{ formatLatency(attempt.latency_ms) }}</b>
-                      <span
-                        v-if="getAttemptCardReason(attempt)"
-                        class="path-key-reason"
-                        :title="getAttemptCardReason(attempt)"
-                      >{{ getAttemptCardReason(attempt) }}</span>
-                    </span>
+                    <span
+                      v-if="getAttemptCardReason(attempt)"
+                      class="path-key-reason"
+                      :title="getAttemptCardReason(attempt)"
+                    >{{ getAttemptCardReason(attempt) }}</span>
                   </button>
                 </template>
               </div>
@@ -573,6 +592,20 @@ function getAttemptHttpLabel(attempt: CandidateRecord): string {
   return '-'
 }
 
+/** Key 卡片优先展示实际端点名称，缺失时回退到该次调用的上游 API 格式。 */
+function getAttemptEndpointLabel(attempt: CandidateRecord): string {
+  const endpoint = attempt.endpoint_name?.trim()
+    || String(attempt.extra_data?.provider_api_format ?? '').trim()
+  return endpoint ? formatApiFormat(endpoint) : ''
+}
+
+/** 首字耗时只读取候选记录中的真实值；缺失或非正数时不补造展示数据。 */
+function getAttemptFirstByteMs(attempt: CandidateRecord): number | null {
+  const value = attempt.extra_data?.first_byte_time_ms
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null
+  return Math.round(value)
+}
+
 /** Key 卡片使用极简结果符号，与成功/失败语义色共同区分状态。 */
 function getAttemptStateSymbol(attempt: CandidateRecord): string {
   const status = getTraceLineStatus(attempt)
@@ -597,9 +630,14 @@ function getAttemptCardReason(attempt: CandidateRecord): string {
   return attempt.status === 'streaming' ? '传输中' : '进行中'
 }
 
-/** 成功状态已由符号和 HTTP 表达，读屏标签不再重复“成功”；失败原因只读一次。 */
+/** 读屏标签补充卡片上可见的耗时、首字和端点；成功状态与失败原因仍不重复。 */
 function getAttemptAriaLabel(attempt: CandidateRecord): string {
   const parts = [getAttemptKeyDisplay(attempt), formatAttemptOutcome(attempt)]
+  parts.push(`耗时 ${formatLatency(attempt.latency_ms)}`)
+  const firstByteMs = getAttemptFirstByteMs(attempt)
+  if (firstByteMs !== null) parts.push(`首字 ${formatLatency(firstByteMs)}`)
+  const endpoint = getAttemptEndpointLabel(attempt)
+  if (endpoint) parts.push(endpoint)
   const reason = getAttemptCardReason(attempt)
   if (reason) parts.push(reason)
   parts.push('查看详情')
@@ -1464,18 +1502,21 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   width: 100%;
   min-width: min-content;
   max-width: 100%;
-  padding: 11px 10px 10px;
-  background-color: color-mix(in srgb, var(--card) 96%, transparent);
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    color-mix(in srgb, var(--muted-foreground) 15%, transparent) 1px,
-    transparent 0
-  );
-  background-size: 18px 18px;
+  padding: 13px 10px 12px;
+  background-color: color-mix(in srgb, var(--card) 94%, var(--muted));
+  background-image:
+    radial-gradient(
+      circle at 1px 1px,
+      color-mix(in srgb, var(--muted-foreground) 14%, transparent) 1px,
+      transparent 0
+    ),
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 3%, transparent), transparent 42%);
+  background-size: 18px 18px, 100% 100%;
 }
 .path-node,
 .path-provider { min-width: 0; }
 .path-node {
+  position: relative;
   display: flex;
   min-height: 72px;
   flex-direction: column;
@@ -1484,7 +1525,8 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   padding: 12px 14px;
   border: 1px dashed var(--border);
   border-radius: 13px;
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 88%, var(--muted));
+  box-shadow: 0 7px 22px -20px color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 .path-entry { border-color: color-mix(in srgb, var(--primary) 42%, var(--border)); }
 .path-stage--success .path-entry { border-color: color-mix(in srgb, var(--path-success) 48%, var(--border)); }
@@ -1497,58 +1539,119 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-stage--failed .path-method { color: var(--path-failed); }
 .path-stage--pending .path-method { color: var(--path-pending); }
 .path-endpoint { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.path-link { position: relative; display: flex; min-width: 28px; align-items: center; align-self: center; justify-content: center; height: 32px; }
-.path-link::before { flex: 0 0 100%; width: 100%; height: 1.5px; background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 16%, transparent), color-mix(in srgb, var(--foreground) 40%, transparent) 72%, color-mix(in srgb, var(--foreground) 60%, transparent)); content: ''; }
-.path-link::after { position: absolute; right: -1px; width: 6px; height: 6px; border-top: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); border-right: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); content: ''; transform: rotate(45deg); }
-.path-link--out::before { background: var(--path-success); box-shadow: 0 0 7px color-mix(in srgb, var(--path-success) 18%, transparent); }
+.path-link {
+  --path-link-color: color-mix(in srgb, var(--primary) 78%, var(--foreground));
+  position: relative;
+  display: flex;
+  min-width: 28px;
+  align-items: center;
+  align-self: center;
+  justify-content: center;
+  height: 32px;
+}
+.path-link::before {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, transparent 48%, color-mix(in srgb, #fff 90%, transparent) 50%, transparent 52%) 0 0 / 44px 100%,
+    linear-gradient(90deg, color-mix(in srgb, var(--path-link-color) 22%, transparent), var(--path-link-color));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--path-link-color) 26%, transparent);
+  content: '';
+  animation: path-link-flow 2.4s linear infinite;
+}
+.path-link::after {
+  position: absolute;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid var(--path-link-color);
+  border-right: 2px solid var(--path-link-color);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--path-link-color) 42%, transparent));
+  content: '';
+  transform: rotate(45deg);
+}
+.path-link--out { --path-link-color: var(--path-success); }
 .path-link--out::after { border-color: var(--path-success); }
-.path-stage--failed .path-link--out::before { background: var(--path-failed); box-shadow: none; }
+.path-stage--failed .path-link--out { --path-link-color: var(--path-failed); }
 .path-stage--failed .path-link--out::after { border-color: var(--path-failed); }
-.path-stage--pending .path-link--out::before { background: var(--path-pending); box-shadow: none; }
+.path-stage--pending .path-link--out { --path-link-color: var(--path-pending); }
 .path-stage--pending .path-link--out::after { border-color: var(--path-pending); }
 .path-provider {
   --provider-tone-border: color-mix(in srgb, var(--foreground) 68%, transparent);
-  --provider-tone-fill: color-mix(in srgb, var(--card) 76%, transparent);
+  --provider-tone-fill: color-mix(in srgb, var(--card) 82%, #f5f3ff);
+  --provider-tone-accent: #8b5cf6;
   position: relative;
-  padding: 27px 10px 10px;
-  border-width: 2px;
-  border-style: dashed;
-  border-color: var(--provider-tone-border);
-  border-radius: 16px;
-  background: var(--provider-tone-fill);
+  padding: 27px 11px 11px;
+  border: 1px solid color-mix(in srgb, var(--provider-tone-accent) 38%, var(--border));
+  border-radius: 17px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 20%, transparent), transparent 44%),
+    var(--provider-tone-fill);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #fff 24%, transparent),
+    0 12px 28px -26px color-mix(in srgb, var(--provider-tone-accent) 55%, transparent);
 }
+.path-provider::after {
+  position: absolute;
+  inset: 4px;
+  z-index: 0;
+  border: 1px dashed color-mix(in srgb, var(--provider-tone-accent) 24%, transparent);
+  border-radius: 12px;
+  content: '';
+  pointer-events: none;
+}
+.path-provider > * { position: relative; z-index: 1; }
 .path-provider--tone-0 {
-  --provider-tone-border: color-mix(in srgb, #8b5cf6 54%, var(--foreground));
-  --provider-tone-fill: color-mix(in srgb, #f5f3ff 72%, var(--card));
+  --provider-tone-fill: #f6f2ff;
+  --provider-tone-accent: #8b5cf6;
 }
 .path-provider--tone-1 {
-  --provider-tone-border: color-mix(in srgb, #0d9488 54%, var(--foreground));
-  --provider-tone-fill: color-mix(in srgb, #f0fdfa 72%, var(--card));
+  --provider-tone-fill: #eefaf7;
+  --provider-tone-accent: #0d9488;
 }
 .path-provider--tone-2 {
-  --provider-tone-border: color-mix(in srgb, #2563eb 54%, var(--foreground));
-  --provider-tone-fill: color-mix(in srgb, #eff6ff 72%, var(--card));
+  --provider-tone-fill: #eef5ff;
+  --provider-tone-accent: #2563eb;
 }
 .path-provider--tone-3 {
-  --provider-tone-border: color-mix(in srgb, #d97706 54%, var(--foreground));
-  --provider-tone-fill: color-mix(in srgb, #fffbeb 72%, var(--card));
+  --provider-tone-fill: #fff8e9;
+  --provider-tone-accent: #d97706;
 }
 .path-provider--tone-4 {
-  --provider-tone-border: color-mix(in srgb, #db2777 54%, var(--foreground));
-  --provider-tone-fill: color-mix(in srgb, #fdf2f8 72%, var(--card));
+  --provider-tone-fill: #fff2f8;
+  --provider-tone-accent: #db2777;
 }
 .path-provider--tone-5 {
-  --provider-tone-border: color-mix(in srgb, #059669 54%, var(--foreground));
-  --provider-tone-fill: color-mix(in srgb, #ecfdf5 72%, var(--card));
+  --provider-tone-fill: #eefaf4;
+  --provider-tone-accent: #059669;
 }
-.path-provider-label { position: absolute; top: -12px; left: 18px; display: inline-flex; max-width: calc(100% - 36px); align-items: baseline; gap: 6px; padding: 1px 8px; background: var(--card); font-size: 11px; line-height: 1.7; white-space: nowrap; }
+.path-provider-label {
+  position: absolute;
+  top: -12px;
+  left: 18px;
+  display: inline-flex;
+  max-width: calc(100% - 36px);
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--provider-tone-accent) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--provider-tone-fill) 86%, var(--card));
+  box-shadow: 0 2px 8px -7px color-mix(in srgb, var(--foreground) 50%, transparent);
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
 .waterfall-provider-order { color: var(--foreground); font-family: var(--monospace); font-size: 9px; font-weight: 700; }
 .waterfall-provider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
 .path-key-stack { display: grid; min-width: 0; }
 .path-key {
-  display: block;
+  display: flex;
   width: 100%;
   height: 88px;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
   padding: 0;
@@ -1561,11 +1664,11 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   text-align: left;
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
-.path-key--failed { border-color: var(--path-failed-border); }
-.path-key--success { border-color: var(--path-success-border); box-shadow: 0 0 0 3px color-mix(in srgb, var(--path-success) 8%, transparent); }
+.path-key--failed { border-color: var(--path-failed-border); box-shadow: 0 4px 13px -11px color-mix(in srgb, var(--path-failed) 58%, transparent); }
+.path-key--success { border-color: var(--path-success-border); box-shadow: 0 0 0 3px color-mix(in srgb, var(--path-success) 8%, transparent), 0 5px 14px -12px color-mix(in srgb, var(--path-success) 65%, transparent); }
 .path-key--pending { border-color: var(--path-pending-border); }
 .path-key:focus-visible { outline: 1.5px solid color-mix(in srgb, var(--ring) 55%, transparent); outline-offset: 2px; }
-.path-key-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 9px; background: color-mix(in srgb, var(--muted) 62%, transparent); }
+.path-key-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 9px; border-bottom: 1px solid color-mix(in srgb, var(--border) 42%, transparent); background: color-mix(in srgb, var(--muted) 52%, transparent); }
 .path-key--failed .path-key-head { background: var(--path-failed-soft); }
 .path-key--success .path-key-head { background: var(--path-success-soft); }
 .path-key--pending .path-key-head { background: var(--path-pending-soft); }
@@ -1574,12 +1677,17 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-key--success .path-key-http { color: var(--path-success); }
 .path-key--pending .path-key-http { color: var(--path-pending); }
 .path-key-order { color: var(--muted-foreground); font-family: var(--monospace); font-size: 9px; }
-.path-key-name { display: flex; min-width: 0; align-items: baseline; gap: 5px; padding: 8px 10px 0; }
+.path-key-body { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 10px 0; }
+.path-key-identity { display: grid; min-width: 0; flex: 1; align-content: center; gap: 2px; }
+.path-key-name { display: flex; min-width: 0; align-items: baseline; gap: 5px; }
 .path-key-name > span { flex: none; color: var(--muted-foreground); font-size: 9px; }
 .waterfall-key { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.path-key-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; padding: 4px 10px 9px; color: var(--muted-foreground); font-size: 9px; }
-.path-key-meta b { color: var(--foreground); font-family: var(--monospace); font-size: 10px; font-weight: 600; }
-.path-key-reason { min-width: 0; max-width: 100%; flex: 1 1 100%; overflow: hidden; color: var(--muted-foreground); font-family: var(--monospace); text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
+.path-key-endpoint { min-width: 0; overflow: hidden; color: color-mix(in srgb, var(--muted-foreground) 84%, var(--foreground)); font-family: var(--monospace); font-size: 8.5px; text-overflow: ellipsis; white-space: nowrap; }
+.path-key-meta { display: flex; flex: none; align-items: center; gap: 7px; color: var(--muted-foreground); font-size: 8px; }
+.path-key-metric { display: grid; min-width: 31px; justify-items: end; gap: 0; line-height: 1.2; white-space: nowrap; }
+.path-key-metric small { color: var(--muted-foreground); font-size: 8px; }
+.path-key-metric b { color: var(--foreground); font-family: var(--monospace); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.path-key-reason { display: block; flex: none; min-width: 0; max-width: 100%; overflow: hidden; padding: 3px 10px 5px; color: var(--muted-foreground); font-family: var(--monospace); font-size: 8.5px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
 .path-key--failed .path-key-reason { color: var(--path-failed); }
 .path-key--success .path-key-reason { color: var(--path-success); }
 .path-key-hop { position: relative; display: block; min-height: 26px; }
@@ -1624,20 +1732,29 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .is-dark .path-key--success .path-key-head { background: color-mix(in srgb, #166534 42%, var(--card)); }
 .is-dark .path-key--pending .path-key-head { background: color-mix(in srgb, #1e40af 32%, var(--card)); }
 .is-dark .path-stage {
-  background-color: color-mix(in srgb, var(--card) 94%, transparent);
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    color-mix(in srgb, var(--foreground) 18%, transparent) 1px,
-    transparent 0
-  );
+  background-color: color-mix(in srgb, var(--card) 93%, var(--muted));
+  background-image:
+    radial-gradient(
+      circle at 1px 1px,
+      color-mix(in srgb, var(--foreground) 16%, transparent) 1px,
+      transparent 0
+    ),
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 7%, transparent), transparent 42%);
+  background-size: 18px 18px, 100% 100%;
 }
-.is-dark .path-provider--tone-0 { --provider-tone-fill: color-mix(in srgb, #4c1d95 28%, var(--card)); }
-.is-dark .path-provider--tone-1 { --provider-tone-fill: color-mix(in srgb, #134e4a 28%, var(--card)); }
-.is-dark .path-provider--tone-2 { --provider-tone-fill: color-mix(in srgb, #1e3a8a 28%, var(--card)); }
-.is-dark .path-provider--tone-3 { --provider-tone-fill: color-mix(in srgb, #78350f 28%, var(--card)); }
-.is-dark .path-provider--tone-4 { --provider-tone-fill: color-mix(in srgb, #831843 28%, var(--card)); }
-.is-dark .path-provider--tone-5 { --provider-tone-fill: color-mix(in srgb, #064e3b 28%, var(--card)); }
+.is-dark .path-provider { box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 3%, transparent), 0 12px 28px -26px color-mix(in srgb, #000 85%, transparent); }
+.is-dark .path-provider--tone-0 { --provider-tone-fill: color-mix(in srgb, #4c1d95 34%, var(--card)); }
+.is-dark .path-provider--tone-1 { --provider-tone-fill: color-mix(in srgb, #134e4a 34%, var(--card)); }
+.is-dark .path-provider--tone-2 { --provider-tone-fill: color-mix(in srgb, #1e3a8a 34%, var(--card)); }
+.is-dark .path-provider--tone-3 { --provider-tone-fill: color-mix(in srgb, #78350f 34%, var(--card)); }
+.is-dark .path-provider--tone-4 { --provider-tone-fill: color-mix(in srgb, #831843 34%, var(--card)); }
+.is-dark .path-provider--tone-5 { --provider-tone-fill: color-mix(in srgb, #064e3b 34%, var(--card)); }
+@keyframes path-link-flow {
+  from { background-position: -44px 0, 0 0; }
+  to { background-position: calc(100% + 44px) 0, 0 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .path-key { transition: none; }
+  .path-link::before { animation: none; }
 }
 </style>

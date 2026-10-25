@@ -85,6 +85,21 @@ async (page) => {
         keyHeights: rows.map(node => Math.round(node.getBoundingClientRect().height)),
         keyClasses: rows.map(node => node.className),
         keyTexts: rows.map(node => node.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+        keyLayouts: rows.map(node => {
+          const body = node.querySelector('.path-key-body')
+          const identity = node.querySelector('.path-key-identity')
+          const metrics = node.querySelector('.path-key-meta')
+          const reason = node.querySelector('.path-key-reason')
+          const rect = (element) => element?.getBoundingClientRect()
+          return {
+            body: rect(body),
+            identity: rect(identity),
+            metrics: rect(metrics),
+            reason: rect(reason),
+            endpoint: node.querySelector('.path-key-endpoint')?.textContent?.trim() ?? '',
+            metricLabels: [...node.querySelectorAll('.path-key-metric small')].map(item => item.textContent?.trim() ?? ''),
+          }
+        }),
         keyReasons: rows.map(node => ({
           text: node.querySelector('.path-key-reason')?.textContent?.trim() ?? '',
           present: Boolean(node.querySelector('.path-key-reason')),
@@ -118,6 +133,7 @@ async (page) => {
         })),
         providerBorderStyles: providers.map(node => getComputedStyle(node).borderStyle),
         providerBorderWidths: providers.map(node => getComputedStyle(node).borderTopWidth),
+        providerInnerBorderStyles: providers.map(node => getComputedStyle(node, '::after').borderStyle),
         entryStyle: (() => {
           const style = entry ? getComputedStyle(entry) : null
           return style ? {
@@ -175,6 +191,10 @@ async (page) => {
             label: node.innerText.trim(),
             width: Math.round(linkRect.width),
             lineWidth: Math.round(Number.parseFloat(getComputedStyle(node, '::before').width)),
+            lineHeight: Number.parseFloat(getComputedStyle(node, '::before').height),
+            backgroundImage: getComputedStyle(node, '::before').backgroundImage,
+            animationName: getComputedStyle(node, '::before').animationName,
+            arrowWidth: Number.parseFloat(getComputedStyle(node, '::after').borderTopWidth),
             centerDelta,
           }
         }),
@@ -226,11 +246,17 @@ async (page) => {
     if (trace.links.some(link => Math.abs(link.lineWidth - link.width) > 1 || link.centerDelta > 1)) {
       throw new Error(`${scenario.name}: 连接线未覆盖整个间隔或未居中：${JSON.stringify(trace.links)}`)
     }
+    if (trace.links.some(link => link.lineHeight < 2
+      || link.arrowWidth < 2
+      || !link.backgroundImage.includes('linear-gradient')
+      || !link.animationName.startsWith('path-link-flow'))) {
+      throw new Error(`${scenario.name}: 连接线未呈现高对比流光箭头：${JSON.stringify(trace.links)}`)
+    }
     if (trace.linkGaps.some(gap => Math.abs(gap) > 1)) {
       throw new Error(`${scenario.name}: 路径节点之间未贴合：${JSON.stringify(trace.linkGaps)}`)
     }
     if (!trace.stageBackground?.image.includes('radial-gradient')
-      || trace.stageBackground.size !== '18px 18px') {
+      || !trace.stageBackground.size.startsWith('18px 18px')) {
       throw new Error(`${scenario.name}: 执行路径缺少画布点阵背景：${JSON.stringify(trace.stageBackground)}`)
     }
     if (trace.providerTones.some(item => !item.tone || !item.background)) {
@@ -239,9 +265,10 @@ async (page) => {
     if (new Set(trace.providerTones.map(item => item.background)).size !== trace.providerTones.length) {
       throw new Error(`${scenario.name}: 不同供应商的背景色重复：${JSON.stringify(trace.providerTones)}`)
     }
-    if (trace.providerBorderStyles.some(style => style !== 'dashed')
-      || trace.providerBorderWidths.some(width => Number.parseFloat(width) < 2)) {
-      throw new Error(`${scenario.name}: 供应商框不是中性虚线分组：${JSON.stringify(trace)}`)
+    if (trace.providerBorderStyles.some(style => style !== 'solid')
+      || trace.providerBorderWidths.some(width => Number.parseFloat(width) < 1)
+      || trace.providerInnerBorderStyles.some(style => style !== 'dashed')) {
+      throw new Error(`${scenario.name}: 供应商框不是细实线外框加轻内虚线：${JSON.stringify(trace)}`)
     }
     for (const [name, style] of [['entry', trace.entryStyle], ['response', trace.responseStyle]]) {
       if (!style || style.borderStyle !== 'dashed' || Number.parseFloat(style.borderWidth) < 1
@@ -254,6 +281,14 @@ async (page) => {
         || style.background === 'rgba(0, 0, 0, 0)')
       || !trace.keyProviderGaps || trace.keyProviderGaps.left < 8 || trace.keyProviderGaps.right < 8) {
       throw new Error(`${scenario.name}: 供应商与 Key 的层级样式错误：${JSON.stringify(trace)}`)
+    }
+    if (trace.keyLayouts.some(layout => !layout.body || !layout.identity || !layout.metrics
+      || layout.identity.right > layout.metrics.left
+      || layout.reason && layout.reason.right > layout.body.right + 1
+      || !layout.endpoint
+      || !layout.metricLabels.includes('耗时')
+      || !layout.metricLabels.includes('首字'))) {
+      throw new Error(`${scenario.name}: Key 卡片未形成身份、指标和端点分层：${JSON.stringify(trace.keyLayouts)}`)
     }
     if (new Set([trace.centers.entry, ...trace.centers.providers, trace.centers.response]).size !== 1) {
       throw new Error(`${scenario.name}: 请求入口、供应商与请求结果未垂直居中：${JSON.stringify(trace.centers)}`)
