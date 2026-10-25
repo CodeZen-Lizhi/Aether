@@ -468,6 +468,10 @@ describe('HorizontalRequestTimeline', () => {
 
     expect([...root.querySelectorAll('.path-provider')].map(node => node.getAttribute('data-provider-id')))
       .toEqual(['provider-a', 'provider-b', 'provider-a'])
+    const providerTones = [...root.querySelectorAll<HTMLElement>('.path-provider')]
+      .map(node => node.getAttribute('data-provider-tone'))
+    expect(providerTones).toEqual([providerTones[0], providerTones[1], providerTones[0]])
+    expect(providerTones[0]).not.toBe(providerTones[1])
     expect([...root.querySelectorAll('.waterfall-provider-name')].map(node => node.textContent?.trim()))
       .toEqual(['Provider A', 'Provider B', 'Provider A'])
     expect([...root.querySelectorAll('.attempt-stop')].map(getAttemptId)).toEqual(['a-1', 'b-1', 'a-2'])

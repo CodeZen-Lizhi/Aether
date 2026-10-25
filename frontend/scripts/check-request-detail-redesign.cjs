@@ -102,17 +102,82 @@ async (page) => {
           providerLefts: providers.map(node => node.getBoundingClientRect().left),
           responseLeft: response?.getBoundingClientRect().left ?? -1,
         },
+        stageBackground: (() => {
+          const stage = root.querySelector('.path-stage')
+          if (!stage) return null
+          const style = getComputedStyle(stage)
+          return {
+            image: style.backgroundImage,
+            size: style.backgroundSize,
+          }
+        })(),
+        providerTones: providers.map(node => ({
+          id: node.getAttribute('data-provider-id') ?? '',
+          tone: node.getAttribute('data-provider-tone') ?? '',
+          background: getComputedStyle(node).backgroundColor,
+        })),
         providerBorderStyles: providers.map(node => getComputedStyle(node).borderStyle),
+        providerBorderWidths: providers.map(node => getComputedStyle(node).borderTopWidth),
+        entryStyle: (() => {
+          const style = entry ? getComputedStyle(entry) : null
+          return style ? {
+            borderStyle: style.borderTopStyle,
+            borderWidth: style.borderTopWidth,
+            background: style.backgroundColor,
+          } : null
+        })(),
+        responseStyle: (() => {
+          const style = response ? getComputedStyle(response) : null
+          return style ? {
+            borderStyle: style.borderTopStyle,
+            borderWidth: style.borderTopWidth,
+            background: style.backgroundColor,
+          } : null
+        })(),
+        providerLabelBackground: (() => {
+          const label = root.querySelector('.path-provider-label')
+          return label ? getComputedStyle(label).backgroundColor : ''
+        })(),
+        keyStyles: rows.map(node => {
+          const style = getComputedStyle(node)
+          return {
+            borderStyle: style.borderTopStyle,
+            background: style.backgroundColor,
+          }
+        }),
+        keyProviderGaps: (() => {
+          const provider = providers[0]
+          const key = provider?.querySelector('.path-key')
+          if (!provider || !key) return null
+          const providerRect = provider.getBoundingClientRect()
+          const keyRect = key.getBoundingClientRect()
+          return {
+            left: Math.round(keyRect.left - providerRect.left),
+            right: Math.round(providerRect.right - keyRect.right),
+          }
+        })(),
         keyHopCount: root.querySelectorAll('.path-key-hop').length,
         keyHopColor: (() => {
           const hop = root.querySelector('.path-key-hop')
           return hop ? getComputedStyle(hop, '::before').backgroundColor : ''
         })(),
-        links: [...root.querySelectorAll('.path-link')].map(node => ({
-          label: node.innerText.trim(),
-          width: Math.round(node.getBoundingClientRect().width),
-          lineWidth: Math.round(Number.parseFloat(getComputedStyle(node, '::before').width)),
-        })),
+        links: [...root.querySelectorAll('.path-link')].map(node => {
+          const linkRect = node.getBoundingClientRect()
+          const previousRect = node.previousElementSibling?.getBoundingClientRect()
+          const nextRect = node.nextElementSibling?.getBoundingClientRect()
+          const linkCenter = (linkRect.top + linkRect.bottom) / 2
+          const centerDelta = previousRect && nextRect
+            ? Math.round(Math.abs(linkCenter - (
+              (previousRect.top + previousRect.bottom + nextRect.top + nextRect.bottom) / 4
+            )))
+            : -1
+          return {
+            label: node.innerText.trim(),
+            width: Math.round(linkRect.width),
+            lineWidth: Math.round(Number.parseFloat(getComputedStyle(node, '::before').width)),
+            centerDelta,
+          }
+        }),
         linkGaps: (() => {
           const stage = root.querySelector('.path-stage')
           const nodes = [...stage.children].map(node => node.getBoundingClientRect())
@@ -158,11 +223,37 @@ async (page) => {
     if (trace.links.some(link => link.label)) {
       throw new Error(`${scenario.name}: 连接线仍包含文字：${JSON.stringify(trace.links)}`)
     }
+    if (trace.links.some(link => Math.abs(link.lineWidth - link.width) > 1 || link.centerDelta > 1)) {
+      throw new Error(`${scenario.name}: 连接线未覆盖整个间隔或未居中：${JSON.stringify(trace.links)}`)
+    }
     if (trace.linkGaps.some(gap => Math.abs(gap) > 1)) {
       throw new Error(`${scenario.name}: 路径节点之间未贴合：${JSON.stringify(trace.linkGaps)}`)
     }
-    if (trace.providerBorderStyles.some(style => style !== 'dashed')) {
+    if (!trace.stageBackground?.image.includes('radial-gradient')
+      || trace.stageBackground.size !== '18px 18px') {
+      throw new Error(`${scenario.name}: 执行路径缺少画布点阵背景：${JSON.stringify(trace.stageBackground)}`)
+    }
+    if (trace.providerTones.some(item => !item.tone || !item.background)) {
+      throw new Error(`${scenario.name}: 供应商缺少身份色调或背景色：${JSON.stringify(trace.providerTones)}`)
+    }
+    if (new Set(trace.providerTones.map(item => item.background)).size !== trace.providerTones.length) {
+      throw new Error(`${scenario.name}: 不同供应商的背景色重复：${JSON.stringify(trace.providerTones)}`)
+    }
+    if (trace.providerBorderStyles.some(style => style !== 'dashed')
+      || trace.providerBorderWidths.some(width => Number.parseFloat(width) < 2)) {
       throw new Error(`${scenario.name}: 供应商框不是中性虚线分组：${JSON.stringify(trace)}`)
+    }
+    for (const [name, style] of [['entry', trace.entryStyle], ['response', trace.responseStyle]]) {
+      if (!style || style.borderStyle !== 'dashed' || Number.parseFloat(style.borderWidth) < 1
+        || style.background === 'rgba(0, 0, 0, 0)') {
+        throw new Error(`${scenario.name}: 请求${name === 'entry' ? '入口' : '结果'}卡片不可见：${JSON.stringify(style)}`)
+      }
+    }
+    if (trace.providerLabelBackground === 'rgba(0, 0, 0, 0)'
+      || trace.keyStyles.some(style => style.borderStyle !== 'solid'
+        || style.background === 'rgba(0, 0, 0, 0)')
+      || !trace.keyProviderGaps || trace.keyProviderGaps.left < 8 || trace.keyProviderGaps.right < 8) {
+      throw new Error(`${scenario.name}: 供应商与 Key 的层级样式错误：${JSON.stringify(trace)}`)
     }
     if (new Set([trace.centers.entry, ...trace.centers.providers, trace.centers.response]).size !== 1) {
       throw new Error(`${scenario.name}: 请求入口、供应商与请求结果未垂直居中：${JSON.stringify(trace.centers)}`)
@@ -173,6 +264,9 @@ async (page) => {
     }
     if (trace.scroll.overflowX !== 'auto') {
       throw new Error(`${scenario.name}: 路径容器未使用内部横向滚动：${JSON.stringify(trace.scroll)}`)
+    }
+    if (trace.providerIds.length === 1 && trace.scroll.scrollWidth > trace.scroll.clientWidth + 1) {
+      throw new Error(`${scenario.name}: 单供应商在桌面宽度不应产生内部横向滚动：${JSON.stringify(trace.scroll)}`)
     }
 
     if (scenario.name === 'multi-provider') {

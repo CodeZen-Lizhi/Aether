@@ -50,7 +50,9 @@
 
             <section
               class="path-provider provider-record"
+              :class="`path-provider--tone-${round.colorTone}`"
               :data-provider-id="round.providerId"
+              :data-provider-tone="round.colorTone"
               :aria-label="`供应商 ${round.order} ${round.providerName}`"
             >
               <header class="path-provider-label">
@@ -269,6 +271,8 @@ interface ProviderRound {
   /** 供应商标题中展示的稳定两位序号。 */
   order: string
   providerName: string
+  /** 供应商固定背景色调索引，同一供应商身份在不同刷新和重排中保持一致。 */
+  colorTone: number
   attempts: CandidateRecord[]
   attemptIndexes: number[]
   firstAttemptIndex: number
@@ -402,6 +406,7 @@ const pathTimeline = computed<CandidateRecord[]>(() => (
 const providerRounds = computed<ProviderRound[]>(() => {
   const rounds: ProviderRound[] = []
   let activeProviderId: string | null = null
+  const colorToneByProvider = new Map<string, number>()
 
   pathTimeline.value.forEach((attempt, attemptIndex) => {
     const providerId = String(attempt.provider_id || attempt.provider_name || '__unknown__')
@@ -414,11 +419,15 @@ const providerRounds = computed<ProviderRound[]>(() => {
     }
 
     activeProviderId = providerId
+    const existingTone = colorToneByProvider.get(providerId)
+    const colorTone = existingTone ?? colorToneByProvider.size % 6
+    if (existingTone == null) colorToneByProvider.set(providerId, colorTone)
     rounds.push({
       providerId,
       nodeKey: `${providerId}@${rounds.length}`,
       order: String(rounds.length + 1).padStart(2, '0'),
       providerName: getProviderDisplayName(attempt),
+      colorTone,
       attempts: [attempt],
       attemptIndexes: [attemptIndex],
       firstAttemptIndex: attemptIndex,
@@ -548,13 +557,13 @@ const responseStatusText = computed(() => {
 /** 方框与连线使用不同比例列，单个/两个供应商优先铺满，更多供应商才内部滚动。 */
 const pathGridTemplate = computed(() => {
   const providerColumns = providerRounds.value.flatMap(() => (
-    'minmax(24px, 0.32fr) minmax(180px, 1fr)'
+    'minmax(32px, 0.45fr) minmax(220px, 1.55fr)'
   ))
   return [
-    'minmax(140px, 0.8fr)',
+    'minmax(140px, 0.9fr)',
     ...providerColumns,
-    'minmax(24px, 0.32fr)',
-    'minmax(140px, 0.8fr)',
+    'minmax(32px, 0.45fr)',
+    'minmax(140px, 0.9fr)',
   ].join(' ')
 })
 
@@ -1418,22 +1427,22 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 
 .is-dark .minimal-request-timeline {
   --path-success: #4ade80;
-  --path-success-soft: color-mix(in srgb, #166534 42%, hsl(var(--card)));
+  --path-success-soft: color-mix(in srgb, #166534 42%, var(--card));
   --path-success-border: #22c55e;
   --path-failed: #f87171;
-  --path-failed-soft: color-mix(in srgb, #991b1b 35%, hsl(var(--card)));
+  --path-failed-soft: color-mix(in srgb, #991b1b 35%, var(--card));
   --path-failed-border: #ef4444;
   --path-pending: #60a5fa;
-  --path-pending-soft: color-mix(in srgb, #1e40af 32%, hsl(var(--card)));
+  --path-pending-soft: color-mix(in srgb, #1e40af 32%, var(--card));
   --path-pending-border: #3b82f6;
 }
 
 .execution-waterfall {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid hsl(var(--border) / 0.6);
-  border-radius: 0.75rem;
-  background: hsl(var(--card) / 0.6);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .execution-waterfall--loading { padding: 0.7rem; }
 .execution-waterfall--error { padding: 0.8rem 1rem; color: var(--destructive); font-size: 0.75rem; }
@@ -1453,37 +1462,44 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   display: grid;
   align-items: center;
   width: 100%;
-  min-width: max-content;
+  min-width: min-content;
   max-width: 100%;
   padding: 11px 10px 10px;
+  background-color: color-mix(in srgb, var(--card) 96%, transparent);
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, var(--muted-foreground) 15%, transparent) 1px,
+    transparent 0
+  );
+  background-size: 18px 18px;
 }
 .path-node,
 .path-provider { min-width: 0; }
 .path-node {
   display: flex;
-  min-height: 64px;
+  min-height: 72px;
   flex-direction: column;
   justify-content: center;
   gap: 5px;
-  padding: 11px 12px;
-  border: 1px dashed hsl(var(--border));
-  border-radius: 12px;
-  background: hsl(var(--card));
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 13px;
+  background: var(--card);
 }
-.path-entry { border-color: color-mix(in srgb, var(--primary) 32%, hsl(var(--border))); }
-.path-stage--success .path-entry { border-color: color-mix(in srgb, var(--path-success) 35%, hsl(var(--border))); }
-.path-stage--failed .path-entry { border-color: color-mix(in srgb, var(--path-failed) 35%, hsl(var(--border))); }
-.path-stage--pending .path-entry { border-color: color-mix(in srgb, var(--path-pending) 35%, hsl(var(--border))); }
-.path-node-kicker { color: var(--muted-foreground); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
+.path-entry { border-color: color-mix(in srgb, var(--primary) 42%, var(--border)); }
+.path-stage--success .path-entry { border-color: color-mix(in srgb, var(--path-success) 48%, var(--border)); }
+.path-stage--failed .path-entry { border-color: color-mix(in srgb, var(--path-failed) 48%, var(--border)); }
+.path-stage--pending .path-entry { border-color: color-mix(in srgb, var(--path-pending) 48%, var(--border)); }
+.path-node-kicker { color: var(--muted-foreground); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
 .path-entry-line { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
-.path-method { flex: none; color: var(--primary); font-family: var(--monospace); font-size: 10px; font-weight: 700; }
+.path-method { flex: none; color: var(--primary); font-family: var(--monospace); font-size: 11px; font-weight: 700; }
 .path-stage--success .path-method { color: var(--path-success); }
 .path-stage--failed .path-method { color: var(--path-failed); }
 .path-stage--pending .path-method { color: var(--path-pending); }
-.path-endpoint { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.path-endpoint { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .path-link { position: relative; display: flex; min-width: 28px; align-items: center; align-self: center; justify-content: center; height: 32px; }
-.path-link::before { width: 100%; height: 1.5px; background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 16%, transparent), color-mix(in srgb, var(--foreground) 40%, transparent) 72%, color-mix(in srgb, var(--foreground) 60%, transparent)); content: ''; }
-.path-link::after { position: absolute; right: 0; width: 6px; height: 6px; border-top: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); border-right: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); content: ''; transform: rotate(45deg); }
+.path-link::before { flex: 0 0 100%; width: 100%; height: 1.5px; background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 16%, transparent), color-mix(in srgb, var(--foreground) 40%, transparent) 72%, color-mix(in srgb, var(--foreground) 60%, transparent)); content: ''; }
+.path-link::after { position: absolute; right: -1px; width: 6px; height: 6px; border-top: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); border-right: 1.5px solid color-mix(in srgb, var(--foreground) 60%, transparent); content: ''; transform: rotate(45deg); }
 .path-link--out::before { background: var(--path-success); box-shadow: 0 0 7px color-mix(in srgb, var(--path-success) 18%, transparent); }
 .path-link--out::after { border-color: var(--path-success); }
 .path-stage--failed .path-link--out::before { background: var(--path-failed); box-shadow: none; }
@@ -1491,18 +1507,43 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-stage--pending .path-link--out::before { background: var(--path-pending); box-shadow: none; }
 .path-stage--pending .path-link--out::after { border-color: var(--path-pending); }
 .path-provider {
+  --provider-tone-border: color-mix(in srgb, var(--foreground) 68%, transparent);
+  --provider-tone-fill: color-mix(in srgb, var(--card) 76%, transparent);
   position: relative;
-  padding: 20px 6px 6px;
-  border-width: 1.5px;
+  padding: 27px 10px 10px;
+  border-width: 2px;
   border-style: dashed;
-  border-color: color-mix(in srgb, var(--primary) 24%, hsl(var(--border)));
+  border-color: var(--provider-tone-border);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--primary) 4%, hsl(var(--card)));
+  background: var(--provider-tone-fill);
 }
-.path-provider-label { position: absolute; top: -10px; left: 13px; display: inline-flex; max-width: calc(100% - 26px); align-items: baseline; gap: 4px; padding: 0 7px; background: hsl(var(--card)); font-size: 10px; line-height: 1.8; white-space: nowrap; }
-.path-provider-label::after { position: absolute; inset: 1px -1px auto; height: 1px; background: hsl(var(--card)); content: ''; }
-.waterfall-provider-order { color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.61rem; }
-.waterfall-provider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.74rem; font-weight: 600; }
+.path-provider--tone-0 {
+  --provider-tone-border: color-mix(in srgb, #8b5cf6 54%, var(--foreground));
+  --provider-tone-fill: color-mix(in srgb, #f5f3ff 72%, var(--card));
+}
+.path-provider--tone-1 {
+  --provider-tone-border: color-mix(in srgb, #0d9488 54%, var(--foreground));
+  --provider-tone-fill: color-mix(in srgb, #f0fdfa 72%, var(--card));
+}
+.path-provider--tone-2 {
+  --provider-tone-border: color-mix(in srgb, #2563eb 54%, var(--foreground));
+  --provider-tone-fill: color-mix(in srgb, #eff6ff 72%, var(--card));
+}
+.path-provider--tone-3 {
+  --provider-tone-border: color-mix(in srgb, #d97706 54%, var(--foreground));
+  --provider-tone-fill: color-mix(in srgb, #fffbeb 72%, var(--card));
+}
+.path-provider--tone-4 {
+  --provider-tone-border: color-mix(in srgb, #db2777 54%, var(--foreground));
+  --provider-tone-fill: color-mix(in srgb, #fdf2f8 72%, var(--card));
+}
+.path-provider--tone-5 {
+  --provider-tone-border: color-mix(in srgb, #059669 54%, var(--foreground));
+  --provider-tone-fill: color-mix(in srgb, #ecfdf5 72%, var(--card));
+}
+.path-provider-label { position: absolute; top: -12px; left: 18px; display: inline-flex; max-width: calc(100% - 36px); align-items: baseline; gap: 6px; padding: 1px 8px; background: var(--card); font-size: 11px; line-height: 1.7; white-space: nowrap; }
+.waterfall-provider-order { color: var(--foreground); font-family: var(--monospace); font-size: 9px; font-weight: 700; }
+.waterfall-provider-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
 .path-key-stack { display: grid; min-width: 0; }
 .path-key {
   display: block;
@@ -1511,9 +1552,9 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
   min-width: 0;
   overflow: hidden;
   padding: 0;
-  border: 1px solid hsl(var(--border));
-  border-radius: 11px;
-  background: hsl(var(--card));
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--card);
   box-shadow: 0 3px 10px -8px color-mix(in srgb, var(--foreground) 35%, transparent);
   contain: inline-size;
   color: var(--foreground);
@@ -1523,7 +1564,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-key--failed { border-color: var(--path-failed-border); }
 .path-key--success { border-color: var(--path-success-border); box-shadow: 0 0 0 3px color-mix(in srgb, var(--path-success) 8%, transparent); }
 .path-key--pending { border-color: var(--path-pending-border); }
-.path-key:focus-visible { outline: 1.5px solid hsl(var(--ring) / 0.55); outline-offset: 2px; }
+.path-key:focus-visible { outline: 1.5px solid color-mix(in srgb, var(--ring) 55%, transparent); outline-offset: 2px; }
 .path-key-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 9px; background: color-mix(in srgb, var(--muted) 62%, transparent); }
 .path-key--failed .path-key-head { background: var(--path-failed-soft); }
 .path-key--success .path-key-head { background: var(--path-success-soft); }
@@ -1544,26 +1585,26 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-key-hop { position: relative; display: block; min-height: 26px; }
 .path-key-hop::before { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--path-failed); content: ''; }
 .path-key-hop::after { position: absolute; bottom: 0; left: calc(50% - 3px); width: 6px; height: 6px; border-right: 1px solid var(--path-failed); border-bottom: 1px solid var(--path-failed); content: ''; transform: rotate(45deg); }
-.path-response { border-color: color-mix(in srgb, var(--path-success) 35%, hsl(var(--border))); }
-.path-response--failed { border-color: color-mix(in srgb, var(--path-failed) 35%, hsl(var(--border))); }
-.path-response--pending { border-color: color-mix(in srgb, var(--path-pending) 35%, hsl(var(--border))); }
+.path-response { border-color: color-mix(in srgb, var(--path-success) 48%, var(--border)); }
+.path-response--failed { border-color: color-mix(in srgb, var(--path-failed) 48%, var(--border)); }
+.path-response--pending { border-color: color-mix(in srgb, var(--path-pending) 48%, var(--border)); }
 .path-response-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
 .path-response-status { flex: none; color: var(--path-success); font-family: var(--monospace); font-size: 11px; font-weight: 700; }
 .path-response--failed .path-response-status { color: var(--path-failed); }
 .path-response--pending .path-response-status { color: var(--path-pending); }
 .path-response-total { display: flex; min-width: 0; align-items: baseline; gap: 4px; color: var(--muted-foreground); font-size: 9px; }
 .path-response-total b { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.waterfall-detail { min-width: 0; margin: 0; padding: 0.72rem 0.9rem 0.8rem; border-top: 1px solid hsl(var(--border) / 0.52); background: transparent; }
+.waterfall-detail { min-width: 0; margin: 0; padding: 0.72rem 0.9rem 0.8rem; border-top: 1px solid color-mix(in srgb, var(--border) 52%, transparent); background: transparent; }
 .waterfall-detail-facts { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 0.38rem 1.15rem; margin: 0; }
 .waterfall-detail-facts > div { display: inline-flex; min-width: 0; align-items: baseline; gap: 0.34rem; }
 .waterfall-detail-facts dt { flex: none; color: var(--muted-foreground); font-size: 0.62rem; }
 .waterfall-detail-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; font-weight: 500; }
 .waterfall-time-arrow { margin: 0 0.2rem; color: var(--muted-foreground); }
 
-.image-progress-block { margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid hsl(var(--border) / 0.7); }
+.image-progress-block { margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
 .image-progress-header { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; margin-bottom: 0.55rem; }
 .image-progress-title { font-size: 0.65rem; font-weight: 600; }
-.image-progress-phase { padding: 0.1rem 0.35rem; border: 1px solid hsl(var(--border)); border-radius: 99px; font-size: 0.58rem; }
+.image-progress-phase { padding: 0.1rem 0.35rem; border: 1px solid var(--border); border-radius: 99px; font-size: 0.58rem; }
 .image-progress-phase.phase-connecting, .image-progress-phase.phase-streaming { color: #3978b8; }
 .image-progress-phase.phase-completed { color: #278461; }
 .image-progress-phase.phase-failed { color: #c14b4b; }
@@ -1572,17 +1613,30 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .image-progress-item.full-width { grid-column: 1 / -1; }
 .image-progress-label { color: var(--muted-foreground); font-size: 0.56rem; }
 .image-progress-value { font-size: 0.65rem; font-weight: 500; }
-.image-progress-code { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.08rem 0.25rem; border-radius: 0.2rem; background: hsl(var(--muted) / 0.65); color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.65rem; }
+.image-progress-code { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.08rem 0.25rem; border-radius: 0.2rem; background: color-mix(in srgb, var(--muted) 65%, transparent); color: var(--muted-foreground); font-family: var(--monospace); font-size: 0.65rem; }
 
-.usage-section { display: flex; flex-wrap: wrap; gap: 0.4rem 0.85rem; margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid hsl(var(--border) / 0.7); }
+.usage-section { display: flex; flex-wrap: wrap; gap: 0.4rem 0.85rem; margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
 .usage-label { color: var(--muted-foreground); font-size: 0.6rem; }
 .mono { font-family: var(--monospace); font-variant-numeric: tabular-nums; }
 
 /* 深色主题通过组件主题类应用同一语义状态色，避免 scoped :global 裁掉后代选择器。 */
-.is-dark .execution-waterfall { background: hsl(var(--card) / 0.7); }
-.is-dark .path-key--failed .path-key-head { background: color-mix(in srgb, #991b1b 35%, hsl(var(--card))); }
-.is-dark .path-key--success .path-key-head { background: color-mix(in srgb, #166534 42%, hsl(var(--card))); }
-.is-dark .path-key--pending .path-key-head { background: color-mix(in srgb, #1e40af 32%, hsl(var(--card))); }
+.is-dark .path-key--failed .path-key-head { background: color-mix(in srgb, #991b1b 35%, var(--card)); }
+.is-dark .path-key--success .path-key-head { background: color-mix(in srgb, #166534 42%, var(--card)); }
+.is-dark .path-key--pending .path-key-head { background: color-mix(in srgb, #1e40af 32%, var(--card)); }
+.is-dark .path-stage {
+  background-color: color-mix(in srgb, var(--card) 94%, transparent);
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, var(--foreground) 18%, transparent) 1px,
+    transparent 0
+  );
+}
+.is-dark .path-provider--tone-0 { --provider-tone-fill: color-mix(in srgb, #4c1d95 28%, var(--card)); }
+.is-dark .path-provider--tone-1 { --provider-tone-fill: color-mix(in srgb, #134e4a 28%, var(--card)); }
+.is-dark .path-provider--tone-2 { --provider-tone-fill: color-mix(in srgb, #1e3a8a 28%, var(--card)); }
+.is-dark .path-provider--tone-3 { --provider-tone-fill: color-mix(in srgb, #78350f 28%, var(--card)); }
+.is-dark .path-provider--tone-4 { --provider-tone-fill: color-mix(in srgb, #831843 28%, var(--card)); }
+.is-dark .path-provider--tone-5 { --provider-tone-fill: color-mix(in srgb, #064e3b 28%, var(--card)); }
 @media (prefers-reduced-motion: reduce) {
   .path-key { transition: none; }
 }
