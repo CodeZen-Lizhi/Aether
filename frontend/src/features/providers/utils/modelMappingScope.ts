@@ -111,9 +111,7 @@ export function modelMappingRequestScopeOptions(
     })
   }
   const currentValue = modelMappingRequestScopeValue(operations)
-  const compactScopeUnavailable = currentValue === COMPACT_REQUEST_SCOPE_VALUE
-    && !capabilities.sessionCompaction
-  if (!compactScopeUnavailable && !options.some(option => option.value === currentValue)) {
+  if (!options.some(option => option.value === currentValue)) {
     options.push({
       value: currentValue,
       label: formatModelMappingRequestScope(operations, labels),

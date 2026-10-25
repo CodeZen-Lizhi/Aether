@@ -2,7 +2,7 @@
   <Dialog
     :model-value="open"
     title="批量添加模型映射"
-    description="选择客户端模型，查看并修改默认范围映射"
+    description="选择客户端模型，查看并修改模型映射"
     :icon="Tags"
     size="5xl"
     :no-padding="true"
@@ -129,7 +129,7 @@
                 {{ loadingUpstream
                   ? '正在加载提供商模型'
                   : selectedClientId
-                    ? '可多选；已配置的默认范围映射会在这里回显，可直接修改。'
+                    ? '可多选；已配置的模型映射会在这里回显，可直接修改。'
                     : '选择客户端模型后即可多选。' }}
               </p>
             </div>
@@ -167,9 +167,6 @@
               </div>
             </div>
 
-            <p class="border-t border-[var(--color-border)] pt-4 text-xs text-muted-foreground">
-              默认作用于全部端点和请求
-            </p>
           </div>
         </section>
 
@@ -186,7 +183,7 @@
                 映射列表
               </h2>
               <p class="mt-1 text-xs text-muted-foreground">
-                默认范围映射会在保存时更新。
+                模型映射会在保存时更新。
               </p>
             </div>
             <label class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
@@ -262,7 +259,7 @@
                 v-else
                 class="mt-3 text-xs text-muted-foreground"
               >
-                默认范围映射已清空
+                模型映射已清空
               </p>
             </article>
 
@@ -275,7 +272,7 @@
                 aria-hidden="true"
               />
               <p class="text-sm">
-                {{ showOnlyChanged ? '暂无待保存的映射更改' : '暂无默认范围映射' }}
+                {{ showOnlyChanged ? '暂无待保存的映射更改' : '暂无模型映射' }}
               </p>
               <p class="mt-1 text-xs">
                 {{ showOnlyChanged ? '修改任意客户端模型后，它会出现在这里。' : '选择客户端模型并添加供应商模型，映射会显示在这里。' }}
@@ -552,6 +549,7 @@ function hasScopeValues(values?: string[]): boolean {
   return Array.isArray(values) && values.length > 0
 }
 
+// 批量编辑只为全范围映射生成草稿；旧记录中的特殊范围项原样保留。
 function isDefaultScopeMapping(mapping: ProviderModelMapping): boolean {
   return !hasScopeValues(mapping.api_formats)
     && !hasScopeValues(mapping.endpoint_ids)
@@ -613,7 +611,9 @@ async function fetchUpstreamModels(forceRefresh = false) {
   feedback.value = null
   try {
     const result = await fetchCachedModels(props.providerId, undefined, forceRefresh)
-    upstreamModels.value = result.models
+    if (!result.error) {
+      upstreamModels.value = result.models
+    }
     if (result.warning) {
       feedback.value = {
         title: '获取提供商模型提示',

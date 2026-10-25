@@ -145,6 +145,18 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
+## Convention: 模型映射统一使用全部端点、全部请求与上游刷新
+
+**What**: 供应商详情中的精确模型映射统一作用于全部端点和全部请求。单条编辑、批量映射及映射列表均不提供或展示端点/请求范围，也不展示“全部端点”“全部请求”等默认徽标；页面不把请求区分为普通请求和会话压缩。前端保存映射时仅写 `name` 与 `priority`，省略 `endpoint_ids` 和 `operations`，由未改动的后端契约按全范围解释。
+
+**Refresh**: 单条编辑和批量映射首次获取上游模型时允许使用后端缓存；用户点击刷新必须传入 `forceRefresh=true` 跳过缓存，并用最新成功响应更新当前模型列表。刷新失败沿用现有完整错误提示，不伪造成功或清空草稿。
+
+**Why**: 当前所有实际精确映射均使用全范围，范围选择与展示没有业务价值；手动刷新则表达用户重新查询上游的明确意图，与首次打开的缓存优化语义不同。
+
+**Verification**: `ModelMappingDialog.spec.ts` 覆盖首次缓存读取、手动强制刷新、新模型回显，并断言范围控件与“仅会话压缩”不出现、保存映射载荷不含 `endpoint_ids` 和 `operations`；`ModelMappingTab` 与 `BatchModelMappingDialog` 测试断言列表和批量界面不展示范围信息。需要浏览器核对的改动应在落地时检查表单布局和操作可达性；这些检查不代替真实上游接口的可用性。
+
+---
+
 ## Convention: 供应商列表排序口径与调度策略对齐
 
 **What**: 供应商管理列表（`views/admin/ProviderManagement.vue`）的排序固定为三级：启用状态（启用在前）→ 调度优先级升序 → `created_at` 升序兜底。优先级只读系统默认分组：`listRoutingGroups()` → `findSystemDefaultRoutingGroup` → `parseSchedulingStrategy(group?.config_json).providerPriorities`（1 起越小越靠前），未配置的供应商用 `Number.MAX_SAFE_INTEGER` 缀尾。排序实现抽在 `features/providers/utils/providerPrioritySort.ts` 纯函数（含单测），桌面表格与移动端卡片共用同一 computed。

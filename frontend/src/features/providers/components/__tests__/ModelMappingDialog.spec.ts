@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref, type App } from 'vue'
 
 import ModelMappingDialog, { type AliasGroup } from '../ModelMappingDialog.vue'
-import type { Model, ProviderEndpoint } from '@/api/endpoints'
+import type { Model } from '@/api/endpoints'
 import { updateModel } from '@/api/endpoints/models'
 
 const upstreamModelMocks = vi.hoisted(() => ({
@@ -48,31 +48,6 @@ vi.mock('@/components/ui', async () => {
     SelectItem: passthrough('SelectItemStub'),
     SelectTrigger: passthrough('SelectTriggerStub'),
     SelectValue: passthrough('SelectValueStub', 'span'),
-  }
-})
-
-vi.mock('@/components/common/MultiSelect.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-  return {
-    default: defineComponent({
-      name: 'MultiSelectStub',
-      props: {
-        modelValue: { type: Array, default: () => [] },
-        options: { type: Array, default: () => [] },
-      },
-      emits: ['update:modelValue'],
-      setup(props, { emit }) {
-        return () => h('div', (props.options as Array<{ value: string, label: string }>).map(option => h(
-          'button',
-          {
-            type: 'button',
-            'data-endpoint-id': option.value,
-            onClick: () => emit('update:modelValue', [option.value]),
-          },
-          option.label,
-        )))
-      },
-    }),
   }
 })
 
@@ -153,22 +128,122 @@ describe('ModelMappingDialog', () => {
     mountedApps.push({ app, root })
 
     await vi.waitFor(() => expect(upstreamModelMocks.fetchModels).toHaveBeenCalledTimes(1))
-    expect(upstreamModelMocks.fetchModels).toHaveBeenCalledWith('provider-1')
+    expect(upstreamModelMocks.fetchModels).toHaveBeenCalledWith('provider-1', undefined, false)
   })
 
-  it('offers session compaction only for an explicitly selected Responses endpoint', async () => {
-    const chatEndpoint = {
-      id: 'endpoint-chat',
-      api_format: 'openai:chat',
-      base_url: 'https://api.example.com/v1',
-      is_active: true,
-    } as ProviderEndpoint
-    const responsesEndpoint = {
-      id: 'endpoint-responses',
-      api_format: 'openai:responses',
-      base_url: 'https://api.example.com/v1',
-      is_active: true,
-    } as ProviderEndpoint
+  it('bypasses the cache and renders the latest models after a manual refresh', async () => {
+    upstreamModelMocks.fetchModels
+      .mockResolvedValueOnce({ models: [{ id: 'upstream-before' }] })
+      .mockResolvedValueOnce({ models: [{ id: 'upstream-after' }] })
+    const model = {
+      id: 'model-1',
+      provider_model_name: 'provider-model-1',
+      provider_model_mappings: [],
+    } as unknown as Model
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(defineComponent({
+      setup() {
+        return () => h(ModelMappingDialog, {
+          open: true,
+          providerId: 'provider-1',
+          models: [model],
+          hasAutoFetchKey: true,
+        })
+      },
+    }))
+    app.mount(root)
+    mountedApps.push({ app, root })
+
+    await vi.waitFor(() => {
+      expect(root.querySelector<HTMLButtonElement>('[title="刷新上游模型"]')).not.toBeNull()
+    })
+    root.querySelector<HTMLButtonElement>('[title="刷新上游模型"]')!.click()
+
+    await vi.waitFor(() => expect(root.textContent).toContain('upstream-after'))
+    expect(upstreamModelMocks.fetchModels).toHaveBeenNthCalledWith(1, 'provider-1', undefined, false)
+    expect(upstreamModelMocks.fetchModels).toHaveBeenNthCalledWith(2, 'provider-1', undefined, true)
+  })
+
+  it('replaces stale upstream models when a successful refresh returns an empty list', async () => {
+    upstreamModelMocks.fetchModels
+      .mockResolvedValueOnce({ models: [{ id: 'upstream-before' }] })
+      .mockResolvedValueOnce({ models: [] })
+    const model = {
+      id: 'model-1',
+      provider_model_name: 'provider-model-1',
+      provider_model_mappings: [],
+    } as unknown as Model
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(defineComponent({
+      setup() {
+        return () => h(ModelMappingDialog, {
+          open: true,
+          providerId: 'provider-1',
+          models: [model],
+          hasAutoFetchKey: true,
+        })
+      },
+    }))
+    app.mount(root)
+    mountedApps.push({ app, root })
+
+    await vi.waitFor(() => expect(root.textContent).toContain('upstream-before'))
+    root.querySelector<HTMLButtonElement>('[title="刷新上游模型"]')!.click()
+
+    await vi.waitFor(() => expect(root.textContent).not.toContain('upstream-before'))
+    expect(root.textContent).toContain('暂无可选模型')
+  })
+
+  it('keeps the previous models and draft when a manual refresh fails', async () => {
+    upstreamModelMocks.fetchModels
+      .mockResolvedValueOnce({ models: [{ id: 'upstream-before' }] })
+      .mockResolvedValueOnce({ models: [], error: 'upstream refresh failed' })
+    const model = {
+      id: 'model-1',
+      provider_model_name: 'provider-model-1',
+      provider_model_mappings: [{ name: 'selected-before', priority: 1 }],
+    } as unknown as Model
+    const editingGroup: AliasGroup = {
+      model,
+      apiFormatsKey: '',
+      apiFormats: [],
+      endpointIdsKey: '',
+      endpointIds: [],
+      operationsKey: '',
+      operations: [],
+      aliases: model.provider_model_mappings ?? [],
+    }
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(defineComponent({
+      setup() {
+        return () => h(ModelMappingDialog, {
+          open: true,
+          providerId: 'provider-1',
+          models: [model],
+          editingGroup,
+          hasAutoFetchKey: true,
+        })
+      },
+    }))
+    app.mount(root)
+    mountedApps.push({ app, root })
+
+    await vi.waitFor(() => expect(root.textContent).toContain('upstream-before'))
+    root.querySelector<HTMLButtonElement>('[title="刷新上游模型"]')!.click()
+
+    await vi.waitFor(() => expect(upstreamModelMocks.fetchModels).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => {
+      expect(root.querySelector<HTMLButtonElement>('[title="刷新上游模型"]')!.disabled).toBe(false)
+    })
+    expect(root.textContent).toContain('upstream-before')
+    expect(root.textContent).toContain('selected-before')
+    expect(root.textContent).toContain('已选 1 个')
+  })
+
+  it('hides all endpoint and request scope controls', async () => {
     const model = {
       id: 'model-sol',
       provider_model_name: 'gpt-5.6-sol',
@@ -183,7 +258,6 @@ describe('ModelMappingDialog', () => {
         return () => h(ModelMappingDialog, {
           open: open.value,
           providerId: 'provider-1',
-          endpoints: [chatEndpoint, responsesEndpoint],
           models: [model],
           preselectedModelId: model.id,
           'onUpdate:open': (value: boolean) => { open.value = value },
@@ -197,96 +271,14 @@ describe('ModelMappingDialog', () => {
     await nextTick()
     await nextTick()
 
-    expect(root.textContent).toContain('所有请求')
+    expect(root.textContent).not.toContain('适用端点')
+    expect(root.textContent).not.toContain('适用请求')
+    expect(root.textContent).not.toContain('全部端点')
+    expect(root.textContent).not.toContain('全部请求')
     expect(root.textContent).not.toContain('仅会话压缩')
-
-    root.querySelector<HTMLButtonElement>('[data-endpoint-id="endpoint-chat"]')?.click()
-    await nextTick()
-    expect(root.textContent).not.toContain('仅会话压缩')
-
-    root.querySelector<HTMLButtonElement>('[data-endpoint-id="endpoint-responses"]')?.click()
-    await nextTick()
-    expect(root.textContent).toContain('仅会话压缩')
   })
 
-  it('returns to all requests when a compact mapping switches away from Responses', async () => {
-    const responsesEndpoint = {
-      id: 'endpoint-responses',
-      api_format: 'openai:responses',
-      base_url: 'https://api.example.com/v1',
-      is_active: true,
-    } as ProviderEndpoint
-    const chatEndpoint = {
-      id: 'endpoint-chat',
-      api_format: 'openai:chat',
-      base_url: 'https://api.example.com/v1',
-      is_active: true,
-    } as ProviderEndpoint
-    const model = {
-      id: 'model-sol',
-      provider_model_name: 'gpt-5.6-sol',
-      global_model_display_name: 'GPT-5.6 Sol',
-      provider_model_mappings: [{
-        name: 'gpt-5.6-luna',
-        priority: 1,
-        endpoint_ids: [responsesEndpoint.id],
-        operations: ['compact'],
-      }],
-    } as unknown as Model
-    const editingGroup: AliasGroup = {
-      model,
-      apiFormatsKey: '',
-      apiFormats: [],
-      endpointIdsKey: responsesEndpoint.id,
-      endpointIds: [responsesEndpoint.id],
-      operationsKey: 'compact',
-      operations: ['compact'],
-      aliases: model.provider_model_mappings ?? [],
-    }
-    const open = ref(false)
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    const app = createApp(defineComponent({
-      setup() {
-        return () => h(ModelMappingDialog, {
-          open: open.value,
-          providerId: 'provider-1',
-          endpoints: [responsesEndpoint, chatEndpoint],
-          models: [model],
-          editingGroup,
-          'onUpdate:open': (value: boolean) => { open.value = value },
-        })
-      },
-    }))
-    app.mount(root)
-    mountedApps.push({ app, root })
-
-    open.value = true
-    await nextTick()
-    await nextTick()
-    expect(root.textContent).toContain('仅会话压缩')
-
-    root.querySelector<HTMLButtonElement>('[data-endpoint-id="endpoint-chat"]')?.click()
-    await nextTick()
-    expect(root.textContent).not.toContain('仅会话压缩')
-    expect(root.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.textContent)
-      .toContain('所有请求')
-
-    const saveButton = [...root.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('保存映射'))
-    saveButton?.click()
-    await vi.waitFor(() => expect(updateModel).toHaveBeenCalledTimes(1))
-
-    expect(updateModel).toHaveBeenCalledWith('provider-1', 'model-sol', {
-      provider_model_mappings: [{
-        name: 'gpt-5.6-luna',
-        priority: 1,
-        endpoint_ids: [chatEndpoint.id],
-      }],
-    })
-  })
-
-  it('preserves an edited compact scope when endpoint capabilities are unavailable', async () => {
+  it('saves an edited mapping with only name and priority', async () => {
     const model = {
       id: 'model-sol',
       provider_model_name: 'gpt-5.6-sol',
@@ -316,7 +308,6 @@ describe('ModelMappingDialog', () => {
         return () => h(ModelMappingDialog, {
           open: open.value,
           providerId: 'provider-1',
-          endpoints: [],
           models: [model],
           editingGroup,
           'onUpdate:open': (value: boolean) => { open.value = value },
@@ -329,6 +320,7 @@ describe('ModelMappingDialog', () => {
     open.value = true
     await nextTick()
     await nextTick()
+    expect(root.textContent).not.toContain('仅会话压缩')
 
     const saveButton = [...root.querySelectorAll('button')]
       .find(button => button.textContent?.includes('保存映射'))
@@ -339,80 +331,6 @@ describe('ModelMappingDialog', () => {
       provider_model_mappings: [{
         name: 'gpt-5.6-luna',
         priority: 1,
-        endpoint_ids: ['endpoint-responses'],
-        operations: ['compact'],
-      }],
-    })
-  })
-
-  it('normalizes and replaces an edited compact operation scope', async () => {
-    const endpoint = {
-      id: 'endpoint-responses',
-      api_format: 'openai:responses',
-      base_url: 'https://api.example.com/v1',
-      is_active: true,
-    } as ProviderEndpoint
-    const model = {
-      id: 'model-sol',
-      provider_model_name: 'gpt-5.6-sol',
-      global_model_display_name: 'GPT-5.6 Sol',
-      provider_model_mappings: [{
-        name: 'gpt-5.6-luna',
-        priority: 1,
-        endpoint_ids: [endpoint.id],
-        operations: ['Compact'],
-      }],
-    } as unknown as Model
-    const editingGroup: AliasGroup = {
-      model,
-      apiFormatsKey: '',
-      apiFormats: [],
-      endpointIdsKey: endpoint.id,
-      endpointIds: [endpoint.id],
-      operationsKey: 'Compact',
-      operations: ['Compact'],
-      aliases: model.provider_model_mappings ?? [],
-    }
-    const open = ref(false)
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    const app = createApp(defineComponent({
-      setup() {
-        return () => h(ModelMappingDialog, {
-          open: open.value,
-          providerId: 'provider-1',
-          endpoints: [endpoint],
-          models: [model],
-          editingGroup,
-          'onUpdate:open': (value: boolean) => { open.value = value },
-        })
-      },
-    }))
-    app.mount(root)
-    mountedApps.push({ app, root })
-
-    open.value = true
-    await nextTick()
-    await nextTick()
-    expect(root.textContent).toContain('仅会话压缩')
-
-    const scopeButtons = [...root.querySelectorAll('button')]
-    scopeButtons.find(button => button.textContent?.includes('所有请求'))?.click()
-    await nextTick()
-    scopeButtons.find(button => button.textContent?.includes('仅会话压缩'))?.click()
-    await nextTick()
-    const saveButton = [...root.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('保存映射'))
-    expect(saveButton).toBeDefined()
-    saveButton?.click()
-    await vi.waitFor(() => expect(updateModel).toHaveBeenCalledTimes(1))
-
-    expect(updateModel).toHaveBeenCalledWith('provider-1', 'model-sol', {
-      provider_model_mappings: [{
-        name: 'gpt-5.6-luna',
-        priority: 1,
-        endpoint_ids: [endpoint.id],
-        operations: ['compact'],
       }],
     })
   })

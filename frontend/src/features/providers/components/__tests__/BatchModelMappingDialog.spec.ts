@@ -77,6 +77,9 @@ async function addMapping(index: number) {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  for (const [index, model] of models.entries()) {
+    model.provider_model_mappings = [{ name: `existing-${index + 1}`, priority: 1 }]
+  }
 })
 
 afterEach(() => {
@@ -87,6 +90,67 @@ afterEach(() => {
 })
 
 describe('BatchModelMappingDialog saving', () => {
+  it('keeps the previous options and draft when a manual refresh fails', async () => {
+    providerApi.queryProviderModels
+      .mockResolvedValueOnce({
+        success: true,
+        data: { models: [{ id: 'upstream-before' }] },
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        data: { models: [], error: 'upstream refresh failed' },
+      })
+    mountDialog(true)
+    await addMapping(1)
+    buttonWithText('existing-1, new-upstream-1').click()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('upstream-before'))
+
+    document.querySelector<HTMLButtonElement>('[title="刷新提供商模型"]')!.click()
+
+    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('upstream refresh failed'))
+    expect(document.body.textContent).toContain('upstream-before')
+    expect(document.body.textContent).toContain('new-upstream-1')
+    expect(buttonWithText('保存 1 项更改').disabled).toBe(false)
+  })
+
+  it('updates only the selected model mappings without presenting scope text', async () => {
+    models[0].provider_model_mappings = [{ name: 'existing-1', priority: 1 }]
+    vi.mocked(updateModel).mockResolvedValue(models[0])
+    const { open } = mountDialog()
+    await addMapping(1)
+
+    expect(document.body.textContent).not.toContain('默认范围')
+    expect(document.body.textContent).not.toContain('适用端点')
+    expect(document.body.textContent).not.toContain('适用请求')
+    buttonWithText('保存 1 项更改').click()
+
+    await vi.waitFor(() => expect(open.value).toBe(false))
+    expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
+      provider_model_mappings: [
+        { name: 'existing-1', priority: 1 },
+        { name: 'new-upstream-1', priority: 1 },
+      ],
+    })
+  })
+
+  it('uses the cache initially and bypasses it for a manual refresh', async () => {
+    providerApi.queryProviderModels.mockResolvedValue({
+      success: true,
+      data: { models: [{ id: 'upstream-model' }] },
+    })
+    mountDialog(true)
+    await vi.waitFor(() => expect(providerApi.queryProviderModels).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLButtonElement>('[title="刷新提供商模型"]')!.disabled).toBe(false)
+    })
+
+    document.querySelector<HTMLButtonElement>('[title="刷新提供商模型"]')!.click()
+
+    await vi.waitFor(() => expect(providerApi.queryProviderModels).toHaveBeenCalledTimes(2))
+    expect(providerApi.queryProviderModels).toHaveBeenNthCalledWith(1, 'provider-1', undefined, false)
+    expect(providerApi.queryProviderModels).toHaveBeenNthCalledWith(2, 'provider-1', undefined, true)
+  })
+
   it.each([false, true])('keeps every upstream error visible without the removed single-item guidance (partial models: %s)', async (partialModels) => {
     const error = `Key 渠道 A: openai:responses: failed to execute upstream request: error sending request for url (https://upstream.example.test/${'long-path-'.repeat(20)}/models): connection refused; Key 渠道 B: certificate verification failed\n最后一行错误详情`
     providerApi.queryProviderModels.mockResolvedValue({
@@ -98,7 +162,7 @@ describe('BatchModelMappingDialog saving', () => {
     await vi.waitFor(() => expect(document.querySelector(partialModels ? '[role="status"]' : '[role="alert"]')?.textContent).toContain('最后一行错误详情'))
     expect(document.querySelector('pre')?.textContent).toBe(error)
     expect(document.body.textContent).not.toContain('单条编辑')
-    expect(document.body.textContent).toContain('默认作用于全部端点和请求')
+    expect(document.body.textContent).not.toContain('默认作用于全部端点和请求')
   })
 
   it('shows each failed client model and its complete save error', async () => {
