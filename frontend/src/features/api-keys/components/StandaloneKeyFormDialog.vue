@@ -21,11 +21,8 @@
           </div>
           <div class="flex-1 min-w-0">
             <h3 class="text-lg font-semibold text-foreground leading-tight">
-              {{ isEditMode ? '编辑独立余额 API Key' : '创建独立余额 API Key' }}
+              {{ isEditMode ? '编辑密钥' : '新建密钥' }}
             </h3>
-            <p class="text-xs text-muted-foreground">
-              {{ isEditMode ? '修改密钥名称、有效期和访问限制' : '用于非注册用户调用接口，可设置初始余额或无限制额度' }}
-            </p>
           </div>
         </div>
       </div>
@@ -79,12 +76,6 @@
                   @update:model-value="(v) => form.unlimited_balance = v"
                 />
               </div>
-              <p
-                v-if="isEditMode"
-                class="text-xs text-muted-foreground"
-              >
-                {{ form.unlimited_balance ? '该 Key 当前使用独立无限额度。' : '该 Key 当前按独立钱包余额限制；增减金额请在列表页使用“资金”操作。' }}
-              </p>
             </div>
 
             <div class="space-y-2">

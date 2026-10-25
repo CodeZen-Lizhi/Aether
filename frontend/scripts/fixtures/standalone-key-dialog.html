@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>独立余额 Key 弹窗验收</title>
+</head>
+<body>
+  <div id="fixture"></div>
+  <script type="module">
+    import { createApp, h, ref } from 'vue'
+    import StandaloneKeyFormDialog from '/src/features/api-keys/components/StandaloneKeyFormDialog.vue'
+    import { createI18n, setI18nLocale } from '/src/i18n'
+    import '/src/style.css'
+
+    const params = new URLSearchParams(location.search)
+    setI18nLocale(params.get('locale') === 'en' ? 'en-US' : 'zh-CN')
+
+    // axios 在当前页面走 XHR；在组件加载前拦截只读选项接口，避免依赖或写入真实数据。
+    const NativeXMLHttpRequest = window.XMLHttpRequest
+    class FixtureXMLHttpRequest extends NativeXMLHttpRequest {
+      open(method, url, ...rest) {
+        this.fixtureUrl = String(url)
+        return super.open(method, url, ...rest)
+      }
+
+      send(body) {
+        const url = this.fixtureUrl || ''
+        let response = null
+        if (url.includes('/api/admin/providers/summary')) {
+          response = { total: 0, page: 1, page_size: 0, items: [] }
+        } else if (url.includes('/api/admin/models/global')) {
+          response = { models: [], total: 0 }
+        } else if (url.includes('/api/admin/system/api-formats')) {
+          response = { formats: [] }
+        }
+        if (!response) {
+          return super.send(body)
+        }
+        Object.defineProperties(this, {
+          readyState: { configurable: true, value: 4 },
+          status: { configurable: true, value: 200 },
+          responseText: { configurable: true, value: JSON.stringify(response) },
+          response: { configurable: true, value: JSON.stringify(response) },
+        })
+        queueMicrotask(() => {
+          this.dispatchEvent(new Event('readystatechange'))
+          this.dispatchEvent(new Event('load'))
+          this.dispatchEvent(new Event('loadend'))
+        })
+      }
+    }
+    window.XMLHttpRequest = FixtureXMLHttpRequest
+
+    const open = ref(false)
+    const editing = ref(params.get('mode') === 'edit')
+    const apiKey = {
+      id: 'fixture-key',
+      name: 'fixture',
+      unlimited_balance: true,
+      expires_at: '2026/10/25',
+      rate_limit: 0,
+      concurrent_limit: 15,
+      auto_delete_on_expiry: false,
+      allowed_providers: null,
+      allowed_api_formats: null,
+      allowed_models: null,
+      ip_rules: null,
+    }
+
+    // 该隔离页只渲染真实表单组件，不依赖运行中的网关选项数据。
+    createApp({
+      render: () => h('main', { class: 'min-h-screen bg-background p-4 text-foreground' }, [
+        h('button', {
+          id: 'open-create',
+          class: 'mr-2 rounded border px-3 py-1',
+          onClick: () => { editing.value = false; open.value = true },
+        }, '新建'),
+        h('button', {
+          id: 'open-edit',
+          class: 'rounded border px-3 py-1',
+          onClick: () => { editing.value = true; open.value = true },
+        }, '编辑'),
+        h(StandaloneKeyFormDialog, {
+          open: open.value,
+          apiKey: editing.value ? apiKey : null,
+          onClose: () => { open.value = false },
+          onSubmit: () => {},
+        }),
+      ]),
+    }).use(createI18n()).mount('#fixture')
+
+    const jsonResponse = (data) => new Response(JSON.stringify(data), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  </script>
+</body>
+</html>

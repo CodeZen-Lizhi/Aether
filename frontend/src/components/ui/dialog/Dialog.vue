@@ -25,19 +25,19 @@
         />
       </Transition>
 
-      <div class="relative flex h-full items-end justify-center overflow-y-auto text-center sm:items-center sm:p-4 pointer-events-none">
+      <div class="relative flex h-full items-end justify-center overflow-hidden text-center sm:items-center sm:p-4 pointer-events-none">
         <!-- 对话框内容 -->
         <Transition
           enter-active-class="duration-300 ease-out"
-          enter-from-class="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-          enter-to-class="opacity-100 translate-y-0 sm:scale-100"
+          enter-from-class="opacity-0"
+          enter-to-class="opacity-100"
           leave-active-class="duration-200 ease-in"
-          leave-from-class="opacity-100 translate-y-0 sm:scale-100"
-          leave-to-class="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+          leave-from-class="opacity-100"
+          leave-to-class="opacity-0"
         >
           <div
             v-if="isOpen"
-            class="app-dialog relative flex transform flex-col overflow-y-hidden rounded-t-xl border border-x-0 border-b-0 border-border bg-background text-left shadow-2xl transition-[opacity,transform] pointer-events-auto sm:my-0 sm:rounded-lg sm:border"
+            class="app-dialog relative flex flex-col overflow-y-hidden rounded-t-xl border border-x-0 border-b-0 border-border bg-background text-left shadow-2xl transition-opacity pointer-events-auto sm:my-0 sm:rounded-lg sm:border"
             :style="{ zIndex: contentZIndex }"
             :data-dialog-size="maxWidth || size || 'md'"
             data-app-dialog-content
@@ -86,7 +86,7 @@
             <!-- Footer 区域：如果有 footer 插槽，自动添加样式 -->
             <div
               v-if="slots.footer"
-              class="flex shrink-0 flex-col-reverse items-stretch gap-2 border-t border-border bg-background/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm [&>button]:w-full sm:flex-row-reverse sm:flex-wrap sm:items-center sm:gap-3 sm:bg-muted/10 sm:px-6 sm:py-4 sm:[&>button]:w-auto"
+              class="flex shrink-0 flex-col-reverse items-stretch gap-2 border-t border-border bg-background/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 [&>button]:w-full sm:flex-row-reverse sm:flex-wrap sm:items-center sm:gap-3 sm:bg-muted/10 sm:px-6 sm:py-4 sm:[&>button]:w-auto"
             >
               <slot name="footer" />
             </div>
@@ -169,9 +169,10 @@ const contentBodyClass = computed(() => [
 const containerZIndex = computed(() => props.zIndex || 60)
 const backdropZIndex = computed(() => props.zIndex || 60)
 const contentZIndex = computed(() => (props.zIndex || 60) + 10)
+// 遮罩只负责压暗背景；避免实时 backdrop-filter 在 WebView 中生成独立透明层。
 const backdropClass = computed(() => props.opaqueBackdrop
   ? 'bg-background'
-  : 'bg-black/40 backdrop-blur-sm')
+  : 'bg-black/40')
 
 // 添加 ESC 键监听
 useEscapeKey(() => {

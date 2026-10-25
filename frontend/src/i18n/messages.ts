@@ -1799,6 +1799,7 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '未设置，依次回退到提供商代理 → 系统代理': 'Not set; falls back to provider proxy, then system proxy',
   '添加 API 端点': 'Add API endpoint',
   '编辑密钥': 'Edit key',
+  '新建密钥': 'New key',
   '删除密钥': 'Delete key',
   '修改 API 密钥配置': 'Modify API key configuration',
   '为提供商添加新的 API 密钥': 'Add a new API key for the provider',
