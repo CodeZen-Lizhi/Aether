@@ -10,8 +10,14 @@
     @update:model-value="handleDialogUpdate"
   >
     <template #header-actions>
-      <div class="flex items-center gap-1.5">
-        <span class="rounded-md bg-muted px-2 py-1 text-[11px] font-medium tabular-nums text-muted-foreground">
+      <div
+        class="flex shrink-0 items-center gap-1.5"
+        data-batch-mapping-header-actions
+      >
+        <span
+          class="hidden whitespace-nowrap rounded-md bg-muted px-2 py-1 text-[11px] font-medium tabular-nums text-muted-foreground sm:inline-block"
+          data-batch-mapping-change-badge
+        >
           {{ hasUnsavedChanges ? `${changedClientCount} 项待保存` : '没有待保存更改' }}
         </span>
         <Button
@@ -322,42 +328,49 @@
       </div>
 
       <div
+        class="pb-1"
         v-if="feedback"
-        class="border-t border-border bg-[var(--color-background-mute)] px-4 pb-3 sm:px-6"
       >
         <div
-          class="min-w-0 rounded-md px-3 py-2 text-xs leading-5"
-          :class="feedback.warning ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-destructive/10 text-destructive'"
-          :role="feedback.warning ? 'status' : 'alert'"
+          class="border-t border-border bg-[var(--color-background-mute)] px-4 pb-3 sm:px-6"
         >
-          <p class="font-medium">
-            {{ feedback.title }}
-          </p>
-          <div class="mt-2 space-y-3">
-            <pre
-              v-for="(detail, index) in feedback.details"
-              :key="index"
-              class="m-0 whitespace-pre-wrap font-sans [overflow-wrap:anywhere]"
-            >{{ detail }}</pre>
+          <div
+            class="min-w-0 rounded-md px-3 py-2 text-xs leading-5"
+            :class="feedback.warning ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-destructive/10 text-destructive'"
+            :role="feedback.warning ? 'status' : 'alert'"
+          >
+            <p class="font-medium">
+              {{ feedback.title }}
+            </p>
+            <div class="mt-2 space-y-3">
+              <pre
+                v-for="(detail, index) in feedback.details"
+                :key="index"
+                class="m-0 whitespace-pre-wrap font-sans [overflow-wrap:anywhere]"
+              >{{ detail }}</pre>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
     <template #footer>
-      <div class="flex w-full flex-wrap items-center justify-between gap-3">
-        <div class="space-y-0.5">
+      <div
+        class="flex w-full flex-wrap items-center justify-between gap-3"
+        data-batch-mapping-footer
+      >
+        <div class="min-w-0 space-y-0.5">
           <p
-            class="text-xs text-muted-foreground"
+            class="text-xs text-muted-foreground sm:hidden"
             aria-live="polite"
           >
-            {{ hasUnsavedChanges ? `${changedClientCount} 个客户端模型有待保存更改` : '没有待保存更改' }}
+            {{ hasUnsavedChanges ? `${changedClientCount} 项待保存` : '没有待保存更改' }}
           </p>
           <p class="text-[11px] text-muted-foreground">
             {{ mappedClientCount }} 个已映射 · {{ unmappedClientCount }} 个未映射 · {{ mappedNameCount }} 个提供商模型映射
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <Button
             variant="outline"
             :disabled="saving"
