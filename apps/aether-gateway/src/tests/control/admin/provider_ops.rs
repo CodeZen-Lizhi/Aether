@@ -40,6 +40,82 @@ fn gateway_usage_api_group_name_roundtrip() {
     run_provider_ops_test("usage_api_group_name", usage_api_group_name_roundtrip);
 }
 
+/// 无效 Refresh Token 必须报告重新登录，同时保留原倍率及名称。
+#[test]
+fn gateway_usage_api_invalid_refresh_reports_auth() {
+    run_provider_ops_test(
+        "usage_api_invalid_refresh",
+        usage_api_invalid_refresh_reports_auth,
+    );
+}
+
+/// 真实本地 HTTP 覆盖账号认证失效的同步响应，不依赖上游网络。
+async fn usage_api_invalid_refresh_reports_auth() {
+    let upstream = Router::new().route(
+        "/api/v1/auth/refresh",
+        post(|| async {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"code":40001,"message":"Refresh Token 无效或已过期"})),
+            )
+        }),
+    );
+    let (base, upstream_handle) = start_server(upstream).await;
+    let mut provider = sample_provider("invalid-refresh", "openai", 10);
+    provider.config = Some(
+        json!({"provider_ops":{"architecture_id":"usage_api","base_url":base,"connector":{"auth_type":"api_key","config":{},"credentials":{"api_key":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"sk-invalid-refresh").unwrap(),"refresh_token":encrypt_python_fernet_plaintext(DEVELOPMENT_ENCRYPTION_KEY,"expired-token").unwrap()}},"actions":{}}}),
+    );
+    let mut key = super::super::sample_key(
+        "invalid-refresh-key",
+        "invalid-refresh",
+        "openai:chat",
+        "sk-invalid-refresh",
+    );
+    key.name = "保留名称".to_string();
+    key.default_rate_multiplier = 0.17;
+    key.upstream_metadata = Some(json!({"multiplier":{"source":"upstream"}}));
+    let repo = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider],
+        vec![],
+        vec![key],
+    ));
+    let state = AppState::new().unwrap().with_data_state_for_tests(
+        GatewayDataState::with_provider_catalog_repository_for_tests(repo.clone())
+            .with_encryption_key_for_tests(DEVELOPMENT_ENCRYPTION_KEY),
+    );
+    let (url, gateway_handle) = start_server(build_router_with_state(state)).await;
+    let payload: serde_json::Value = reqwest::Client::new()
+        .post(format!(
+            "{url}/api/admin/provider-ops/providers/invalid-refresh/actions/sync_multiplier"
+        ))
+        .header(GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .json(&json!({"config":{"key_id":"invalid-refresh-key"}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        payload["data"]["results"][0]["error"]
+            .as_str()
+            .is_some_and(|message| message.contains("重新填写 Refresh Token")),
+        "{payload}"
+    );
+    let stored = repo
+        .list_keys_by_provider_ids(&["invalid-refresh".to_string()])
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(stored.name, "保留名称");
+    assert_eq!(stored.default_rate_multiplier, 0.17);
+    gateway_handle.abort();
+    upstream_handle.abort();
+}
+
 /// 真实 HTTP 覆盖旧模板存量凭据、续期缓存、同账号精确匹配和失败保留。
 async fn usage_api_group_name_roundtrip() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

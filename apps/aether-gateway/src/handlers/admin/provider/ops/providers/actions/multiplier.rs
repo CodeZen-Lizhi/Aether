@@ -191,7 +191,14 @@ async fn run_sync(
         let (token, updated, _) =
             admin_provider_ops_sub2api_exchange_token(state, base, credentials, proxy)
                 .await
-                .map_err(|_| "用户认证失效或暂时无法验证，请检查用户认证配置".to_string())?;
+                .map_err(|message| {
+                    // 保留上游已明确给出的凭据错误，避免可操作的失效原因被通用文案覆盖。
+                    if message.contains("Refresh Token") || message.contains("登录失败") {
+                        format!("账号认证失效，请重新填写 Refresh Token 或账号密码：{message}")
+                    } else {
+                        "用户认证暂时无法验证，请检查用户认证配置".to_string()
+                    }
+                })?;
         if !updated.is_empty() {
             let saved = persist_admin_provider_ops_runtime_credentials(state, provider, &updated)
                 .await
