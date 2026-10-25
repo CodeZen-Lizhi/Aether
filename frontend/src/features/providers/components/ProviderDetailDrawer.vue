@@ -17,7 +17,7 @@
         />
 
         <!-- 全部密钥连续展示，超出窗口高度时由抽屉统一纵向滚动。 -->
-        <Card class="drawer-panel relative h-full w-full sm:w-[700px] sm:max-w-[90vw] rounded-none shadow-2xl overflow-y-auto">
+        <Card class="drawer-panel relative h-full w-full rounded-none shadow-2xl overflow-y-auto">
           <!-- 加载状态 -->
           <div
             v-if="loading"
@@ -156,7 +156,6 @@
                             <ProviderKeyDetailPopover
                               :api-key="key"
                               :masked-secret-label="getProviderMaskedSecretLabel(key)"
-                              @edit="handleEditKey(endpoint, key)"
                             />
                           </template>
                           <template #after-recover>
@@ -1315,6 +1314,13 @@ useEscapeKey(() => {
 .drawer-enter-to .drawer-panel,
 .drawer-leave-from .drawer-panel {
   transform: translateX(0);
+}
+
+@media (min-width: 640px) {
+  .drawer-panel {
+    width: clamp(34rem, 62vw, 56rem);
+    max-width: calc(100vw - 2rem);
+  }
 }
 
 /* 轻量滚动条（用于 Antigravity 模型配额等小区域） */

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Aether 细线鱼 2 号</title>
+  <desc id="desc">白底黑色细线的简笔鱼</desc>
+  <rect width="256" height="256" fill="#fff"/>
+  <g fill="none" stroke="#111827" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M42 128c21-25 50-38 82-38 31 0 57 13 74 38-17 25-43 38-74 38-32 0-61-13-82-38Z"/>
+    <path d="M198 128 226 105v46l-28-23Z"/>
+    <path d="M116 94c7 7 12 15 14 25 2-10 7-18 14-25"/>
+    <path d="M116 162c7-7 12-15 14-25 2 10 7 18 14 25"/>
+    <circle cx="78" cy="118" r="4" fill="#111827" stroke="none"/>
+    <path d="M91 128c8 4 16 4 24 0"/>
+  </g>
+</svg>

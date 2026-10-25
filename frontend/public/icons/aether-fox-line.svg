@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Aether 狐狸</title><desc id="desc">简洁的狐狸线稿图标</desc>
+  <g fill="none" stroke="#0f172a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 76 83 91c13-7 25-10 45-10s32 3 45 10l31-15-7 59c-4 38-30 63-69 63s-65-25-69-63l-7-59Z" fill="#fed7aa"/>
+    <path d="m52 76 31 15M204 76l-31 15"/>
+    <path d="M77 135c8-9 19-13 31-13M179 135c-8-9-19-13-31-13"/>
+    <circle cx="96" cy="134" r="7" fill="#0f172a" stroke="none"/><circle cx="160" cy="134" r="7" fill="#0f172a" stroke="none"/>
+    <path d="m128 143-13 13 13 9 13-9-13-13Z" fill="#f97316"/><path d="M116 175c8 6 16 6 24 0"/>
+  </g>
+</svg>

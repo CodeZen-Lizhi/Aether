@@ -4,6 +4,7 @@
       v-if="isOpen"
       class="fixed inset-0 overflow-hidden pointer-events-none"
       :style="{ zIndex: containerZIndex }"
+      data-app-dialog-container
     >
       <!-- 背景遮罩 -->
       <Transition
@@ -16,8 +17,10 @@
       >
         <div
           v-if="isOpen"
-          class="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity pointer-events-auto"
+          class="fixed inset-0 transition-opacity pointer-events-auto"
+          :class="backdropClass"
           :style="{ zIndex: backdropZIndex }"
+          data-app-dialog-backdrop
           @click="handleBackdropClick"
         />
       </Transition>
@@ -37,6 +40,7 @@
             class="app-dialog relative flex transform flex-col overflow-y-hidden rounded-t-xl border border-x-0 border-b-0 border-border bg-background text-left shadow-2xl transition-[opacity,transform] pointer-events-auto sm:my-0 sm:rounded-lg sm:border"
             :style="{ zIndex: contentZIndex }"
             :data-dialog-size="maxWidth || size || 'md'"
+            data-app-dialog-content
             @click.stop
           >
             <!-- Header 区域：优先使用 slot，否则使用 title prop -->
@@ -113,6 +117,8 @@ const props = defineProps<{
   noPadding?: boolean // Disable default content padding
   persistent?: boolean // Prevent closing on backdrop click
   closeOnBackdrop?: boolean // Allow closing on backdrop click (default: true)
+  /** 背景遮罩是否完全遮盖下层界面；嵌套大弹窗可用不透明背景避免透出父层轮廓。 */
+  opaqueBackdrop?: boolean
 }>()
 
 // Emits 定义
@@ -163,6 +169,9 @@ const contentBodyClass = computed(() => [
 const containerZIndex = computed(() => props.zIndex || 60)
 const backdropZIndex = computed(() => props.zIndex || 60)
 const contentZIndex = computed(() => (props.zIndex || 60) + 10)
+const backdropClass = computed(() => props.opaqueBackdrop
+  ? 'bg-background'
+  : 'bg-black/40 backdrop-blur-sm')
 
 // 添加 ESC 键监听
 useEscapeKey(() => {

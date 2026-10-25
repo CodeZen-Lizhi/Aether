@@ -1,19 +1,19 @@
 .app-dialog {
   --dialog-width: 46vw;
   --dialog-width-limit: 28rem;
+  --dialog-height: 92dvh;
   --dialog-height-limit: 100dvh;
   container: dialog / inline-size;
   min-width: 0;
   width: 100%;
   max-height: var(--dialog-height-limit);
 }
-
 .app-dialog[data-dialog-size='sm'] { --dialog-width: 40vw; --dialog-width-limit: 24rem; }
 .app-dialog[data-dialog-size='lg'] { --dialog-width: 52vw; --dialog-width-limit: 32rem; }
 .app-dialog[data-dialog-size='xl'] { --dialog-width: 58vw; --dialog-width-limit: 40rem; }
 .app-dialog[data-dialog-size='2xl'] { --dialog-width: 66vw; --dialog-width-limit: 48rem; }
 .app-dialog[data-dialog-size='3xl'] { --dialog-width: 74vw; --dialog-width-limit: 55rem; }
-.app-dialog[data-dialog-size='4xl'] { --dialog-width: 78vw; --dialog-width-limit: 60rem; }
+.app-dialog[data-dialog-size='4xl'] { --dialog-width: 72vw; --dialog-width-limit: 60rem; }
 .app-dialog[data-dialog-size='5xl'] { --dialog-width: 82vw; --dialog-width-limit: 64rem; }
 .app-dialog[data-dialog-size='6xl'],
 .app-dialog[data-dialog-size='7xl'] { --dialog-width: 82vw; --dialog-width-limit: 70rem; }
@@ -38,7 +38,7 @@
 
 @media (min-width: 640px) and (max-width: 839px) {
   .app-dialog {
-    width: min(max(var(--dialog-width), 22.5rem), var(--dialog-width-limit), 82vw, calc(100vw - 2rem));
+    width: min(max(var(--dialog-width), 22.5rem), var(--dialog-width-limit), calc(100vw - 2rem));
   }
 }
 

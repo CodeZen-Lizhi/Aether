@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Aether 多路汇聚</title>
+  <desc id="desc">多条供应商线路汇聚到网关核心</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M35 61 101 119M35 195l66-58M221 61l-66 58M221 195l-66-58" stroke="#0f172a" stroke-width="14"/>
+    <path d="M35 61 101 119M35 195l66-58" stroke="#38bdf8" stroke-width="6"/>
+    <path d="M221 61l-66 58M221 195l-66-58" stroke="#22c55e" stroke-width="6"/>
+    <path d="M128 86 166 128l-38 42-38-42 38-42Z" fill="#f8fafc" stroke="#0f172a" stroke-width="13"/>
+    <circle cx="35" cy="61" r="12" fill="#38bdf8" stroke="#0f172a" stroke-width="7"/>
+    <circle cx="35" cy="195" r="12" fill="#38bdf8" stroke="#0f172a" stroke-width="7"/>
+    <circle cx="221" cy="61" r="12" fill="#22c55e" stroke="#0f172a" stroke-width="7"/>
+    <circle cx="221" cy="195" r="12" fill="#22c55e" stroke="#0f172a" stroke-width="7"/>
+    <circle cx="128" cy="128" r="12" fill="#f59e0b" stroke="#0f172a" stroke-width="7"/>
+  </g>
+</svg>

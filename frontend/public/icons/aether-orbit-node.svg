@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Aether 轨道节点</title>
+  <desc id="desc">中心调度核心与三条轨道节点</desc>
+  <g fill="none" stroke-linecap="round">
+    <ellipse cx="128" cy="128" rx="91" ry="43" transform="rotate(-32 128 128)" stroke="#0f172a" stroke-width="12"/>
+    <ellipse cx="128" cy="128" rx="91" ry="43" transform="rotate(32 128 128)" stroke="#0f172a" stroke-width="12"/>
+    <ellipse cx="128" cy="128" rx="91" ry="43" stroke="#38bdf8" stroke-width="12"/>
+    <circle cx="128" cy="128" r="31" fill="#22c55e" stroke="#0f172a" stroke-width="12"/>
+    <circle cx="128" cy="128" r="9" fill="#f8fafc" stroke="none"/>
+    <circle cx="48" cy="87" r="13" fill="#38bdf8" stroke="#0f172a" stroke-width="8"/>
+    <circle cx="208" cy="87" r="13" fill="#f59e0b" stroke="#0f172a" stroke-width="8"/>
+    <circle cx="128" cy="215" r="13" fill="#22c55e" stroke="#0f172a" stroke-width="8"/>
+  </g>
+</svg>

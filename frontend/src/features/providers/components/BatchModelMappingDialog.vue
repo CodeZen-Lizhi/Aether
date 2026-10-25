@@ -5,8 +5,9 @@
     title="批量添加模型映射"
     description="为每个客户端模型维护提供商模型集合，更改统一保存"
     :icon="ListPlus"
-    size="5xl"
+    size="4xl"
     :no-padding="true"
+    opaque-backdrop
     @update:model-value="handleDialogUpdate"
   >
     <template #header-actions>
@@ -142,10 +143,10 @@
             <div class="overflow-hidden rounded-xl border border-border bg-card">
               <table class="w-full table-fixed text-sm">
                 <colgroup>
-                  <col class="w-[22%]">
-                  <col class="w-[52%]">
-                  <col class="w-[13%]">
-                  <col class="w-[13%]">
+                  <col class="w-[20%]">
+                  <col class="w-[48%]">
+                  <col class="w-[14%]">
+                  <col class="w-[18%]">
                 </colgroup>
                 <thead class="border-b border-border bg-muted/30">
                   <tr>
@@ -218,7 +219,7 @@
                         <button
                           v-if="entry.upstreamNames.length > 0"
                           type="button"
-                          class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50"
+                          class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50"
                           :disabled="saving || entry.isHidden"
                           :aria-label="`清空 ${clientModelLabel(entry.model)} 的映射`"
                           @click="clearMapping(entry.model.id)"
@@ -228,7 +229,7 @@
                         </button>
                         <button
                           type="button"
-                          class="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50"
+                          class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50"
                           :disabled="saving"
                           :aria-label="`${entry.isHidden ? '显示' : '隐藏'} ${clientModelLabel(entry.model)}`"
                           @click="toggleHidden(entry.model.id)"

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Aether 简笔鱼</title>
+  <desc id="desc">白底黑色细线的简笔鱼图标</desc>
+  <rect width="256" height="256" fill="#fff"/>
+  <g fill="none" stroke="#111827" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M45 128c22-31 54-45 88-45 27 0 51 10 70 27l27-22v80l-27-22c-19 17-43 27-70 27-34 0-66-14-88-45Z"/>
+    <circle cx="91" cy="113" r="5" fill="#111827" stroke="none"/>
+    <path d="M126 102c-8 9-8 43 0 52"/>
+    <path d="M67 128h1M77 128h1"/>
+  </g>
+</svg>

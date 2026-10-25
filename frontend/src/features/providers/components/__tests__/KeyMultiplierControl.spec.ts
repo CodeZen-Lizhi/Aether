@@ -296,4 +296,18 @@ describe('列表内倍率交互', () => {
     expect(mocks.error).toHaveBeenCalledWith('该供应商未提供兼容的上游倍率查询接口')
     expect(mocks.sync).toHaveBeenCalledWith('provider', 'key', undefined, undefined)
   })
+
+  it('凭据失效时立即显示重新登录提示并刷新当前行', async () => {
+    mocks.sync.mockResolvedValue({
+      status: 'success',
+      data: { failed: 1, results: [{ error: '账号认证失效，请重新填写 Refresh Token 或账号密码' }] },
+    })
+    const root = mountControl('upstream', true)
+    const syncButton = root.querySelector('button[aria-label="立即同步倍率"]') as HTMLButtonElement
+    syncButton.click()
+    await settle()
+
+    expect(mocks.error).toHaveBeenCalledWith('账号认证失效，请重新填写 Refresh Token 或账号密码')
+    expect(root.querySelector('[role="alert"]')).toBeNull()
+  })
 })

@@ -64,18 +64,6 @@
           </div>
         </dl>
       </div>
-
-      <div class="border-t border-border/60 px-3 py-2 text-right">
-        <Button
-          variant="outline"
-          size="sm"
-          class="h-7 px-2 text-xs"
-          data-testid="provider-key-detail-edit"
-          @click="handleEdit"
-        >
-          {{ legacyT('编辑密钥') }}
-        </Button>
-      </div>
     </PopoverContent>
   </Popover>
 </template>
@@ -97,19 +85,9 @@ const props = withDefaults(defineProps<{
   maskedSecretLabel: '',
 })
 
-const emit = defineEmits<{
-  (e: 'edit'): void
-}>()
-
 const { legacyT } = useI18n()
 
 const open = ref(false)
-
-/** 点击“编辑密钥”后先收起浮层，避免与编辑对话框重叠。 */
-function handleEdit() {
-  open.value = false
-  emit('edit')
-}
 
 /** 详情浮层只展示已存在的字段，缺省项不占行，避免大量空值噪音。 */
 const detailRows = computed(() => {

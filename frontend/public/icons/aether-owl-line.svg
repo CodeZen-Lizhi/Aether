@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Aether 猫头鹰</title>
+  <desc id="desc">简洁的猫头鹰线稿图标</desc>
+  <g fill="none" stroke="#0f172a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M47 104V68l31 21c14-9 28-13 50-13s36 4 50 13l31-21v36c0 57-33 91-81 91s-81-34-81-91Z" fill="#e0f2fe"/>
+    <path d="m47 68 31 21M209 68l-31 21"/>
+    <circle cx="94" cy="123" r="25" fill="#f8fafc"/>
+    <circle cx="162" cy="123" r="25" fill="#f8fafc"/>
+    <circle cx="94" cy="123" r="8" fill="#0f172a" stroke="none"/>
+    <circle cx="162" cy="123" r="8" fill="#0f172a" stroke="none"/>
+    <path d="m128 132-12 17 12 11 12-11-12-17Z" fill="#f59e0b"/>
+    <path d="M101 185c17 8 37 8 54 0"/>
+  </g>
+</svg>

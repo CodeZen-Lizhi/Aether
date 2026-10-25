@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Aether 正脸狐狸</title>
+  <rect width="256" height="256" fill="white"/>
+  <g fill="none" stroke="#111827" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M58 73 77 43l34 29c11-4 22-4 34 0l34-29 19 30-8 68c-4 28-17 47-38 57l-24 11-24-11c-21-10-34-29-38-57Z"/>
+    <path d="M62 71 77 53l25 23M194 71 179 53l-25 23"/>
+    <path d="M111 72c6 7 11 12 17 15 6-3 11-8 17-15"/>
+    <path d="M78 111c10-9 21-9 32 0-10 8-21 8-32 0ZM146 111c11-9 22-9 32 0-11 8-22 8-32 0Z"/>
+    <circle cx="96" cy="111" r="3" fill="#111827" stroke="none"/><circle cx="160" cy="111" r="3" fill="#111827" stroke="none"/>
+    <path d="M112 121c5 11 10 19 16 25 6-6 11-14 16-25"/>
+    <path d="M117 146c4-4 18-4 22 0-2 8-5 12-11 12s-9-4-11-12Z" fill="#111827"/>
+    <path d="M128 158v10M113 173c9 6 21 6 30 0"/>
+    <path d="M78 137c-9 7-17 10-27 10M178 137c9 7 17 10 27 10"/>
+  </g>
+</svg>

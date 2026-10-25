@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Aether 蜜蜂</title><desc id="desc">简洁的蜜蜂线稿图标</desc>
+  <g fill="none" stroke="#0f172a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="128" cy="139" rx="57" ry="65" fill="#fef3c7"/>
+    <path d="M79 119h98M73 145h110M82 171h92"/>
+    <path d="M91 91C59 58 29 76 44 112c7 15 23 21 39 19M165 91c32-33 62-15 47 21-7 15-23 21-39 19" fill="#e0f2fe"/>
+    <circle cx="110" cy="126" r="6" fill="#0f172a" stroke="none"/><circle cx="146" cy="126" r="6" fill="#0f172a" stroke="none"/>
+    <path d="M120 145h16"/><path d="M108 78c4-12 10-19 20-24M148 78c-4-12-10-19-20-24"/>
+  </g>
+</svg>
