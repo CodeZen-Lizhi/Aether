@@ -424,12 +424,14 @@ describe('provider key concurrent_limit form behavior', () => {
     expect(multiplierCard).not.toBeNull()
     expect(priorityCard).not.toBeNull()
     expect(
-      multiplierCard?.querySelector('#default-rate-multiplier-help')
-        ?.compareDocumentPosition(findInput(root, 'default_rate_multiplier')) & Node.DOCUMENT_POSITION_FOLLOWING,
+      (multiplierCard?.querySelector('#default-rate-multiplier-help')
+        ?.compareDocumentPosition(findInput(root, 'default_rate_multiplier')) ?? 0)
+        & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(
-      priorityCard?.querySelector('#internal-priority-help')
-        ?.compareDocumentPosition(findInput(root, 'internal_priority')) & Node.DOCUMENT_POSITION_FOLLOWING,
+      (priorityCard?.querySelector('#internal-priority-help')
+        ?.compareDocumentPosition(findInput(root, 'internal_priority')) ?? 0)
+        & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 
