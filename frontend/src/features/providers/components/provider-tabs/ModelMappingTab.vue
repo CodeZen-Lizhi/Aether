@@ -7,6 +7,7 @@
           模型映射
         </h3>
         <Button
+          variant="outline"
           size="sm"
           class="h-8"
           @click="openBatchDialog"
