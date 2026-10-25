@@ -379,7 +379,7 @@ import {
   getProvider,
   getProviderEndpoints,
   updateProvider,
-  getProviderModels,
+  getAllProviderModels,
   getProviderMappingPreview,
   type ProviderMappingPreviewResponse,
   type ProviderWithEndpointsSummary,
@@ -1242,7 +1242,7 @@ async function loadEndpoints() {
 
   const providerKeysPromise = loadProviderKeys()
 
-  const modelsPromise = getProviderModels(providerId)
+  const modelsPromise = getAllProviderModels(providerId)
     .catch(() => [])
     .then((modelsResult) => {
       if (requestId !== endpointsLoadRequestId) return

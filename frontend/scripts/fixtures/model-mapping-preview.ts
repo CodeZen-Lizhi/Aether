@@ -2,26 +2,50 @@ import { createApp, defineComponent, h, ref } from 'vue'
 import ModelMappingDialog, { type AliasGroup } from '@/features/providers/components/ModelMappingDialog.vue'
 import BatchModelMappingDialog from '@/features/providers/components/BatchModelMappingDialog.vue'
 import ModelMappingTab from '@/features/providers/components/provider-tabs/ModelMappingTab.vue'
-import { createI18n } from '@/i18n'
+import { createI18n, setI18nLocale } from '@/i18n'
+import client from '@/api/client'
+import { adminApi } from '@/api/admin'
 import '@/style.css'
 
-const models = [{
-  id: 'model-primary',
-  provider_model_name: 'primary-provider-model',
-  global_model_display_name: '主模型映射',
-  provider_model_mappings: [{ name: 'primary-upstream', priority: 1 }],
-}, {
-  id: 'model-secondary',
-  provider_model_name: 'secondary-provider-model',
-  global_model_display_name: '备用模型映射',
-  provider_model_mappings: [{ name: 'secondary-upstream', priority: 1 }],
-}]
+const previewLocale = new URLSearchParams(location.search).get('locale') === 'en' ? 'en-US' : 'zh-CN'
+setI18nLocale(previewLocale)
+
+const models = [
+  {
+    id: 'model-gpt-56-sol',
+    provider_model_name: 'gpt-5.6-sol',
+    global_model_name: 'gpt-5.6-sol',
+    global_model_display_name: 'GPT-5.6 Sol',
+    provider_model_mappings: [{ name: 'gpt-5.6-sol', priority: 1 }],
+  },
+  {
+    id: 'model-gpt-6-astra',
+    provider_model_name: 'gpt-6-astra',
+    global_model_name: 'gpt-6-astra',
+    global_model_display_name: 'GPT-6 Astra',
+    provider_model_mappings: [{ name: 'gpt-6.1-sol', priority: 1 }],
+  },
+  {
+    id: 'model-gpt-6-luna',
+    provider_model_name: 'gpt-6-luna',
+    global_model_name: 'gpt-6-luna',
+    global_model_display_name: 'GPT-6 Luna',
+    provider_model_mappings: [{ name: 'gpt-6.1-sol', priority: 1 }],
+  },
+  {
+    id: 'model-gpt-61-sol',
+    provider_model_name: 'gpt-6.1-sol',
+    global_model_name: 'gpt-6.1-sol',
+    global_model_display_name: 'GPT-6.1 Sol',
+    provider_model_mappings: [],
+  },
+]
 const provider = {
-  id: 'provider-preview',
-  name: 'Preview Provider',
+  id: 'provider-shenwen-ai',
+  name: '神稳AI',
   is_active: true,
   active_keys: 1,
-  api_formats: ['openai:responses'],
+  api_formats: ['openai:responses', 'openai:responses:compact', 'openai:search'],
 }
 const defaultGroup: AliasGroup = {
   model: models[0] as never,
@@ -31,10 +55,62 @@ const defaultGroup: AliasGroup = {
   endpointIds: [],
   operationsKey: '',
   operations: [],
-  aliases: models[0].provider_model_mappings,
+  aliases: [],
 }
 
-// 验收预览只组合真实组件与固定业务数据，不承载产品逻辑。
+// 上游模型请求由固定业务数据拦截，避免预览修改真实供应商配置。
+adminApi.queryProviderModels = async () => ({
+  success: true,
+  data: {
+    models: [
+      { id: 'gpt-5.6-sol', api_formats: ['openai:responses'] },
+      { id: 'gpt-5.6-pro', api_formats: ['openai:responses'] },
+      { id: 'gpt-5.6-mini', api_formats: ['openai:responses'] },
+      { id: 'gpt-6-astra', api_formats: ['openai:responses'] },
+      { id: 'gpt-6-luna', api_formats: ['openai:responses'] },
+      { id: 'gpt-6.1-sol', api_formats: ['openai:responses'] },
+      { id: 'gpt-6.1-pro', api_formats: ['openai:responses'] },
+      { id: 'gpt-6.1-flash', api_formats: ['openai:responses'] },
+      { id: 'claude-5-sonnet', api_formats: ['claude:messages'] },
+      { id: 'gemini-4-pro', api_formats: ['gemini:generate_content'] },
+      { id: 'workbuddy/kimi-k3.1-pro', api_formats: ['openai:responses'] },
+    ],
+  },
+})
+
+// 预览只记录保存载荷，防止误触按钮时写入真实本地网关。
+const previewWrites: Array<{ url: string; data: unknown }> = []
+client.patch = async (url, data) => {
+  previewWrites.push({ url, data })
+  return {
+    data: models.find(model => url.endsWith(model.id)) ?? models[0],
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config: { headers: {} },
+  }
+}
+client.get = async url => {
+  if (url.includes('/endpoints')) {
+    return {
+      data: provider.api_formats.map(apiFormat => ({
+        id: `endpoint-${apiFormat}`,
+        provider_id: provider.id,
+        provider_name: provider.name,
+        api_format: apiFormat,
+        base_url: 'https://fixture.invalid',
+        is_active: true,
+        total_keys: 1,
+        active_keys: 1,
+      })),
+    }
+  }
+  throw new Error(`未配置 fixture 请求: ${url}`)
+}
+;(window as Window & { __modelMappingPreviewWrites?: typeof previewWrites })
+  .__modelMappingPreviewWrites = previewWrites
+
+// 验收预览组合真实组件与固定业务数据，不写数据库。
 const Preview = defineComponent({
   setup() {
     const mode = ref(new URLSearchParams(location.search).get('mode') ?? 'list')

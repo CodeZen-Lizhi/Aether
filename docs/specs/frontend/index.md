@@ -157,6 +157,18 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 ---
 
+## Convention: 批量模型映射使用全模型工作台
+
+**What**: `BatchModelMappingDialog.vue` 一次展示当前供应商的全部客户端模型，桌面使用“客户端模型 / 提供商模型 / 状态 / 操作”表格，窄内容宽度使用同一数据的纵向卡片，不要求先选择客户端模型。搜索覆盖客户端展示名、供应商模型名和当前提供商映射名；全部、已映射、未映射、已修改及“只看已修改”仅过滤可见行，不改变草稿或保存目标。
+
+**Draft and actions**: 每行可直接添加或移除提供商模型，也可清空该客户端模型的全部映射；待保存数量按实际变化的客户端模型计算，保存只提交变化项。隐藏只影响当前工作台是否显示该行，不删除映射、不改变待保存统计，也不进入保存载荷；显示已隐藏后可从原行恢复。
+
+**Preserved semantics**: 首次打开沿用后端缓存，手动刷新强制读取上游；刷新失败保留原上游候选与全部草稿。取消关闭确认、完整上游错误详情、部分保存失败草稿、成功项基线更新以及旧的非默认范围映射原样保留。内容超出弹窗时只让正文纵向滚动，底部关闭与保存始终可达。
+
+**Verification**: `BatchModelMappingDialog.spec.ts` 覆盖全模型展示、状态筛选与搜索、行内添加/移除/清空、隐藏恢复、刷新失败候选保留、保存载荷、完整错误和部分失败重试；`i18n.spec.ts` 覆盖工作台状态、操作、动态统计及英文单复数。浏览器 fixture `/scripts/fixtures/model-mapping-preview.html?mode=batch` 挂载正式组件并拦截写请求，检查 1200×820、900×640 和窄屏卡片布局无横向溢出，底部操作可达，浅深主题、英文界面、筛选、添加、待保存统计、恢复基线及主要交互正常；该证据不代表真实上游或持久化已通过。
+
+---
+
 ## Convention: 供应商列表排序口径与调度策略对齐
 
 **What**: 供应商管理列表（`views/admin/ProviderManagement.vue`）的排序固定为三级：启用状态（启用在前）→ 调度优先级升序 → `created_at` 升序兜底。优先级只读系统默认分组：`listRoutingGroups()` → `findSystemDefaultRoutingGroup` → `parseSchedulingStrategy(group?.config_json).providerPriorities`（1 起越小越靠前），未配置的供应商用 `Number.MAX_SAFE_INTEGER` 缀尾。排序实现抽在 `features/providers/utils/providerPrioritySort.ts` 纯函数（含单测），桌面表格与移动端卡片共用同一 computed。

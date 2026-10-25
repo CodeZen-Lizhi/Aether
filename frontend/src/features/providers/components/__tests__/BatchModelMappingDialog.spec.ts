@@ -60,18 +60,28 @@ function buttonWithText(text: string): HTMLButtonElement {
   return button!
 }
 
+function visibleModelNames(): string[] {
+  return [...document.querySelectorAll<HTMLElement>('tbody tr')]
+    .map(row => row.textContent ?? '')
+    .filter(text => text.trim().length > 0)
+}
+
 async function addMapping(index: number) {
-  const editButton = document.querySelector<HTMLButtonElement>(`[title="继续编辑 Client ${index}"]`)
-  expect(editButton).not.toBeNull()
-  editButton!.click()
+  const addButton = document.querySelector<HTMLButtonElement>(
+    `[aria-label="为 Client ${index} 添加提供商模型"]`,
+  )
+  expect(addButton).not.toBeNull()
+  addButton!.click()
   await nextTick()
 
-  const input = document.querySelector<HTMLInputElement>('#batch-custom-upstream-model')
+  const input = document.querySelector<HTMLInputElement>(
+    `[data-mapping-add-input][aria-label="Client ${index} 的提供商模型"]`,
+  )
   expect(input).not.toBeNull()
   input!.value = `new-upstream-${index}`
   input!.dispatchEvent(new Event('input', { bubbles: true }))
   await nextTick()
-  buttonWithText('添加并选中').click()
+  input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await nextTick()
 }
 
@@ -102,15 +112,23 @@ describe('BatchModelMappingDialog saving', () => {
       })
     mountDialog(true)
     await addMapping(1)
-    buttonWithText('existing-1, new-upstream-1').click()
-    await vi.waitFor(() => expect(document.body.textContent).toContain('upstream-before'))
 
     document.querySelector<HTMLButtonElement>('[title="刷新提供商模型"]')!.click()
 
     await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('upstream refresh failed'))
-    expect(document.body.textContent).toContain('upstream-before')
     expect(document.body.textContent).toContain('new-upstream-1')
     expect(buttonWithText('保存 1 项更改').disabled).toBe(false)
+
+    document.querySelector<HTMLButtonElement>('[aria-label="为 Client 1 添加提供商模型"]')!.click()
+    await nextTick()
+    const addInput = document.querySelector<HTMLInputElement>(
+      '[data-mapping-add-input][aria-label="Client 1 的提供商模型"]',
+    )
+    expect(addInput).not.toBeNull()
+    addInput!.value = 'upstream-before'
+    addInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(document.body.textContent).toContain('upstream-before')
   })
 
   it('updates only the selected model mappings without presenting scope text', async () => {
@@ -127,6 +145,36 @@ describe('BatchModelMappingDialog saving', () => {
     await vi.waitFor(() => expect(open.value).toBe(false))
     expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
       provider_model_mappings: [
+        { name: 'existing-1', priority: 1 },
+        { name: 'new-upstream-1', priority: 1 },
+      ],
+    })
+  })
+
+  it('preserves legacy non-default scope mappings when saving default mappings', async () => {
+    models[0].provider_model_mappings = [
+      { name: 'existing-1', priority: 1 },
+      {
+        name: 'endpoint-only',
+        priority: 2,
+        endpoint_ids: ['endpoint-1'],
+      },
+    ]
+    models[1].provider_model_mappings = []
+    vi.mocked(updateModel).mockResolvedValue(models[0])
+    mountDialog()
+    await addMapping(1)
+
+    buttonWithText('保存 1 项更改').click()
+
+    await vi.waitFor(() => expect(updateModel).toHaveBeenCalledOnce())
+    expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
+      provider_model_mappings: [
+        {
+          name: 'endpoint-only',
+          priority: 2,
+          endpoint_ids: ['endpoint-1'],
+        },
         { name: 'existing-1', priority: 1 },
         { name: 'new-upstream-1', priority: 1 },
       ],
@@ -200,8 +248,7 @@ describe('BatchModelMappingDialog saving', () => {
     expect(open.value).toBe(true)
     expect(saved).not.toHaveBeenCalled()
     expect(buttonWithText('保存中...').disabled).toBe(true)
-    expect(document.querySelector<HTMLInputElement>('#batch-custom-upstream-model')?.disabled).toBe(true)
-    expect(document.querySelector<HTMLButtonElement>('[title="清空映射"]')?.disabled).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="清空 Client 1 的映射"]')?.disabled).toBe(true)
     expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
       provider_model_mappings: [
         { name: 'existing-1', priority: 1 },
@@ -250,5 +297,72 @@ describe('BatchModelMappingDialog saving', () => {
       ],
     })
     expect(feedback.confirm).not.toHaveBeenCalled()
+  })
+
+  it('filters by model status without changing the draft', async () => {
+    models[0].provider_model_mappings = [{ name: 'existing-1', priority: 1 }]
+    models[1].provider_model_mappings = null
+    mountDialog()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Client 2'))
+
+    expect(buttonWithText('全部 2')).toBeDefined()
+    expect(buttonWithText('已映射 1')).toBeDefined()
+    expect(buttonWithText('未映射 1')).toBeDefined()
+    buttonWithText('已映射 1').click()
+    await nextTick()
+    expect(visibleModelNames()).toHaveLength(1)
+    expect(visibleModelNames()[0]).toContain('Client 1')
+
+    buttonWithText('未映射 1').click()
+    await nextTick()
+    expect(visibleModelNames()).toHaveLength(1)
+    expect(visibleModelNames()[0]).toContain('Client 2')
+
+    buttonWithText('全部 2').click()
+    await nextTick()
+    const search = document.querySelector<HTMLInputElement>(
+      'input[placeholder="搜索客户端或提供商模型…"]',
+    )
+    expect(search).not.toBeNull()
+    search!.value = 'existing-1'
+    search!.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(visibleModelNames()).toHaveLength(1)
+    expect(visibleModelNames()[0]).toContain('Client 1')
+    expect(buttonWithText('保存').disabled).toBe(true)
+  })
+
+  it('hides and restores a model without changing or saving its mappings', async () => {
+    models[0].provider_model_mappings = [{ name: 'existing-1', priority: 1 }]
+    models[1].provider_model_mappings = [{ name: 'existing-2', priority: 1 }]
+    vi.mocked(updateModel).mockResolvedValue(models[0])
+    const { open } = mountDialog()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Client 1'))
+
+    const hideButton = document.querySelector<HTMLButtonElement>('[aria-label="隐藏 Client 1"]')
+    expect(hideButton).not.toBeNull()
+    hideButton!.click()
+    await nextTick()
+
+    expect(document.body.textContent).not.toContain('Client 1')
+    expect(buttonWithText('保存').disabled).toBe(true)
+    expect(document.body.textContent).toContain('显示已隐藏（1）')
+
+    const showHidden = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      .find(input => input.parentElement?.textContent?.includes('显示已隐藏'))
+    expect(showHidden).toBeDefined()
+    showHidden!.checked = true
+    showHidden!.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+
+    expect(document.body.textContent).toContain('Client 1')
+    const restoreButton = document.querySelector<HTMLButtonElement>('[aria-label="显示 Client 1"]')
+    expect(restoreButton).not.toBeNull()
+    restoreButton!.click()
+    await nextTick()
+    expect(document.body.textContent).toContain('existing-1')
+    expect(buttonWithText('保存').disabled).toBe(true)
+    expect(open.value).toBe(true)
+    expect(updateModel).not.toHaveBeenCalled()
   })
 })

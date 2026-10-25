@@ -8,6 +8,8 @@ import type {
   ImportFromUpstreamResponse,
 } from './types'
 
+const PROVIDER_MODEL_PAGE_SIZE = 500
+
 /**
  * 获取 Provider 的所有模型
  */
@@ -21,6 +23,28 @@ export async function getProviderModels(
 ): Promise<Model[]> {
   const response = await client.get(`/api/admin/providers/${providerId}/models`, { params })
   return response.data
+}
+
+/**
+ * 获取 Provider 的全部模型，供需要完整模型集合的详情工作台使用。
+ *
+ * 后端默认每页只返回 100 条、单次上限 500 条；这里主动按 500 条分页，
+ * 避免超过 100 个客户端模型时静默截断。需要单页数据的调用方继续使用
+ * `getProviderModels`，不改变其原有契约。
+ */
+export async function getAllProviderModels(providerId: string): Promise<Model[]> {
+  let skip = 0
+  const allModels: Model[] = []
+
+  while (true) {
+    const models = await getProviderModels(providerId, {
+      skip,
+      limit: PROVIDER_MODEL_PAGE_SIZE,
+    })
+    allModels.push(...models)
+    if (models.length < PROVIDER_MODEL_PAGE_SIZE) return allModels
+    skip += PROVIDER_MODEL_PAGE_SIZE
+  }
 }
 
 /**

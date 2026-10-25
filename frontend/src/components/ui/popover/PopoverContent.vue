@@ -8,13 +8,20 @@ const props = withDefaults(defineProps<{
   side?: 'top' | 'right' | 'bottom' | 'left'
   sideOffset?: number
   alignOffset?: number
+  collisionPadding?: number
+  disableOutsidePointerEvents?: boolean
+  forceMount?: boolean
 }>(), {
   class: undefined,
   align: 'center',
   side: 'bottom',
   sideOffset: 4,
   alignOffset: 0,
+  collisionPadding: 0,
+  disableOutsidePointerEvents: true,
+  forceMount: false,
 })
+
 </script>
 
 <template>
@@ -33,6 +40,9 @@ const props = withDefaults(defineProps<{
       :side="props.side"
       :side-offset="props.sideOffset"
       :align-offset="props.alignOffset"
+      :collision-padding="props.collisionPadding"
+      :disable-outside-pointer-events="props.disableOutsidePointerEvents"
+      :force-mount="props.forceMount"
     >
       <slot />
     </PopoverContent>
