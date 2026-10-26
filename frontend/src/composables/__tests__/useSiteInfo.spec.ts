@@ -73,7 +73,7 @@ describe('useSiteInfo', () => {
     await refreshSiteInfo()
 
     expect(siteName.value).toBe('Aether')
-    expect(siteSubtitle.value).toBe('AI Gateway')
+    expect(siteSubtitle.value).toBe('个人 AI API 网关')
     expect(siteInfoLoaded.value).toBe(true)
     expect(document.title).toBe('Aether')
   })

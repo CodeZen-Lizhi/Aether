@@ -201,7 +201,7 @@ async fn gateway_serves_frontend_routes_and_assets_without_shadowing_public_api(
     assert_eq!(response.status(), StatusCode::OK);
     let payload: serde_json::Value = response.json().await.expect("json body should parse");
     assert_eq!(payload["site_name"], "Aether");
-    assert_eq!(payload["site_subtitle"], "AI Gateway");
+    assert_eq!(payload["site_subtitle"], "个人 AI API 网关");
 
     gateway_handle.abort();
     let _ = fs::remove_dir_all(&static_dir);

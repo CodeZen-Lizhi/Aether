@@ -8,7 +8,7 @@ interface SiteInfo {
 
 const DEFAULT_SITE_INFO: SiteInfo = {
   site_name: 'Aether',
-  site_subtitle: 'AI Gateway',
+  site_subtitle: '个人 AI API 网关',
 }
 
 // 模块级缓存，所有组件共享同一份数据

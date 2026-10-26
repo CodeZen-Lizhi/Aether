@@ -5,13 +5,30 @@
 //! applicable.
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use aether_http::{apply_http_client_config, HttpClientConfig};
 use sha2::{Digest, Sha256};
 
 const GITHUB_API_BASE: &str = "https://api.github.com";
-const GITHUB_REPO: &str = "fawney19/Aether";
+/// 默认从个人仓库发布页升级；仍允许用 `AETHER_TUNNEL_RELEASE_REPO` 指定镜像仓库。
+const DEFAULT_GITHUB_REPO: &str = "CodeZen-Lizhi/Aether";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+static GITHUB_REPO: OnceLock<String> = OnceLock::new();
+
+/// 返回发布制品所在的 `owner/repo`；环境变量只在首次使用时读取。
+fn github_repo() -> &'static str {
+    GITHUB_REPO
+        .get_or_init(|| {
+            std::env::var("AETHER_TUNNEL_RELEASE_REPO")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| DEFAULT_GITHUB_REPO.to_string())
+        })
+        .as_str()
+}
 
 // ── GitHub API types ─────────────────────────────────────────────────────────
 
@@ -92,7 +109,9 @@ async fn fetch_release(
             };
             let url = format!(
                 "{}/repos/{}/releases/tags/{}",
-                GITHUB_API_BASE, GITHUB_REPO, tag
+                GITHUB_API_BASE,
+                github_repo(),
+                tag
             );
             let resp = client.get(&url).send().await?;
             if !resp.status().is_success() {
@@ -106,7 +125,8 @@ async fn fetch_release(
             // List releases and find the latest tunnel-v* tag
             let url = format!(
                 "{}/repos/{}/releases?per_page=20",
-                GITHUB_API_BASE, GITHUB_REPO
+                GITHUB_API_BASE,
+                github_repo()
             );
             let resp = client.get(&url).send().await?;
             if !resp.status().is_success() {
@@ -134,7 +154,9 @@ async fn download_release_file(
 ) -> anyhow::Result<Vec<u8>> {
     let url = format!(
         "https://github.com/{}/releases/download/{}/{}",
-        GITHUB_REPO, tag, filename
+        github_repo(),
+        tag,
+        filename
     );
     let resp = client
         .get(&url)
@@ -423,4 +445,18 @@ pub async fn cmd_upgrade(version: Option<String>) -> anyhow::Result<()> {
 /// the currently active managed service to restart successfully.
 pub async fn perform_upgrade(version: &str) -> anyhow::Result<()> {
     execute_upgrade(Some(version), true, RestartMode::Required).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 未指定覆盖仓库时，升级必须访问个人发布仓库而不是旧上游地址。
+    #[test]
+    fn default_release_repository_is_independent_fork() {
+        if std::env::var_os("AETHER_TUNNEL_RELEASE_REPO").is_some() {
+            return;
+        }
+        assert_eq!(github_repo(), "CodeZen-Lizhi/Aether");
+    }
 }

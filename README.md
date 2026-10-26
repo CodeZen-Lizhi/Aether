@@ -2,205 +2,289 @@
   <img src="frontend/public/aether_adaptive.svg" width="120" height="120" alt="Aether Logo">
 </p>
 
-<h1 align="center">Aether · 个人自用版</h1>
+<h1 align="center">Aether</h1>
 
 <p align="center">
-  <strong>自托管 AI API 网关（个人单机裁剪版）</strong><br>
-  Claude / OpenAI / Gemini 统一接入与格式转换 · 三种调度模式 · 有限重试与故障转移 · 用量统计
+  <strong>个人自托管 AI API 网关</strong><br>
+  统一接入模型供应商 · 三种调度策略 · 有限重试与故障转移 · 本地用量与成本统计
 </p>
 
 <p align="center">
-  <a href="#功能">功能</a> •
-  <a href="#调度与故障转移">调度与故障转移</a> •
+  <a href="#项目定位">项目定位</a> •
+  <a href="#当前功能">当前功能</a> •
   <a href="#部署">部署</a> •
+  <a href="#使用流程">使用流程</a> •
   <a href="#本地开发">本地开发</a> •
   <a href="#环境变量">环境变量</a>
 </p>
 
 ---
 
-## 简介
+## 项目定位
 
-这是 [Aether](https://github.com/fawney19/Aether) 的个人自用二开分支（`slim-personal`）：在上游基础上**物理删除**了商业化（支付/套餐/用户钱包/返利/注册）、运营周边（公告/邮件/推送通知/审计日志/PII 脱敏/S3 备份/自更新/管理令牌/一键安装/模块开关系统/LDAP/OAuth 登录/全局 IP 黑白名单）与多数据库（Postgres/MySQL）支持，只保留个人单机所需的代理核心。
+Aether 是一个面向个人和小团队自托管的 AI API 网关。它把不同供应商的模型、端点和凭据收在同一个本机服务后面，按统一模型名完成路由、协议转换、失败切换和用量记账。
 
-> 上游同步会大量冲突，本分支视作单向 fork，不再跟随上游合并。
+当前仓库是独立维护的个人版本，主线为 `codex/tauri-macos`。项目以 macOS 桌面客户端为主要使用方式，同时保留 Web 管理页、Docker Compose 和源码运行方式。服务默认使用 SQLite 与内存运行时，不依赖外部数据库或 Redis。
 
-## 功能
+核心边界：
 
-- **AI 代理核心**：Claude / OpenAI / Gemini 协议互转、流式透传、Responses WebSocket 模式、模型指令解析
-- **渠道管理**：Provider / Endpoint / Key 管理，渠道 OAuth（Claude 订阅账号等）、渠道上游代理、渠道配额重置
-- **调度与路由**：人工优先级、缓存亲和、成本优先三种完整模式，统一首次选择与故障后的候选顺序，保留路由规则和请求修改配置
-- **聊天故障转移**：同 Key 有限重试、按错误性质与连续失败调整健康度、熔断探测恢复、共享首输出等待预算，覆盖 HTTP 同步、SSE 和 Responses WebSocket 的适用路径
-- **API Key**：用户 Key / 独立 Key、限流、并发限制、模型与 Provider 白名单、Key 级 IP 规则、有效期与自动删除
-- **用量统计**：请求/Tokens/成本统计、模型与 Provider 维度、活跃热图、用量明细
-- **代理功能**：Aether Tunnel 正/反向代理节点（保留），渠道级上游代理（保留）
-- **单用户**：管理员账号密码登录，账号/密码在系统设置中自助修改
+- 单管理员、单机优先，数据默认保存在本机。
+- 只代理实际配置的供应商；是否支持某种请求取决于对应供应商、端点、认证和模型能力。
+- 计费统计按本地配置价格计算，不预测供应商账单；中转服务的最终扣费仍以其账单为准。
+- 网关不替代客户端工具，不内置模型账号，也不附带任何第三方 API 额度。
 
-**已删除**：支付、套餐、用户钱包、邀请返利、用户注册、公告、邮件、推送通知、审计日志、PII 脱敏、S3 备份、在线自更新、管理令牌（CC Switch）、一键安装脚本、模块开关系统、LDAP、OAuth 登录、全局 IP 黑白名单、Gemini Files 管理页、视频任务管理页、号池管理页、用户管理页、独立健康监控页面、Postgres/MySQL/Redis。多用户体系裁剪为单管理员；请求调度所需的 Key 健康度、冷却与熔断恢复机制仍保留。
+## 当前功能
 
-## 调度与故障转移
+### 1. 桌面客户端
 
-以下策略面向聊天与开发场景，包括 Codex 等客户端通过网关发起的模型请求。图片、视频、embedding 不新增这套聊天重试策略。下文的 Key 指渠道的**上游凭据**，不是客户端访问网关使用的 API Key。
+- macOS 14+、Apple Silicon 为主要交付目标，Tauri 2 宿主内打包 Rust 网关、SQLite 与前端资源。
+- 安装后自动初始化并打开后台，桌面模式不需要额外创建管理员或经过 Web 登录页。
+- 菜单栏控制启动、停止、重启、打开后台、数据目录、日志目录和退出；支持登录自启。
+- 系统设置可修改端口、自启和查看诊断日志；网关仅监听本机回环地址。
+- 应用数据位于 `~/Library/Application Support/com.aether.desktop/`，JWT 与加密密钥保存在 macOS 钥匙串。
+- 版本升级前生成数据库与 WAL 快照，支持配置导出、完整备份与恢复。
 
-### 三种完整调度模式
+详细安装、数据目录、签名和构建说明见 [macOS 客户端文档](docs/desktop-macos.md)。
 
-在路由配置中选择模式；同一模式同时决定首次调用和故障后的候选顺序，无需另选故障转移策略。
+### 2. 供应商、端点和上游 Key
 
-| 模式 | 选择与转移顺序 | 适用场景 |
+- 管理供应商、API 端点与多渠道 Key；同一供应商可配置多个端点和多把 Key。
+- 支持渠道 OAuth 账号、API Key、Cookie 等认证方式，以及供应商自定义认证模板。
+- Key 可设置接口格式、模型范围、内部优先级、并发限制、过期时间和 RPM 限制。
+- 支持上游模型发现、单条/批量模型映射、模型别名、模型能力与图片、视频等计费配置。
+- 支持供应商余额查询、签到、额度重置、月配额展示和批量余额刷新。
+- 支持从上游同步分组倍率，也可手动设置 Key 的价格倍率；成本优先调度使用该倍率。
+- 支持渠道级出口代理、代理节点选择、端点健康与冷却状态查看。
+- 支持模型测试与故障转移测试，从真实候选链路观察请求是否可达。
+
+### 3. 全局模型与协议代理
+
+- 以统一模型名管理客户端可见模型，再映射到各供应商的实际模型。
+- 支持 OpenAI Chat Completions、Responses、Realtime、Images、Videos、Embeddings、Rerank、Search 等端点。
+- 支持 Claude Messages、Gemini Generate Content、Gemini Interactions、Gemini Files 及对应 embedding/video 路由。
+- 支持 Codex Live、Responses WebSocket、普通 HTTP 流式与非流式请求。
+- 允许在协议能力兼容时做格式转换；同格式请求可透传，转换失败或供应商不支持时按明确错误返回。
+- 模型指令支持为请求选择推理强度等参数，具体可用后缀取决于当前 API 格式与供应商能力。
+- 对已交付且不可安全重放的文本或工具状态，不在中途静默换 Key 重发整轮请求。
+
+### 4. 调度、重试与健康度
+
+- 调度页提供三种策略，首次选择与故障后的候选顺序使用同一套规则：
+
+| 策略 | 选择方式 | 适用场景 |
 | --- | --- | --- |
-| 人工优先级 `fixed_order` | 按配置的供应商、Key 优先级选择。当前 Key 尝试耗尽后按原顺序寻找备用；健康尚未归零不会让它被自动重排。 | 供应商较少，已了解其余额、价格、稳定性，希望优先使用指定渠道。 |
-| 缓存亲和 `cache_affinity` | 同一会话优先复用供应商、端点和 Key；备用完整成功后迁移绑定，原 Key 恢复不会强制切回。 | 较长的开发任务、连续对话，希望提高上游缓存复用机会。 |
-| 成本优先 `cost_based` | 在同等能力、兼容条件下按 Key 配置的价格倍率升序选择，失败后继续找下一候选；仅同倍率时优先亲和目标。 | 较多独立短任务，优先考虑配置价格。 |
+| 缓存亲和 `cache_affinity` | 同一会话优先复用供应商、端点和 Key；备用成功后迁移绑定 | 长对话、Codex 等连续开发任务 |
+| 固定顺序 `fixed_order` | 严格按供应商优先级主备，不按会话粘滞 | 渠道少、顺序明确 |
+| 成本优先 `cost_based` | 同模型下按 Key 价格倍率升序，失败后继续找下一候选 | 多渠道、关注配置成本 |
 
-缓存亲和依赖可识别的会话信息以及绑定有效期；复用同一 Key 不保证上游一定命中缓存。成本模式使用配置价格倍率，不预测包含缓存折扣在内的最终账单。三种模式都先执行可用性过滤，不能绕过禁用、冷却、熔断或本地容量限制。
+- 支持按供应商拖拽调整全局优先级，并保留已有请求修改规则、条件、阶段和停止语义。
+- 同一 Key 可进行有限重试；总尝试次数包含首次，设为 `2` 表示首次加一次重试。
+- 调度健康度按 Key 和接口格式维护，范围 0–10；错误分类、连续失败加重、冷却、熔断与探测恢复均按当前聊天策略执行。
+- 流式请求共享首输出总预算，覆盖调度、排队、连接、刷新凭据、退避与等待有效输出；默认 `90s`，开始有效输出后不截断正常回答。
+- 普通重试的额外等待有上限；供应商返回有效 `Retry-After` 时保留完整冷却期限。
+- 已禁用、模型/接口不匹配、熔断未到探测时间或本地容量不足的候选会被过滤，不伪造为上游失败。
 
-### 有限重试与切换
+完整规则见 [聊天调度与故障转移](docs/specs/aether-gateway/backend/chat-failover.md)。
 
-“**总尝试次数（含首次）**”按本次请求、同一个 Key 和接口格式计数。设为 **2** 表示首次请求加一次重试，不是首次之外再重试两次。同一 Key 出现在多个端点候选中，也不会因此获得无限重试。
+### 5. API Key 与访问控制
 
-以 K1、K2 按顺序排列、总尝试次数为 2 为例：
+- 管理独立余额 API Key，可配置初始余额、无限额度、按余额消费或独立余额模式。
+- 支持按分钟限速、并发限制、模型白名单、Provider 白名单、IP/CIDR/通配符规则。
+- 支持有效期、到期禁用或自动删除；可单独启用、禁用和删除 Key。
+- 网关通过 Bearer API Key 鉴权；独立 Key 的创建结果需按页面提示及时保存，列表只展示脱敏值。
+- 全局配置提供默认限速、到期 Key 自动删除和 API 格式转换开关。
 
-```text
-K1 返回 500 → K1 再试一次仍返回 500 → K2 成功
-K1 健康度：10 → 8 → 6；K2 的成功不会给 K1 回血。
-```
+### 6. 用量、成本与诊断
 
-**本次请求不必等到健康归零才换 Key。** 次数耗尽、冷却等待过长或单次尝试超时，都可能让请求在健康仍大于 0 时转向备用；适用的跨候选总预算耗尽后则停止继续尝试。后续请求重新按所选模式、健康与冷却状态选择；人工模式可能仍优先 K1，缓存模式可以继续使用已成功的 K2。
+- 仪表盘展示今日请求、Token、费用、缓存和平均响应时间，以及历史累计和按小时/天/周/月的趋势。
+- 使用记录支持时间、模型、供应商、接口格式、状态和客户端类型筛选，并可自动刷新。
+- 请求详情显示模型、费用、Token、缓存、首字耗时、总耗时和吞吐，并区分调用方 Key 与实际上游执行 Key。
+- 请求链路按真实调度顺序展示入口、供应商、Key、重试和结果；未尝试或仅跳过的候选不会伪装成实际调用。
+- 支持查看请求头、请求体、响应体、原始上游错误、curl 回放计划和相关诊断信息。
+- 用量按模型、供应商和记录维度汇总；金额根据模型定价与 Key 倍率本地计算。
+- 系统设置提供记录级别、敏感请求头、日志保留、自动清理、手动清理和数据维护。
 
-重试还受错误类型、显式终止规则和协议重放限制约束，并非所有错误都重试。没有可用候选或总预算耗尽时明确返回错误，不无限循环。
+### 7. 备份、导入与运行维护
 
-- 禁用、已知不可用、熔断尚未到探测时间、接口/模型不匹配、本地并发已满：过滤该候选，不因跳过而扣健康分。
-- 本地容量尚可、实际调用后上游返回限流或并发满：属于真实失败，可有限重试并影响当前 Key 的健康。
-- 无明确等待提示的普通暂态重试首次退避约 0.5–1 秒，随后指数增加；同一次请求在同 Key、同格式上的额外重试等待**累计最多 2 秒**，不包含上游请求本身耗时。
-- 上游返回有效 `Retry-After` 时保留完整冷却期限，包括 503 等非 429 响应。要求等待 30 秒时可以先用备用，但不会把原 Key 的共享冷却缩成 2 秒；后续请求也受该期限约束。
+- 支持配置导出/导入和完整备份恢复，覆盖供应商、端点、Key、模型、代理节点、调度策略、系统配置、管理员资料、API Key 与用量。
+- 完整备份默认使用 `skip / overwrite / error` 合并模式；遇到冲突或无法关联的数据会明确中止，不静默丢弃。
+- SQLite 使用增量迁移、WAL 与启动前自动准备数据库；桌面升级前保存数据库快照。
+- 支持通过配置或系统设置控制日志格式、日志落点、轮转、保留期限和请求正文记录级别。
 
-### 健康度与熔断恢复
+### 8. Aether Tunnel
 
-调度健康度为 **0–10 分**，按 Key、接口格式分别维护，与统计成功率不同。每次真实尝试最多结算一次，错误归因优先于单独的 HTTP 状态码。
+- Tunnel 是独立代理节点程序，适合无法直连 Aether 或需要固定出口的场景。
+- 节点通过 WebSocket 回连 Aether，无需对外监听端口；支持多条服务地址、自动重连、连接池与限流。
+- 支持出口代理、DNS 策略、IPv4/IPv6 选择、TLS/PSK 通道安全、心跳指标和多平台服务安装。
+- 管理页支持添加节点、查看指标、测试连通性和维护远程配置；升级能力以当前节点和管理页状态为准。
 
-| 结果 | 基础处理 |
-| --- | --- |
-| 429、可识别的上游并发满/暂时繁忙、503/504、上游首输出等待超时 | 扣 1 分 |
-| 500/502、可归因上游的连接/TLS/协议异常、不确定的中转鉴权错误 | 扣 2 分 |
-| 可信证据确认当前 Key 无效、停用或余额/配额耗尽 | 直接归零，进入可恢复熔断 |
-| 客户端取消、本地配置或准入拒绝、未调用的候选 | 不扣分、不回血，也不清连续失败计数 |
-| 合法的完整模型终态 | 加 1 分，最高 10 分，并清零连续失败计数 |
-
-连续失败会在基础扣分上加重：第 1–2 次不额外扣分，第 3–4 次额外扣 1 分，第 5 次起额外扣 2 分。错误类型变化不重置计数。满分开始、期间没有成功时：
-
-- 连续基础 1 分失败：`10 → 9 → 8 → 6 → 4 → 1 → 0`。
-- 连续基础 2 分失败：`10 → 8 → 6 → 3 → 0`。
-
-这套聊天策略不再使用“固定连续 8 次失败”、低成功率额外熔断或快速恢复满血规则。HTTP 200、收到响应头或开始输出都不等于完整成功；错误 JSON、HTML 错误页、空响应和缺少合法终态的响应不会被当成成功。协议认可的正常截断终态按既有规则处理，Responses 同格式的合法扩展终态保留。
-
-中转站的笼统 401/402/403、“内部线路余额不足”等信息，不足以证明当前 Key 本身已不可用。只有经过可信归因、明确指向当前凭据的错误才能直接归零；中转返回模板未被可靠识别时，按相应普通错误处理。
-
-健康归零后停止普通调用，首次约 **1 分钟**后允许一个请求探测；失败后间隔按 2、4、8 分钟递增，受最大探测间隔配置约束（1–32 分钟）。探测完整成功恢复到 **1 分**，之后逐次成功加分。到期代表允许探测，不代表上游一定恢复或后台会准点发起模型请求。长流探测持续续租，取消或失去探测所有权后释放/停止旧尝试。
-
-### 等待时间与流式边界
-
-| 时间设置 | 含义 |
-| --- | --- |
-| 单次流式首字节超时 | 默认保留现有 30 秒及渠道的有效覆盖配置；首字节、首个协议事件与有效模型输出不同，它们不能替代跨候选的首输出总预算。 |
-| 流式首输出总预算 | 默认 **90 秒**，跨候选、Key 和重试共享，包含调度、准入排队、连接、刷新凭据、退避和等待有效输出。 |
-| 同 Key 额外重试等待 | 累计最多 **2 秒**；只限制重试等待，不代表单 Key 请求两秒就结束。 |
-| 非流式、compact、WS 整轮/连接 | 保留各自时限；非流式默认完整响应 300 秒、compact 默认 1200 秒，不统一改成 90 秒。 |
-
-90 秒限制的是流式**首次有效输出前**的等待，不是完整回答的时长，也不保证每个候选都能试完。心跳、响应头、启动事件和空帧不算有效输出；正常文本、推理或有效工具输出可构成进展。开始有效输出后，这个预算不再截断正常回答，其他适用超时仍然生效。
-
-一旦已向客户端交付不能安全重放的协议、文本或工具状态，中途断流不会透明重发整次请求，也不会拼接另一个模型的输出。这样可以避免重复代码、重复工具调用或不一致的生成状态；后续是否重建请求由客户端决定。
-
-需要原上游状态的续接必须保留原绑定。当前 HTTP 请求携带 `previous_response_id` 时，由于无法可靠证明原物理绑定，会明确返回 **409**；Responses WebSocket 续接沿用已有原连接/Key 归属校验。网关不会把旧引用转发给另一 Key，也不会擅自删除引用或拼装历史来制造故障转移。
-
-### 配置与升级
-
-1. 配置供应商、端点和上游 Key，在路由中选择三种模式之一，并设置所需的人工优先级或价格倍率。
-2. 在供应商设置中核对“总尝试次数（含首次）”及显示的生效来源；可设为 2 以容忍一次暂态失败。有效值范围为 1–99，没有任何有效配置时回退为 1。
-3. 按上游延迟调整“流式首输出总预算”（毫秒，默认 `90000`）及单次超时。总预算对应供应商 `config.failover_rules.stream_failover_budget_ms`，不是环境变量。
-4. 通过请求记录、Key 健康度及冷却/熔断状态观察实际效果。中转的正常推理耗时、客户端和前置代理的超时可能影响实际等待，应结合使用情况校准。
-
-存量配置中的 `2` 现在真正表示两次总尝试，保留原本有效的显式覆盖与继承关系；因此部分失败请求会比旧实现多一次上游调用。旧健康值保留，新严格连续失败计数按策略版本迁移，不将低健康直接重置满分。
-
-升级时需运行更新后的网关并应用 SQLite 增量迁移。健康结算使用原子去重和待结算事实：数据库暂时失败时重试状态写入，不重新调用模型；迟到的旧凭据、旧熔断代次或旧探测回报不能覆盖新状态。待结算事实保留原始时间，重复回报不会延长冷却；数据库本身无法持久化时会记录失败，不伪造成功写入。
+安装和参数见 [Tunnel 文档](apps/aether-tunnel/README.md)。
 
 ## 部署
 
-### macOS 客户端
+### macOS 客户端（推荐）
 
-桌面版使用 Tauri 2 和现有 Vue 后台，内置本机网关，打开即用，无需创建账号或登录。提供菜单栏、登录自启、钥匙串密钥管理和安装包。安装与构建方法见 [macOS 客户端文档](docs/desktop-macos.md)。
+桌面应用是当前主要交付形态。打开安装包后将 **Aether.app** 拖入“应用程序”并启动；首次运行会自动创建本地数据库和管理员身份。
+
+默认网关地址：`http://127.0.0.1:8084`
+
+OpenAI 兼容客户端 Base URL：`http://127.0.0.1:8084/v1`
+
+Claude 兼容客户端 Base URL：`http://127.0.0.1:8084`
+
+构建当前架构安装包：
+
+```bash
+npm --prefix frontend ci
+npm --prefix apps/aether-desktop ci
+npm --prefix apps/aether-desktop run build
+```
+
+产物位于 `target/release/bundle/macos/Aether.app` 和 `target/release/bundle/dmg/`。构建会递增版本；默认使用 ad-hoc 签名，不含 Apple 公证。
 
 ### Docker Compose
 
 ```bash
-git clone <你的 fork 仓库地址> aether
+git clone https://github.com/CodeZen-Lizhi/Aether.git aether
 cd aether
 
-# 配置环境变量
 cp .env.example .env
-./generate_keys.sh   # 生成 JWT_SECRET_KEY / ENCRYPTION_KEY 并写入 .env
-# 编辑 .env 设置 ADMIN_PASSWORD（首次启动自举管理员）
+./generate_keys.sh
+# 在 .env 中设置 ADMIN_PASSWORD，首次启动时创建管理员
 
-# 本地构建并启动（SQLite + memory，单容器）
 docker compose up -d --build
 ```
 
-应用监听 `0.0.0.0:${APP_PORT:-8084}`，SQLite 数据保存在 Docker named volume `aether-personal_aether-data` 中，而非宿主机目录。`docker compose down` 会保留该数据卷；请勿在需要保留数据时使用 `docker compose down -v`。登录后台后先配置渠道（Provider），再创建 API Key 即可通过 `http://<host>:8084/v1/messages`（Claude 格式）或 `/v1/chat/completions`（OpenAI 格式）代理请求。
+默认监听 `0.0.0.0:${APP_PORT:-8084}`，SQLite 数据保存在 Docker named volume `aether-personal_aether-data`。`docker compose down` 保留数据卷；只有确认不再需要数据时才使用 `docker compose down -v`。
 
-### 源码直跑
+### 源码运行
+
+需要 Rust 工具链和 Node.js。SQLite 与 memory 运行时不需要额外数据库服务。
 
 ```bash
-# 前端（首次）
-cd frontend && npm install && npm run build && cd ..
-
-# 后端（SQLite 默认）
+npm --prefix frontend ci
+npm --prefix frontend run build
 cargo run -p aether-gateway --release
 ```
 
+生产环境至少设置 `JWT_SECRET_KEY`、`ENCRYPTION_KEY` 和 `ADMIN_PASSWORD`。监听在非回环地址时，应自行配置 HTTPS 反向代理、访问控制与防火墙。
+
+## 使用流程
+
+1. 启动网关或桌面应用并打开管理后台。
+2. 在“供应商管理”中添加供应商、端点和上游 Key；完成模型发现或手动建立模型。
+3. 在“模型管理”中创建统一模型，关联一个或多个供应商模型；必要时配置计费。
+4. 在“调度策略”中选择缓存亲和、固定顺序或成本优先，并调整供应商优先级。
+5. 在“独立余额 API Keys”中创建客户端 Key，配置额度、模型范围、IP 和并发限制。
+6. 将客户端 Base URL 指向网关，在 Authorization 头使用刚创建的 Key。
+7. 在“用量记录”中核对请求结果、实际供应商、Token、费用和失败原因。
+
+常用 API 端点：
+
+| 能力 | 路径 |
+| --- | --- |
+| OpenAI Chat Completions | `POST /v1/chat/completions` |
+| OpenAI Responses | `POST /v1/responses` |
+| OpenAI Responses WebSocket | `GET /v1/responses`（升级） |
+| OpenAI Realtime | `GET /v1/realtime`（升级） |
+| OpenAI Embeddings | `POST /v1/embeddings` |
+| OpenAI Images | `POST /v1/images/generations` |
+| OpenAI Videos | `POST /v1/videos` |
+| Claude Messages | `POST /v1/messages` |
+| Gemini Generate Content | `POST /v1beta/models/{model}:{action}` |
+| 模型列表 | `GET /v1/models` |
+| 健康检查 | `GET /v1/health` |
+
+具体请求格式以对应供应商和格式文档为准；Aether 不保证跨格式的所有字段都能无损转换。
+
 ## 本地开发
 
-依赖 Rust toolchain 和 Node.js（无需 Docker，SQLite + memory 运行时零外部依赖）。
-
 ```bash
-make dev          # 同时启动后端 + 前端 Vite dev server
-make dev-backend  # 仅后端
-make dev-frontend # 仅前端
+make dev           # 后端 + 前端开发服务
+make dev-backend   # 仅后端
+make dev-frontend  # 仅前端
 ```
 
-## Aether Tunnel（可选）
+前端检查：
 
-Aether Tunnel 是配套的代理节点程序，为无法直连上游的网络环境中转 API 流量。
+```bash
+npm --prefix frontend run type-check
+npm --prefix frontend run test:run
+```
 
-- Docker Compose 部署或下载预编译二进制直接运行
-- 通过 `aether-tunnel setup` 完成交互式配置
-- 详细文档见 [apps/aether-tunnel/README.md](apps/aether-tunnel/README.md)
+Rust 检查：
+
+```bash
+cargo fmt --all -- --check
+cargo check -p aether-gateway
+cargo test -p aether-gateway --lib
+```
+
+桌面开发与交付验收：
+
+```bash
+npm --prefix apps/aether-desktop run dev
+npm --prefix apps/aether-desktop run verify:delivery -- --help
+npm --prefix apps/aether-desktop run build:verified -- --help
+```
+
+`build` 只证明安装包构建成功；涉及功能验收时使用 `verify:delivery` 或 `build:verified`，参数与证据目录规则见 [桌面验证入口](docs/desktop-macos.md#交付门禁)。
 
 ## 环境变量
 
-- `APP_PORT`：`aether-gateway` 唯一监听端口，固定绑定 `0.0.0.0:${APP_PORT}`
-- `AETHER_DATABASE_DRIVER` / `AETHER_DATABASE_URL`：SQLite（默认）连接配置
-- `AETHER_RUNTIME_BACKEND=memory`：运行时状态后端，单机固定 memory
-- `AETHER_GATEWAY_AUTO_PREPARE_DATABASE`：启动前自动执行挂起的 SQLite migration
-- `JWT_SECRET_KEY` / `ENCRYPTION_KEY`：认证与敏感数据加密密钥（`generate_keys.sh` 生成）
-- `API_KEY_PREFIX`：API Key 前缀，默认 `sk`
-- `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL`：首次启动自举管理员
-- `CORS_ORIGINS` / `CORS_ALLOW_CREDENTIALS`：前端跨域来源控制
-- `RUST_LOG`：Rust 日志过滤，例如 `aether_gateway=info`
-- `AETHER_GATEWAY_MAX_IN_FLIGHT_REQUESTS`：单实例请求并发上限（按 CPU 自动推导）
-- `AETHER_MAX_REQUEST_BODY_MB`：单请求解压后请求体上限（0 为不限制）
+| 变量 | 说明 |
+| --- | --- |
+| `APP_PORT` | 网关监听端口，默认 `8084` |
+| `APP_HOST` | 监听地址；桌面模式固定回环，Web/Docker 默认 `0.0.0.0` |
+| `AETHER_DATABASE_DRIVER` | 数据库驱动，当前使用 `sqlite` |
+| `AETHER_DATABASE_URL` | SQLite 地址，例如 `sqlite:///opt/aether/data/aether.db` |
+| `AETHER_RUNTIME_BACKEND` | 运行时状态后端，单机使用 `memory` |
+| `AETHER_GATEWAY_AUTO_PREPARE_DATABASE` | 启动前自动应用 SQLite migration |
+| `JWT_SECRET_KEY` | 管理会话签名密钥；更换后已有登录态失效 |
+| `ENCRYPTION_KEY` | 上游 Key 等敏感数据加密密钥；丢失后原密文无法解密 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL` | 首次启动自举管理员 |
+| `API_KEY_PREFIX` | 客户端 API Key 前缀，默认 `sk` |
+| `CORS_ORIGINS` / `CORS_ALLOW_CREDENTIALS` | Web 模式跨域来源与 Cookie 配置 |
+| `RUST_LOG` | Rust 日志过滤，例如 `aether_gateway=info` |
+| `AETHER_LOG_FORMAT` / `AETHER_LOG_DESTINATION` / `AETHER_LOG_DIR` | 日志格式、落点与目录 |
+| `AETHER_GATEWAY_MAX_IN_FLIGHT_REQUESTS` | 单实例请求并发上限 |
+| `AETHER_MAX_REQUEST_BODY_MB` | 解压后请求体上限，`0` 表示不限制 |
 
-## 与上游的差异维护
+完整示例见 [.env.example](.env.example)。凭据不要提交到仓库；更换 `ENCRYPTION_KEY` 前先导出并核对恢复方案。
 
-删除以阶段化 commit 落在 `slim-personal` 分支，按功能可读回滚：
+## 数据与备份
 
-1. `feat(frontend)` 前端瘦身
-2. `feat(backend)` 后端周边模块删除（通知/邮件/OAuth 登录/LDAP/审计/备份/管理令牌/自更新/模块系统等）
-3. `feat(backend)` 商业化核心删除（支付/套餐/钱包/返利 + 请求链路钱包闸门摘除）
-4. `feat(data)` 数据层 SQLite 化 + 部署裁剪
+- Web/Docker 模式默认数据库为 SQLite；桌面模式数据库和快照位于应用数据目录。
+- 导出配置与完整备份可能包含上游凭据、管理资料和用量，应视为敏感文件保管。
+- 物理复制数据库不包含 macOS 钥匙串中的 JWT/加密密钥，不能单独作为桌面数据恢复依据。
+- 恢复完整备份前应停止写入并保留当前数据副本；合并冲突不会被静默跳过。
 
-保留例外：`aether-billing` 定价引擎（用量成本计算依赖）、`aether-oauth/provider`（渠道订阅账号 OAuth）、`aether-cache`（数据层依赖）、`aether-task`（后台 worker 运行时底座）、per-key IP 规则、隐私还原库壳（`privacy/`，脱敏入口已短路）。
+## 项目结构
 
-兼容边界：独立 Key 的余额与结算仍复用钱包数据契约，代理节点仍复用管理令牌；管理员审计输出及隐私还原封装仍在正常请求处理链路中。历史 SQLite 表和 JSON 备份字段保留兼容，不做隐式删表或数据迁移。已退役的模块配置不再通过普通管理 API 读写，备份入口仍保留历史标量配置；钱包每日汇总任务已移除。
+```text
+apps/
+  aether-desktop/      Tauri macOS 宿主
+  aether-gateway/      HTTP/WebSocket 网关入口
+  aether-tunnel/       隧道节点程序
+crates/
+  aether-ai/           协议格式、转换与 serving
+  aether-provider/     供应商、端点、Key 与传输
+  aether-routing-core/ 调度规则
+  aether-gateway/      前门、控制、执行与 worker
+  aether-data/         SQLite、查询与 schema
+  aether-usage/        用量与统计
+frontend/              Vue 管理界面
+docs/                  规格、任务与运维文档
+```
+
+## 文档
+
+- [Spec 索引](docs/specs/index.md)
+- [macOS 客户端](docs/desktop-macos.md)
+- [Aether Tunnel](apps/aether-tunnel/README.md)
+- [Responses WebSocket 模式](docs/WebSocket-Mode.md)
+- [供应商接口定义](docs/api/provider-interface-definitions.md)
 
 ## 许可证
 
-沿用上游 [Aether 非商业开源许可证](LICENSE)。
+本项目沿用 [Aether 非商业开源许可证](LICENSE)。许可边界以仓库中的 `LICENSE` 正文为准。

@@ -140,7 +140,7 @@ pub(crate) async fn maybe_build_local_public_support_response(
                 .ok()
                 .flatten()
                 .and_then(|value| value.as_str().map(ToOwned::to_owned))
-                .unwrap_or_else(|| "AI Gateway".to_string());
+                .unwrap_or_else(|| "个人 AI API 网关".to_string());
             return Some(
                 Json(json!({
                     "site_name": site_name,

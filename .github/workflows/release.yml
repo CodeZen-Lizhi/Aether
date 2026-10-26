@@ -15,8 +15,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  GHCR_IMAGE: fawney19/aether
-  DOCKERHUB_IMAGE: fawney19/aether
+  GHCR_IMAGE: ${{ github.repository_owner }}/aether
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'codezen-lizhi/aether' }}
 
 jobs:
   preflight:

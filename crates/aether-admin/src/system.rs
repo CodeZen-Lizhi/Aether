@@ -1034,7 +1034,7 @@ pub fn is_sensitive_admin_system_config_key(key: &str) -> bool {
 pub fn admin_system_config_default_value(key: &str) -> Option<serde_json::Value> {
     match key {
         "site_name" => Some(json!("Aether")),
-        "site_subtitle" => Some(json!("AI Gateway")),
+        "site_subtitle" => Some(json!("个人 AI API 网关")),
         REQUEST_RECORD_LEVEL_KEY => Some(json!("full")),
         "max_request_body_size" => Some(json!(0)),
         "max_response_body_size" => Some(json!(0)),
