@@ -11,15 +11,10 @@ pub(crate) async fn read_request_candidate_trace(
     request_id: &str,
     attempted_only: bool,
 ) -> Result<Option<RequestCandidateTrace>, DataLayerError> {
-    let all_candidates = if attempted_only {
-        state
-            .list_attempted_request_candidates_by_request_id(request_id)
-            .await?
-    } else {
-        state
-            .list_request_candidates_by_request_id(request_id)
-            .await?
-    };
+    // 始终读取完整历史：先过滤再构造会在全部候选被跳过时丢失“有过调度但零上游调用”的事实。
+    let all_candidates = state
+        .list_request_candidates_by_request_id(request_id)
+        .await?;
     Ok(RequestCandidateTrace::from_candidates(
         request_id,
         all_candidates,
@@ -126,6 +121,32 @@ mod tests {
         assert_eq!(trace.candidates[0].id, "cand-2");
         assert_eq!(trace.final_status, RequestCandidateFinalStatus::Failed);
         assert_eq!(trace.total_latency_ms, 33);
+    }
+
+    #[tokio::test]
+    async fn read_request_candidate_trace_keeps_skipped_history_as_no_attempt() {
+        let repository = Arc::new(InMemoryRequestCandidateRepository::seed(vec![
+            sample_candidate(
+                "cand-cooldown",
+                "req-cooldown",
+                0,
+                RequestCandidateStatus::Skipped,
+                None,
+                None,
+                None,
+            ),
+        ]));
+        let state = GatewayDataState::with_request_candidate_reader_for_tests(repository);
+
+        let trace = read_request_candidate_trace(&state, "req-cooldown", true)
+            .await
+            .expect("trace should succeed")
+            .expect("skipped history should still produce a trace");
+
+        assert_eq!(trace.total_candidates, 0);
+        assert_eq!(trace.final_status, RequestCandidateFinalStatus::NoAttempt);
+        assert!(trace.candidates.is_empty());
+        assert_eq!(trace.total_latency_ms, 0);
     }
 
     #[tokio::test]

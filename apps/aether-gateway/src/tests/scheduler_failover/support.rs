@@ -474,11 +474,22 @@ impl Fixture {
 
     pub async fn request_body(&self, path: &str, body: Value) -> reqwest::Response {
         let trace_id = uuid::Uuid::new_v4().to_string();
+        self.request_body_with_trace_id(path, body, trace_id.as_str())
+            .await
+    }
+
+    /// 使用调用方指定的 trace ID 发起真实本地网关请求，便于测试读取同一次请求的候选与 usage。
+    pub async fn request_body_with_trace_id(
+        &self,
+        path: &str,
+        body: Value,
+        trace_id: &str,
+    ) -> reqwest::Response {
         let response = self
             .client
             .post(format!("{}{path}", self.url))
             .bearer_auth(CLIENT_KEY)
-            .header(crate::constants::TRACE_ID_HEADER, &trace_id)
+            .header(crate::constants::TRACE_ID_HEADER, trace_id)
             .header("x-aether-session-id", "local-stable-session")
             .json(&body)
             .send()
@@ -488,7 +499,7 @@ impl Fixture {
             eprintln!(
                 "request candidates: {:#?}",
                 self.request_candidates
-                    .list_by_request_id(&trace_id)
+                    .list_by_request_id(trace_id)
                     .await
                     .unwrap()
             );

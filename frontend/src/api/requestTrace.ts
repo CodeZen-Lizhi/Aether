@@ -90,7 +90,7 @@ export interface RequestTrace {
   request_query_string?: string
   request_path_and_query?: string
   total_candidates: number
-  final_status: 'success' | 'failed' | 'streaming' | 'pending' | 'cancelled'
+  final_status: 'success' | 'failed' | 'streaming' | 'pending' | 'cancelled' | 'no_attempt'
   total_latency_ms: number
   candidates: CandidateRecord[]
 }

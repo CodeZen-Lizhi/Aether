@@ -102,17 +102,19 @@ pub(super) async fn build_admin_monitoring_trace_request_response(
                 .is_some_and(|item| has_explicit_image_failure(item.candidate.extra_data.as_ref()));
         // Attempts retain their own outcomes and latency. The trace summary
         // follows the logical request, including gaps between retry attempts.
-        if let Some(status) =
-            admin_monitoring_usage_final_status(usage).filter(|_| !explicit_image_failure)
-        {
-            resolved.trace.final_status = status;
-            resolved.trace.total_latency_ms = usage
-                .request_metadata
-                .as_ref()
-                .and_then(|metadata| metadata.get("end_to_end_time_ms"))
-                .and_then(Value::as_u64)
-                .or(usage.response_time_ms)
-                .unwrap_or(resolved.trace.total_latency_ms);
+        if resolved.trace.final_status != RequestCandidateFinalStatus::NoAttempt {
+            if let Some(status) =
+                admin_monitoring_usage_final_status(usage).filter(|_| !explicit_image_failure)
+            {
+                resolved.trace.final_status = status;
+                resolved.trace.total_latency_ms = usage
+                    .request_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.get("end_to_end_time_ms"))
+                    .and_then(Value::as_u64)
+                    .or(usage.response_time_ms)
+                    .unwrap_or(resolved.trace.total_latency_ms);
+            }
         }
     }
     let key_accounts =
@@ -148,7 +150,10 @@ async fn resolve_admin_monitoring_trace(
             Some(usage) => Some(hydrate_admin_monitoring_trace_response_body(state, usage).await?),
             None => None,
         };
-        return Ok(Some(ResolvedAdminMonitoringTrace { trace, usage }));
+        return Ok(Some(ResolvedAdminMonitoringTrace {
+            trace: admin_monitoring_apply_no_attempt_trace_status(trace, attempted_only),
+            usage,
+        }));
     }
 
     let mut usage_candidates = Vec::new();
@@ -180,7 +185,7 @@ async fn resolve_admin_monitoring_trace(
                 .map_err(|err| GatewayError::Internal(err.to_string()))?
             {
                 return Ok(Some(ResolvedAdminMonitoringTrace {
-                    trace,
+                    trace: admin_monitoring_apply_no_attempt_trace_status(trace, attempted_only),
                     usage: Some(usage),
                 }));
             }
@@ -188,7 +193,7 @@ async fn resolve_admin_monitoring_trace(
         if usage_snapshot_fallback.is_none() {
             if let Some(trace) = build_admin_monitoring_usage_routing_snapshot_trace(&usage) {
                 usage_snapshot_fallback = Some(ResolvedAdminMonitoringTrace {
-                    trace,
+                    trace: admin_monitoring_apply_no_attempt_trace_status(trace, attempted_only),
                     usage: Some(usage.clone()),
                 });
             }
@@ -286,6 +291,23 @@ fn build_admin_monitoring_usage_routing_snapshot_trace(
     })
 }
 
+/**
+ * 只查询真实调用时，空候选表示尚无上游执行。
+ *
+ * 使用场景快照兜底也必须保留这个语义，避免把请求级失败状态或未发送候选
+ * 误画成一次真实上游调用；usage 的终态仍由详情和请求级状态单独表达。
+ */
+fn admin_monitoring_apply_no_attempt_trace_status(
+    mut trace: DecisionTrace,
+    attempted_only: bool,
+) -> DecisionTrace {
+    if attempted_only && trace.candidates.is_empty() {
+        trace.final_status = RequestCandidateFinalStatus::NoAttempt;
+        trace.total_latency_ms = 0;
+    }
+    trace
+}
+
 fn admin_monitoring_usage_has_routing_snapshot_trace_data(usage: &StoredRequestUsageAudit) -> bool {
     usage.routing_candidate_id().is_some()
         || usage.routing_candidate_index().is_some()
@@ -305,6 +327,7 @@ fn admin_monitoring_usage_candidate_status(
             RequestCandidateFinalStatus::Cancelled => RequestCandidateStatus::Cancelled,
             RequestCandidateFinalStatus::Streaming => RequestCandidateStatus::Streaming,
             RequestCandidateFinalStatus::Pending => RequestCandidateStatus::Pending,
+            RequestCandidateFinalStatus::NoAttempt => RequestCandidateStatus::Skipped,
         };
     }
     match usage.status_code {

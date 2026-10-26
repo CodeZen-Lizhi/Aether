@@ -998,6 +998,62 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.textContent).not.toContain('$.n')
   })
 
+  it('shows local rate-limit cooldown without an HTTP result or upstream response', async () => {
+    const cooldownUntilUnixSecs = Math.floor(Date.now() / 1000) + 480
+    const trace = buildTrace([
+      buildCandidate({
+        id: 'cand-rate-limit-a',
+        provider_name: 'Magpie',
+        key_id: 'key-rate-limit-a',
+        key_name: '3425',
+        candidate_index: 0,
+        status: 'skipped',
+        skip_reason: 'key_rate_limit_cooldown',
+        status_code: undefined,
+        started_at: undefined,
+        finished_at: undefined,
+        latency_ms: undefined,
+        extra_data: {
+          rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs,
+        },
+      }),
+      buildCandidate({
+        id: 'cand-rate-limit-b',
+        provider_name: 'Magpie',
+        key_id: 'key-rate-limit-b',
+        key_name: '3425-backup',
+        candidate_index: 1,
+        status: 'skipped',
+        skip_reason: 'key_rate_limit_cooldown',
+        status_code: undefined,
+        started_at: undefined,
+        finished_at: undefined,
+        latency_ms: undefined,
+        extra_data: {
+          rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs + 60,
+        },
+      }),
+    ])
+    trace.final_status = 'no_attempt'
+    trace.total_latency_ms = 0
+
+    const root = mountTimeline(trace, { overrideStatusCode: 503 })
+    await flushPendingUpdates()
+
+    expect(root.querySelector('[data-request-no-attempt]')).not.toBeNull()
+    expect(root.querySelector('.path-response')).toBeNull()
+    expect(root.querySelectorAll('.attempt-stop')).toHaveLength(0)
+    expect(root.textContent).toContain('本地限流冷却中，未发送到上游')
+    expect(root.textContent).toContain('2 个 Key')
+    expect(root.textContent).toContain('预计')
+    expect(root.textContent).toContain('恢复')
+    expect(root.textContent).toContain('本地冷却时间')
+    expect(root.textContent).toMatch(/本地冷却时间 (?:\d+小时)?\d+分\d+秒/)
+    expect(root.textContent).toContain('本次没有上游响应，也不会消耗上游额度')
+    expect(root.textContent).not.toContain('503')
+    expect(root.querySelector('[data-upstream-response]')).toBeNull()
+  })
+
   it('formats unsupported stream finish reasons with the failing field', async () => {
     const trace = buildTrace([
       buildCandidate({
@@ -1230,7 +1286,7 @@ describe('HorizontalRequestTimeline', () => {
     const requestId = shallowRef('req-1')
     requestTraceApiMock.getRequestTrace
       .mockImplementationOnce(() => new Promise<RequestTrace>(resolve => { finishOld = resolve }))
-      .mockResolvedValueOnce({ ...buildTrace([buildCandidate({ id: 'new-attempt', request_id: 'req-2' })]), request_id: 'req-2' })
+      .mockResolvedValue({ ...buildTrace([buildCandidate({ id: 'new-attempt', request_id: 'req-2' })]), request_id: 'req-2' })
     const root = document.createElement('div')
     document.body.appendChild(root)
     const app = createApp(defineComponent({ setup: () => () => h(HorizontalRequestTimeline, { requestId: requestId.value }) }))
@@ -1249,13 +1305,13 @@ describe('HorizontalRequestTimeline', () => {
   it('keeps manual selection during API refresh and supports keyboard cycling', async () => {
     const first = buildCandidate({ id: 'first', candidate_index: 0, key_name: 'First Key' })
     const second = buildCandidate({ id: 'second', candidate_index: 1, key_name: 'Second Key', status: 'success' })
-    requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(buildTrace([first, second]))
+    requestTraceApiMock.getRequestTrace.mockResolvedValue(buildTrace([first, second]))
     const { root, refresh } = mountTimelineFromApi('req-1')
     await flushPendingUpdates()
     clickAttempt(root, 'first')
     await flushPendingUpdates()
     expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('first')
-    requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(buildTrace([{ ...first, key_name: 'Updated Key' }, second]))
+    requestTraceApiMock.getRequestTrace.mockResolvedValue(buildTrace([{ ...first, key_name: 'Updated Key' }, second]))
     await refresh()
     expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('first')
     expect(root.querySelector('.waterfall-item[data-attempt-id="first"] .waterfall-key')?.textContent?.trim()).toBe('Updated Key')
@@ -1307,13 +1363,13 @@ describe('HorizontalRequestTimeline', () => {
     ])
     activeTrace.final_status = 'streaming'
 
-    requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(initialTrace)
+    requestTraceApiMock.getRequestTrace.mockResolvedValue(initialTrace)
     const { root, refresh } = mountTimelineFromApi('req-1', {
       requestStatus: 'streaming',
     })
     await flushPendingUpdates()
 
-    requestTraceApiMock.getRequestTrace.mockResolvedValueOnce(activeTrace)
+    requestTraceApiMock.getRequestTrace.mockResolvedValue(activeTrace)
     await refresh()
 
     clickAttempt(root, 'cand-streaming-b')

@@ -253,10 +253,38 @@
     </section>
 
     <div
-      v-else
-      class="execution-waterfall execution-waterfall--empty"
+      v-else-if="noAttemptCooldown"
+      class="execution-waterfall execution-waterfall--no-attempt"
+      data-request-no-attempt
     >
-      没有已发送的上游请求
+      <p class="no-attempt-title">
+        本地限流冷却中，未发送到上游
+      </p>
+      <span class="path-entry-line no-attempt-route">
+        <span class="path-method">POST</span>
+        <span class="path-endpoint" :title="requestPath">{{ requestPath }}</span>
+      </span>
+      <p class="no-attempt-detail">
+        {{ noAttemptCooldown.keyLabel }} 命中限流冷却
+        <template v-if="noAttemptCooldown.untilLabel">
+          · 预计 {{ noAttemptCooldown.untilLabel }} 恢复
+        </template>
+      </p>
+      <p v-if="noAttemptCooldown.remainingLabel" class="no-attempt-detail">
+        本地冷却时间 {{ noAttemptCooldown.remainingLabel }}
+      </p>
+      <p class="no-attempt-note">
+        本次没有上游响应，也不会消耗上游额度。
+      </p>
+    </div>
+    <div
+      v-else
+      class="execution-waterfall execution-waterfall--no-attempt"
+      data-request-no-attempt
+    >
+      <p class="no-attempt-title">
+        没有已发送的上游请求
+      </p>
     </div>
   </div>
 </template>
@@ -421,6 +449,57 @@ const pathTimeline = computed<CandidateRecord[]>(() => (
   timeline.value.filter(isAttemptedCandidate)
 ))
 
+interface NoAttemptCooldown {
+  /** 按候选顺序列出命中的 Key 名称，同一 Key 只展示一次。 */
+  keyLabel: string
+  /** 所有命中 Key 中最晚的可靠恢复时刻，缺失时为空。 */
+  untilLabel: string
+  /** 距最晚可靠恢复时刻的剩余时长；恢复时刻已过时为空。 */
+  remainingLabel: string
+}
+
+/** 全部候选仅因本地限流冷却被跳过时，汇总冷却数量和最晚恢复时刻。 */
+const resolveCooldownUntilLabel = (untilUnixSecs: number): string => (
+  new Date(untilUnixSecs * 1000).toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+)
+
+/** 把冷却剩余秒数格式化为可核对的时分秒，不把本地处理耗时当作倒计时。 */
+const resolveCooldownRemainingLabel = (untilUnixSecs: number): string => {
+  const remainingSecs = Math.ceil(untilUnixSecs - Date.now() / 1000)
+  if (remainingSecs <= 0) return ''
+  const hours = Math.floor(remainingSecs / 3600)
+  const minutes = Math.floor((remainingSecs % 3600) / 60)
+  const seconds = remainingSecs % 60
+  return `${hours > 0 ? `${hours}小时` : ''}${minutes}分${seconds}秒`
+}
+
+const noAttemptCooldown = computed<NoAttemptCooldown | null>(() => {
+  if (pathTimeline.value.length > 0 || rawTimeline.value.length === 0) return null
+  const cooldownCandidates = rawTimeline.value.filter(candidate => (
+    candidate.status === 'skipped'
+    && candidate.skip_reason === 'key_rate_limit_cooldown'
+  ))
+  if (cooldownCandidates.length !== rawTimeline.value.length) return null
+
+  const deadlines = cooldownCandidates
+    .map(getAttemptCooldownDeadlineValue)
+    .filter((value): value is number => value != null)
+  const latestDeadline = deadlines.length > 0 ? Math.max(...deadlines) : null
+  const keyNames = Array.from(new Set(cooldownCandidates.map(attempt => (
+    attempt.key_account_label || attempt.key_name || attempt.key_id || '未知 Key'
+  ))))
+  return {
+    keyLabel: keyNames.length === 1 ? `Key ${keyNames[0]}` : `${keyNames.length} 个 Key`,
+    untilLabel: latestDeadline == null ? '' : resolveCooldownUntilLabel(latestDeadline),
+    remainingLabel: latestDeadline == null ? '' : resolveCooldownRemainingLabel(latestDeadline),
+  }
+})
+
 // 只合并连续的同供应商调用；供应商再次出现时另起节点，保持真实调度顺序。
 const providerRounds = computed<ProviderRound[]>(() => {
   const rounds: ProviderRound[] = []
@@ -555,8 +634,9 @@ const requestPath = computed(() => (
 ))
 
 /** 请求结果优先使用请求级终态，避免用最后一个 Key 的 HTTP 替代整体结论。 */
-const responseState = computed<'success' | 'failed' | 'pending'>(() => {
+const responseState = computed<'success' | 'failed' | 'pending' | 'no_attempt'>(() => {
   const status = computedFinalStatus.value
+  if (status === 'no_attempt') return 'no_attempt'
   if (status === 'success') return 'success'
   if (status === 'pending' || status === 'streaming') return 'pending'
   return 'failed'
@@ -565,6 +645,7 @@ const responseState = computed<'success' | 'failed' | 'pending'>(() => {
 /** 请求结果状态码来自请求终态或最后一个真实 Key，未知时保留横杠。 */
 const responseStatusText = computed(() => {
   const status = computedFinalStatus.value
+  if (status === 'no_attempt') return '未发送'
   if (status === 'pending' || status === 'streaming') return '进行中'
   if (status === 'success') {
     return String(props.overrideStatusCode ?? pathTimeline.value.find(attempt => getDisplayStatus(attempt) === 'success')?.status_code ?? '-')
@@ -783,8 +864,10 @@ watch(
       loaded: !isLoading && !waitingForInternalTrace,
       hasTrace: Boolean(value?.candidates?.length),
       finalStatus: finalStatus ?? value?.final_status ?? null,
-      statusCode: attempt?.status_code ?? null,
-      latencyMs: value?.total_latency_ms ?? attempt?.latency_ms ?? null,
+      statusCode: finalStatus === 'no_attempt' ? null : attempt?.status_code ?? null,
+      latencyMs: finalStatus === 'no_attempt'
+        ? value?.total_latency_ms ?? null
+        : value?.total_latency_ms ?? attempt?.latency_ms ?? null,
       imageProgress,
       errorMessage: attempt?.error_message ?? null,
     })
@@ -871,6 +954,7 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   api_key_concurrency_limit_reached: '调用方 API Key 并发已达上限',
   provider_concurrency_limit_reached: '上游提供商并发已达上限',
   provider_key_concurrency_limit_reached: '上游账号并发已达上限',
+  key_rate_limit_cooldown: '本地限流冷却',
   provider_request_body_build_failed: '上游请求体转换失败',
   provider_request_body_missing: '无法构建上游请求体',
 }
@@ -878,7 +962,7 @@ const SKIP_REASON_LABELS: Record<string, string> = {
  * 从 trace 已带回的诊断字段读取 Key 冷却截止时间。
  * 时间戳统一按 Unix 秒转换为本地时刻；字段缺失或越界时返回空字符串，避免猜造恢复时间。
  */
-function getAttemptCooldownDeadline(attempt: CandidateRecord): string {
+function getAttemptCooldownDeadlineValue(attempt: CandidateRecord): number | null {
   const extra = extractObject(attempt.extra_data)
   const candidates = [
     extra?.rate_limit_cooldown_until_unix_secs,
@@ -886,13 +970,13 @@ function getAttemptCooldownDeadline(attempt: CandidateRecord): string {
     extra?.retry_after_until_unix_secs,
   ]
   const raw = candidates.find(value => typeof value === 'number' && Number.isFinite(value) && value > 0)
-  if (typeof raw !== 'number') return ''
-  return new Date(raw * 1000).toLocaleTimeString('zh-CN', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
+  return typeof raw === 'number' ? raw : null
+}
+
+function formatCooldownDeadline(attempt: CandidateRecord): string {
+  const raw = getAttemptCooldownDeadlineValue(attempt)
+  if (raw == null) return ''
+  return resolveCooldownUntilLabel(raw)
 }
 
 const isGenericExecutionRuntimeStatusMessage = (message: string): boolean =>
@@ -1133,7 +1217,11 @@ function resolveAttemptRequestError(attempt: CandidateRecord): AttemptRequestErr
   if (!attempt.skip_reason && !message && statusCode == null && !response) return null
 
   const skipReasonLabel = attempt.skip_reason === 'key_circuit_open'
-    ? getAttemptCooldownDeadline(attempt) ? `本地冷却至 ${getAttemptCooldownDeadline(attempt)}` : '本地冷却中'
+    ? formatCooldownDeadline(attempt) ? `本地冷却至 ${formatCooldownDeadline(attempt)}` : '本地冷却中'
+    : attempt.skip_reason === 'key_rate_limit_cooldown'
+      ? formatCooldownDeadline(attempt)
+        ? `本地限流冷却至 ${formatCooldownDeadline(attempt)}`
+        : '本地限流冷却中'
     : SKIP_REASON_LABELS[attempt.skip_reason ?? ''] ?? attempt.skip_reason ?? ''
   const showMessage = shouldShowAttemptMessageWithUpstreamResponse(rawMessage || fallbackType, upstreamResponseDisplay)
 
@@ -1197,7 +1285,11 @@ const loadTrace = async (silent = false) => {
     error.value = null
 
     try {
-      const result = await requestTraceApi.getRequestTrace(requestId, { attemptedOnly: true })
+      // 路径只画真实调用，但零调用时需要读取 skipped 候选来解释本地限流原因。
+      const attemptedResult = await requestTraceApi.getRequestTrace(requestId, { attemptedOnly: true })
+      const result = attemptedResult.candidates.length === 0
+        ? await requestTraceApi.getRequestTrace(requestId, { attemptedOnly: false })
+        : attemptedResult
       if (version !== traceLoadVersion) return
       internalTrace.value = result
     } catch (err: unknown) {
@@ -1485,6 +1577,12 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .execution-waterfall--loading { padding: 0.7rem; }
 .execution-waterfall--error { padding: 0.8rem 1rem; color: var(--destructive); font-size: 0.75rem; }
 .execution-waterfall--empty { padding: 1rem; color: var(--muted-foreground); font-size: 0.75rem; text-align: center; }
+.execution-waterfall--no-attempt { padding: 1rem; color: var(--muted-foreground); font-size: 0.75rem; text-align: center; }
+.no-attempt-title { margin: 0; color: var(--foreground); font-size: 0.82rem; font-weight: 600; }
+.no-attempt-route { justify-content: center; margin-top: 0.6rem; }
+.no-attempt-route .path-method { color: #b45309; }
+.no-attempt-detail { margin: 0.45rem 0 0; color: #b45309; font-weight: 500; }
+.no-attempt-note { margin: 0.35rem 0 0; color: var(--muted-foreground); }
 
 .path-scroll {
   width: 100%;

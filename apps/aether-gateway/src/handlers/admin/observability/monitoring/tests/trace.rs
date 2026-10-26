@@ -82,6 +82,74 @@ async fn admin_monitoring_trace_request_returns_local_payload() {
 }
 
 #[tokio::test]
+async fn admin_monitoring_trace_attempted_only_keeps_skipped_request_as_no_attempt() {
+    let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![
+        sample_candidate(
+            "cand-cooldown",
+            "request-cooldown",
+            0,
+            RequestCandidateStatus::Skipped,
+            None,
+            None,
+            None,
+        ),
+    ]));
+    let provider_catalog = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![sample_provider()],
+        vec![sample_endpoint()],
+        vec![sample_key()],
+    ));
+    let mut usage = sample_usage(
+        "usage-cooldown",
+        "provider-1",
+        "OpenAI",
+        0,
+        0.0,
+        "failed",
+        Some(429),
+        4,
+    );
+    usage.request_id = "request-cooldown".to_string();
+    usage.candidate_id = Some("cand-cooldown".to_string());
+    usage.provider_api_key_id = Some("provider-key-1".to_string());
+    usage.execution_path = Some("local_execution_runtime_miss".to_string());
+    usage.local_execution_runtime_miss_reason = Some("key_rate_limit_cooldown".to_string());
+    usage.request_metadata = Some(json!({
+        "routing_candidate_skip_reason": "key_rate_limit_cooldown",
+        "rate_limit_cooldown_until_unix_secs": 1_795_140_147u64
+    }));
+    let usage_repository = Arc::new(InMemoryUsageReadRepository::seed(vec![usage]));
+    let data_state =
+        crate::data::GatewayDataState::with_request_candidate_and_usage_repository_for_tests(
+            request_candidates,
+            usage_repository,
+        )
+        .with_provider_catalog_reader(provider_catalog);
+    let state = AppState::new()
+        .expect("state should build")
+        .with_data_state_for_tests(data_state);
+    let context = request_context(
+        http::Method::GET,
+        "/api/admin/monitoring/trace/request-cooldown?attempted_only=true",
+    );
+
+    let response = local_monitoring_response(&state, &context)
+        .await
+        .expect("handler should not error")
+        .expect("route should be handled locally");
+
+    assert_eq!(response.status(), http::StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let payload: serde_json::Value = serde_json::from_slice(&body).expect("json body should parse");
+    assert_eq!(payload["request_id"], json!("request-cooldown"));
+    assert_eq!(payload["total_candidates"], json!(0));
+    assert_eq!(payload["final_status"], json!("no_attempt"));
+    assert_eq!(payload["candidates"], json!([]));
+}
+
+#[tokio::test]
 async fn admin_monitoring_trace_request_resolves_usage_id_to_header_trace_id() {
     let request_candidates = Arc::new(InMemoryRequestCandidateRepository::seed(vec![
         sample_candidate(

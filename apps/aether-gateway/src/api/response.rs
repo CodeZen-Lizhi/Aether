@@ -258,6 +258,50 @@ pub(crate) fn build_local_user_rpm_limited_response(
     )
 }
 
+/**
+ * 构造上游 Key 本地限流冷却期间的 429 响应。
+ *
+ * 此时没有向供应商发出请求，因此只暴露本地冷却原因和可靠恢复秒数，不生成
+ * 用户 RPM 额度头，也不表示用户调用配额已经耗尽。
+ */
+pub(crate) fn build_local_provider_key_rate_limit_cooldown_response(
+    trace_id: &str,
+    control_decision: Option<&GatewayControlDecision>,
+    retry_after_secs: u64,
+) -> Result<Response<Body>, GatewayError> {
+    let message = "本地限流冷却中，请求未发送到上游";
+    let fallback_payload = json!({
+        "error": {
+            "type": "rate_limit_exceeded",
+            "message": message,
+        }
+    });
+    let payload = build_local_error_payload(
+        control_decision,
+        None,
+        message,
+        LocalCoreSyncErrorKind::RateLimit,
+        fallback_payload,
+    );
+    let body =
+        serde_json::to_vec(&payload).map_err(|err| GatewayError::Internal(err.to_string()))?;
+    let headers = BTreeMap::from([
+        ("content-type".to_string(), "application/json".to_string()),
+        (
+            "Retry-After".to_string(),
+            retry_after_secs.max(1).to_string(),
+        ),
+        ("X-RateLimit-Scope".to_string(), "provider_key".to_string()),
+    ]);
+    build_client_response_from_parts(
+        StatusCode::TOO_MANY_REQUESTS.as_u16(),
+        &headers,
+        Body::from(body),
+        trace_id,
+        control_decision,
+    )
+}
+
 pub(crate) fn build_local_http_error_response(
     trace_id: &str,
     control_decision: Option<&GatewayControlDecision>,
@@ -456,6 +500,7 @@ mod tests {
     use super::{
         build_client_response_from_parts, build_local_auth_rejection_response,
         build_local_http_error_response_with_request_path, build_local_overloaded_response,
+        build_local_provider_key_rate_limit_cooldown_response,
         build_local_user_rpm_limited_response,
     };
     use crate::control::{GatewayControlDecision, GatewayLocalAuthRejection};
@@ -545,6 +590,32 @@ mod tests {
         let overloaded = response_json(overloaded).await;
         assert_eq!(overloaded["type"], "error");
         assert_eq!(overloaded["error"]["type"], "overloaded_error");
+    }
+
+    #[tokio::test]
+    async fn provider_key_cooldown_uses_local_rate_limit_contract() {
+        let response =
+            build_local_provider_key_rate_limit_cooldown_response("trace-cooldown", None, 480)
+                .expect("cooldown response should build");
+        assert_eq!(response.status(), http::StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response
+                .headers()
+                .get("Retry-After")
+                .and_then(|value| value.to_str().ok()),
+            Some("480")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("X-RateLimit-Scope")
+                .and_then(|value| value.to_str().ok()),
+            Some("provider_key")
+        );
+        assert!(response.headers().get("X-RateLimit-Limit").is_none());
+        let body = response_json(response).await;
+        assert_eq!(body["error"]["type"], "rate_limit_exceeded");
+        assert_eq!(body["error"]["message"], "本地限流冷却中，请求未发送到上游");
     }
 
     #[tokio::test]

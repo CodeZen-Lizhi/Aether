@@ -17,6 +17,7 @@ async (page) => {
     { name: 'single-key-failure', query: 'status=single-key-failure' },
     { name: 'real-upstream-error', query: 'status=real-upstream-error' },
     { name: 'long-error', query: 'status=single-key-failure&long=true' },
+    { name: 'rate-limit-no-attempt', query: 'status=cooldown' },
   ]
   const reports = []
 
@@ -24,7 +25,11 @@ async (page) => {
   for (const scenario of scenarios) {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto(`${fixtureOrigin}/scripts/fixtures/request-detail-layout.html?${scenario.query}&test_run=${Date.now()}`, { waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(() => Boolean(document.querySelector('[data-request-trace-waterfall]')), undefined, { timeout: 5000 })
+    await page.waitForFunction(
+      () => Boolean(document.querySelector('[data-request-trace-waterfall], [data-request-no-attempt]')),
+      undefined,
+      { timeout: 5000 },
+    )
     await page.waitForTimeout(120)
     if (new URL(page.url()).origin !== fixtureOrigin) {
       throw new Error(`${scenario.name}: 页面 origin 发生跳转：${page.url()}`)
@@ -44,7 +49,7 @@ async (page) => {
       throw new Error(`${scenario.name}: 次级详情或 Key 详情没有默认收起：${JSON.stringify(detailsOpen)}`)
     }
 
-    const trace = await page.evaluate(() => {
+    const trace = scenario.name === 'rate-limit-no-attempt' ? null : await page.evaluate(() => {
       const root = document.querySelector('[data-request-trace-waterfall]')
       if (!root) throw new Error('执行路径缺失')
       const centerY = (node) => {
@@ -216,73 +221,74 @@ async (page) => {
       }
     })
 
-    if (trace.oldStructures !== 0 || trace.oldInspector !== 0) {
+    if (trace && (trace.oldStructures !== 0 || trace.oldInspector !== 0)) {
       throw new Error(`${scenario.name}: 仍存在旧瀑布或检查器结构：${JSON.stringify(trace)}`)
     }
-    if (trace.entryLineCount !== 2 || trace.entryMethod !== 'POST' || trace.entryPath !== '/v1/images/generations') {
+    if (trace && (trace.entryLineCount !== 2 || trace.entryMethod !== 'POST' || trace.entryPath !== '/v1/images/generations')) {
       throw new Error(`${scenario.name}: 请求入口不是两行真实请求路径：${JSON.stringify(trace)}`)
     }
-    if (trace.responseTitle !== '请求结果' || !trace.responseStatus || !trace.responseStatusRightAligned) {
+    if (scenario.name !== 'rate-limit-no-attempt'
+      && (trace.responseTitle !== '请求结果' || !trace.responseStatus || !trace.responseStatusRightAligned)) {
       throw new Error(`${scenario.name}: 请求结果标题或状态码位置错误：${JSON.stringify(trace)}`)
     }
-    if (scenario.name === 'success' && trace.entryColor !== 'rgb(21, 128, 61)') {
+    if (scenario.name === 'success' && trace?.entryColor !== 'rgb(21, 128, 61)') {
       throw new Error(`success: 请求入口不是成功绿：${JSON.stringify(trace.entryColor)}`)
     }
-    if (scenario.name === 'upstream' && trace.entryColor !== 'rgb(220, 38, 38)') {
+    if (scenario.name === 'upstream' && trace?.entryColor !== 'rgb(220, 38, 38)') {
       throw new Error(`upstream: 请求入口不是失败正红：${JSON.stringify(trace.entryColor)}`)
     }
-    if (!trace.responseText.includes('总耗时')) {
+    if (scenario.name !== 'rate-limit-no-attempt' && !trace.responseText.includes('总耗时')) {
       throw new Error(`${scenario.name}: 请求结果缺少总耗时：${JSON.stringify(trace)}`)
     }
-    if (trace.keyNames.some(name => !name || /^\S$/.test(name))) {
+    if (trace && trace.keyNames.some(name => !name || /^\S$/.test(name))) {
       throw new Error(`${scenario.name}: Key 名称缺失或被挤断：${JSON.stringify(trace.keyNames)}`)
     }
-    if (trace.keyHeights.some(height => height !== 88)) {
+    if (trace && trace.keyHeights.some(height => height !== 88)) {
       throw new Error(`${scenario.name}: Key 卡片高度不固定：${JSON.stringify(trace.keyHeights)}`)
     }
-    if (trace.links.some(link => link.label)) {
+    if (trace && trace.links.some(link => link.label)) {
       throw new Error(`${scenario.name}: 连接线仍包含文字：${JSON.stringify(trace.links)}`)
     }
-    if (trace.links.some(link => Math.abs(link.lineWidth - link.width) > 1 || link.centerDelta > 1)) {
+    if (trace && trace.links.some(link => Math.abs(link.lineWidth - link.width) > 1 || link.centerDelta > 1)) {
       throw new Error(`${scenario.name}: 连接线未覆盖整个间隔或未居中：${JSON.stringify(trace.links)}`)
     }
-    if (trace.links.some(link => link.lineHeight < 2
+    if (trace && trace.links.some(link => link.lineHeight < 2
       || link.arrowWidth < 2
       || !link.backgroundImage.includes('linear-gradient')
       || !link.animationName.startsWith('path-link-flow'))) {
       throw new Error(`${scenario.name}: 连接线未呈现高对比流光箭头：${JSON.stringify(trace.links)}`)
     }
-    if (trace.linkGaps.some(gap => Math.abs(gap) > 1)) {
+    if (trace && trace.linkGaps.some(gap => Math.abs(gap) > 1)) {
       throw new Error(`${scenario.name}: 路径节点之间未贴合：${JSON.stringify(trace.linkGaps)}`)
     }
-    if (!trace.stageBackground?.image.includes('radial-gradient')
-      || !trace.stageBackground.size.startsWith('18px 18px')) {
+    if (trace && (!trace.stageBackground?.image.includes('radial-gradient')
+      || !trace.stageBackground.size.startsWith('18px 18px'))) {
       throw new Error(`${scenario.name}: 执行路径缺少画布点阵背景：${JSON.stringify(trace.stageBackground)}`)
     }
-    if (trace.providerTones.some(item => !item.tone || !item.background)) {
+    if (trace && trace.providerTones.some(item => !item.tone || !item.background)) {
       throw new Error(`${scenario.name}: 供应商缺少身份色调或背景色：${JSON.stringify(trace.providerTones)}`)
     }
-    if (new Set(trace.providerTones.map(item => item.background)).size !== trace.providerTones.length) {
+    if (trace && new Set(trace.providerTones.map(item => item.background)).size !== trace.providerTones.length) {
       throw new Error(`${scenario.name}: 不同供应商的背景色重复：${JSON.stringify(trace.providerTones)}`)
     }
-    if (trace.providerBorderStyles.some(style => style !== 'solid')
+    if (trace && (trace.providerBorderStyles.some(style => style !== 'solid')
       || trace.providerBorderWidths.some(width => Number.parseFloat(width) < 1)
-      || trace.providerInnerBorderStyles.some(style => style !== 'dashed')) {
+      || trace.providerInnerBorderStyles.some(style => style !== 'dashed'))) {
       throw new Error(`${scenario.name}: 供应商框不是细实线外框加轻内虚线：${JSON.stringify(trace)}`)
     }
-    for (const [name, style] of [['entry', trace.entryStyle], ['response', trace.responseStyle]]) {
+    for (const [name, style] of trace ? [['entry', trace.entryStyle], ['response', trace.responseStyle]] : []) {
       if (!style || style.borderStyle !== 'dashed' || Number.parseFloat(style.borderWidth) < 1
         || style.background === 'rgba(0, 0, 0, 0)') {
         throw new Error(`${scenario.name}: 请求${name === 'entry' ? '入口' : '结果'}卡片不可见：${JSON.stringify(style)}`)
       }
     }
-    if (trace.providerLabelBackground === 'rgba(0, 0, 0, 0)'
+    if (trace && (trace.providerLabelBackground === 'rgba(0, 0, 0, 0)'
       || trace.keyStyles.some(style => style.borderStyle !== 'solid'
         || style.background === 'rgba(0, 0, 0, 0)')
-      || !trace.keyProviderGaps || trace.keyProviderGaps.left < 8 || trace.keyProviderGaps.right < 8) {
+      || !trace.keyProviderGaps || trace.keyProviderGaps.left < 8 || trace.keyProviderGaps.right < 8)) {
       throw new Error(`${scenario.name}: 供应商与 Key 的层级样式错误：${JSON.stringify(trace)}`)
     }
-    if (trace.keyLayouts.some(layout => !layout.body || !layout.identity || !layout.metrics
+    if (trace && trace.keyLayouts.some(layout => !layout.body || !layout.identity || !layout.metrics
       || layout.identity.right > layout.metrics.left
       || layout.reason && layout.reason.right > layout.body.right + 1
       || !layout.endpoint
@@ -290,17 +296,19 @@ async (page) => {
       || !layout.metricLabels.includes('首字'))) {
       throw new Error(`${scenario.name}: Key 卡片未形成身份、指标和端点分层：${JSON.stringify(trace.keyLayouts)}`)
     }
-    if (new Set([trace.centers.entry, ...trace.centers.providers, trace.centers.response]).size !== 1) {
+    if (trace && scenario.name !== 'rate-limit-no-attempt'
+      && new Set([trace.centers.entry, ...trace.centers.providers, trace.centers.response]).size !== 1) {
       throw new Error(`${scenario.name}: 请求入口、供应商与请求结果未垂直居中：${JSON.stringify(trace.centers)}`)
     }
-    if (!(trace.positions.entryLeft < Math.min(...trace.positions.providerLefts)
+    if (trace && scenario.name !== 'rate-limit-no-attempt'
+      && !(trace.positions.entryLeft < Math.min(...trace.positions.providerLefts)
       && Math.max(...trace.positions.providerLefts) < trace.positions.responseLeft)) {
       throw new Error(`${scenario.name}: 请求入口、供应商与请求结果顺序错误：${JSON.stringify(trace.positions)}`)
     }
-    if (trace.scroll.overflowX !== 'auto') {
+    if (trace && trace.scroll.overflowX !== 'auto') {
       throw new Error(`${scenario.name}: 路径容器未使用内部横向滚动：${JSON.stringify(trace.scroll)}`)
     }
-    if (trace.providerIds.length === 1 && trace.scroll.scrollWidth > trace.scroll.clientWidth + 1) {
+    if (trace && trace.providerIds.length === 1 && trace.scroll.scrollWidth > trace.scroll.clientWidth + 1) {
       throw new Error(`${scenario.name}: 单供应商在桌面宽度不应产生内部横向滚动：${JSON.stringify(trace.scroll)}`)
     }
 
@@ -402,28 +410,60 @@ async (page) => {
       throw new Error(`upstream: 请求级失败色错误：${JSON.stringify({ lifecycleBadge, trace })}`)
     }
 
-    await page.locator('.attempt-stop').first().evaluate(element => element.click())
-    await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 1)
-    const opened = await page.evaluate(() => {
-      const row = document.querySelector('.waterfall-item.is-open')
-      const detail = document.querySelector('.waterfall-detail')
-      return {
-        rowId: row?.getAttribute('data-attempt-id') ?? '',
-        detailId: detail?.getAttribute('data-attempt-id') ?? '',
-        expanded: row?.getAttribute('aria-expanded'),
-        hasDuplicateIdentity: Boolean(detail?.querySelector('.waterfall-detail-identity, .waterfall-detail-key, .waterfall-detail-provider')),
-        detailText: detail?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
-        status: detail?.getAttribute('data-status') ?? '',
+    if (scenario.name === 'rate-limit-no-attempt') {
+      const noAttempt = await page.evaluate(() => {
+        const root = document.querySelector('[data-request-no-attempt]')
+        return {
+          present: Boolean(root),
+          text: root?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          hasResponse: Boolean(document.querySelector('.path-response')),
+          hasAttempt: Boolean(document.querySelector('.attempt-stop')),
+          hasUpstreamResponse: Boolean(document.querySelector('[data-upstream-response]')),
+        }
+      })
+      if (!noAttempt.present
+        || !noAttempt.text.includes('本地限流冷却中，未发送到上游')
+        || !noAttempt.text.includes('2 个 Key')
+        || !noAttempt.text.includes('预计')
+        || !noAttempt.text.includes('恢复')
+        || !noAttempt.text.includes('本地冷却时间')
+        || !noAttempt.text.includes('/v1/images/generations')
+        || noAttempt.hasResponse
+        || noAttempt.hasAttempt
+        || noAttempt.hasUpstreamResponse) {
+        throw new Error(`rate-limit-no-attempt: 本地限流展示错误：${JSON.stringify(noAttempt)}`)
       }
-    })
-    if (!opened.rowId || opened.rowId !== opened.detailId || opened.expanded !== 'true' || opened.hasDuplicateIdentity) {
-      throw new Error(`${scenario.name}: Key 详情未绑定同一记录：${JSON.stringify(opened)}`)
+      const coolingDeadline = await page.evaluate(() => {
+        const text = document.querySelector('[data-request-no-attempt]')?.textContent ?? ''
+        return text.match(/预计 (\d{2}:\d{2}:\d{2}) 恢复/)?.[1] ?? ''
+      })
+      if (!/^\d{2}:\d{2}:\d{2}$/.test(coolingDeadline)) {
+        throw new Error(`rate-limit-no-attempt: 恢复时刻格式错误：${coolingDeadline}`)
+      }
+    } else {
+      await page.locator('.attempt-stop').first().evaluate(element => element.click())
+      await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 1)
+      const opened = await page.evaluate(() => {
+        const row = document.querySelector('.waterfall-item.is-open')
+        const detail = document.querySelector('.waterfall-detail')
+        return {
+          rowId: row?.getAttribute('data-attempt-id') ?? '',
+          detailId: detail?.getAttribute('data-attempt-id') ?? '',
+          expanded: row?.getAttribute('aria-expanded'),
+          hasDuplicateIdentity: Boolean(detail?.querySelector('.waterfall-detail-identity, .waterfall-detail-key, .waterfall-detail-provider')),
+          detailText: detail?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          status: detail?.getAttribute('data-status') ?? '',
+        }
+      })
+      if (!opened.rowId || opened.rowId !== opened.detailId || opened.expanded !== 'true' || opened.hasDuplicateIdentity) {
+        throw new Error(`${scenario.name}: Key 详情未绑定同一记录：${JSON.stringify(opened)}`)
+      }
+      if (!opened.detailText.includes('耗时') || !opened.detailText.includes('HTTP')) {
+        throw new Error(`${scenario.name}: Key 详情缺少单次调用事实：${JSON.stringify(opened)}`)
+      }
+      await page.locator('.attempt-stop').first().evaluate(element => element.click())
+      await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 0)
     }
-    if (!opened.detailText.includes('耗时') || !opened.detailText.includes('HTTP')) {
-      throw new Error(`${scenario.name}: Key 详情缺少单次调用事实：${JSON.stringify(opened)}`)
-    }
-    await page.locator('.attempt-stop').first().evaluate(element => element.click())
-    await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 0)
 
     if (scenario.name === 'upstream') {
       await page.locator('.attempt-stop').first().evaluate(element => element.click())
@@ -492,14 +532,16 @@ async (page) => {
         }
       })
       if (!layout.page || layout.page.scrollWidth > layout.page.clientWidth + 1
-        || !layout.root || layout.root.scrollWidth > layout.root.clientWidth + 1
-        || !layout.scroll || layout.scroll.overflowX !== 'auto'
+        || (scenario.name !== 'rate-limit-no-attempt'
+          && (!layout.root || layout.root.scrollWidth > layout.root.clientWidth + 1))
+        || (scenario.name !== 'rate-limit-no-attempt' && (!layout.scroll || layout.scroll.overflowX !== 'auto'))
         || (scenario.name === 'multi-provider' && width === 390
           && layout.scroll.scrollWidth <= layout.scroll.clientWidth)
-        || new Set(layout.providers.map(provider => provider.centerY)).size !== 1
-        || layout.keyHeights.some(height => height !== 88)
-        || !layout.centers
-        || new Set([layout.centers.entry, ...layout.centers.providers, layout.centers.response]).size !== 1) {
+        || (scenario.name !== 'rate-limit-no-attempt'
+          && (new Set(layout.providers.map(provider => provider.centerY)).size !== 1
+            || layout.keyHeights.some(height => height !== 88)
+            || !layout.centers
+            || new Set([layout.centers.entry, ...layout.centers.providers, layout.centers.response]).size !== 1))) {
         throw new Error(`${scenario.name}/${width}px: 横向路径布局错误 ${JSON.stringify(layout)}`)
       }
       layoutChecks.push({ scenario: scenario.name, width, ...layout })
@@ -509,7 +551,11 @@ async (page) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.waitForTimeout(100)
     await page.screenshot({ path: `/tmp/aether-request-detail-${scenario.name}.png` })
-    reports.push({ scenario: scenario.name, entry: trace.entryText, summary: trace.summary })
+    reports.push({
+      scenario: scenario.name,
+      entry: trace?.entryText ?? 'no upstream attempt',
+      summary: trace?.summary ?? 'local rate-limit cooldown',
+    })
   }
 
   await page.goto(`${fixtureOrigin}/scripts/fixtures/request-detail-layout.html?status=multi-provider&theme=dark`, { waitUntil: 'domcontentloaded' })

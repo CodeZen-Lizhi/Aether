@@ -73,6 +73,29 @@ describe('request failure notice', () => {
     })
   })
 
+  it('shows local rate-limit cooldown with the real recovery time and no upstream source', () => {
+    const cooldownUntilUnixSecs = Math.floor(Date.now() / 1000) + 480
+    const notice = resolveRequestFailureNotice(buildRequestDetail({
+      status_code: 429,
+      scheduling_failure: {
+        source: 'local_execution_runtime_miss',
+        reason: 'key_rate_limit_cooldown',
+        reason_label: '本地限流冷却',
+        title: '本地限流冷却中，请求未发送',
+        message: '本地限流冷却中，请求未发送到上游',
+        status_code: 429,
+        rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs,
+        no_upstream_attempt: true,
+      },
+    }))
+
+    expect(notice?.title).toBe('本地限流冷却中，请求未发送')
+    expect(notice?.message).toBe('本地限流冷却中，请求未发送到上游')
+    expect(notice?.meta).toContain('未进入上游执行')
+    expect(notice?.meta).not.toContain('upstream_response')
+    expect(notice?.meta[0]).toMatch(/^本地限流冷却至 \d{2}:\d{2}:\d{2}$/)
+  })
+
   it('falls back to the failure summary for upstream failures', () => {
     const notice = resolveRequestFailureNotice(buildRequestDetail({
       failure_summary: {

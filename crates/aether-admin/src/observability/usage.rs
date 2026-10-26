@@ -491,6 +491,7 @@ fn admin_usage_simplify_all_candidates_skipped_client_error_message(
 fn admin_usage_local_runtime_miss_reason_label(reason: &str) -> &'static str {
     match reason {
         "all_candidates_skipped" => "所有候选均被跳过",
+        "key_rate_limit_cooldown" => "本地限流冷却",
         "candidate_list_empty" => "没有可调度候选",
         "local_runtime_unavailable" => "本地执行运行时不可用",
         "provider_transport_unavailable" => "提供商传输不可用",
@@ -520,7 +521,9 @@ fn admin_usage_scheduling_failure_json(
     }
 
     let reason = item
-        .routing_local_execution_runtime_miss_reason()
+        .routing_candidate_skip_reason()
+        .filter(|reason| *reason == "key_rate_limit_cooldown")
+        .or_else(|| item.routing_local_execution_runtime_miss_reason())
         .unwrap_or("local_execution_runtime_miss");
     let message = admin_usage_error_domain_message(client_error)
         .or_else(|| admin_usage_client_error_fallback_message(item))
@@ -532,20 +535,29 @@ fn admin_usage_scheduling_failure_json(
         .filter(|value| !value.is_empty());
     let reason_summary =
         raw_message.and_then(admin_usage_extract_local_runtime_miss_reason_summary);
+    let rate_limit_cooldown_until_unix_secs = item
+        .request_metadata
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|metadata| metadata.get("rate_limit_cooldown_until_unix_secs"))
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0);
+    let no_upstream_attempt = admin_usage_runtime_miss_has_no_upstream_attempt(item);
 
     json!({
         "source": "local_execution_runtime_miss",
         "reason": reason,
         "reason_label": admin_usage_local_runtime_miss_reason_label(reason),
-        "title": format!("本地调度失败：{}", admin_usage_local_runtime_miss_reason_label(reason)),
+        "title": if reason == "key_rate_limit_cooldown" {
+            "本地限流冷却中，请求未发送".to_string()
+        } else {
+            format!("本地调度失败：{}", admin_usage_local_runtime_miss_reason_label(reason))
+        },
         "message": message,
         "reason_summary": reason_summary,
         "status_code": item.status_code,
-        "no_upstream_attempt": item.candidate_id.is_none()
-            && item.provider_api_key_id.is_none()
-            && item.provider_request_headers.is_none()
-            && item.provider_request_body.is_none()
-            && item.provider_request_body_ref.is_none(),
+        "rate_limit_cooldown_until_unix_secs": rate_limit_cooldown_until_unix_secs,
+        "no_upstream_attempt": no_upstream_attempt,
     })
 }
 
@@ -640,12 +652,7 @@ fn admin_usage_failure_summary_json(
 }
 
 fn admin_usage_error_domains_json(item: &StoredRequestUsageAudit) -> Value {
-    let has_upstream_attempt = item.candidate_id.is_some()
-        || item.provider_api_key_id.is_some()
-        || item.provider_request_headers.is_some()
-        || item.provider_request_body.is_some()
-        || item.provider_request_body_ref.is_some();
-    let upstream_error = if has_upstream_attempt {
+    let upstream_error = if !admin_usage_runtime_miss_has_no_upstream_attempt(item) {
         admin_usage_error_domain_json(
             "upstream_response",
             item.status_code,
@@ -676,6 +683,52 @@ fn admin_usage_error_domains_json(item: &StoredRequestUsageAudit) -> Value {
         "client_error": client_error,
         "failure_summary": failure_summary,
     })
+}
+
+/**
+ * 判断本地调度失败是否确实没有向上游发出请求。
+ *
+ * 冷却候选也会留下 candidate/provider key 标识，不能据此推断调用过上游；
+ * 只有没有可靠 local-execution runtime-miss 证据时，才沿用历史字段兜底。
+ */
+fn admin_usage_runtime_miss_has_no_upstream_attempt(item: &StoredRequestUsageAudit) -> bool {
+    if item.routing_execution_path() == Some("local_execution_runtime_miss") {
+        if let Some(skip_reason) = item.routing_candidate_skip_reason() {
+            let is_local_skip = matches!(
+                skip_reason,
+                "key_rate_limit_cooldown"
+                    | "key_circuit_open"
+                    | "provider_quota_blocked"
+                    | "api_key_concurrency_limit_reached"
+                    | "provider_concurrency_limit_reached"
+                    | "provider_key_concurrency_limit_reached"
+                    | "provider_request_body_build_failed"
+                    | "provider_request_body_missing"
+            );
+            if is_local_skip {
+                return true;
+            }
+        }
+        let runtime_miss_reason = item.routing_local_execution_runtime_miss_reason();
+        let is_local_runtime_miss = matches!(
+            runtime_miss_reason,
+            Some(
+                "all_candidates_skipped"
+                    | "candidate_list_empty"
+                    | "local_runtime_unavailable"
+                    | "provider_transport_unavailable"
+            )
+        );
+        if is_local_runtime_miss {
+            return true;
+        }
+    }
+
+    item.candidate_id.is_none()
+        && item.provider_api_key_id.is_none()
+        && item.provider_request_headers.is_none()
+        && item.provider_request_body.is_none()
+        && item.provider_request_body_ref.is_none()
 }
 
 fn admin_usage_error_domain_search_text(domain: &Value) -> String {
@@ -3587,6 +3640,75 @@ mod tests {
             "没有可用提供商支持模型 gpt-5.4 的流式请求"
         );
         assert_eq!(payload["scheduling_failure"]["no_upstream_attempt"], true);
+    }
+
+    #[test]
+    fn detail_payload_exposes_local_rate_limit_cooldown_without_upstream_response() {
+        let cooldown_until_unix_secs = 1_795_140_147u64;
+        let item = StoredRequestUsageAudit {
+            provider_api_key_id: Some("provider-key-1".to_string()),
+            provider_request_headers: None,
+            provider_request_body: None,
+            provider_request_body_ref: None,
+            candidate_id: Some("candidate-1".to_string()),
+            execution_path: Some("local_execution_runtime_miss".to_string()),
+            local_execution_runtime_miss_reason: Some("all_candidates_skipped".to_string()),
+            request_metadata: Some(json!({
+                "routing_candidate_skip_reason": "key_rate_limit_cooldown",
+                "rate_limit_cooldown_until_unix_secs": cooldown_until_unix_secs
+            })),
+            response_headers: None,
+            response_body: None,
+            client_response_headers: Some(json!({"content-type": "application/json"})),
+            client_response_body: Some(json!({
+                "error": {
+                    "type": "rate_limit_exceeded",
+                    "message": "本地限流冷却中，请求未发送到上游"
+                }
+            })),
+            client_response_body_ref: None,
+            error_category: Some("client_error".to_string()),
+            ..sample_usage(
+                "failed",
+                Some(429),
+                Some("本地限流冷却中，请求未发送到上游"),
+            )
+        };
+
+        let payload = build_admin_usage_detail_payload(
+            &item,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            false,
+            false,
+            None,
+            false,
+            Some(json!({"model": "gpt-5.4", "stream": true})),
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(
+            payload["scheduling_failure"]["title"],
+            "本地限流冷却中，请求未发送"
+        );
+        assert_eq!(
+            payload["scheduling_failure"]["reason"],
+            "key_rate_limit_cooldown"
+        );
+        assert_eq!(
+            payload["scheduling_failure"]["rate_limit_cooldown_until_unix_secs"],
+            json!(cooldown_until_unix_secs)
+        );
+        assert_eq!(payload["scheduling_failure"]["no_upstream_attempt"], true);
+        assert!(payload["upstream_error"].is_null());
+        assert_eq!(payload["error_flow"]["source"], "gateway");
+        assert_eq!(
+            payload["error_flow"]["client_response_source"],
+            "gateway_generated"
+        );
+        assert!(payload["client_error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("本地限流冷却")));
     }
 
     #[test]

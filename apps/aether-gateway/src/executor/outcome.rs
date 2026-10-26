@@ -157,6 +157,36 @@ impl LocalExecutionRuntimeMissContext {
         detail.push_str("（原因代码: provider_request_body_build_failed）");
         Some(detail)
     }
+
+    /// 返回本次所有候选均因限流冷却被跳过时的最晚恢复时刻。
+    ///
+    /// 只有每个已持久化候选都是 `key_rate_limit_cooldown` 且都带可靠截止时间时才返回；
+    /// 这避免把混合跳过、缺少健康数据或普通上游失败误报成本地限流。
+    pub(crate) fn all_rate_limit_cooldown_until_unix_secs(&self) -> Option<u64> {
+        if self.candidate_contexts.is_empty() {
+            return None;
+        }
+
+        self.candidate_contexts
+            .iter()
+            .map(|candidate| {
+                if candidate.candidate.status != RequestCandidateStatus::Skipped
+                    || candidate.candidate.skip_reason.as_deref() != Some("key_rate_limit_cooldown")
+                {
+                    return None;
+                }
+                candidate
+                    .candidate
+                    .extra_data
+                    .as_ref()
+                    .and_then(Value::as_object)
+                    .and_then(|extra| extra.get("rate_limit_cooldown_until_unix_secs"))
+                    .and_then(Value::as_u64)
+                    .filter(|value| *value > 0)
+            })
+            .collect::<Option<Vec<_>>>()
+            .and_then(|deadlines| deadlines.into_iter().max())
+    }
 }
 
 struct RuntimeMissFailureDiagnostic {
@@ -411,10 +441,28 @@ pub(crate) async fn record_failed_usage_for_runtime_miss_request(
         .and_then(|value| value.selected_provider_model_name.clone())
         .filter(|value| !value.eq_ignore_ascii_case(model.as_str()));
 
-    let status_code = http::StatusCode::SERVICE_UNAVAILABLE.as_u16();
-    let client_message =
-        beautify_local_execution_client_error_message(local_execution_runtime_miss_detail);
-    let client_body = runtime_miss_client_error_body(api_format.as_deref(), &client_message);
+    let rate_limit_cooldown_until_unix_secs = context.all_rate_limit_cooldown_until_unix_secs();
+    let status_code = if rate_limit_cooldown_until_unix_secs.is_some() {
+        http::StatusCode::TOO_MANY_REQUESTS.as_u16()
+    } else {
+        http::StatusCode::SERVICE_UNAVAILABLE.as_u16()
+    };
+    let local_rate_limit_cooldown = rate_limit_cooldown_until_unix_secs.is_some();
+    let client_message = if local_rate_limit_cooldown {
+        "本地限流冷却中，请求未发送到上游".to_string()
+    } else {
+        beautify_local_execution_client_error_message(local_execution_runtime_miss_detail)
+    };
+    let client_error_kind = if local_rate_limit_cooldown {
+        LocalCoreSyncErrorKind::RateLimit
+    } else {
+        LocalCoreSyncErrorKind::Overloaded
+    };
+    let client_body = runtime_miss_client_error_body_for_kind(
+        api_format.as_deref(),
+        &client_message,
+        client_error_kind,
+    );
     let mut client_headers = Map::from_iter([(
         "content-type".to_string(),
         Value::String("application/json".to_string()),
@@ -478,14 +526,40 @@ pub(crate) async fn record_failed_usage_for_runtime_miss_request(
         response_time_ms: Some(started_at.elapsed().as_millis() as u64),
         request_headers: Some(runtime_miss_original_headers_json(request_headers)),
         request_body: runtime_miss_original_request_body_json(request_headers, request_body),
-        response_headers: Some(json_header_map()),
-        response_body: Some(client_body.clone()),
+        // 本地冷却候选没有调用上游，不能把客户端错误体镜像成上游响应。
+        response_headers: (!local_rate_limit_cooldown).then(json_header_map),
+        response_body: (!local_rate_limit_cooldown).then(|| client_body.clone()),
         client_response_headers: Some(Value::Object(client_headers)),
         client_response_body: Some(client_body),
         ..UsageEventData::default()
     };
     if let Some(candidate) = routing_candidate {
         insert_runtime_miss_candidate_usage_metadata(&mut request_metadata, &candidate.candidate);
+    }
+    if let Some(until_unix_secs) = rate_limit_cooldown_until_unix_secs {
+        request_metadata.insert(
+            "rate_limit_cooldown_until_unix_secs".to_string(),
+            json!(until_unix_secs),
+        );
+        if let Some(headers) = data
+            .client_response_headers
+            .as_mut()
+            .and_then(Value::as_object_mut)
+        {
+            headers.insert(
+                "Retry-After".to_string(),
+                Value::String(
+                    until_unix_secs
+                        .saturating_sub(crate::clock::current_unix_secs())
+                        .max(1)
+                        .to_string(),
+                ),
+            );
+            headers.insert(
+                "X-RateLimit-Scope".to_string(),
+                Value::String("provider_key".to_string()),
+            );
+        }
     }
     apply_runtime_miss_usage_routing(
         &mut data,
@@ -691,6 +765,15 @@ fn json_header_map() -> Value {
 }
 
 fn runtime_miss_client_error_body(api_format: Option<&str>, message: &str) -> Value {
+    runtime_miss_client_error_body_for_kind(api_format, message, LocalCoreSyncErrorKind::Overloaded)
+}
+
+/** 按失败语义生成客户端错误体；本地限流使用 RateLimit，其他运行时未命中保持 Overloaded。 */
+fn runtime_miss_client_error_body_for_kind(
+    api_format: Option<&str>,
+    message: &str,
+    kind: LocalCoreSyncErrorKind,
+) -> Value {
     let fallback = json!({
         "error": {
             "type": "http_error",
@@ -705,13 +788,8 @@ fn runtime_miss_client_error_body(api_format: Option<&str>, message: &str) -> Va
         return fallback;
     }
 
-    build_core_error_body_for_client_format(
-        "claude:messages",
-        message,
-        None,
-        LocalCoreSyncErrorKind::Overloaded,
-    )
-    .unwrap_or(fallback)
+    build_core_error_body_for_client_format("claude:messages", message, None, kind)
+        .unwrap_or(fallback)
 }
 
 fn runtime_miss_original_headers_json(headers: &HeaderMap) -> Value {
@@ -989,6 +1067,20 @@ fn insert_runtime_miss_candidate_usage_metadata(
         );
     }
 
+    if let Some(until_unix_secs) = candidate
+        .extra_data
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|extra_data| extra_data.get("rate_limit_cooldown_until_unix_secs"))
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)
+    {
+        metadata.insert(
+            "rate_limit_cooldown_until_unix_secs".to_string(),
+            json!(until_unix_secs),
+        );
+    }
+
     let diagnostic = candidate
         .extra_data
         .as_ref()
@@ -1219,10 +1311,17 @@ fn apply_runtime_miss_usage_routing(
         .execution_path
         .clone()
         .or_else(|| trimmed_non_empty(Some(execution_path)));
+    let candidate_skip_reason = request_metadata
+        .get(ROUTING_CANDIDATE_SKIP_REASON_METADATA_KEY)
+        .and_then(Value::as_str);
     data.local_execution_runtime_miss_reason = data
         .local_execution_runtime_miss_reason
         .clone()
-        .or_else(|| trimmed_non_empty(diagnostic.map(|value| value.reason.as_str())));
+        .or_else(|| {
+            trimmed_non_empty(
+                candidate_skip_reason.or_else(|| diagnostic.map(|value| value.reason.as_str())),
+            )
+        });
     data.route_family = data.route_family.clone().or_else(|| {
         trimmed_non_empty(
             diagnostic
@@ -1241,7 +1340,6 @@ fn apply_runtime_miss_usage_routing(
         .planner_kind
         .clone()
         .or_else(|| trimmed_non_empty(diagnostic.and_then(|value| value.plan_kind.as_deref())));
-    let _ = request_metadata;
 }
 
 fn trimmed_non_empty(value: Option<&str>) -> Option<String> {
@@ -1267,6 +1365,57 @@ mod tests {
     };
     use aether_usage_runtime::UsageEventData;
     use serde_json::{json, Map, Value};
+
+    fn skipped_candidate(skip_reason: &str, extra_data: Option<Value>) -> StoredRequestCandidate {
+        StoredRequestCandidate::new(
+            format!("cand-{skip_reason}"),
+            "req-1".to_string(),
+            Some("user-1".to_string()),
+            Some("api-key-1".to_string()),
+            Some("alice".to_string()),
+            Some("default".to_string()),
+            0,
+            0,
+            Some("provider-1".to_string()),
+            Some("endpoint-1".to_string()),
+            Some("provider-key-1".to_string()),
+            RequestCandidateStatus::Skipped,
+            Some(skip_reason.to_string()),
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            extra_data,
+            None,
+            100,
+            None,
+            None,
+        )
+        .expect("candidate should build")
+    }
+
+    fn runtime_miss_context(
+        candidates: Vec<StoredRequestCandidate>,
+    ) -> LocalExecutionRuntimeMissContext {
+        LocalExecutionRuntimeMissContext {
+            candidate_contexts: candidates
+                .into_iter()
+                .map(|candidate| RuntimeMissCandidateContext {
+                    candidate,
+                    provider_name: Some("openai".to_string()),
+                    key_name: Some("prod".to_string()),
+                    client_api_format: Some("openai:responses".to_string()),
+                    provider_api_format: Some("openai:responses".to_string()),
+                    global_model_name: Some("gpt-5".to_string()),
+                    selected_provider_model_name: Some("gpt-5-upstream".to_string()),
+                    endpoint_url: Some("https://api.openai.example/v1/responses".to_string()),
+                })
+                .collect(),
+            ..LocalExecutionRuntimeMissContext::default()
+        }
+    }
 
     #[test]
     fn local_execution_client_error_message_is_client_friendly() {
@@ -1482,5 +1631,37 @@ mod tests {
         assert!(detail.contains("字段 n"));
         assert!(detail.contains("字段路径：$.n"));
         assert!(detail.contains("provider_request_body_build_failed"));
+    }
+
+    #[test]
+    fn runtime_miss_context_reads_rate_limit_cooldown_deadline() {
+        let context = runtime_miss_context(vec![
+            skipped_candidate(
+                "key_rate_limit_cooldown",
+                Some(json!({"rate_limit_cooldown_until_unix_secs": 1_803})),
+            ),
+            skipped_candidate(
+                "key_rate_limit_cooldown",
+                Some(json!({"rate_limit_cooldown_until_unix_secs": 1_900})),
+            ),
+        ]);
+
+        assert_eq!(
+            context.all_rate_limit_cooldown_until_unix_secs(),
+            Some(1_900)
+        );
+    }
+
+    #[test]
+    fn runtime_miss_context_does_not_guess_cooldown_when_mixed_with_other_skips() {
+        let context = runtime_miss_context(vec![
+            skipped_candidate(
+                "key_rate_limit_cooldown",
+                Some(json!({"rate_limit_cooldown_until_unix_secs": 1_900})),
+            ),
+            skipped_candidate("provider_quota_blocked", None),
+        ]);
+
+        assert_eq!(context.all_rate_limit_cooldown_until_unix_secs(), None);
     }
 }

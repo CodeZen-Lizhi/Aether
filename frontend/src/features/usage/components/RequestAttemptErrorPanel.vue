@@ -8,7 +8,7 @@
       <div class="error-content">
         <div class="error-heading">
           <div class="error-title-group">
-            <span class="error-kicker">上游响应</span>
+            <span class="error-kicker">{{ isLocalSkip ? '本地调度' : '上游响应' }}</span>
             <p class="error-title">
               {{ presentation.title }}
             </p>
@@ -85,6 +85,7 @@ const props = defineProps<{
 }>()
 
 const hasUpstreamResponse = computed(() => Boolean(props.error.upstreamResponse))
+const isLocalSkip = computed(() => Boolean(props.error.skipped))
 
 const presentation = computed<AttemptErrorPresentation>(() => {
   const { error } = props
@@ -99,6 +100,12 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 
   const primaryMessage = error.technicalMessage.trim()
   const readableMessage = error.message.trim()
+  if (error.skipReason === 'key_rate_limit_cooldown') {
+    return {
+      title: error.skipReasonLabel || '本地限流冷却中',
+      tone: 'warning',
+    }
+  }
   if (primaryMessage && !isTimeout && !isConversionFailure && primaryMessage !== '未知错误') {
     return {
       title: readableMessage || primaryMessage,
@@ -108,7 +115,7 @@ const presentation = computed<AttemptErrorPresentation>(() => {
 
   if (error.skipReason === 'key_circuit_open') {
     return {
-      title: error.skipped ? 'Key 处于本地限流冷却，请求未发送' : 'Key 的本地冷却保护已生效',
+      title: error.skipped ? 'Key 处于本地熔断冷却，请求未发送' : 'Key 的本地冷却保护已生效',
       tone: 'warning',
     }
   }

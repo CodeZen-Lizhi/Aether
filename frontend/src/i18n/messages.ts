@@ -408,6 +408,11 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '请求入口': 'Request entry',
   '请求结果': 'Request result',
   '没有已发送的上游请求': 'No upstream requests were sent',
+  '本地限流冷却中，未发送到上游': 'Local rate-limit cooldown; request not sent upstream',
+  '本地限流冷却': 'Local rate-limit cooldown',
+  '本次没有上游响应，也不会消耗上游额度。': 'No upstream response was received, and no upstream quota was consumed.',
+  '未进入上游执行': 'No upstream execution',
+  '本地调度': 'Local scheduling',
   '进行中': 'In progress',
   '传输中': 'Streaming',
   '总耗时': 'Total duration',
@@ -2817,6 +2822,14 @@ const legacyDynamicPatterns: Array<[RegExp, (match: RegExpMatchArray) => string]
   [/^(.+) 秒$/u, match => `${translateLegacyText(match[1], 'en-US')}s`],
   [/^(.+) 分钟$/u, match => `${translateLegacyText(match[1], 'en-US')} min`],
   [/^(\d+) 家供应商，(\d+) 次上游请求$/u, match => `${match[1]} providers, ${match[2]} upstream requests`],
+  [/^Key (.+) 命中限流冷却$/u, match => `Key ${match[1]} is in rate-limit cooldown`],
+  [/^(\d+) 个 Key 命中限流冷却$/u, match => `${match[1]} keys are in rate-limit cooldown`],
+  [/^预计 (\d{2}:\d{2}:\d{2}) 恢复$/u, match => `Expected recovery at ${match[1]}`],
+  [/^本地冷却时间 (?:(\d+)小时)?(\d+)分(\d+)秒$/u, match => {
+    const hours = match[1] ? `${match[1]}h ` : ''
+    return `Local cooldown ${hours}${match[2]}m ${match[3]}s`
+  }],
+  [/^本地限流冷却至 (\d{2}:\d{2}:\d{2})$/u, match => `Local rate-limit cooldown until ${match[1]}`],
   [/^(.+) 小时$/u, match => `${translateLegacyText(match[1], 'en-US')} h`],
   [/^(.+) 天$/u, match => `${translateLegacyText(match[1], 'en-US')} d`],
   [/^影响用户：(.+) 个$/u, match => `Affected users: ${match[1]}`],

@@ -205,6 +205,8 @@ impl StoredRequestCandidate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RequestCandidateFinalStatus {
+    /// 只查询真实调用且本次没有任何候选进入上游。
+    NoAttempt,
     Success,
     Failed,
     Cancelled,
@@ -261,16 +263,16 @@ impl RequestCandidateTrace {
                 })
             })
             .fold(0_u64, u64::saturating_add);
-        let final_status_source = if attempted_only && candidates.is_empty() {
-            &all_candidates
-        } else {
-            &candidates
-        };
-
         Some(Self {
             request_id: request_id.into(),
             total_candidates: candidates.len(),
-            final_status: derive_request_candidate_final_status(final_status_source),
+            // 只请求真实调用时，没有候选表示没有发生上游执行，不能借请求级失败状态
+            // 生成一条并不存在的调用结果。
+            final_status: if attempted_only && candidates.is_empty() {
+                RequestCandidateFinalStatus::NoAttempt
+            } else {
+                derive_request_candidate_final_status(&candidates)
+            },
             total_latency_ms,
             candidates,
         })
@@ -632,8 +634,8 @@ pub fn request_candidate_lifecycle_would_regress(
 mod tests {
     use super::{
         derive_request_candidate_final_status, request_candidate_lifecycle_would_regress,
-        RequestCandidateFinalStatus, RequestCandidateStatus, StoredRequestCandidate,
-        UpsertRequestCandidateRecord,
+        RequestCandidateFinalStatus, RequestCandidateStatus, RequestCandidateTrace,
+        StoredRequestCandidate, UpsertRequestCandidateRecord,
     };
 
     fn candidate(
@@ -695,6 +697,24 @@ mod tests {
             derive_request_candidate_final_status(&candidates),
             RequestCandidateFinalStatus::Success
         );
+    }
+
+    #[test]
+    fn attempted_only_trace_without_candidates_is_no_attempt() {
+        let trace = RequestCandidateTrace::from_candidates(
+            "req-1",
+            vec![candidate(
+                "cand-skipped",
+                RequestCandidateStatus::Skipped,
+                None,
+            )],
+            true,
+        )
+        .expect("non-empty history should produce an attempted-only trace");
+
+        assert_eq!(trace.final_status, RequestCandidateFinalStatus::NoAttempt);
+        assert!(trace.candidates.is_empty());
+        assert_eq!(trace.total_latency_ms, 0);
     }
 
     #[test]

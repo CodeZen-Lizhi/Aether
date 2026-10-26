@@ -143,6 +143,8 @@ export interface RequestSchedulingFailure {
   message?: string | null
   reason_summary?: string | null
   status_code?: number | null
+  /** 本地限流冷却的可靠恢复时刻，Unix 秒；仅冷却跳过时存在。 */
+  rate_limit_cooldown_until_unix_secs?: number | null
   no_upstream_attempt?: boolean | null
 }
 

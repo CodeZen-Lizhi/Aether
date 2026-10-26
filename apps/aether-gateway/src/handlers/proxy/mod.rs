@@ -26,7 +26,8 @@ use crate::ai_serving::api::{
 use crate::api::response::{
     build_client_response, build_client_response_from_parts, build_local_auth_rejection_response,
     build_local_http_error_response, build_local_http_error_response_with_request_path,
-    build_local_overloaded_response, build_local_user_rpm_limited_response,
+    build_local_overloaded_response, build_local_provider_key_rate_limit_cooldown_response,
+    build_local_user_rpm_limited_response,
 };
 use crate::constants::{
     CONTROL_CANDIDATE_ID_HEADER, DEPENDENCY_REASON_HEADER, EXECUTION_PATH_CONTROL_EXECUTE_STREAM,
@@ -1717,6 +1718,8 @@ async fn proxy_request_inner(
             .all_candidates_skipped_for_reason(AUTH_API_KEY_CONCURRENCY_LIMIT_SKIP_REASON)
             || local_execution_runtime_miss_context
                 .all_candidates_skipped_for_reason(LEGACY_API_KEY_CONCURRENCY_LIMIT_SKIP_REASON);
+        let rate_limit_cooldown_until_unix_secs =
+            local_execution_runtime_miss_context.all_rate_limit_cooldown_until_unix_secs();
         let local_execution_runtime_miss_detail = (!auth_api_key_concurrency_limited)
             .then(|| {
                 local_execution_runtime_miss_context
@@ -1835,15 +1838,29 @@ async fn proxy_request_inner(
             )
             .await;
         }
-        let mut response = build_local_http_error_response(
-            &trace_id,
-            control_decision,
-            http::StatusCode::SERVICE_UNAVAILABLE,
-            local_execution_runtime_miss_client_message(
-                local_execution_runtime_miss_detail.as_str(),
-            )
-            .as_str(),
-        )?;
+        let rate_limit_cooldown_retry_after_secs =
+            rate_limit_cooldown_until_unix_secs.map(|until_unix_secs| {
+                until_unix_secs
+                    .saturating_sub(crate::clock::current_unix_secs())
+                    .max(1)
+            });
+        let mut response = if let Some(retry_after_secs) = rate_limit_cooldown_retry_after_secs {
+            build_local_provider_key_rate_limit_cooldown_response(
+                &trace_id,
+                control_decision,
+                retry_after_secs,
+            )?
+        } else {
+            build_local_http_error_response(
+                &trace_id,
+                control_decision,
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                local_execution_runtime_miss_client_message(
+                    local_execution_runtime_miss_detail.as_str(),
+                )
+                .as_str(),
+            )?
+        };
         let local_execution_runtime_miss_reason = local_execution_runtime_miss_diagnostic
             .as_ref()
             .map(|diagnostic| diagnostic.reason.trim())

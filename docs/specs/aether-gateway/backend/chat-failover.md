@@ -155,6 +155,13 @@ reserve an anonymous probe. The managed owner renews every 20 seconds with a
 60-second TTL and bounded storage operations. Lost/expired ownership is neutral
 and cannot restore health. Validate owner on every CAS reread and expiry again
 inside the repository write; terminal projection consumes owner metadata.
+When every candidate is skipped only because their provider keys are cooling
+after a rate-limit response, the request is rejected locally with `429`, a
+`Retry-After` derived from the latest reliable cooldown deadline and scope
+`provider_key`. It must not contain an upstream response or consume upstream
+quota, and must not settle the skipped keys' health again. Request trace uses
+`no_attempt` for the attempted-only view so the local rejection is not rendered
+as a request-level upstream failure.
 
 Once protocol/tool/model state has been delivered, do not transparently replay
 or concatenate a second generation. HTTP `previous_response_id` currently

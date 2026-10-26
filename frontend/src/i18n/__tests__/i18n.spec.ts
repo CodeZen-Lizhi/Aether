@@ -123,6 +123,24 @@ describe('i18n infrastructure', () => {
   })
 
   it('translates dashboard scopes and dynamic request and token summaries', () => {
+    expect(translateLegacyText('本地限流冷却中，未发送到上游', 'en-US')).toBe(
+      'Local rate-limit cooldown; request not sent upstream',
+    )
+    expect(translateLegacyText('Key 3425 命中限流冷却', 'en-US')).toBe(
+      'Key 3425 is in rate-limit cooldown',
+    )
+    expect(translateLegacyText('2 个 Key 命中限流冷却', 'en-US')).toBe(
+      '2 keys are in rate-limit cooldown',
+    )
+    expect(translateLegacyText('预计 20:42:27 恢复', 'en-US')).toBe(
+      'Expected recovery at 20:42:27',
+    )
+    expect(translateLegacyText('本地冷却时间 7分59秒', 'en-US')).toBe(
+      'Local cooldown 7m 59s',
+    )
+    expect(translateLegacyText('本地冷却时间 1小时2分3秒', 'en-US')).toBe(
+      'Local cooldown 1h 2m 3s',
+    )
     expect(translateLegacyText('累计 Token', 'en-US')).toBe('Lifetime tokens')
     expect(translateLegacyText('今日平均响应', 'en-US')).toBe('Average response today')
     expect(translateLegacyText('重试累计统计', 'en-US')).toBe('Retry lifetime statistics')

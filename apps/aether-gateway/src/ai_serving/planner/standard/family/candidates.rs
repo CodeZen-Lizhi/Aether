@@ -8,7 +8,7 @@ use crate::ai_serving::planner::candidate_materialization::{
 use crate::ai_serving::planner::candidate_metadata::{
     build_local_execution_candidate_contract_metadata,
     build_local_execution_candidate_contract_metadata_for_candidate,
-    LocalExecutionCandidateMetadataParts,
+    skipped_candidate_extra_fields, LocalExecutionCandidateMetadataParts,
 };
 use crate::ai_serving::planner::candidate_source::{
     preselect_local_execution_candidates_for_api_formats_with_serving,
@@ -202,7 +202,7 @@ pub(super) async fn materialize_local_standard_candidate_attempts(
                     skipped_candidate.transport_ref(),
                     provider_api_format.as_str(),
                     spec_metadata.api_format,
-                    serde_json::Map::new(),
+                    skipped_candidate_extra_fields(&skipped_candidate),
                     execution_strategy,
                     conversion_mode,
                     provider_api_format.as_str(),
@@ -302,7 +302,7 @@ pub(super) async fn build_local_standard_candidate_attempt_source<'a>(
                         skipped_candidate.transport_ref(),
                         provider_api_format.as_str(),
                         spec_metadata.api_format,
-                        serde_json::Map::new(),
+                        skipped_candidate_extra_fields(&skipped_candidate),
                         execution_strategy,
                         conversion_mode,
                         provider_api_format.as_str(),

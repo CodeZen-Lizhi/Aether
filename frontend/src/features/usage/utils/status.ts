@@ -1,6 +1,6 @@
 import type { RequestStatus, UsageRecord } from '../types'
 
-export type TimelineFinalStatus = 'success' | 'failed' | 'streaming' | 'pending' | 'cancelled'
+export type TimelineFinalStatus = 'success' | 'failed' | 'streaming' | 'pending' | 'cancelled' | 'no_attempt'
 
 type RequestStatusLike = RequestStatus | string | null | undefined
 
@@ -280,6 +280,7 @@ function normalizeTimelineFinalStatus(status: string | null | undefined): Timeli
     case 'streaming':
     case 'pending':
     case 'cancelled':
+    case 'no_attempt':
       return normalized
     default:
       return undefined
@@ -297,6 +298,10 @@ export function resolveTimelineFinalStatus(params: {
     : undefined
 
   const requestStatus = mapRequestStatusToTimelineStatus(params.requestStatus)
+  const traceStatus = normalizeTimelineFinalStatus(params.traceFinalStatus)
+  if (traceStatus === 'no_attempt') {
+    return 'no_attempt'
+  }
   if (requestStatus === 'success' || requestStatus === 'failed' || requestStatus === 'cancelled') {
     return requestStatus
   }
@@ -304,7 +309,6 @@ export function resolveTimelineFinalStatus(params: {
     return requestStatus
   }
 
-  const traceStatus = normalizeTimelineFinalStatus(params.traceFinalStatus)
   if (traceStatus === 'success' || traceStatus === 'failed' || traceStatus === 'cancelled') {
     if (traceStatus === 'success' && hasTerminalSuccessStatusCode === false) {
       return 'failed'

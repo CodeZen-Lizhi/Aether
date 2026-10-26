@@ -396,6 +396,7 @@ fn copy_allowed_metadata_fields(source: &Map<String, Value>, target: &mut Map<St
     copy_non_null_value(source, target, "scheduling_audit");
     copy_non_empty_string(source, target, ROUTING_CANDIDATE_SKIP_REASON_METADATA_KEY);
     copy_non_null_value(source, target, ROUTING_FAILURE_DIAGNOSTIC_METADATA_KEY);
+    copy_number(source, target, "rate_limit_cooldown_until_unix_secs");
     copy_non_null_value(source, target, "tls_fingerprint");
     copy_number(source, target, "rate_multiplier");
     copy_bool(source, target, "is_free_tier");
@@ -466,6 +467,7 @@ fn move_allowed_metadata_fields(mut source: Map<String, Value>, target: &mut Map
         ROUTING_CANDIDATE_SKIP_REASON_METADATA_KEY,
     );
     remove_non_null_value(&mut source, target, ROUTING_FAILURE_DIAGNOSTIC_METADATA_KEY);
+    remove_number(&mut source, target, "rate_limit_cooldown_until_unix_secs");
     remove_non_null_value(&mut source, target, "tls_fingerprint");
     remove_number(&mut source, target, "rate_multiplier");
     remove_bool(&mut source, target, "is_free_tier");
@@ -827,7 +829,7 @@ mod tests {
     fn sanitizes_request_metadata_to_allowlist() {
         let stage_timings_ms = sample_stage_timings_metadata();
         let db_timings_ms = sample_db_timings_metadata();
-        let metadata = sanitize_usage_request_metadata(Some(json!({
+        let input = json!({
             "request_id": "req-1",
             "provider_id": "provider-1",
             "provider_name": "OpenAI",
@@ -865,6 +867,7 @@ mod tests {
                 "message": "invalid reasoning summary",
                 "safe_to_show": true
             },
+            "rate_limit_cooldown_until_unix_secs": 1_795_140_147,
             "rate_multiplier": 1.25,
             "is_free_tier": false,
             "input_price_per_1m": 3.0,
@@ -878,8 +881,9 @@ mod tests {
             "original_request_body": {"messages": []},
             "provider_request_headers": {"authorization": "Bearer secret"},
             "upstream_url": "https://example.com/v1/chat/completions"
-        })))
-        .expect("metadata should remain");
+        });
+        let metadata =
+            sanitize_usage_request_metadata(Some(input)).expect("metadata should remain");
 
         assert_eq!(
             metadata,
@@ -916,6 +920,7 @@ mod tests {
                     "message": "invalid reasoning summary",
                     "safe_to_show": true
                 },
+                "rate_limit_cooldown_until_unix_secs": 1_795_140_147,
                 "rate_multiplier": 1.25,
                 "is_free_tier": false,
                 "input_price_per_1m": 3.0,
@@ -1307,6 +1312,24 @@ mod tests {
                 "provider_service_tier": "priority",
                 "provider_actual_service_tier": "default"
             })
+        );
+    }
+
+    #[test]
+    fn rate_limit_cooldown_metadata_survives_usage_sanitization() {
+        let Value::Object(mut input) = sample_stage_timings_metadata() else {
+            panic!("sample stage timings should be an object");
+        };
+        input.insert(
+            "rate_limit_cooldown_until_unix_secs".to_string(),
+            json!(1_795_139_547u64),
+        );
+        let metadata = sanitize_usage_request_metadata(Some(Value::Object(input)))
+            .expect("cooldown metadata should be retained");
+
+        assert_eq!(
+            metadata["rate_limit_cooldown_until_unix_secs"],
+            json!(1_795_139_547u64)
         );
     }
 

@@ -180,7 +180,12 @@ impl AiCandidatePreselectionPort for GatewayLocalCandidatePreselectionPort<'_> {
             candidates,
             skipped_candidates
                 .into_iter()
-                .map(skipped_local_execution_candidate_from_scheduler_skip)
+                .map(|skipped| {
+                    skipped_local_execution_candidate_from_scheduler_skip(
+                        skipped,
+                        candidate_api_format,
+                    )
+                })
                 .collect(),
         ))
     }
@@ -1240,7 +1245,9 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
             .await?;
         let skipped_candidates = skipped_candidates
             .into_iter()
-            .map(skipped_local_execution_candidate_from_scheduler_skip)
+            .map(|skipped| {
+                skipped_local_execution_candidate_from_scheduler_skip(skipped, candidate_api_format)
+            })
             .filter(|skipped_candidate| {
                 self.skipped_candidate_allowed_for_page(skipped_candidate, candidate_api_format)
             })
@@ -1291,13 +1298,22 @@ impl<'a> LocalCandidatePreselectionPageCursor<'a> {
 
 fn skipped_local_execution_candidate_from_scheduler_skip(
     skipped_candidate: SchedulerSkippedCandidate,
+    api_format: &str,
 ) -> SkippedLocalExecutionCandidate {
+    let cooldown_until_unix_secs = (skipped_candidate.skip_reason == "key_rate_limit_cooldown")
+        .then_some(skipped_candidate.rate_limit_cooldown_until_unix_secs)
+        .flatten();
     SkippedLocalExecutionCandidate {
         candidate: skipped_candidate.candidate,
         skip_reason: skipped_candidate.skip_reason,
         transport: None,
         ranking: None,
-        extra_data: None,
+        extra_data: cooldown_until_unix_secs.map(|until_unix_secs| {
+            serde_json::json!({
+                "rate_limit_cooldown_until_unix_secs": until_unix_secs,
+                "rate_limit_cooldown_api_format": api_format,
+            })
+        }),
     }
 }
 

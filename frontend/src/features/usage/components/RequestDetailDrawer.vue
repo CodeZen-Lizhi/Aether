@@ -1142,6 +1142,9 @@ function mapTraceFinalStatusToRequestStatus(
       return 'streaming'
     case 'pending':
       return 'pending'
+    /** 零上游调用不覆盖 usage 已记录的请求级失败终态。 */
+    case 'no_attempt':
+      return undefined
     default:
       return undefined
   }

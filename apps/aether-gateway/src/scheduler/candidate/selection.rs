@@ -20,6 +20,8 @@ use super::{SchedulerMinimalCandidateSelectionCandidate, SchedulerRuntimeState};
 pub(crate) struct SchedulerSkippedCandidate {
     pub(crate) candidate: SchedulerMinimalCandidateSelectionCandidate,
     pub(crate) skip_reason: &'static str,
+    /// 限流冷却跳过时保存 Key 在该 API 格式上的可靠恢复时刻，供调用方展示真实倒计时。
+    pub(crate) rate_limit_cooldown_until_unix_secs: Option<u64>,
 }
 
 pub(crate) const AUTH_API_KEY_CONCURRENCY_LIMIT_SKIP_REASON: &str =
@@ -283,6 +285,7 @@ pub(super) async fn collect_selectable_enumerated_candidates_with_skip_reasons(
                 .map(|candidate| SchedulerSkippedCandidate {
                     candidate,
                     skip_reason: API_KEY_CONCURRENCY_LIMIT_SKIP_REASON,
+                    rate_limit_cooldown_until_unix_secs: None,
                 })
                 .collect(),
         ));

@@ -10,8 +10,10 @@ use std::time::{Duration, Instant};
 use aether_data_contracts::repository::candidates::{
     RequestCandidateReadRepository, RequestCandidateStatus,
 };
+use aether_data_contracts::repository::provider_catalog::ProviderCatalogWriteRepository;
 use aether_data_contracts::repository::usage::UsageReadRepository;
 use http::StatusCode;
+use serde_json::json;
 use tokio::sync::Notify;
 
 use support::{assert_success, Fixture, Reply, FIRST_TEXT};
@@ -235,6 +237,144 @@ fn short_retry_after_retries_same_key_and_long_cooldown_survives_next_request() 
             "long cooldown must not be clipped to two seconds"
         );
         long.assert_health(0, 0.9).await;
+    });
+}
+
+/// 真实上游 429 之后，下一次请求只命本地冷却时不应伪造上游响应、503 或上游耗时。
+#[test]
+fn rate_limit_cooldown_rejects_locally_without_upstream_attempt_or_response() {
+    run("rate-limit-no-attempt", async {
+        let fixture = Fixture::new(
+            "fixed_order",
+            2,
+            false,
+            [1.0, 1.0],
+            90_000,
+            [
+                vec![Reply::Error(StatusCode::TOO_MANY_REQUESTS, Some("600"))],
+                vec![Reply::Success],
+            ],
+        )
+        .await;
+
+        let first_request_id = "trace-rate-limit-first";
+        let first = fixture
+            .request_body_with_trace_id(
+                "/v1/chat/completions",
+                json!({"model":"gpt-5","messages":[]}),
+                first_request_id,
+            )
+            .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(fixture.targets(), [0, 1]);
+        fixture.assert_health(0, 0.9).await;
+
+        let mut primary = fixture.key(0).await;
+        let mut backup = fixture.key(1).await;
+        let cooldown_until_unix_secs = crate::clock::current_unix_secs() + 600;
+        primary.health_by_format = Some(json!({
+            "openai:chat": {
+                "health_score": 0.9,
+                "consecutive_failures": 1,
+                "last_failure_at": "2026-10-26T12:32:27Z",
+                "rate_limit_cooldown_started_at_unix_secs": cooldown_until_unix_secs - 600,
+                "rate_limit_cooldown_until_unix_secs": cooldown_until_unix_secs,
+                "consecutive_rate_limits": 1
+            }
+        }));
+        backup.health_by_format = primary.health_by_format.clone();
+        assert!(fixture
+            .catalog
+            .update_key_health_state(
+                primary.id.as_str(),
+                primary.is_active,
+                primary.health_by_format.as_ref(),
+                primary.circuit_breaker_by_format.as_ref(),
+            )
+            .await
+            .expect("primary health should update"));
+        assert!(fixture
+            .catalog
+            .update_key_health_state(
+                backup.id.as_str(),
+                backup.is_active,
+                backup.health_by_format.as_ref(),
+                backup.circuit_breaker_by_format.as_ref(),
+            )
+            .await
+            .expect("backup health should update"));
+
+        let second_request_id = "trace-rate-limit-second";
+        let started = Instant::now();
+        let second = fixture
+            .request_body_with_trace_id(
+                "/v1/chat/completions",
+                json!({"model":"gpt-5","messages":[]}),
+                second_request_id,
+            )
+            .await;
+        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            fixture.targets(),
+            [0, 1],
+            "cooling keys must not reach upstream"
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let retry_after = second
+            .headers()
+            .get(http::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .expect("local cooldown must expose retry-after");
+        assert!((1..=600).contains(&retry_after));
+        let response_body: serde_json::Value = second
+            .json()
+            .await
+            .expect("local cooldown body should parse");
+        assert_eq!(response_body["error"]["type"], "rate_limit_exceeded");
+
+        let candidates = fixture
+            .request_candidates
+            .list_by_request_id(second_request_id)
+            .await
+            .expect("second request candidates should read");
+        assert!(!candidates.is_empty());
+        assert!(candidates.iter().all(|candidate| {
+            candidate.status == RequestCandidateStatus::Skipped
+                && candidate.skip_reason.as_deref() == Some("key_rate_limit_cooldown")
+                && candidate.status_code.is_none()
+        }));
+        assert!(candidates.iter().all(|candidate| {
+            candidate
+                .extra_data
+                .as_ref()
+                .and_then(|value| value.get("rate_limit_cooldown_until_unix_secs"))
+                .and_then(serde_json::Value::as_u64)
+                .is_some()
+        }));
+
+        let usage = failed_usage(&fixture, second_request_id).await;
+        assert_eq!(
+            usage.status_code,
+            Some(StatusCode::TOO_MANY_REQUESTS.as_u16())
+        );
+        assert_eq!(
+            usage.routing_local_execution_runtime_miss_reason(),
+            Some("key_rate_limit_cooldown")
+        );
+        assert!(usage.response_headers.is_none());
+        assert!(usage.response_body.is_none());
+        fixture.assert_health(0, 0.9).await;
+        fixture.assert_health(1, 0.9).await;
+        assert_eq!(
+            usage
+                .request_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("rate_limit_cooldown_until_unix_secs"))
+                .and_then(serde_json::Value::as_u64),
+            Some(cooldown_until_unix_secs)
+        );
+        assert!(usage.response_time_ms.is_some_and(|ms| ms < 2_000));
     });
 }
 
