@@ -121,6 +121,55 @@ function buildFastTierDetail(): RequestDetail {
 }
 
 describe('RequestDetailDrawer request lifecycle', () => {
+  it('shows the reliable local rate-limit recovery time instead of local processing duration', async () => {
+    const cooldownUntilUnixSecs = Math.floor(Date.UTC(2026, 9, 26, 12, 42, 27) / 1000)
+    const expectedRecoveryLabel = new Date(cooldownUntilUnixSecs * 1000).toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+    apiMocks.getRequestDetail.mockResolvedValue({
+      ...buildEmbeddingDetail(),
+      status: 'failed',
+      status_code: 429,
+      response_time_ms: 4_538,
+      end_to_end_time_ms: 4_538,
+      scheduling_failure: {
+        source: 'local_execution_runtime_miss',
+        reason: 'key_rate_limit_cooldown',
+        reason_label: '本地限流冷却',
+        title: '本地限流冷却中，请求未发送',
+        message: '本地限流冷却中，请求未发送到上游',
+        status_code: 429,
+        rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs,
+        no_upstream_attempt: true,
+      },
+    })
+    const isOpen = ref(false)
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp({ render: () => h(RequestDetailDrawer, {
+      isOpen: isOpen.value,
+      requestId: 'usage-embedding-1',
+    }) })
+    app.mount(root)
+    mountedApps.push({ app, root })
+    isOpen.value = true
+    await nextTick()
+
+    await vi.waitFor(() => {
+      const overview = document.body.querySelector('[data-request-detail-overview]')
+      expect(overview?.textContent).toContain('本地限流预计恢复时间')
+      expect(overview?.textContent).toContain(expectedRecoveryLabel)
+      expect(overview?.textContent).not.toContain('总耗时')
+      expect(overview?.textContent).not.toContain('4.54s')
+      expect(document.body.querySelector('[data-request-lifecycle-status]')).toBeNull()
+    })
+  })
+
   it.each([201, 204])('shows successful HTTP %i as semantic success', async (statusCode) => {
     apiMocks.getRequestDetail.mockResolvedValue({
       ...buildEmbeddingDetail(),

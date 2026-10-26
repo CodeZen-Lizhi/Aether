@@ -37,6 +37,17 @@ async (page) => {
 
     const metrics = await page.locator('[data-request-detail-overview]').locator(':scope > div').allTextContents()
     if (metrics.length !== 5) throw new Error(`${scenario.name}: 首屏概览不是 5 项，实际 ${metrics.length}`)
+    if (scenario.name === 'rate-limit-no-attempt') {
+      const overviewText = metrics.join(' ')
+      if (!overviewText.includes('本地限流预计恢复时间')
+        || overviewText.includes('总耗时')
+        || !/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}/.test(overviewText)) {
+        throw new Error(`rate-limit-no-attempt: 概览仍把本地处理耗时当作总耗时：${overviewText}`)
+      }
+      if (await page.locator('[data-request-lifecycle-status]').count() !== 0) {
+        throw new Error('rate-limit-no-attempt: 抽屉头部仍显示请求级 HTTP 状态')
+      }
+    }
 
     const detailsOpen = await page.evaluate(() => ({
       billing: document.querySelector('[data-request-billing-details]')?.open,

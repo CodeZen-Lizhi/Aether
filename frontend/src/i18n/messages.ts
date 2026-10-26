@@ -410,6 +410,7 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '没有已发送的上游请求': 'No upstream requests were sent',
   '本地限流冷却中，未发送到上游': 'Local rate-limit cooldown; request not sent upstream',
   '本地限流冷却': 'Local rate-limit cooldown',
+  '本地限流预计恢复时间': 'Local rate-limit expected recovery time',
   '本次没有上游响应，也不会消耗上游额度。': 'No upstream response was received, and no upstream quota was consumed.',
   '未进入上游执行': 'No upstream execution',
   '本地调度': 'Local scheduling',

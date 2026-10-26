@@ -126,6 +126,9 @@ describe('i18n infrastructure', () => {
     expect(translateLegacyText('本地限流冷却中，未发送到上游', 'en-US')).toBe(
       'Local rate-limit cooldown; request not sent upstream',
     )
+    expect(translateLegacyText('本地限流预计恢复时间', 'en-US')).toBe(
+      'Local rate-limit expected recovery time',
+    )
     expect(translateLegacyText('Key 3425 命中限流冷却', 'en-US')).toBe(
       'Key 3425 is in rate-limit cooldown',
     )
