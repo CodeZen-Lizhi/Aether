@@ -350,7 +350,7 @@ async fn record_stream_sync_failure(
     candidate_status_code: Option<u16>,
     started_at_unix_ms: Option<u64>,
     handling: StreamFailureHandling,
-) -> LocalFailoverAnalysis {
+) -> (LocalFailoverAnalysis, Option<Value>) {
     crate::execution_runtime::chat_retry::mark_chat_attempt_terminal();
     let error_type = stream_failure_body_field(payload, "type").unwrap_or("internal");
     let error_message = stream_failure_body_field(payload, "message").unwrap_or_default();
@@ -391,7 +391,7 @@ async fn record_stream_sync_failure(
         }),
     )
     .await;
-    apply_local_execution_effect(
+    let cooldown = apply_local_execution_effect(
         state,
         LocalExecutionEffectContext {
             plan,
@@ -460,7 +460,7 @@ async fn record_stream_sync_failure(
         },
     )
     .await;
-    failure_analysis
+    (failure_analysis, cooldown)
 }
 
 #[allow(clippy::too_many_arguments)] // internal helper for prefetch error handling
@@ -476,6 +476,7 @@ pub(super) async fn handle_prefetch_provider_private_stream_error(
     mut headers: std::collections::BTreeMap<String, String>,
     telemetry: Option<ExecutionTelemetry>,
     buffered_body: &[u8],
+    candidate_elapsed_ms: u64,
     upstream_status_code: u16,
     status_code: u16,
     body_json: Value,
@@ -487,7 +488,7 @@ pub(super) async fn handle_prefetch_provider_private_stream_error(
     headers.remove("content-length");
     headers.insert("content-type".to_string(), "application/json".to_string());
 
-    let payload = GatewaySyncReportRequest {
+    let mut payload = GatewaySyncReportRequest {
         trace_id: trace_id.to_string(),
         report_kind: report_kind.to_string(),
         report_context,
@@ -499,7 +500,13 @@ pub(super) async fn handle_prefetch_provider_private_stream_error(
             .then(|| base64::engine::general_purpose::STANDARD.encode(buffered_body)),
         telemetry,
     };
-    let failure_analysis = record_stream_sync_failure(
+    let telemetry = payload.telemetry.get_or_insert(ExecutionTelemetry {
+        ttfb_ms: None,
+        elapsed_ms: None,
+        upstream_bytes: None,
+    });
+    telemetry.elapsed_ms.get_or_insert(candidate_elapsed_ms);
+    let (failure_analysis, cooldown) = record_stream_sync_failure(
         state,
         plan,
         payload.report_context.as_ref(),
@@ -509,6 +516,10 @@ pub(super) async fn handle_prefetch_provider_private_stream_error(
         StreamFailureHandling::HonorLocalFailover,
     )
     .await;
+    payload.report_context = crate::execution_runtime::merge_rate_limit_cooldown_report_context(
+        payload.report_context,
+        cooldown,
+    );
     if matches!(
         failure_analysis.decision,
         LocalFailoverDecision::RetryNextCandidate
@@ -523,17 +534,34 @@ pub(super) async fn handle_prefetch_provider_private_stream_error(
         }
         if failure_disposition.preserve_upstream_error {
             if let Some(retry_fallback) = retry_fallback_out {
-                *retry_fallback = Some(attach_control_metadata_headers(
-                    crate::api::response::build_client_response_from_parts(
-                        upstream_status_code,
-                        &upstream_headers,
-                        Body::from(buffered_body.to_vec()),
-                        trace_id,
-                        Some(decision),
+                let mut fallback_headers = upstream_headers;
+                crate::execution_runtime::align_rate_limit_retry_after(
+                    &mut fallback_headers,
+                    status_code,
+                    payload
+                        .report_context
+                        .as_ref()
+                        .and_then(|context| context.get("rate_limit_cooldown")),
+                );
+                let terminal = crate::executor::DeferredUsageTerminal::from_sync_payload(
+                    plan,
+                    payload.report_context.as_ref(),
+                    &payload,
+                );
+                *retry_fallback = Some(crate::executor::attach_deferred_usage_terminal(
+                    attach_control_metadata_headers(
+                        crate::api::response::build_client_response_from_parts(
+                            status_code,
+                            &fallback_headers,
+                            Body::from(buffered_body.to_vec()),
+                            trace_id,
+                            Some(decision),
+                        )?,
+                        Some(request_id),
+                        candidate_id,
                     )?,
-                    Some(request_id),
-                    candidate_id,
-                )?);
+                    terminal,
+                ));
             }
         }
         warn!(
@@ -549,6 +577,14 @@ pub(super) async fn handle_prefetch_provider_private_stream_error(
         return Ok(None);
     }
 
+    crate::execution_runtime::align_rate_limit_retry_after(
+        &mut payload.headers,
+        status_code,
+        payload
+            .report_context
+            .as_ref()
+            .and_then(|context| context.get("rate_limit_cooldown")),
+    );
     let response =
         submit_local_core_error_or_sync_finalize(state, trace_id, decision, payload).await?;
     Ok(Some(attach_control_metadata_headers(
@@ -588,13 +624,16 @@ pub(super) async fn handle_prefetch_stream_failure(
         buffered_body,
         failure,
     );
-    if transport_error {
-        let telemetry = payload.telemetry.get_or_insert(ExecutionTelemetry {
+    if let Some(telemetry) = payload.telemetry.as_mut() {
+        telemetry.elapsed_ms.get_or_insert(candidate_elapsed_ms);
+    } else {
+        payload.telemetry = Some(ExecutionTelemetry {
             ttfb_ms: None,
-            elapsed_ms: None,
+            elapsed_ms: Some(candidate_elapsed_ms),
             upstream_bytes: None,
         });
-        telemetry.elapsed_ms.get_or_insert(candidate_elapsed_ms);
+    }
+    if transport_error {
         return handle_prefetch_transport_stream_failure(
             state,
             trace_id,
@@ -610,7 +649,7 @@ pub(super) async fn handle_prefetch_stream_failure(
         .await;
     }
     let honor_local_failover = honor_http_failover && retry_scope_out.is_some();
-    let failure_analysis = record_stream_sync_failure(
+    let (failure_analysis, _) = record_stream_sync_failure(
         state,
         plan,
         payload.report_context.as_ref(),
@@ -803,7 +842,7 @@ pub(super) async fn submit_midstream_stream_failure(
         buffered_body,
         failure,
     );
-    record_stream_sync_failure(
+    let _ = record_stream_sync_failure(
         state,
         plan,
         payload.report_context.as_ref(),

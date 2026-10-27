@@ -99,78 +99,94 @@
               还没有供应商——先到「供应商管理」添加供应商和 Key
             </p>
 
-            <TransitionGroup
+            <div
               v-else
-              tag="ul"
-              name="provider-row"
-              move-class="provider-row-move"
-              class="provider-priority-list mt-3 space-y-2"
+              ref="providerListElement"
+              class="mt-3"
             >
-              <li
-                v-for="(provider, index) in orderedProviders"
-                :key="provider.id"
-                :data-provider-id="provider.id"
-                class="provider-row rounded-lg border border-border bg-background"
-                :class="draggedProviderId === provider.id ? 'provider-row--placeholder' : ''"
+              <TransitionGroup
+                tag="ul"
+                name="provider-row"
+                move-class="provider-row-move"
+                class="provider-priority-list space-y-2"
               >
-                <div class="flex items-center gap-2 px-3 py-2.5">
+                <li
+                  v-for="(provider, index) in orderedProviders"
+                  :key="provider.id"
+                  :data-provider-id="provider.id"
+                  class="provider-row rounded-lg border border-border bg-background"
+                  :class="draggedProviderId === provider.id ? 'provider-row--placeholder' : ''"
+                >
                   <span
-                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
-                  >
-                    {{ index + 1 }}
-                  </span>
-                  <button
-                    type="button"
-                    class="flex h-7 w-7 shrink-0 touch-none select-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="draggedProviderId === provider.id ? 'cursor-grabbing text-primary' : 'cursor-grab'"
-                    :aria-label="`拖动 ${provider.name} 调整优先级`"
-                    :title="`拖动 ${provider.name} 调整优先级`"
-                    @pointerdown="onPointerDragStart($event, provider.id)"
-                    @pointermove="onPointerDragMove"
-                    @pointerup="onPointerDragEnd"
-                    @pointercancel="onPointerDragEnd"
-                    @lostpointercapture="onPointerDragEnd"
-                  >
-                    <GripVertical
-                      aria-hidden="true"
-                      class="h-4 w-4 pointer-events-none"
-                    />
-                  </button>
-                  <div class="flex min-w-0 flex-1 items-center gap-2 text-left">
-                    <span class="truncate text-sm font-medium">{{ provider.name }}</span>
-                    <Badge
-                      v-if="!provider.is_active"
-                      variant="secondary"
-                      class="shrink-0"
+                    v-if="draggedProviderId && dropIndex === index"
+                    class="provider-drop-indicator"
+                    aria-hidden="true"
+                  />
+                  <div class="flex items-center gap-2 px-3 py-2.5">
+                    <span
+                      class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
                     >
-                      已停用
-                    </Badge>
+                      {{ index + 1 }}
+                    </span>
+                    <button
+                      type="button"
+                      class="flex h-7 w-7 shrink-0 touch-none select-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      :class="draggedProviderId === provider.id ? 'cursor-grabbing text-primary' : 'cursor-grab'"
+                      :aria-label="`拖动 ${provider.name} 调整优先级`"
+                      :title="`拖动 ${provider.name} 调整优先级`"
+                      @pointerdown="onPointerDragStart($event, provider.id)"
+                    >
+                      <GripVertical
+                        aria-hidden="true"
+                        class="h-4 w-4 pointer-events-none"
+                      />
+                    </button>
+                    <div class="flex min-w-0 flex-1 items-center gap-2 text-left">
+                      <span class="truncate text-sm font-medium">{{ provider.name }}</span>
+                      <Badge
+                        v-if="!provider.is_active"
+                        variant="secondary"
+                        class="shrink-0"
+                      >
+                        已停用
+                      </Badge>
+                    </div>
+                    <div
+                      class="provider-order-actions flex shrink-0 items-center gap-0.5 rounded-xl border border-border/70 bg-muted/40 p-0.5"
+                      role="group"
+                      :aria-label="`调整 ${provider.name} 的优先级`"
+                    >
+                      <Button
+                        variant="ghost"
+                        class="provider-order-button h-10 w-11 rounded-lg p-0 text-muted-foreground hover:bg-background hover:text-foreground hover:shadow-sm"
+                        :disabled="index === 0"
+                        :aria-label="`上移 ${provider.name}`"
+                        :title="`上移 ${provider.name}`"
+                        @click="moveProvider(index, -1)"
+                      >
+                        <ArrowUp
+                          aria-hidden="true"
+                          class="h-5 w-5"
+                        />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        class="provider-order-button h-10 w-11 rounded-lg p-0 text-muted-foreground hover:bg-background hover:text-foreground hover:shadow-sm"
+                        :disabled="index === orderedProviders.length - 1"
+                        :aria-label="`下移 ${provider.name}`"
+                        :title="`下移 ${provider.name}`"
+                        @click="moveProvider(index, 1)"
+                      >
+                        <ArrowDown
+                          aria-hidden="true"
+                          class="h-5 w-5"
+                        />
+                      </Button>
+                    </div>
                   </div>
-                  <div class="flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7"
-                      :disabled="index === 0"
-                      aria-label="上移"
-                      @click="moveProvider(index, -1)"
-                    >
-                      <ChevronUp class="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7"
-                      :disabled="index === orderedProviders.length - 1"
-                      aria-label="下移"
-                      @click="moveProvider(index, 1)"
-                    >
-                      <ChevronDown class="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </li>
-            </TransitionGroup>
+                </li>
+              </TransitionGroup>
+            </div>
 
             <Teleport to="body">
               <div
@@ -206,8 +222,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { ChevronDown, ChevronUp, GripVertical } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ArrowDown, ArrowUp, GripVertical } from 'lucide-vue-next'
 
 import { Badge, Button, TableCard } from '@/components/ui'
 import { PageContainer } from '@/components/layout'
@@ -262,10 +278,15 @@ const loadError = ref<string | null>(null)
 const mode = ref<SchedulingStrategyMode>('cache_affinity')
 const providers = ref<AdminProviderListItem[]>([])
 const orderedProviderIds = ref<string[]>([])
+const providerListElement = ref<HTMLElement | null>(null)
 const systemDefaultGroup = ref<RoutingGroupRecord | null>(null)
 const savedSnapshot = ref<string | null>(null)
 const dragOrigin = ref<{ left: number, top: number, width: number, startX: number, startY: number } | null>(null)
 const dragPointer = ref({ x: 0, y: 0 })
+const dropSlot = ref<number | null>(null)
+let activeDragPointerId: number | null = null
+let activeDragHandle: HTMLElement | null = null
+let dragStartIndex: number | null = null
 
 const orderedProviders = computed(() => {
   const byId = new Map(providers.value.map(provider => [provider.id, provider]))
@@ -284,6 +305,7 @@ const orderedProviders = computed(() => {
 })
 
 const dirty = computed(() => currentSnapshot() !== savedSnapshot.value)
+const dropIndex = ref<number | null>(null)
 
 function currentSnapshot(): string {
   return JSON.stringify({
@@ -346,6 +368,9 @@ function onPointerDragStart(event: PointerEvent, providerId: string) {
   event.preventDefault()
   draggedProviderId.value = providerId
   dragPointer.value = { x: event.clientX, y: event.clientY }
+  activeDragPointerId = event.pointerId
+  dragStartIndex = orderedProviderIds.value.indexOf(providerId)
+  dropSlot.value = dragStartIndex
 
   const row = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-provider-id]')
   const rect = row?.getBoundingClientRect()
@@ -360,44 +385,101 @@ function onPointerDragStart(event: PointerEvent, providerId: string) {
   }
 
   const handle = event.currentTarget as HTMLElement
+  activeDragHandle = handle
   handle.setPointerCapture?.(event.pointerId)
+  window.addEventListener('pointermove', onPointerDragMove)
+  window.addEventListener('pointerup', onPointerDragEnd)
+  window.addEventListener('pointercancel', onPointerDragEnd)
+  window.addEventListener('blur', onPointerDragCancel)
 }
 
 function onPointerDragMove(event: PointerEvent) {
   const providerId = draggedProviderId.value
-  if (!providerId) return
+  if (!providerId || event.pointerId !== activeDragPointerId) return
   event.preventDefault()
   dragPointer.value = { x: event.clientX, y: event.clientY }
+  applyDragPosition(event.clientY, providerId)
+}
 
-  const target = document.elementFromPoint(event.clientX, event.clientY)
-    ?.closest<HTMLElement>('[data-provider-id]')
-  if (!target?.parentElement?.classList.contains('provider-priority-list')) return
-  const targetProviderId = target?.dataset.providerId
-  if (!targetProviderId || targetProviderId === providerId) return
+/**
+ * 按指针位置计算拖动项在其余供应商中的插入槽位，并立即更新顺序。
+ * 行位移动画会改变视觉坐标，因此使用不受 transform 影响的布局坐标。
+ */
+function applyDragPosition(clientY: number, providerId: string) {
+  const list = providerListElement.value?.querySelector<HTMLElement>('.provider-priority-list')
+  if (!list) return
 
-  const fromIndex = orderedProviderIds.value.indexOf(providerId)
-  const targetIndex = orderedProviderIds.value.indexOf(targetProviderId)
-  if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return
-
-  const targetRect = target.getBoundingClientRect()
-  const movingDown = fromIndex < targetIndex
-  const targetMidpoint = targetRect.top + targetRect.height / 2
-  if ((movingDown && event.clientY < targetMidpoint) || (!movingDown && event.clientY > targetMidpoint)) return
-
+  const rows = Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-provider-id]'))
   const next = [...orderedProviderIds.value]
-  const [moved] = next.splice(fromIndex, 1)
-  next.splice(targetIndex, 0, moved)
-  orderedProviderIds.value = next
+  const currentIndex = next.indexOf(providerId)
+  if (currentIndex < 0) return
+
+  let slot = rows.length
+  for (const row of rows) {
+    const rowProviderId = row.dataset.providerId
+    if (!rowProviderId) continue
+    const rect = row.getBoundingClientRect()
+    const rowIndex = next.indexOf(rowProviderId)
+    if (rowIndex < 0) return
+    if (clientY < rect.top) {
+      slot = rowIndex
+      break
+    }
+    if (clientY <= rect.bottom) {
+      slot = rowIndex + (clientY >= rect.top + rect.height / 2 ? 1 : 0)
+      break
+    }
+  }
+  dropSlot.value = Math.max(0, Math.min(slot, next.length))
+  dropIndex.value = Math.max(
+    0,
+    Math.min(dropSlot.value > currentIndex ? dropSlot.value - 1 : dropSlot.value, rows.length - 1),
+  )
 }
 
 function onPointerDragEnd(event: PointerEvent) {
+  if (event.pointerId !== activeDragPointerId) return
+  const providerId = draggedProviderId.value
+  if (providerId) {
+    if (Number.isFinite(event.clientY) && event.clientY > 0) {
+      applyDragPosition(event.clientY, providerId)
+    }
+    const targetSlot = dropSlot.value
+    const currentIndex = orderedProviderIds.value.indexOf(providerId)
+    if (targetSlot !== null && currentIndex >= 0) {
+      const next = [...orderedProviderIds.value]
+      const [moved] = next.splice(currentIndex, 1)
+      const insertAt = targetSlot > currentIndex ? targetSlot - 1 : targetSlot
+      next.splice(Math.min(insertAt, next.length), 0, moved)
+      orderedProviderIds.value = next
+    }
+  }
+  finishPointerDrag()
+}
+
+function onPointerDragCancel() {
+  finishPointerDrag()
+}
+
+/** 统一释放拖动状态、指针捕获和全局监听，避免重排后残留拖动会话。 */
+function finishPointerDrag() {
+  window.removeEventListener('pointermove', onPointerDragMove)
+  window.removeEventListener('pointerup', onPointerDragEnd)
+  window.removeEventListener('pointercancel', onPointerDragEnd)
+  window.removeEventListener('blur', onPointerDragCancel)
   draggedProviderId.value = null
   dragOrigin.value = null
 
-  const handle = event.currentTarget as HTMLElement
-  if (handle.hasPointerCapture?.(event.pointerId)) {
-    handle.releasePointerCapture(event.pointerId)
+  const handle = activeDragHandle
+  const pointerId = activeDragPointerId
+  if (handle && pointerId !== null && handle.hasPointerCapture?.(pointerId)) {
+    handle.releasePointerCapture(pointerId)
   }
+  activeDragPointerId = null
+  activeDragHandle = null
+  dragStartIndex = null
+  dropIndex.value = null
+  dropSlot.value = null
 }
 
 async function loadStrategy() {
@@ -469,15 +551,22 @@ async function saveStrategy() {
 onMounted(() => {
   void loadStrategy()
 })
+
+onBeforeUnmount(finishPointerDrag)
 </script>
 
 <style scoped>
 .provider-row {
+  position: relative;
   transform-origin: center;
   transition:
     border-color 140ms ease,
     background-color 140ms ease,
     box-shadow 140ms ease;
+}
+
+.provider-priority-list {
+  position: relative;
 }
 
 .provider-row-move {
@@ -519,6 +608,19 @@ onMounted(() => {
 
 .provider-drag-preview__rank {
   background: color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+.provider-drop-indicator {
+  position: absolute;
+  right: 8px;
+  bottom: -6px;
+  left: 8px;
+  z-index: 2;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 82%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent);
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -349,6 +349,35 @@ pub(crate) fn build_local_http_error_response_with_request_path(
     )
 }
 
+/// 构造上游 429 耗尽后的客户端响应，并仅在冷却窗口可靠时附加 `Retry-After`。
+pub(crate) fn build_local_upstream_rate_limit_response(
+    trace_id: &str,
+    control_decision: Option<&GatewayControlDecision>,
+    message: &str,
+    retry_after_secs: Option<u64>,
+) -> Result<Response<Body>, GatewayError> {
+    let response = build_local_http_error_response(
+        trace_id,
+        control_decision,
+        StatusCode::TOO_MANY_REQUESTS,
+        message,
+    )?;
+    let Some(retry_after_secs) = retry_after_secs else {
+        return Ok(response);
+    };
+    let (mut parts, body) = response.into_parts();
+    parts.headers.insert(
+        http::header::RETRY_AFTER,
+        http::HeaderValue::from_str(retry_after_secs.max(1).to_string().as_str())
+            .map_err(|err| GatewayError::Internal(err.to_string()))?,
+    );
+    parts.headers.insert(
+        http::HeaderName::from_static("x-ratelimit-scope"),
+        http::HeaderValue::from_static("provider_key"),
+    );
+    Ok(Response::from_parts(parts, body))
+}
+
 pub(crate) fn build_local_auth_rejection_response(
     trace_id: &str,
     control_decision: Option<&GatewayControlDecision>,

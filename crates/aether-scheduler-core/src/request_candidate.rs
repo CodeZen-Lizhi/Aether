@@ -26,6 +26,7 @@ pub struct SchedulerRequestCandidateReportContext {
     pub header_rules: Option<Value>,
     pub body_rules: Option<Value>,
     pub upstream_response: Option<Value>,
+    pub rate_limit_cooldown: Option<Value>,
     pub proxy: Option<Value>,
     pub error_flow: Option<Value>,
     pub candidate_group_id: Option<String>,
@@ -74,6 +75,8 @@ struct ReportCandidateExtraDataInput {
     header_rules: Option<Value>,
     body_rules: Option<Value>,
     upstream_response: Option<Value>,
+    /// 429 后与真实 Key 健康状态同源的冷却窗口；仅在存在可靠起止时间时写入候选详情。
+    rate_limit_cooldown: Option<Value>,
     proxy: Option<Value>,
     error_flow: Option<Value>,
     candidate_group_id: Option<String>,
@@ -166,6 +169,10 @@ pub fn parse_request_candidate_report_context(
             .get("upstream_response")
             .cloned()
             .filter(|value| !value.is_null()),
+        rate_limit_cooldown: report_context
+            .get("rate_limit_cooldown")
+            .cloned()
+            .filter(|value| !value.is_null()),
         proxy: report_context
             .get("proxy")
             .cloned()
@@ -217,6 +224,7 @@ pub fn resolve_report_request_candidate_slot(
         header_rules,
         body_rules,
         upstream_response,
+        rate_limit_cooldown,
         proxy,
         error_flow,
         candidate_group_id,
@@ -242,6 +250,7 @@ pub fn resolve_report_request_candidate_slot(
         header_rules,
         body_rules,
         upstream_response,
+        rate_limit_cooldown,
         proxy,
         error_flow,
         candidate_group_id,
@@ -366,6 +375,7 @@ pub fn build_execution_request_candidate_seed(
             header_rules: metadata.header_rules,
             body_rules: metadata.body_rules,
             upstream_response: metadata.upstream_response,
+            rate_limit_cooldown: metadata.rate_limit_cooldown,
             proxy: metadata.proxy,
             error_flow: metadata.error_flow,
             candidate_group_id: metadata.candidate_group_id,
@@ -532,6 +542,7 @@ fn build_local_request_candidate_extra_data(
         header_rules: metadata.and_then(|metadata| metadata.header_rules.clone()),
         body_rules: metadata.and_then(|metadata| metadata.body_rules.clone()),
         upstream_response: metadata.and_then(|metadata| metadata.upstream_response.clone()),
+        rate_limit_cooldown: metadata.and_then(|metadata| metadata.rate_limit_cooldown.clone()),
         proxy: metadata.and_then(|metadata| metadata.proxy.clone()),
         error_flow: metadata.and_then(|metadata| metadata.error_flow.clone()),
         candidate_group_id: metadata.and_then(|metadata| metadata.candidate_group_id.clone()),
@@ -750,6 +761,7 @@ fn build_report_candidate_extra_data(input: ReportCandidateExtraDataInput) -> Op
         header_rules,
         body_rules,
         upstream_response,
+        rate_limit_cooldown,
         proxy,
         error_flow,
         candidate_group_id,
@@ -809,6 +821,22 @@ fn build_report_candidate_extra_data(input: ReportCandidateExtraDataInput) -> Op
     }
     if let Some(upstream_response) = upstream_response {
         extra_data.insert("upstream_response".to_string(), upstream_response);
+    }
+    if let Some(rate_limit_cooldown) = rate_limit_cooldown {
+        extra_data.insert(
+            "rate_limit_cooldown_started_at_unix_secs".to_string(),
+            rate_limit_cooldown
+                .get("started_at_unix_secs")
+                .cloned()
+                .unwrap_or(Value::Null),
+        );
+        extra_data.insert(
+            "rate_limit_cooldown_until_unix_secs".to_string(),
+            rate_limit_cooldown
+                .get("until_unix_secs")
+                .cloned()
+                .unwrap_or(Value::Null),
+        );
     }
     if let Some(proxy) = proxy {
         extra_data.insert("proxy".to_string(), proxy);
@@ -1307,6 +1335,42 @@ mod tests {
                 .and_then(|value| value.get("routing_trace"))
                 .and_then(|value| value.get("group_id")),
             Some(&json!("routing-group-1"))
+        );
+    }
+
+    #[test]
+    fn expands_rate_limit_cooldown_into_candidate_extra_data() {
+        let slot = resolve_report_request_candidate_slot(
+            &[],
+            parse_request_candidate_report_context(Some(&json!({
+                "request_id": "req-1",
+                "candidate_id": "cand-1",
+                "candidate_index": 0,
+                "provider_id": "provider-1",
+                "endpoint_id": "endpoint-1",
+                "key_id": "catalog-key-1",
+                "rate_limit_cooldown": {
+                    "started_at_unix_secs": 1_795_139_547u64,
+                    "until_unix_secs": 1_795_140_147u64
+                }
+            })))
+            .expect("metadata"),
+            123,
+            "generated-1".to_string(),
+        )
+        .expect("slot");
+
+        assert_eq!(
+            slot.extra_data
+                .as_ref()
+                .and_then(|value| value.get("rate_limit_cooldown_started_at_unix_secs")),
+            Some(&json!(1_795_139_547u64))
+        );
+        assert_eq!(
+            slot.extra_data
+                .as_ref()
+                .and_then(|value| value.get("rate_limit_cooldown_until_unix_secs")),
+            Some(&json!(1_795_140_147u64))
         );
     }
 

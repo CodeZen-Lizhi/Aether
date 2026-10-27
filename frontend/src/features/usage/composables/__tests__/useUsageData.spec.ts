@@ -159,6 +159,46 @@ describe('useUsageData', () => {
     expect(totalRecords.value).toBe(1)
   })
 
+  it('replaces a same-second pending row with the terminal failed 429 snapshot', async () => {
+    const { loadRecords, currentRecords } = useUsageData()
+    const dateRange = { preset: 'today', tz_offset_minutes: 0 }
+
+    getAllUsageRecordsMock.mockResolvedValueOnce({
+      records: [buildUsageRecord({
+        status: 'pending',
+        status_code: undefined,
+        response_time_ms: null,
+        created_at: '2026-10-27T10:00:00.679Z',
+        updated_at: '2026-10-27T10:00:00Z',
+      })],
+      total: 1,
+      limit: 20,
+      offset: 0,
+    })
+    await loadRecords({ page: 1, pageSize: 20 }, undefined, dateRange)
+
+    getAllUsageRecordsMock.mockResolvedValueOnce({
+      records: [buildUsageRecord({
+        status: 'failed',
+        status_code: 429,
+        error_message: 'Upstream rate limit exceeded',
+        response_time_ms: 736,
+        created_at: '2026-10-27T10:00:00.679Z',
+        updated_at: '2026-10-27T10:00:00Z',
+      })],
+      total: 1,
+      limit: 20,
+      offset: 0,
+    })
+    await loadRecords({ page: 1, pageSize: 20 }, undefined, dateRange)
+
+    expect(currentRecords.value[0]).toMatchObject({
+      status: 'failed',
+      status_code: 429,
+      response_time_ms: 736,
+    })
+  })
+
   it('sends the WebSocket type filter to the admin records endpoint', async () => {
     const { loadRecords } = useUsageData()
 

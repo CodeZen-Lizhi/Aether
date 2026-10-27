@@ -7,6 +7,7 @@ import {
   mergeUsageRecordLifecycleSnapshot,
   mergeUsageRecordResponseTiming,
   syncUsageRecordStreamResolution,
+  usageLifecycleSnapshotIsOlder,
 } from '../recordSync'
 
 function buildUsageRecord(overrides: Partial<UsageRecord> = {}): UsageRecord {
@@ -234,5 +235,21 @@ describe('mergeUsageRecordLifecycleSnapshot', () => {
       updated_at: '2026-07-17T00:00:02Z',
       accepted: true,
     })
+  })
+})
+
+describe('usageLifecycleSnapshotIsOlder', () => {
+  it('does not reject a second-precision terminal snapshot in the creation second', () => {
+    expect(usageLifecycleSnapshotIsOlder(
+      '2026-10-27T10:00:00.679Z',
+      '2026-10-27T10:00:00Z',
+    )).toBe(false)
+  })
+
+  it('still rejects a snapshot from an earlier second', () => {
+    expect(usageLifecycleSnapshotIsOlder(
+      '2026-10-27T10:00:00.679Z',
+      '2026-10-27T09:59:59Z',
+    )).toBe(true)
   })
 })

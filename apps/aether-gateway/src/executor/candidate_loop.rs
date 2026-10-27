@@ -28,7 +28,8 @@ use crate::execution_runtime::{
     UpstreamExecutionGateProvider, UPSTREAM_EXECUTION_GATE_NAME,
 };
 use crate::executor::{
-    build_local_execution_exhaustion, mark_deferred_upstream_response, LocalExecutionRequestOutcome,
+    attach_deferred_usage_terminal, build_local_execution_exhaustion,
+    mark_deferred_upstream_response, DeferredUsageTerminal, LocalExecutionRequestOutcome,
 };
 use crate::log_ids::short_request_id;
 use crate::orchestration::{
@@ -50,6 +51,49 @@ const UPSTREAM_EXECUTION_GATE_HOLD_STREAM_RESPONSE_ENV: &str =
     "AETHER_GATEWAY_UPSTREAM_EXECUTION_GATE_HOLD_STREAM_RESPONSE";
 const UPSTREAM_EXECUTION_GATE_STREAM_HOLD_MODE_ENV: &str =
     "AETHER_GATEWAY_UPSTREAM_EXECUTION_GATE_STREAM_HOLD_MODE";
+
+/// 仅给最终保留的上游错误响应附加请求终态；成功和普通响应不携带该扩展。
+fn attach_deferred_usage_terminal_for_attempt(
+    response: Response<Body>,
+    plan: &aether_contracts::ExecutionPlan,
+    report_context: Option<&serde_json::Value>,
+) -> Response<Body> {
+    // 执行运行时已附带的终态包含真实上游 telemetry 和错误正文，候选循环的
+    // 通用快照不能覆盖它。
+    if response
+        .extensions()
+        .get::<DeferredUsageTerminal>()
+        .is_some()
+    {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let headers = parts
+        .headers
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|value| (name.as_str().to_string(), value.to_string()))
+        })
+        .collect();
+    let payload = crate::usage::GatewaySyncReportRequest {
+        trace_id: plan.request_id.clone(),
+        report_kind: String::new(),
+        report_context: report_context.cloned(),
+        status_code: parts.status.as_u16(),
+        headers,
+        body_json: None,
+        client_body_json: None,
+        body_base64: None,
+        telemetry: None,
+    };
+    attach_deferred_usage_terminal(
+        Response::from_parts(parts, body),
+        DeferredUsageTerminal::from_sync_payload(plan, report_context, &payload),
+    )
+}
 
 fn attach_redaction_execution_candidate(response: &mut Response<Body>, candidate_id: Option<&str>) {
     if let Some(candidate_id) = candidate_id
@@ -134,9 +178,17 @@ where
             AiAttemptLoopOutcome::Responded(response) => {
                 Ok(LocalExecutionRequestOutcome::responded(response))
             }
-            AiAttemptLoopOutcome::Deferred(response) => Ok(
-                LocalExecutionRequestOutcome::responded(mark_deferred_upstream_response(response)),
-            ),
+            AiAttemptLoopOutcome::Deferred {
+                response,
+                last_plan,
+                last_report_context,
+            } => Ok(LocalExecutionRequestOutcome::responded(
+                mark_deferred_upstream_response(attach_deferred_usage_terminal_for_attempt(
+                    response,
+                    &last_plan,
+                    last_report_context.as_ref(),
+                )),
+            )),
             AiAttemptLoopOutcome::Exhausted(exhaustion) => {
                 Ok(LocalExecutionRequestOutcome::Exhausted(exhaustion))
             }
@@ -451,9 +503,17 @@ where
             AiAttemptLoopOutcome::Responded(response) => {
                 Ok(LocalExecutionRequestOutcome::responded(response))
             }
-            AiAttemptLoopOutcome::Deferred(response) => Ok(
-                LocalExecutionRequestOutcome::responded(mark_deferred_upstream_response(response)),
-            ),
+            AiAttemptLoopOutcome::Deferred {
+                response,
+                last_plan,
+                last_report_context,
+            } => Ok(LocalExecutionRequestOutcome::responded(
+                mark_deferred_upstream_response(attach_deferred_usage_terminal_for_attempt(
+                    response,
+                    &last_plan,
+                    last_report_context.as_ref(),
+                )),
+            )),
             AiAttemptLoopOutcome::Exhausted(exhaustion) => {
                 Ok(LocalExecutionRequestOutcome::Exhausted(exhaustion))
             }
@@ -830,6 +890,7 @@ where
 {
     let mut last_attempted = None;
     let mut fallback_response = None;
+    let mut fallback_attempt = None;
     let mut failed_circuit_scopes = BTreeSet::new();
     let mut unavailable_circuit_scopes = BTreeSet::new();
 
@@ -899,6 +960,8 @@ where
             } => {
                 if attempt_fallback_response.is_some() {
                     fallback_response = attempt_fallback_response;
+                    fallback_attempt =
+                        Some((attempt.execution_plan().clone(), attempt.report_context()));
                 }
                 apply_attempt_retry_scope(source, &attempt, scope).await?;
             }
@@ -920,8 +983,14 @@ where
     }
 
     if let Some(response) = fallback_response {
+        let (last_plan, last_report_context) =
+            fallback_attempt.expect("a fallback response must retain its attempt context");
         return Ok(LocalExecutionRequestOutcome::responded(
-            mark_deferred_upstream_response(response),
+            mark_deferred_upstream_response(attach_deferred_usage_terminal_for_attempt(
+                response,
+                &last_plan,
+                last_report_context.as_ref(),
+            )),
         ));
     }
 

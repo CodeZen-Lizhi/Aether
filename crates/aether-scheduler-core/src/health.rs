@@ -357,6 +357,8 @@ impl UpstreamFailureClass {
 /// 成功会重置退避计数，其他失败保留冷却状态，避免意外提前恢复。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderKeyRateLimitCooldown {
+    /// 最近一次实际触发冷却的时刻；本地调度据此投影同一窗口起点。
+    pub started_at_unix_secs: Option<u64>,
     pub until_unix_secs: u64,
     pub consecutive_rate_limits: u64,
 }
@@ -376,6 +378,7 @@ impl ProviderKeyRateLimitCooldown {
         retry_after_secs: Option<u64>,
     ) -> Self {
         let previous = current.unwrap_or(Self {
+            started_at_unix_secs: None,
             until_unix_secs: 0,
             consecutive_rate_limits: 0,
         });
@@ -387,6 +390,7 @@ impl ProviderKeyRateLimitCooldown {
         let latest_allowed_until =
             observed_at_unix_secs.saturating_add(RATE_LIMIT_COOLDOWN_MAX_SECS);
         Self {
+            started_at_unix_secs: Some(observed_at_unix_secs),
             until_unix_secs: observed_at_unix_secs
                 .saturating_add(seconds)
                 .max(previous.until_unix_secs.min(latest_allowed_until)),
@@ -403,6 +407,7 @@ impl ProviderKeyRateLimitCooldown {
         retry_after_secs: Option<u64>,
     ) -> Self {
         let previous = current.unwrap_or(Self {
+            started_at_unix_secs: None,
             until_unix_secs: 0,
             consecutive_rate_limits: 0,
         });
@@ -419,6 +424,7 @@ impl ProviderKeyRateLimitCooldown {
             }
         };
         Self {
+            started_at_unix_secs: Some(observed_at_unix_secs),
             until_unix_secs: observed_at_unix_secs.saturating_add(cooldown_secs),
             consecutive_rate_limits: consecutive,
         }
@@ -431,16 +437,18 @@ impl ProviderKeyRateLimitCooldown {
             .get("rate_limit_cooldown_until_unix_secs")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
-        let latest_allowed_until = payload
+        let started_at_unix_secs = payload
             .get("rate_limit_cooldown_started_at_unix_secs")
             .and_then(serde_json::Value::as_u64)
+            .filter(|value| *value > 0)
             .or_else(|| {
                 payload
                     .get("last_failure_at")
                     .and_then(serde_json::Value::as_str)
                     .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
                     .and_then(|value| u64::try_from(value.timestamp()).ok())
-            })
+            });
+        let latest_allowed_until = started_at_unix_secs
             .map(|started_at| started_at.saturating_add(RATE_LIMIT_COOLDOWN_MAX_SECS));
         let until = latest_allowed_until.map_or(stored_until, |maximum| stored_until.min(maximum));
         let consecutive = payload
@@ -451,16 +459,26 @@ impl ProviderKeyRateLimitCooldown {
             return None;
         }
         Some(Self {
+            started_at_unix_secs,
             until_unix_secs: until,
             consecutive_rate_limits: consecutive,
         })
     }
 
     pub fn to_json(self) -> serde_json::Value {
-        serde_json::json!({
+        let mut payload = serde_json::json!({
             "rate_limit_cooldown_until_unix_secs": self.until_unix_secs,
             "consecutive_rate_limits": self.consecutive_rate_limits,
-        })
+        });
+        if let (Some(object), Some(started_at_unix_secs)) =
+            (payload.as_object_mut(), self.started_at_unix_secs)
+        {
+            object.insert(
+                "rate_limit_cooldown_started_at_unix_secs".to_string(),
+                serde_json::json!(started_at_unix_secs),
+            );
+        }
+        payload
     }
 }
 
@@ -1307,6 +1325,7 @@ mod rate_limit_cooldown_tests {
 
         // Ladder saturates at the cap regardless of consecutive count.
         let many = ProviderKeyRateLimitCooldown {
+            started_at_unix_secs: Some(now),
             until_unix_secs: now,
             consecutive_rate_limits: 20,
         };
@@ -1357,12 +1376,17 @@ mod rate_limit_cooldown_tests {
     #[test]
     fn cooldown_payload_roundtrip() {
         let cooldown = ProviderKeyRateLimitCooldown {
+            started_at_unix_secs: Some(1_000),
             until_unix_secs: 1_234,
             consecutive_rate_limits: 3,
         };
         let payload = cooldown.to_json();
         let parsed = provider_key_rate_limit_cooldown_payload(&payload);
         assert_eq!(parsed, Some(cooldown));
+        assert_eq!(
+            payload["rate_limit_cooldown_started_at_unix_secs"],
+            json!(1_000)
+        );
         // Missing fields parse to None.
         assert_eq!(
             provider_key_rate_limit_cooldown_payload(&json!({"consecutive_rate_limits": 3})),

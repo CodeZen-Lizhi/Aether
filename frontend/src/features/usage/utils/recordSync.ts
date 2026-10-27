@@ -23,6 +23,31 @@ export function parseUsageTimestampMs(value: string | null | undefined): number 
 }
 
 /**
+ * 判断一份生命周期快照是否早于当前记录。
+ *
+ * usage 的 `created_at` 带毫秒，而 `updated_at` 只到秒；同一秒内创建并结束的
+ * 请求不能被截断后的秒级时间误判为旧快照，否则终态会永久留在等待中。
+ */
+export function usageLifecycleSnapshotIsOlder(
+  existingUpdatedAt: string | null | undefined,
+  nextUpdatedAt: string | null | undefined,
+): boolean {
+  const existingUpdatedAtMs = parseUsageTimestampMs(existingUpdatedAt)
+  const nextUpdatedAtMs = parseUsageTimestampMs(nextUpdatedAt)
+  if (existingUpdatedAtMs == null || nextUpdatedAtMs == null) return false
+
+  // 两边都只有秒级精度时仍按严格早于处理，保留现有防回退语义。
+  const existingHasSubsecond = existingUpdatedAtMs % 1000 !== 0
+  const nextHasSubsecond = nextUpdatedAtMs % 1000 !== 0
+  if (!existingHasSubsecond && !nextHasSubsecond) {
+    return nextUpdatedAtMs < existingUpdatedAtMs
+  }
+
+  // 与毫秒时间落在同一秒的秒级快照可能是同一时刻的截断结果，不能据此丢弃终态。
+  return Math.floor(nextUpdatedAtMs / 1000) < Math.floor(existingUpdatedAtMs / 1000)
+}
+
+/**
  * Merge a live response duration together with the timestamp that anchors it.
  *
  * These fields form one clock snapshot: active elapsed time is projected as
@@ -141,9 +166,10 @@ export function mergeUsageRecordLifecycleSnapshot(
   }
   const existingUpdatedAtMs = parseUsageTimestampMs(existing.updated_at)
   const nextUpdatedAtMs = parseUsageTimestampMs(update.updatedAt)
-  const nextSnapshotIsOlder = existingUpdatedAtMs != null &&
-    nextUpdatedAtMs != null &&
-    nextUpdatedAtMs < existingUpdatedAtMs
+  const nextSnapshotIsOlder = usageLifecycleSnapshotIsOlder(
+    existing.updated_at,
+    update.updatedAt,
+  )
   const currentRank = existing.status ? statusPriority[existing.status] : -1
   const nextRank = update.status ? statusPriority[update.status] : -1
   const statusAccepted = update.status != null &&

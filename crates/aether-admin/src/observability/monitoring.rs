@@ -455,6 +455,23 @@ fn build_admin_monitoring_trace_candidate_extra_data(
                 .entry("request_path_and_query".to_string())
                 .or_insert_with(|| json!(request_path_and_query));
         }
+        for field in [
+            "rate_limit_cooldown_started_at_unix_secs",
+            "rate_limit_cooldown_until_unix_secs",
+        ] {
+            let value = usage
+                .request_metadata
+                .as_ref()
+                .and_then(Value::as_object)
+                .and_then(|metadata| metadata.get(field))
+                .and_then(Value::as_u64)
+                .filter(|value| *value > 0);
+            if let Some(value) = value {
+                extra_object
+                    .entry(field.to_string())
+                    .or_insert_with(|| json!(value));
+            }
+        }
         if admin_monitoring_usage_is_error_node(usage) {
             if let Some(response) = admin_monitoring_trace_response_data(
                 "upstream_response",

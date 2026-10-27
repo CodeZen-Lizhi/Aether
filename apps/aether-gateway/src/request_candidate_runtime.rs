@@ -561,6 +561,83 @@ pub(crate) async fn record_report_request_candidate_status(
     }
 }
 
+/// 将已生效的限流冷却窗口写回当前候选报告，供随后落库的候选详情使用。
+pub(crate) async fn record_report_candidate_extra_fields(
+    state: &(impl RequestCandidateRuntimeReader + RequestCandidateRuntimeWriter + ?Sized),
+    report_context: Option<&Value>,
+    extra_fields: Value,
+) {
+    let Some(slot) = resolve_report_request_candidate_slot(state, report_context).await else {
+        return;
+    };
+    let Some(extra_fields) = extra_fields.as_object() else {
+        return;
+    };
+    let existing = state
+        .read_request_candidates_by_request_id(slot.request_id.as_str())
+        .await
+        .ok()
+        .and_then(|candidates| {
+            candidates
+                .into_iter()
+                .find(|candidate| candidate.id == slot.id)
+        });
+    let Some(existing) = existing else {
+        return;
+    };
+    let started_at_unix_ms = existing
+        .started_at_unix_ms
+        .or_else(|| Some(existing.created_at_unix_ms));
+    let finished_at_unix_ms = existing.finished_at_unix_ms;
+    let mut extra_data = slot
+        .extra_data
+        .as_ref()
+        .and_then(Value::as_object)
+        .cloned()
+        .or_else(|| {
+            existing
+                .extra_data
+                .as_ref()
+                .and_then(Value::as_object)
+                .cloned()
+        })
+        .unwrap_or_default();
+    for (key, value) in extra_fields {
+        if value.is_null() {
+            extra_data.remove(key);
+        } else {
+            extra_data.insert(key.clone(), value.clone());
+        }
+    }
+    let record = UpsertRequestCandidateRecord {
+        id: existing.id,
+        request_id: existing.request_id,
+        user_id: existing.user_id,
+        api_key_id: existing.api_key_id,
+        username: existing.username,
+        api_key_name: existing.api_key_name,
+        candidate_index: existing.candidate_index,
+        retry_index: existing.retry_index,
+        provider_id: existing.provider_id,
+        endpoint_id: existing.endpoint_id,
+        key_id: existing.key_id,
+        status: existing.status,
+        skip_reason: existing.skip_reason,
+        is_cached: Some(existing.is_cached),
+        status_code: existing.status_code,
+        error_type: existing.error_type,
+        error_message: existing.error_message,
+        latency_ms: existing.latency_ms,
+        concurrent_requests: existing.concurrent_requests,
+        extra_data: Some(Value::Object(extra_data)),
+        required_capabilities: existing.required_capabilities,
+        created_at_unix_ms: Some(existing.created_at_unix_ms),
+        started_at_unix_ms,
+        finished_at_unix_ms,
+    };
+    persist_local_request_candidate_status_record(state, record).await;
+}
+
 pub(crate) async fn ensure_execution_request_candidate_slot(
     state: &(impl RequestCandidateRuntimeWriter + ?Sized),
     plan: &mut ExecutionPlan,

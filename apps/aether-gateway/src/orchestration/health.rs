@@ -307,6 +307,7 @@ pub(crate) fn project_local_rate_limit_cooldown(
             .and_then(Value::as_u64)
             .map(
                 |consecutive_rate_limits| aether_scheduler_core::ProviderKeyRateLimitCooldown {
+                    started_at_unix_secs: None,
                     until_unix_secs: 0,
                     consecutive_rate_limits,
                 },

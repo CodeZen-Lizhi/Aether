@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use aether_contracts::ExecutionError;
 use aether_data_contracts::repository::candidates::RequestCandidateStatus;
 use aether_scheduler_core::{execution_error_details, SchedulerRequestCandidateStatusUpdate};
+use serde_json::Value;
 use tracing::{debug, warn};
 
 use crate::clock::current_unix_ms;
@@ -236,6 +237,10 @@ async fn handle_local_sync_report(state: &AppState, payload: &GatewaySyncReportR
         .telemetry
         .as_ref()
         .and_then(|telemetry| telemetry.elapsed_ms);
+    if status == RequestCandidateStatus::Failed {
+        record_rate_limit_cooldown_from_usage_metadata(state, payload.report_context.as_ref())
+            .await;
+    }
     record_report_request_candidate_status(
         state,
         payload.report_context.as_ref(),
@@ -300,6 +305,34 @@ async fn handle_local_stream_report(state: &AppState, payload: &GatewayStreamRep
     )
     .await;
     apply_local_report_effect(state, LocalReportEffect::Stream { payload }).await;
+}
+
+/// 将 usage 已确认的限流窗口补回同一候选详情；只写两个冷却字段，不改状态或耗时。
+async fn record_rate_limit_cooldown_from_usage_metadata(
+    state: &AppState,
+    report_context: Option<&Value>,
+) {
+    let Some(metadata) = report_context.and_then(Value::as_object) else {
+        return;
+    };
+    let started_at_unix_secs = metadata
+        .get("rate_limit_cooldown_started_at_unix_secs")
+        .and_then(Value::as_u64);
+    let until_unix_secs = metadata
+        .get("rate_limit_cooldown_until_unix_secs")
+        .and_then(Value::as_u64);
+    if started_at_unix_secs.is_none() && until_unix_secs.is_none() {
+        return;
+    }
+    crate::request_candidate_runtime::record_report_candidate_extra_fields(
+        state,
+        report_context,
+        serde_json::json!({
+            "rate_limit_cooldown_started_at_unix_secs": started_at_unix_secs,
+            "rate_limit_cooldown_until_unix_secs": until_unix_secs,
+        }),
+    )
+    .await;
 }
 
 #[cfg(test)]

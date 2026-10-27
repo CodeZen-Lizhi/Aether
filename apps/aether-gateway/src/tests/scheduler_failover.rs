@@ -41,7 +41,7 @@ async fn failed_usage(
     request_id: &str,
 ) -> aether_data_contracts::repository::usage::StoredRequestUsageAudit {
     // Terminal seeds use the existing ordered background persistence dispatcher.
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if let Some(usage) = fixture.usage.find_by_request_id(request_id).await.unwrap() {
                 if usage.status == "failed" {
@@ -237,6 +237,139 @@ fn short_retry_after_retries_same_key_and_long_cooldown_survives_next_request() 
             "long cooldown must not be clipped to two seconds"
         );
         long.assert_health(0, 0.9).await;
+    });
+}
+
+/// 单候选真实返回 429 时，客户端、usage 和候选详情必须同时落到同一个终态和冷却窗口。
+#[test]
+fn stream_rate_limit_exhaustion_returns_429_and_persists_cooldown_window() {
+    run("stream-rate-limit-terminal", async {
+        let fixture = Fixture::new(
+            "fixed_order",
+            2,
+            false,
+            [1.0, 1.0],
+            90_000,
+            [
+                vec![Reply::Error(StatusCode::TOO_MANY_REQUESTS, Some("600"))],
+                vec![Reply::Error(StatusCode::TOO_MANY_REQUESTS, Some("1"))],
+            ],
+        )
+        .await;
+        fixture.configure_chat_max_attempts(1, 1).await;
+        let request_id = "trace-stream-rate-limit-terminal";
+        let response = fixture
+            .request_body_with_trace_id(
+                "/v1/chat/completions",
+                json!({"model":"gpt-5","stream":true,"messages":[]}),
+                request_id,
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry_after = response
+            .headers()
+            .get(http::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .expect("429 response must include the local cooldown deadline");
+        assert!((1..=600).contains(&retry_after));
+        assert_eq!(fixture.targets(), [0, 1]);
+
+        let usage = failed_usage(&fixture, request_id).await;
+        assert_eq!(
+            usage.status_code,
+            Some(StatusCode::TOO_MANY_REQUESTS.as_u16())
+        );
+        assert!(usage.response_time_ms.is_some_and(|latency| latency > 0));
+        let metadata = usage.request_metadata.as_ref().unwrap();
+        let started_at = metadata["rate_limit_cooldown_started_at_unix_secs"]
+            .as_u64()
+            .unwrap();
+        let until = metadata["rate_limit_cooldown_until_unix_secs"]
+            .as_u64()
+            .unwrap();
+        assert!(until > started_at);
+        assert!(until <= started_at + 600);
+
+        let candidates = fixture
+            .request_candidates
+            .list_by_request_id(request_id)
+            .await
+            .unwrap();
+        let candidate = candidates
+            .iter()
+            .filter(|candidate| candidate.status_code == Some(429))
+            .max_by_key(|candidate| (candidate.candidate_index, candidate.retry_index))
+            .unwrap();
+        assert_eq!(candidate.status, RequestCandidateStatus::Failed);
+        assert_eq!(candidate.status_code, Some(429));
+        assert!(candidate.latency_ms.is_some_and(|latency| latency > 0));
+        let extra = candidate.extra_data.as_ref().unwrap();
+        assert_eq!(
+            extra["rate_limit_cooldown_started_at_unix_secs"],
+            started_at
+        );
+        assert_eq!(extra["rate_limit_cooldown_until_unix_secs"], until);
+    });
+}
+
+/// 真实上游返回超过本地上限的 Retry-After 时，最终响应必须采用网关自己的冷却截止时间。
+#[test]
+fn rate_limit_exhaustion_caps_upstream_retry_after_for_sync_and_stream() {
+    run("rate-limit-retry-after-cap", async {
+        for stream in [false, true] {
+            let fixture = Fixture::new(
+                "fixed_order",
+                1,
+                false,
+                [1.0, 1.0],
+                90_000,
+                [
+                    vec![Reply::Error(StatusCode::TOO_MANY_REQUESTS, Some("3600"))],
+                    vec![Reply::Error(StatusCode::TOO_MANY_REQUESTS, Some("3600"))],
+                ],
+            )
+            .await;
+            fixture.configure_chat_max_attempts(0, 1).await;
+            fixture.configure_chat_max_attempts(1, 1).await;
+            let request_id = if stream {
+                "trace-rate-limit-cap-stream"
+            } else {
+                "trace-rate-limit-cap-sync"
+            };
+            let response = fixture
+                .request_body_with_trace_id(
+                    "/v1/chat/completions",
+                    json!({"model":"gpt-5","stream":stream,"messages":[]}),
+                    request_id,
+                )
+                .await;
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            let retry_after = response
+                .headers()
+                .get(http::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                .expect("429 response must include the local cooldown deadline");
+            assert!((1..=600).contains(&retry_after), "stream={stream}");
+
+            let usage = failed_usage(&fixture, request_id).await;
+            assert_eq!(
+                usage.status_code,
+                Some(StatusCode::TOO_MANY_REQUESTS.as_u16())
+            );
+            assert!(usage.response_time_ms.is_some_and(|latency| latency > 0));
+            let metadata = usage.request_metadata.as_ref().unwrap();
+            let started_at = metadata["rate_limit_cooldown_started_at_unix_secs"]
+                .as_u64()
+                .unwrap();
+            let until = metadata["rate_limit_cooldown_until_unix_secs"]
+                .as_u64()
+                .unwrap();
+            assert!(until > started_at);
+            assert!(until <= started_at + 600);
+            assert!(retry_after <= until.saturating_sub(started_at));
+        }
     });
 }
 

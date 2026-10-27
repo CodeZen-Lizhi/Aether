@@ -87,7 +87,7 @@ import {
   mergeUsageRecordFirstByteTimeMs,
   mergeUsageRecordLifecycleSnapshot,
   mergeUsageRecordResponseTiming,
-  parseUsageTimestampMs,
+  usageLifecycleSnapshotIsOlder,
 } from '@/features/usage/utils/recordSync'
 import {
   normalizeRequestStatus,
@@ -287,11 +287,10 @@ async function pollActiveRequests() {
       }
       const currentRank = record.status ? (statusPriority[record.status] ?? 0) : 0
       const newRank = update.status ? (statusPriority[update.status] ?? 0) : 0
-      const currentUpdatedAtMs = parseUsageTimestampMs(record.updated_at)
-      const updateUpdatedAtMs = parseUsageTimestampMs(update.updated_at)
-      const updateSnapshotIsOlder = currentUpdatedAtMs != null &&
-        updateUpdatedAtMs != null &&
-        updateUpdatedAtMs < currentUpdatedAtMs
+      const updateSnapshotIsOlder = usageLifecycleSnapshotIsOlder(
+        record.updated_at,
+        update.updated_at,
+      )
       const shouldApply = !updateSnapshotIsOlder && newRank >= currentRank
       const updateHasFailureSignal =
         (typeof update.status_code === 'number' && update.status_code >= 400) ||

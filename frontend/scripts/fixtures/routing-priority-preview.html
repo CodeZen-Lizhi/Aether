@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调度优先级拖拽验收预览</title>
+    <link rel="icon" href="data:,">
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp } from 'vue'
+      import { createPinia } from 'pinia'
+      import RoutingProfiles from '/src/views/admin/RoutingProfiles.vue'
+      import client from '/src/api/client'
+      import { createI18n, setI18nLocale } from '/src/i18n'
+      import '/src/style.css'
+
+      setI18nLocale('zh-CN')
+
+      // 固定供应商只驻留内存，所有读写请求均在预览页拦截。
+      const providers = [
+        ['provider-a', 'Magpie', true],
+        ['provider-b', 'Input-国际线路', false],
+        ['provider-c', 'loomex', false],
+        ['provider-d', '聪明', false],
+        ['provider-e', '世一稳', false],
+        ['provider-f', 'hi-code', false],
+        ['provider-g', 'air-router', false],
+        ['provider-h', '神稳AI', false],
+        ['provider-i', '备用线路', false],
+      ].map(([id, name, is_active]) => ({ id, name, is_active }))
+
+      const writes = []
+      client.get = async url => {
+        if (url === '/api/admin/routing/groups') {
+          return { data: { items: [], total: 0 } }
+        }
+        if (url === '/api/admin/providers') {
+          return { data: providers.map(provider => ({ ...provider })) }
+        }
+        throw new Error(`未配置 fixture 请求: ${url}`)
+      }
+      client.post = async (url, data) => {
+        writes.push({ method: 'POST', url, data })
+        if (url === '/api/admin/routing/groups') {
+          return { data: { id: 'fixture-group', config_json: data.config_json } }
+        }
+        if (url.endsWith('/publish')) {
+          return { data: { id: 'fixture-group', config_json: writes.at(-2)?.data?.config_json } }
+        }
+        throw new Error(`未配置 fixture 写入: ${url}`)
+      }
+      client.patch = async (url, data) => {
+        writes.push({ method: 'PATCH', url, data })
+        return { data: { id: 'fixture-group', config_json: data.config_json } }
+      }
+      window.__routingPriorityPreviewWrites = writes
+
+      createApp(RoutingProfiles).use(createPinia()).use(createI18n()).mount('#app')
+    </script>
+  </body>
+</html>

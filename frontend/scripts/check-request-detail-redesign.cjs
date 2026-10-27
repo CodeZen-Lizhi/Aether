@@ -60,7 +60,7 @@ async (page) => {
       throw new Error(`${scenario.name}: 次级详情或 Key 详情没有默认收起：${JSON.stringify(detailsOpen)}`)
     }
 
-    const trace = scenario.name === 'rate-limit-no-attempt' ? null : await page.evaluate(() => {
+    const trace = await page.evaluate(() => {
       const root = document.querySelector('[data-request-trace-waterfall]')
       if (!root) throw new Error('执行路径缺失')
       const centerY = (node) => {
@@ -101,6 +101,7 @@ async (page) => {
         keyHeights: rows.map(node => Math.round(node.getBoundingClientRect().height)),
         keyClasses: rows.map(node => node.className),
         keyTexts: rows.map(node => node.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+        notSent: rows.map(node => node.getAttribute('data-not-sent')),
         keyLayouts: rows.map(node => {
           const body = node.querySelector('.path-key-body')
           const identity = node.querySelector('.path-key-identity')
@@ -149,7 +150,7 @@ async (page) => {
         })),
         providerBorderStyles: providers.map(node => getComputedStyle(node).borderStyle),
         providerBorderWidths: providers.map(node => getComputedStyle(node).borderTopWidth),
-        providerInnerBorderStyles: providers.map(node => getComputedStyle(node, '::after').borderStyle),
+        providerInnerBorderStyles: providers.map(node => getComputedStyle(node, '::after').borderTopWidth),
         entryStyle: (() => {
           const style = entry ? getComputedStyle(entry) : null
           return style ? {
@@ -238,8 +239,7 @@ async (page) => {
     if (trace && (trace.entryLineCount !== 2 || trace.entryMethod !== 'POST' || trace.entryPath !== '/v1/images/generations')) {
       throw new Error(`${scenario.name}: 请求入口不是两行真实请求路径：${JSON.stringify(trace)}`)
     }
-    if (scenario.name !== 'rate-limit-no-attempt'
-      && (trace.responseTitle !== '请求结果' || !trace.responseStatus || !trace.responseStatusRightAligned)) {
+    if (trace.responseTitle !== '请求结果' || !trace.responseStatus || !trace.responseStatusRightAligned) {
       throw new Error(`${scenario.name}: 请求结果标题或状态码位置错误：${JSON.stringify(trace)}`)
     }
     if (scenario.name === 'success' && trace?.entryColor !== 'rgb(21, 128, 61)') {
@@ -248,7 +248,11 @@ async (page) => {
     if (scenario.name === 'upstream' && trace?.entryColor !== 'rgb(220, 38, 38)') {
       throw new Error(`upstream: 请求入口不是失败正红：${JSON.stringify(trace.entryColor)}`)
     }
-    if (scenario.name !== 'rate-limit-no-attempt' && !trace.responseText.includes('总耗时')) {
+    if (scenario.name === 'rate-limit-no-attempt') {
+      if (trace.responseStatus !== '未发送' || !trace.responseText.includes('预计恢复')) {
+        throw new Error(`rate-limit-no-attempt: 请求结果未使用统一路径的未发送语义：${JSON.stringify(trace.responseText)}`)
+      }
+    } else if (!trace.responseText.includes('总耗时')) {
       throw new Error(`${scenario.name}: 请求结果缺少总耗时：${JSON.stringify(trace)}`)
     }
     if (trace && trace.keyNames.some(name => !name || /^\S$/.test(name))) {
@@ -284,8 +288,8 @@ async (page) => {
     }
     if (trace && (trace.providerBorderStyles.some(style => style !== 'solid')
       || trace.providerBorderWidths.some(width => Number.parseFloat(width) < 1)
-      || trace.providerInnerBorderStyles.some(style => style !== 'dashed'))) {
-      throw new Error(`${scenario.name}: 供应商框不是细实线外框加轻内虚线：${JSON.stringify(trace)}`)
+      || trace.providerInnerBorderStyles.some(width => Number.parseFloat(width) !== 0))) {
+      throw new Error(`${scenario.name}: 供应商框应只有细实线外框且不应有重复内虚线：${JSON.stringify(trace)}`)
     }
     for (const [name, style] of trace ? [['entry', trace.entryStyle], ['response', trace.responseStyle]] : []) {
       if (!style || style.borderStyle !== 'dashed' || Number.parseFloat(style.borderWidth) < 1
@@ -302,17 +306,29 @@ async (page) => {
     if (trace && trace.keyLayouts.some(layout => !layout.body || !layout.identity || !layout.metrics
       || layout.identity.right > layout.metrics.left
       || layout.reason && layout.reason.right > layout.body.right + 1
-      || !layout.endpoint
-      || !layout.metricLabels.includes('耗时')
-      || !layout.metricLabels.includes('首字'))) {
+      || !layout.endpoint)) {
+      if (scenario.name !== 'rate-limit-no-attempt') {
+        throw new Error(`${scenario.name}: Key 卡片未形成身份、指标和端点分层：${JSON.stringify(trace.keyLayouts)}`)
+      }
+    }
+    if (scenario.name === 'rate-limit-no-attempt') {
+      if (trace.notSent.some(value => value !== 'true')
+        || trace.keyTexts.some(text => (
+          !text.includes('未请求')
+          || !/本地限流冷却至 \d{2}:\d{2}:\d{2} · (?:\d+小时)?\d+分\d+秒/.test(text)
+        ))
+        || trace.rowIds.length !== 2) {
+        throw new Error(`rate-limit-no-attempt: 本地冷却 Key 未使用未请求语义：${JSON.stringify(trace)}`)
+      }
+    } else if (trace.keyLayouts.some(layout => (
+      !layout.metricLabels.includes('耗时') || !layout.metricLabels.includes('首字')
+    ))) {
       throw new Error(`${scenario.name}: Key 卡片未形成身份、指标和端点分层：${JSON.stringify(trace.keyLayouts)}`)
     }
-    if (trace && scenario.name !== 'rate-limit-no-attempt'
-      && new Set([trace.centers.entry, ...trace.centers.providers, trace.centers.response]).size !== 1) {
+    if (new Set([trace.centers.entry, ...trace.centers.providers, trace.centers.response]).size !== 1) {
       throw new Error(`${scenario.name}: 请求入口、供应商与请求结果未垂直居中：${JSON.stringify(trace.centers)}`)
     }
-    if (trace && scenario.name !== 'rate-limit-no-attempt'
-      && !(trace.positions.entryLeft < Math.min(...trace.positions.providerLefts)
+    if (!(trace.positions.entryLeft < Math.min(...trace.positions.providerLefts)
       && Math.max(...trace.positions.providerLefts) < trace.positions.responseLeft)) {
       throw new Error(`${scenario.name}: 请求入口、供应商与请求结果顺序错误：${JSON.stringify(trace.positions)}`)
     }
@@ -321,6 +337,10 @@ async (page) => {
     }
     if (trace && trace.providerIds.length === 1 && trace.scroll.scrollWidth > trace.scroll.clientWidth + 1) {
       throw new Error(`${scenario.name}: 单供应商在桌面宽度不应产生内部横向滚动：${JSON.stringify(trace.scroll)}`)
+    }
+    if (trace && scenario.name === 'rate-limit-no-attempt'
+      && trace.responseText.includes('总耗时')) {
+      throw new Error(`rate-limit-no-attempt: 请求结果仍展示本地处理耗时：${trace.responseText}`)
     }
 
     if (scenario.name === 'multi-provider') {
@@ -423,34 +443,56 @@ async (page) => {
 
     if (scenario.name === 'rate-limit-no-attempt') {
       const noAttempt = await page.evaluate(() => {
-        const root = document.querySelector('[data-request-no-attempt]')
+        const root = document.querySelector('[data-request-trace-waterfall]')
         return {
           present: Boolean(root),
           text: root?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
-          hasResponse: Boolean(document.querySelector('.path-response')),
-          hasAttempt: Boolean(document.querySelector('.attempt-stop')),
           hasUpstreamResponse: Boolean(document.querySelector('[data-upstream-response]')),
         }
       })
       if (!noAttempt.present
-        || !noAttempt.text.includes('本地限流冷却中，未发送到上游')
-        || !noAttempt.text.includes('2 个 Key')
-        || !noAttempt.text.includes('预计')
-        || !noAttempt.text.includes('恢复')
-        || !noAttempt.text.includes('本地冷却时间')
+        || !noAttempt.text.includes('本地限流跳过 2 个 Key')
+        || !noAttempt.text.includes('预计恢复')
+        || !noAttempt.text.includes('本地限流冷却至')
         || !noAttempt.text.includes('/v1/images/generations')
-        || noAttempt.hasResponse
-        || noAttempt.hasAttempt
         || noAttempt.hasUpstreamResponse) {
         throw new Error(`rate-limit-no-attempt: 本地限流展示错误：${JSON.stringify(noAttempt)}`)
       }
       const coolingDeadline = await page.evaluate(() => {
-        const text = document.querySelector('[data-request-no-attempt]')?.textContent ?? ''
-        return text.match(/预计 (\d{2}:\d{2}:\d{2}) 恢复/)?.[1] ?? ''
+        return document.querySelector('[data-trace-cooldown-recovery]')?.textContent?.trim() ?? ''
       })
       if (!/^\d{2}:\d{2}:\d{2}$/.test(coolingDeadline)) {
         throw new Error(`rate-limit-no-attempt: 恢复时刻格式错误：${coolingDeadline}`)
       }
+      await page.locator('.attempt-stop').first().evaluate(element => element.click())
+      await page.waitForFunction(() => Boolean(document.querySelector('.waterfall-detail')))
+      const localDetail = await page.evaluate(() => {
+        const detail = document.querySelector('.waterfall-detail')
+        const rateLimit = detail?.querySelector('[data-attempt-rate-limit-window]')
+        const remaining = detail?.querySelector('[data-attempt-cooldown-remaining]')
+        return {
+          http: detail?.querySelector('[data-attempt-http-status]')?.textContent?.trim() ?? '',
+          text: detail?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          rateLimit: rateLimit?.querySelector('dd')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          remaining: remaining?.querySelector('dd')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          hasUpstreamResponse: Boolean(detail?.querySelector('[data-upstream-response]')),
+        }
+      })
+      if (localDetail.http !== '未请求'
+        || !localDetail.text.includes('未请求上游')
+        || !localDetail.text.includes('本次没有上游响应，也不会消耗上游额度')
+        || !/^\d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2}$/.test(localDetail.rateLimit)
+        || !/^(?:\d+小时)?\d+分\d+秒$/.test(localDetail.remaining)
+        || localDetail.hasUpstreamResponse) {
+        throw new Error(`rate-limit-no-attempt: 本地冷却详情不完整：${JSON.stringify(localDetail)}`)
+      }
+      await page.waitForTimeout(1100)
+      const remainingAfter = await page.locator('[data-attempt-cooldown-remaining] dd').textContent()
+      if (!remainingAfter?.trim() || remainingAfter.trim() === localDetail.remaining) {
+        throw new Error(`rate-limit-no-attempt: 剩余冷却未实时倒计时：${localDetail.remaining} -> ${remainingAfter}`)
+      }
+      await page.locator('.attempt-stop').first().evaluate(element => element.click())
+      await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 0)
     } else {
       await page.locator('.attempt-stop').first().evaluate(element => element.click())
       await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 1)
@@ -471,6 +513,24 @@ async (page) => {
       }
       if (!opened.detailText.includes('耗时') || !opened.detailText.includes('HTTP')) {
         throw new Error(`${scenario.name}: Key 详情缺少单次调用事实：${JSON.stringify(opened)}`)
+      }
+      if (scenario.name === 'single-key-failure') {
+        const rateLimitFacts = await page.evaluate(() => {
+          const detail = document.querySelector('.waterfall-detail')
+          const rateLimit = detail?.querySelector('[data-attempt-rate-limit-window]')
+          return {
+            label: rateLimit?.querySelector('dt')?.textContent?.trim() ?? '',
+            value: rateLimit?.querySelector('dd')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          }
+        })
+        if (rateLimitFacts.label !== '限流时间'
+          || !/^\d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2}$/.test(rateLimitFacts.value)) {
+          throw new Error(`single-key-failure: 429 限流窗口缺失或格式错误：${JSON.stringify(rateLimitFacts)}`)
+        }
+        const cooldownRemaining = await page.locator('[data-attempt-cooldown-remaining] dd').textContent()
+        if (!/^(?:\d+小时)?\d+分\d+秒$/.test(cooldownRemaining?.trim() ?? '')) {
+          throw new Error(`single-key-failure: 429 剩余冷却缺失：${cooldownRemaining}`)
+        }
       }
       await page.locator('.attempt-stop').first().evaluate(element => element.click())
       await page.waitForFunction(() => document.querySelectorAll('.waterfall-detail').length === 0)
@@ -543,16 +603,14 @@ async (page) => {
         }
       })
       if (!layout.page || layout.page.scrollWidth > layout.page.clientWidth + 1
-        || (scenario.name !== 'rate-limit-no-attempt'
-          && (!layout.root || layout.root.scrollWidth > layout.root.clientWidth + 1))
-        || (scenario.name !== 'rate-limit-no-attempt' && (!layout.scroll || layout.scroll.overflowX !== 'auto'))
+        || !layout.root || layout.root.scrollWidth > layout.root.clientWidth + 1
+        || !layout.scroll || layout.scroll.overflowX !== 'auto'
         || (scenario.name === 'multi-provider' && width === 390
           && layout.scroll.scrollWidth <= layout.scroll.clientWidth)
-        || (scenario.name !== 'rate-limit-no-attempt'
-          && (new Set(layout.providers.map(provider => provider.centerY)).size !== 1
+        || (new Set(layout.providers.map(provider => provider.centerY)).size !== 1
             || layout.keyHeights.some(height => height !== 88)
             || !layout.centers
-            || new Set([layout.centers.entry, ...layout.centers.providers, layout.centers.response]).size !== 1))) {
+            || new Set([layout.centers.entry, ...layout.centers.providers, layout.centers.response]).size !== 1)) {
         throw new Error(`${scenario.name}/${width}px: 横向路径布局错误 ${JSON.stringify(layout)}`)
       }
       layoutChecks.push({ scenario: scenario.name, width, ...layout })
@@ -612,9 +670,35 @@ async (page) => {
     body: document.body.textContent?.replace(/\s+/g, ' ').trim() ?? '',
   }))
   if (!englishText.labels.includes('Credential') || englishText.labels.includes('凭据')
+    || !englishText.labels.includes('Request time') || englishText.labels.includes('请求时间')
     || !englishText.body.includes('Request entry') || !englishText.body.includes('Request result')
     || englishText.body.includes('请求入口') || englishText.body.includes('请求结果')) {
     throw new Error(`英文界面主标签未翻译：${JSON.stringify(englishText)}`)
+  }
+
+  await page.goto(`${fixtureOrigin}/scripts/fixtures/request-detail-layout.html?status=single-key-failure&locale=en-US`, { waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(() => Boolean(document.querySelector('[data-request-trace-waterfall]')), undefined, { timeout: 5000 })
+  await page.locator('.attempt-stop').first().evaluate(element => element.click())
+  await page.waitForFunction(() => Boolean(document.querySelector('[data-attempt-rate-limit-window]')))
+  await page.waitForFunction(() => (
+    document.querySelector('[data-attempt-rate-limit-window] dt')?.textContent?.trim() === 'Rate limit window'
+  ))
+  const englishRateLimit = await page.evaluate(() => ({
+    label: document.querySelector('[data-attempt-rate-limit-window] dt')?.textContent?.trim() ?? '',
+    body: document.body.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+  }))
+  if (englishRateLimit.label !== 'Rate limit window' || englishRateLimit.body.includes('限流时间')) {
+    throw new Error(`英文 429 限流窗口未翻译：${JSON.stringify(englishRateLimit)}`)
+  }
+  const englishCooldown = await page.evaluate(() => ({
+    label: document.querySelector('[data-attempt-cooldown-remaining] dt')?.textContent?.trim() ?? '',
+    value: document.querySelector('[data-attempt-cooldown-remaining] dd')?.textContent?.trim() ?? '',
+    body: document.body.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+  }))
+  if (englishCooldown.label !== 'Remaining cooldown'
+    || !/^(?:\d+h )?\d+m \d+s$/.test(englishCooldown.value)
+    || englishCooldown.body.includes('剩余冷却')) {
+    throw new Error(`英文 429 剩余冷却未翻译：${JSON.stringify(englishCooldown)}`)
   }
   await page.screenshot({ path: '/tmp/aether-request-detail-en.png' })
 

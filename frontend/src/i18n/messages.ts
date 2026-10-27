@@ -411,6 +411,10 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '本地限流冷却中，未发送到上游': 'Local rate-limit cooldown; request not sent upstream',
   '本地限流冷却': 'Local rate-limit cooldown',
   '本地限流预计恢复时间': 'Local rate-limit expected recovery time',
+  '未请求': 'Not requested',
+  '剩余冷却': 'Remaining cooldown',
+  '预计恢复': 'Expected recovery',
+  '本地限流冷却中': 'Local rate-limit cooldown in progress',
   '本次没有上游响应，也不会消耗上游额度。': 'No upstream response was received, and no upstream quota was consumed.',
   '未进入上游执行': 'No upstream execution',
   '本地调度': 'Local scheduling',
@@ -832,6 +836,8 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '名称': 'Name',
   '类型': 'Type',
   '时间': 'Time',
+  '请求时间': 'Request time',
+  '限流时间': 'Rate limit window',
   '凭据': 'Credential',
   '结果': 'Result',
   '原因': 'Reason',
@@ -2826,11 +2832,24 @@ const legacyDynamicPatterns: Array<[RegExp, (match: RegExpMatchArray) => string]
   [/^Key (.+) 命中限流冷却$/u, match => `Key ${match[1]} is in rate-limit cooldown`],
   [/^(\d+) 个 Key 命中限流冷却$/u, match => `${match[1]} keys are in rate-limit cooldown`],
   [/^预计 (\d{2}:\d{2}:\d{2}) 恢复$/u, match => `Expected recovery at ${match[1]}`],
-  [/^本地冷却时间 (?:(\d+)小时)?(\d+)分(\d+)秒$/u, match => {
-    const hours = match[1] ? `${match[1]}h ` : ''
-    return `Local cooldown ${hours}${match[2]}m ${match[3]}s`
+  [/^(本地冷却时间 )?(?:(\d+)小时)?(\d+)分(\d+)秒$/u, match => {
+    const prefix = match[1] ? 'Local cooldown ' : ''
+    const hours = match[2] ? `${match[2]}h ` : ''
+    return `${prefix}${hours}${match[3]}m ${match[4]}s`
   }],
   [/^本地限流冷却至 (\d{2}:\d{2}:\d{2})$/u, match => `Local rate-limit cooldown until ${match[1]}`],
+  [/^本地限流冷却至 (\d{2}:\d{2}:\d{2}) · ((?:\d+小时)?\d+分\d+秒)$/u, (match) => {
+    const hours = match[2].match(/^(\d+)小时/)?.[1]
+    const minutes = match[2].match(/(\d+)分/)?.[1] ?? '0'
+    const seconds = match[2].match(/(\d+)秒/)?.[1] ?? '0'
+    return `Local rate-limit cooldown until ${match[1]} · ${hours ? `${hours}h ` : ''}${minutes}m ${seconds}s`
+  }],
+  [/^本地限流冷却中 · ((?:\d+小时)?\d+分\d+秒)$/u, (match) => {
+    const hours = match[1].match(/^(\d+)小时/)?.[1]
+    const minutes = match[1].match(/(\d+)分/)?.[1] ?? '0'
+    const seconds = match[1].match(/(\d+)秒/)?.[1] ?? '0'
+    return `Local rate-limit cooldown in progress · ${hours ? `${hours}h ` : ''}${minutes}m ${seconds}s`
+  }],
   [/^(.+) 小时$/u, match => `${translateLegacyText(match[1], 'en-US')} h`],
   [/^(.+) 天$/u, match => `${translateLegacyText(match[1], 'en-US')} d`],
   [/^影响用户：(.+) 个$/u, match => `Affected users: ${match[1]}`],

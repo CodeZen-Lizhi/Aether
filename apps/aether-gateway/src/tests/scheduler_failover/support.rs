@@ -463,6 +463,22 @@ impl Fixture {
         self.catalog.update_provider(&provider).await.unwrap();
     }
 
+    /// 把 provider 的聊天尝试上限改为指定值，用于构造单次候选真实耗尽的路径。
+    pub async fn configure_chat_max_attempts(&self, target: usize, max_attempts: u32) {
+        use aether_data_contracts::repository::provider_catalog::ProviderCatalogWriteRepository;
+        let mut provider = self
+            .catalog
+            .list_providers_by_ids(&[format!("provider-{target}")])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let config = provider.config.get_or_insert_with(|| json!({}));
+        config["failover_rules"]["max_attempts"] = json!(max_attempts);
+        provider.max_retries = Some(max_attempts as i32);
+        self.catalog.update_provider(&provider).await.unwrap();
+    }
+
     pub async fn request(&self, stream: bool) -> reqwest::Response {
         self.request_body(
             "/v1/chat/completions",

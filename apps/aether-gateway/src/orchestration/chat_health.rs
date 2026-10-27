@@ -122,6 +122,9 @@ pub(crate) fn project_chat_failure(
             json!(observed_at),
         );
         let previous = Some(aether_scheduler_core::ProviderKeyRateLimitCooldown {
+            started_at_unix_secs: next_health
+                .get("rate_limit_cooldown_started_at_unix_secs")
+                .and_then(Value::as_u64),
             until_unix_secs: next_health
                 .get("rate_limit_cooldown_until_unix_secs")
                 .and_then(Value::as_u64)

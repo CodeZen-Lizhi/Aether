@@ -920,14 +920,27 @@ pub fn build_sync_terminal_usage_payload_seed(
         .or_else(|| headers_to_json(&payload.headers));
     let client_response_headers = context_usage_value(context, "client_response_headers")
         .or_else(|| headers_to_json(&payload.headers));
+    let response_time_ms = payload
+        .telemetry
+        .as_ref()
+        .and_then(|value| value.elapsed_ms);
+    // 已观测到上游响应时，真实请求不可能耗时为 0。毫秒截断不能把已完成的
+    // 请求写成零耗时，否则列表会把它与尚未结束的请求混为一谈。
+    let observed_provider_response = context
+        .and_then(|context| context.get("provider_response_headers_observed_at_unix_ms"))
+        .and_then(Value::as_u64)
+        .is_some()
+        || has_provider_response;
+    let response_time_ms = if observed_provider_response && response_time_ms == Some(0) {
+        Some(1)
+    } else {
+        response_time_ms
+    };
     let standardized_usage = kiro_simulated_cache_standardized_usage_from_context(context);
     SyncTerminalUsagePayloadSeed {
         report_kind: payload.report_kind.clone(),
         status_code: payload.status_code,
-        response_time_ms: payload
-            .telemetry
-            .as_ref()
-            .and_then(|value| value.elapsed_ms),
+        response_time_ms,
         first_byte_time_ms: payload.telemetry.as_ref().and_then(|value| value.ttfb_ms),
         provider_response_headers,
         client_response_headers,
@@ -4063,6 +4076,60 @@ mod tests {
             event.data.provider_request_body,
             Some(json!({"input": "safe"}))
         );
+    }
+
+    #[test]
+    fn observed_provider_terminal_usage_never_keeps_zero_elapsed_time() {
+        let payload = GatewaySyncReportRequest {
+            trace_id: "trace-sync-zero-elapsed".to_string(),
+            report_kind: "openai_chat_sync_error".to_string(),
+            report_context: Some(json!({
+                "provider_response_headers_observed_at_unix_ms": 1_700_000_000_000_u64,
+            })),
+            status_code: 429,
+            headers: BTreeMap::new(),
+            body_json: Some(json!({"error": {"message": "rate limited"}})),
+            client_body_json: None,
+            body_base64: None,
+            telemetry: Some(aether_contracts::ExecutionTelemetry {
+                ttfb_ms: Some(0),
+                elapsed_ms: Some(0),
+                upstream_bytes: None,
+            }),
+        };
+
+        let seed = build_sync_terminal_usage_payload_seed(&payload);
+        assert_eq!(seed.response_time_ms, Some(1));
+        assert_eq!(seed.first_byte_time_ms, Some(0));
+
+        let no_response = GatewaySyncReportRequest {
+            trace_id: "trace-sync-transport-zero-elapsed".to_string(),
+            report_context: Some(json!({
+                "provider_request_started_at_unix_ms": 1_700_000_000_000_u64,
+            })),
+            body_json: None,
+            body_base64: None,
+            client_body_json: None,
+            ..payload.clone()
+        };
+        assert_eq!(
+            build_sync_terminal_usage_payload_seed(&no_response).response_time_ms,
+            Some(0)
+        );
+
+        let local_payload = GatewaySyncReportRequest {
+            report_context: Some(json!({
+                "no_upstream_attempt": true,
+                "rate_limit_cooldown_started_at_unix_secs": 1_700_000_000_u64,
+                "rate_limit_cooldown_until_unix_secs": 1_700_000_600_u64,
+            })),
+            body_json: None,
+            body_base64: None,
+            client_body_json: None,
+            ..payload
+        };
+        let local_seed = build_sync_terminal_usage_payload_seed(&local_payload);
+        assert_eq!(local_seed.response_time_ms, Some(0));
     }
 
     #[test]

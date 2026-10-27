@@ -16,7 +16,7 @@ use aether_usage_runtime::{
     build_stream_terminal_usage_outcome, build_sync_terminal_usage_outcome,
     GatewayStreamReportRequest, GatewaySyncReportRequest, TerminalUsageOutcome,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex as TokioMutex;
 use tracing::warn;
@@ -147,10 +147,10 @@ async fn record_chat_health_effect(
     state: &AppState,
     context: LocalExecutionEffectContext<'_>,
     failure: Option<(LocalHealthFailureEffect, ChatFailureFact)>,
-) {
+) -> Option<Value> {
     let api_format = context.plan.provider_api_format.trim();
     if api_format.is_empty() {
-        return;
+        return None;
     }
     // Stored cooldowns use seconds; round up so a 1-second Retry-After is
     // never shortened by the fractional part of its receipt time.
@@ -164,11 +164,11 @@ async fn record_chat_health_effect(
         if failure.is_none() && captured_fence.is_none() {
             remember_successful_local_scheduler_affinity(state, context).await;
         }
-        return;
+        return None;
     }
     let Some(captured_fence) = captured_fence else {
         warn!(event_name = "chat_health_attempt_identity_missing", request_id = %context.plan.request_id);
-        return;
+        return None;
     };
     if context
         .report_context
@@ -177,11 +177,14 @@ async fn record_chat_health_effect(
         .is_some_and(|planned| captured_fence.transport_fingerprint.as_deref() != Some(planned))
     {
         warn!(event_name = "chat_health_plan_credential_changed", request_id = %context.plan.request_id);
-        return;
+        return None;
     }
     if failure.is_some_and(|(_, fact)| fact.penalty == super::ChatHealthPenalty::Neutral) {
-        return;
+        return None;
     }
+    let rate_limit_failure = failure.is_some_and(|(effect, fact)| {
+        fact.rate_limited || effect.status_code == http::StatusCode::TOO_MANY_REQUESTS.as_u16()
+    });
     let pending = super::health_settlement::build_pending_fact(
         &context.plan.provider_id,
         &context.plan.key_id,
@@ -191,10 +194,30 @@ async fn record_chat_health_effect(
         failure.map(|(effect, fact)| (fact, effect.retry_after_secs)),
         observed_at,
     );
-    if super::health_settlement::persist_and_settle(state, pending).await && failure.is_none() {
+    let settled = super::health_settlement::persist_and_settle_with_cooldown_snapshot(
+        state,
+        pending,
+        rate_limit_failure.then_some(api_format),
+    )
+    .await;
+    if let Some(cooldown) = settled.as_ref().and_then(Option::as_ref) {
+        crate::request_candidate_runtime::record_report_candidate_extra_fields(
+            state,
+            context.report_context,
+            json!({
+                "rate_limit_cooldown_started_at_unix_secs":
+                    cooldown["started_at_unix_secs"].clone(),
+                "rate_limit_cooldown_until_unix_secs":
+                    cooldown["until_unix_secs"].clone(),
+            }),
+        )
+        .await;
+    }
+    if settled.is_some() && failure.is_none() {
         remember_successful_local_scheduler_affinity(state, context).await;
         record_scheduler_latency_observation(context);
     }
+    settled.flatten()
 }
 
 pub(super) fn chat_health_effect_lock(key_id: &str) -> Arc<TokioMutex<()>> {
@@ -421,23 +444,27 @@ pub(crate) async fn apply_local_execution_effect(
     state: &AppState,
     context: LocalExecutionEffectContext<'_>,
     effect: LocalExecutionEffect,
-) {
+) -> Option<Value> {
     match effect {
         LocalExecutionEffect::AttemptFailure(effect) => {
             record_attempt_failure_effect(state, context, effect).await;
+            None
         }
         LocalExecutionEffect::HealthFailure(effect) => {
             record_health_failure_effect(state, context, effect).await;
+            None
         }
         LocalExecutionEffect::ClassifiedHealthFailure(effect, fact) => {
             if chat_health_policy_applies(&context.plan.client_api_format) {
-                record_chat_health_effect(state, context, Some((effect, fact))).await;
+                record_chat_health_effect(state, context, Some((effect, fact))).await
             } else {
                 record_health_failure_effect(state, context, effect).await;
+                None
             }
         }
         LocalExecutionEffect::HealthSuccess(effect) => {
             record_health_success_effect(state, context, effect).await;
+            None
         }
     }
 }
@@ -978,7 +1005,7 @@ async fn record_health_failure_effect(
             ChatFailureSource::UpstreamResponse
         };
         let fact = classify_chat_failure(effect.status_code, None, source, false);
-        record_chat_health_effect(state, context, Some((effect, fact))).await;
+        let _ = record_chat_health_effect(state, context, Some((effect, fact))).await;
         return;
     }
     let failure_class =
@@ -1133,7 +1160,7 @@ async fn record_health_success_effect(
     _effect: LocalHealthSuccessEffect,
 ) {
     if chat_health_policy_applies(&context.plan.client_api_format) {
-        record_chat_health_effect(state, context, None).await;
+        let _ = record_chat_health_effect(state, context, None).await;
         return;
     }
     remember_successful_local_scheduler_affinity(state, context).await;
@@ -1403,7 +1430,7 @@ mod tests {
         state: &AppState,
         context: LocalExecutionEffectContext<'_>,
         effect: LocalExecutionEffect,
-    ) {
+    ) -> Option<Value> {
         let report = attempt_context(state, context).await;
         super::apply_local_execution_effect(
             state,
@@ -1413,7 +1440,7 @@ mod tests {
             },
             effect,
         )
-        .await;
+        .await
     }
 
     async fn apply_local_stream_success_effects(

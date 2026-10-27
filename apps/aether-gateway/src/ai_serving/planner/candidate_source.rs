@@ -1300,7 +1300,11 @@ fn skipped_local_execution_candidate_from_scheduler_skip(
     skipped_candidate: SchedulerSkippedCandidate,
     api_format: &str,
 ) -> SkippedLocalExecutionCandidate {
-    let cooldown_until_unix_secs = (skipped_candidate.skip_reason == "key_rate_limit_cooldown")
+    let is_rate_limit_cooldown = skipped_candidate.skip_reason == "key_rate_limit_cooldown";
+    let cooldown_started_at_unix_secs = is_rate_limit_cooldown
+        .then_some(skipped_candidate.rate_limit_cooldown_started_at_unix_secs)
+        .flatten();
+    let cooldown_until_unix_secs = is_rate_limit_cooldown
         .then_some(skipped_candidate.rate_limit_cooldown_until_unix_secs)
         .flatten();
     SkippedLocalExecutionCandidate {
@@ -1309,10 +1313,19 @@ fn skipped_local_execution_candidate_from_scheduler_skip(
         transport: None,
         ranking: None,
         extra_data: cooldown_until_unix_secs.map(|until_unix_secs| {
-            serde_json::json!({
+            let mut extra = serde_json::json!({
                 "rate_limit_cooldown_until_unix_secs": until_unix_secs,
                 "rate_limit_cooldown_api_format": api_format,
-            })
+            });
+            if let (Some(object), Some(started_at_unix_secs)) =
+                (extra.as_object_mut(), cooldown_started_at_unix_secs)
+            {
+                object.insert(
+                    "rate_limit_cooldown_started_at_unix_secs".to_string(),
+                    serde_json::json!(started_at_unix_secs),
+                );
+            }
+            extra
         }),
     }
 }

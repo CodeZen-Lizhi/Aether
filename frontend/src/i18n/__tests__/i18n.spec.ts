@@ -111,6 +111,8 @@ describe('i18n infrastructure', () => {
   })
 
   it('translates common legacy phrases without adding new message entry points', () => {
+    expect(translateLegacyText('请求时间', 'en-US')).toBe('Request time')
+    expect(translateLegacyText('限流时间', 'en-US')).toBe('Rate limit window')
     expect(translateLegacyText('请求记录清理策略', 'en-US')).toBe('Request log cleanup policy')
     expect(translateLegacyText('最大转移次数', 'en-US')).toBe('Max transfers')
     expect(translateLegacyText('最大转移超时', 'en-US')).toBe('Max transfer timeout')
@@ -129,6 +131,10 @@ describe('i18n infrastructure', () => {
     expect(translateLegacyText('本地限流预计恢复时间', 'en-US')).toBe(
       'Local rate-limit expected recovery time',
     )
+    expect(translateLegacyText('未请求', 'en-US')).toBe('Not requested')
+    expect(translateLegacyText('剩余冷却', 'en-US')).toBe('Remaining cooldown')
+    expect(translateLegacyText('预计恢复', 'en-US')).toBe('Expected recovery')
+    expect(translateLegacyText('本地限流冷却中', 'en-US')).toBe('Local rate-limit cooldown in progress')
     expect(translateLegacyText('Key 3425 命中限流冷却', 'en-US')).toBe(
       'Key 3425 is in rate-limit cooldown',
     )
@@ -144,6 +150,7 @@ describe('i18n infrastructure', () => {
     expect(translateLegacyText('本地冷却时间 1小时2分3秒', 'en-US')).toBe(
       'Local cooldown 1h 2m 3s',
     )
+    expect(translateLegacyText('7分59秒', 'en-US')).toBe('7m 59s')
     expect(translateLegacyText('累计 Token', 'en-US')).toBe('Lifetime tokens')
     expect(translateLegacyText('今日平均响应', 'en-US')).toBe('Average response today')
     expect(translateLegacyText('重试累计统计', 'en-US')).toBe('Retry lifetime statistics')

@@ -16,11 +16,12 @@ pub(crate) use candidate_loop::{
 };
 pub(crate) use orchestration::*;
 pub(crate) use outcome::{
-    beautify_local_execution_client_error_message, build_fast_local_execution_exhaustion,
-    build_fast_local_execution_runtime_miss_context, build_local_execution_exhaustion,
-    build_local_execution_runtime_miss_context, is_deferred_upstream_response,
-    mark_deferred_upstream_response, record_failed_usage_for_exhausted_request,
-    record_failed_usage_for_runtime_miss_request, LocalExecutionExhaustion,
+    attach_deferred_usage_terminal, beautify_local_execution_client_error_message,
+    build_fast_local_execution_exhaustion, build_fast_local_execution_runtime_miss_context,
+    build_local_execution_exhaustion, build_local_execution_runtime_miss_context,
+    is_deferred_upstream_response, mark_deferred_upstream_response, record_deferred_usage_terminal,
+    record_failed_usage_for_exhausted_request, record_failed_usage_for_runtime_miss_request,
+    take_deferred_usage_terminal, DeferredUsageTerminal, LocalExecutionExhaustion,
     LocalExecutionRequestOutcome, LocalExecutionRuntimeMissContext,
 };
 pub(crate) use plan_fallback::{

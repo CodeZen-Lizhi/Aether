@@ -12,7 +12,9 @@ use aether_data_contracts::repository::usage::{
     ROUTING_CANDIDATE_SKIP_REASON_METADATA_KEY, ROUTING_FAILURE_DIAGNOSTIC_METADATA_KEY,
 };
 use aether_usage_runtime::{
-    build_usage_event_data_seed, UsageEvent, UsageEventData, UsageEventType,
+    build_sync_terminal_usage_payload_seed, build_terminal_usage_context_seed,
+    build_usage_event_data_seed, GatewaySyncReportRequest, UsageEvent, UsageEventData,
+    UsageEventType,
 };
 use axum::body::Body;
 use axum::body::Bytes;
@@ -39,6 +41,31 @@ pub(crate) enum LocalExecutionRequestOutcome {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DeferredUpstreamResponse;
 
+/// 最终保留的上游错误响应对应的请求终态快照。
+///
+/// 只有候选循环确认不再尝试后续候选、真正返回该响应时，才会用它写入 usage；
+/// 中间候选失败仍只写候选状态，不能提前把整个请求记成失败。
+#[derive(Debug, Clone)]
+pub(crate) struct DeferredUsageTerminal {
+    pub(crate) plan: ExecutionPlan,
+    pub(crate) report_context: Option<Value>,
+    pub(crate) payload: GatewaySyncReportRequest,
+}
+
+impl DeferredUsageTerminal {
+    pub(crate) fn from_sync_payload(
+        plan: &ExecutionPlan,
+        report_context: Option<&Value>,
+        payload: &GatewaySyncReportRequest,
+    ) -> Self {
+        Self {
+            plan: plan.clone(),
+            report_context: report_context.cloned(),
+            payload: payload.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct LocalExecutionExhaustion {
     request_id: String,
@@ -46,8 +73,29 @@ pub(crate) struct LocalExecutionExhaustion {
     candidate_id: Option<String>,
     candidate_index: Option<u32>,
     upstream_status_code: Option<u16>,
+    /// 最终失败候选对应的本地限流冷却起点；仅 429 实际生效时存在。
+    rate_limit_cooldown_started_at_unix_secs: Option<u64>,
+    /// 最终失败候选对应的本地限流冷却截止；与调度使用的同一份 Key 健康快照一致。
+    rate_limit_cooldown_until_unix_secs: Option<u64>,
     upstream_error_type: Option<String>,
     upstream_error_message: Option<String>,
+}
+
+impl LocalExecutionExhaustion {
+    /// 返回最终失败候选的上游状态码，供耗尽响应沿用 429 等最终语义。
+    pub(crate) fn upstream_status_code(&self) -> Option<u16> {
+        self.upstream_status_code
+    }
+
+    /// 返回到本地冷却截止还剩的秒数；缺少可靠截止时不补造 `Retry-After`。
+    pub(crate) fn rate_limit_retry_after_secs(&self) -> Option<u64> {
+        self.rate_limit_cooldown_until_unix_secs
+            .map(|until_unix_secs| {
+                until_unix_secs
+                    .saturating_sub(crate::clock::current_unix_secs())
+                    .max(1)
+            })
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -82,11 +130,66 @@ pub(crate) fn mark_deferred_upstream_response(mut response: Response<Body>) -> R
     response
 }
 
+pub(crate) fn attach_deferred_usage_terminal(
+    mut response: Response<Body>,
+    terminal: DeferredUsageTerminal,
+) -> Response<Body> {
+    response.extensions_mut().insert(terminal);
+    response
+}
+
+pub(crate) fn take_deferred_usage_terminal(
+    response: &mut Response<Body>,
+) -> Option<DeferredUsageTerminal> {
+    response.extensions_mut().remove::<DeferredUsageTerminal>()
+}
+
 pub(crate) fn is_deferred_upstream_response(response: &Response<Body>) -> bool {
     response
         .extensions()
         .get::<DeferredUpstreamResponse>()
         .is_some()
+}
+
+/// 在最终代理出口写入延迟到候选耗尽后才确认的 usage 终态。
+pub(crate) async fn record_deferred_usage_terminal(
+    state: &AppState,
+    terminal: DeferredUsageTerminal,
+) {
+    if !state.usage_runtime.is_enabled() {
+        return;
+    }
+    let response_time_ms = terminal
+        .payload
+        .telemetry
+        .as_ref()
+        .and_then(|telemetry| telemetry.elapsed_ms);
+    let first_byte_time_ms = terminal
+        .payload
+        .telemetry
+        .as_ref()
+        .and_then(|telemetry| telemetry.ttfb_ms);
+    let report_context_with_diagnostics =
+        crate::request_diagnostics::attach_current_request_diagnostics_and_candidate_timing_to_report_context(
+            terminal.report_context.as_ref(),
+            response_time_ms,
+            first_byte_time_ms,
+        );
+    let context_seed = build_terminal_usage_context_seed(
+        &terminal.plan,
+        report_context_with_diagnostics
+            .as_ref()
+            .or(terminal.report_context.as_ref()),
+    );
+    let payload_seed = build_sync_terminal_usage_payload_seed(&terminal.payload);
+    state
+        .usage_runtime
+        .record_sync_terminal(
+            state.usage_lifecycle_data_state().as_ref(),
+            context_seed,
+            payload_seed,
+        )
+        .await;
 }
 
 impl LocalExecutionRuntimeMissContext {
@@ -241,6 +344,18 @@ pub(crate) async fn build_local_execution_exhaustion(
     exhaustion.upstream_status_code = last_failed_candidate
         .as_ref()
         .and_then(|candidate| candidate.status_code);
+    exhaustion.rate_limit_cooldown_started_at_unix_secs = last_failed_candidate
+        .as_ref()
+        .and_then(|candidate| candidate.extra_data.as_ref())
+        .and_then(Value::as_object)
+        .and_then(|extra| extra.get("rate_limit_cooldown_started_at_unix_secs"))
+        .and_then(Value::as_u64);
+    exhaustion.rate_limit_cooldown_until_unix_secs = last_failed_candidate
+        .as_ref()
+        .and_then(|candidate| candidate.extra_data.as_ref())
+        .and_then(Value::as_object)
+        .and_then(|extra| extra.get("rate_limit_cooldown_until_unix_secs"))
+        .and_then(Value::as_u64);
     exhaustion.upstream_error_type = last_failed_candidate
         .as_ref()
         .and_then(|candidate| candidate.error_type.clone())
@@ -269,6 +384,8 @@ pub(crate) fn build_fast_local_execution_exhaustion(
             .and_then(|value| u32::try_from(value).ok()),
         data,
         upstream_status_code: None,
+        rate_limit_cooldown_started_at_unix_secs: None,
+        rate_limit_cooldown_until_unix_secs: None,
         upstream_error_type: None,
         upstream_error_message: None,
     }
@@ -325,11 +442,16 @@ pub(crate) async fn record_failed_usage_for_exhausted_request(
         candidate_id,
         candidate_index,
         upstream_status_code,
+        rate_limit_cooldown_started_at_unix_secs,
+        rate_limit_cooldown_until_unix_secs,
         upstream_error_type,
         upstream_error_message,
     } = exhaustion;
 
-    let status_code = http::StatusCode::SERVICE_UNAVAILABLE.as_u16();
+    // 最终候选的上游 429 必须保留原状态，不能由本地耗尽路径改写成 503。
+    let status_code = upstream_status_code
+        .filter(|value| *value == http::StatusCode::TOO_MANY_REQUESTS.as_u16())
+        .unwrap_or(http::StatusCode::SERVICE_UNAVAILABLE.as_u16());
     let candidate_status_code = upstream_status_code.unwrap_or(status_code);
     data.status_code = Some(status_code);
     data.error_message = upstream_error_message
@@ -379,6 +501,18 @@ pub(crate) async fn record_failed_usage_for_exhausted_request(
         None => Map::new(),
     };
     request_metadata.insert("trace_id".to_string(), Value::String(request_id.clone()));
+    if let Some(started_at_unix_secs) = rate_limit_cooldown_started_at_unix_secs {
+        request_metadata.insert(
+            "rate_limit_cooldown_started_at_unix_secs".to_string(),
+            Value::from(started_at_unix_secs),
+        );
+    }
+    if let Some(until_unix_secs) = rate_limit_cooldown_until_unix_secs {
+        request_metadata.insert(
+            "rate_limit_cooldown_until_unix_secs".to_string(),
+            Value::from(until_unix_secs),
+        );
+    }
     apply_runtime_miss_usage_routing(
         &mut data,
         &mut request_metadata,
@@ -691,12 +825,12 @@ fn select_last_failed_request_candidate(
         })
         .max_by_key(|candidate| {
             (
-                candidate.retry_index,
-                candidate.candidate_index,
                 candidate
                     .finished_at_unix_ms
                     .or(candidate.started_at_unix_ms)
                     .unwrap_or(candidate.created_at_unix_ms),
+                candidate.candidate_index,
+                candidate.retry_index,
             )
         })
 }
@@ -1355,8 +1489,9 @@ mod tests {
         apply_runtime_miss_usage_routing, beautify_local_execution_client_error_message,
         insert_runtime_miss_candidate_usage_metadata,
         request_candidate_represents_provider_execution, runtime_miss_client_error_body,
-        select_last_runtime_miss_executed_candidate, select_last_runtime_miss_routing_candidate,
-        LocalExecutionRuntimeMissContext, RuntimeMissCandidateContext,
+        select_last_failed_request_candidate, select_last_runtime_miss_executed_candidate,
+        select_last_runtime_miss_routing_candidate, LocalExecutionRuntimeMissContext,
+        RuntimeMissCandidateContext,
     };
     use crate::constants::EXECUTION_PATH_LOCAL_EXECUTION_RUNTIME_MISS;
     use crate::state::LocalExecutionRuntimeMissDiagnostic;
@@ -1631,6 +1766,33 @@ mod tests {
         assert!(detail.contains("字段 n"));
         assert!(detail.contains("字段路径：$.n"));
         assert!(detail.contains("provider_request_body_build_failed"));
+    }
+
+    #[test]
+    fn exhaustion_uses_last_completed_candidate_instead_of_highest_retry_index() {
+        let mut earlier_candidate = skipped_candidate("first", None);
+        earlier_candidate.id = "cand-earlier".to_string();
+        earlier_candidate.candidate_index = 0;
+        earlier_candidate.retry_index = 5;
+        earlier_candidate.status = RequestCandidateStatus::Failed;
+        earlier_candidate.status_code = Some(429);
+        earlier_candidate.finished_at_unix_ms = Some(1_100);
+        earlier_candidate.started_at_unix_ms = Some(1_000);
+
+        let mut later_candidate = skipped_candidate("second", None);
+        later_candidate.id = "cand-later".to_string();
+        later_candidate.candidate_index = 1;
+        later_candidate.retry_index = 0;
+        later_candidate.status = RequestCandidateStatus::Failed;
+        later_candidate.status_code = Some(500);
+        later_candidate.finished_at_unix_ms = Some(1_200);
+        later_candidate.started_at_unix_ms = Some(1_150);
+
+        let candidates = [earlier_candidate, later_candidate];
+        let selected = select_last_failed_request_candidate(&candidates)
+            .expect("a failed candidate should be selected");
+        assert_eq!(selected.id, "cand-later");
+        assert_eq!(selected.status_code, Some(500));
     }
 
     #[test]

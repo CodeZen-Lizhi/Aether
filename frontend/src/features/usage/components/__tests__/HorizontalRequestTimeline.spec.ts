@@ -367,6 +367,50 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.querySelector('[data-execution-inspector]')).toBeNull()
   })
 
+  it('shows the local rate-limit window only for an actual 429 attempt', async () => {
+    const startedAt = Math.floor(Date.now() / 1000) - 60
+    const until = startedAt + 600
+    const root = mountTimeline(buildTrace([
+      buildCandidate({
+        id: 'cand-429',
+        status_code: 429,
+        error_message: 'Upstream rate limit exceeded',
+        latency_ms: 736,
+        extra_data: {
+          rate_limit_cooldown_started_at_unix_secs: startedAt,
+          rate_limit_cooldown_until_unix_secs: until,
+        },
+      }),
+    ]), {}, { autoOpenDetail: false })
+    await flushPendingUpdates()
+
+    clickAttempt(root, 'cand-429')
+    await flushPendingUpdates()
+    const rateLimitWindow = root.querySelector('[data-attempt-rate-limit-window]')
+    expect(rateLimitWindow?.textContent).toContain('限流时间')
+    expect(rateLimitWindow?.textContent).toMatch(/\d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2}/)
+    expect(root.querySelector('[data-attempt-cooldown-remaining]')?.textContent).toContain('剩余冷却')
+
+    clickAttempt(root, 'cand-429')
+    await flushPendingUpdates()
+    const failedTrace = buildTrace([
+      buildCandidate({
+        id: 'cand-500',
+        status_code: 500,
+        extra_data: {
+          rate_limit_cooldown_started_at_unix_secs: startedAt,
+          rate_limit_cooldown_until_unix_secs: until,
+        },
+      }),
+    ])
+    const failedRoot = mountTimeline(failedTrace, {}, { autoOpenDetail: false })
+    await flushPendingUpdates()
+    clickAttempt(failedRoot, 'cand-500')
+    await flushPendingUpdates()
+    expect(failedRoot.querySelector('[data-attempt-rate-limit-window]')).toBeNull()
+    expect(failedRoot.querySelector('[data-attempt-cooldown-remaining]')).toBeNull()
+  })
+
   it('orders attempted candidates by scheduling index and omits unattempted candidates', async () => {
     const trace = buildTrace([
       buildCandidate({
@@ -998,11 +1042,15 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.textContent).not.toContain('$.n')
   })
 
-  it('shows local rate-limit cooldown without an HTTP result or upstream response', async () => {
+  it('renders local rate-limit cooldown in the same path and detail without an upstream response', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-27T04:00:00.000Z'))
     const cooldownUntilUnixSecs = Math.floor(Date.now() / 1000) + 480
+    const cooldownStartedUnixSecs = cooldownUntilUnixSecs - 600
     const trace = buildTrace([
       buildCandidate({
         id: 'cand-rate-limit-a',
+        provider_id: 'provider-rate-limit',
         provider_name: 'Magpie',
         key_id: 'key-rate-limit-a',
         key_name: '3425',
@@ -1014,11 +1062,13 @@ describe('HorizontalRequestTimeline', () => {
         finished_at: undefined,
         latency_ms: undefined,
         extra_data: {
+          rate_limit_cooldown_started_at_unix_secs: cooldownStartedUnixSecs,
           rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs,
         },
       }),
       buildCandidate({
         id: 'cand-rate-limit-b',
+        provider_id: 'provider-rate-limit',
         provider_name: 'Magpie',
         key_id: 'key-rate-limit-b',
         key_name: '3425-backup',
@@ -1030,6 +1080,7 @@ describe('HorizontalRequestTimeline', () => {
         finished_at: undefined,
         latency_ms: undefined,
         extra_data: {
+          rate_limit_cooldown_started_at_unix_secs: cooldownStartedUnixSecs,
           rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs + 60,
         },
       }),
@@ -1040,18 +1091,38 @@ describe('HorizontalRequestTimeline', () => {
     const root = mountTimeline(trace, { overrideStatusCode: 503 })
     await flushPendingUpdates()
 
-    expect(root.querySelector('[data-request-no-attempt]')).not.toBeNull()
-    expect(root.querySelector('.path-response')).toBeNull()
-    expect(root.querySelectorAll('.attempt-stop')).toHaveLength(0)
-    expect(root.textContent).toContain('本地限流冷却中，未发送到上游')
-    expect(root.textContent).toContain('2 个 Key')
-    expect(root.textContent).toContain('预计')
-    expect(root.textContent).toContain('恢复')
-    expect(root.textContent).toContain('本地冷却时间')
-    expect(root.textContent).toMatch(/本地冷却时间 (?:\d+小时)?\d+分\d+秒/)
-    expect(root.textContent).toContain('本次没有上游响应，也不会消耗上游额度')
+    expect(root.querySelector('[data-request-trace-waterfall]')).not.toBeNull()
+    expect(root.querySelector('[data-request-no-attempt]')).toBeNull()
+    expect(root.querySelector('.path-entry')).not.toBeNull()
+    expect(root.querySelectorAll('.path-provider')).toHaveLength(1)
+    expect(root.querySelectorAll('.attempt-stop')).toHaveLength(2)
+    expect(root.querySelector('.path-response-status')?.textContent?.trim()).toBe('未发送')
+    expect(root.querySelector('[data-trace-cooldown-recovery]')?.textContent?.trim()).toMatch(/^\d{2}:\d{2}:\d{2}$/)
+    expect([...root.querySelectorAll('.attempt-stop')].every(node => node.getAttribute('data-not-sent') === 'true')).toBe(true)
+    expect(root.querySelector('.attempt-stop')?.textContent).toContain('未请求')
+    expect(root.querySelector('.attempt-stop')?.textContent).toContain('本地限流冷却')
+    expect(root.querySelector('.attempt-stop')?.textContent).toMatch(/本地限流冷却至 \d{2}:\d{2}:\d{2} · (?:\d+小时)?\d+分\d+秒/)
+    expect(root.querySelectorAll('.path-response')).toHaveLength(1)
     expect(root.textContent).not.toContain('503')
     expect(root.querySelector('[data-upstream-response]')).toBeNull()
+
+    clickAttempt(root, 'cand-rate-limit-a')
+    await flushPendingUpdates()
+    expect(root.querySelector('[data-execution-inspector]')?.getAttribute('data-attempt-id')).toBe('cand-rate-limit-a')
+    const detailText = root.querySelector('[data-execution-inspector]')?.textContent?.replace(/\s+/g, ' ') ?? ''
+    expect(detailText).toContain('HTTP未请求')
+    expect(detailText).toContain('耗时未请求上游')
+    expect(detailText).toContain('限流时间')
+    expect(detailText).toContain('剩余冷却')
+    expect(detailText).toContain('本次没有上游响应，也不会消耗上游额度')
+    const remainingBeforeTick = root.querySelector('[data-attempt-cooldown-remaining] dd')?.textContent?.trim() ?? ''
+    expect(remainingBeforeTick).toMatch(/^\d+分\d+秒$/)
+    expect(root.querySelector('[data-upstream-response]')).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPendingUpdates()
+    const remainingAfterTick = root.querySelector('[data-attempt-cooldown-remaining] dd')?.textContent?.trim() ?? ''
+    expect(remainingAfterTick).not.toBe(remainingBeforeTick)
   })
 
   it('formats unsupported stream finish reasons with the failing field', async () => {
@@ -1214,7 +1285,11 @@ describe('HorizontalRequestTimeline', () => {
     await nextTick()
 
     const detailText = root.querySelector('[data-execution-inspector]')?.textContent ?? ''
+    const detailLabels = [...root.querySelectorAll('.waterfall-detail-facts dt')]
+      .map(element => element.textContent?.trim())
     expect(detailText).toContain('22.20s')
+    expect(detailLabels).toContain('请求时间')
+    expect(detailLabels).not.toContain('时间')
     expect([...root.querySelectorAll('.waterfall-detail-facts > div')].some(element => element.textContent?.includes('22.20s'))).toBe(true)
   })
 

@@ -105,6 +105,25 @@ enum SettlementProgress {
     Pending,
 }
 
+/// 结算在 Key 锁内返回的进度及本次投影出的冷却窗口。
+///
+/// 冷却快照必须在同一临界区读取，否则并发 429 可能在结算和读取之间
+/// 改写同一 Key 的窗口，使旧候选记录到另一请求的起止时间。
+struct SettlementSnapshot {
+    progress: SettlementProgress,
+    cooldown: Option<Value>,
+}
+
+impl SettlementSnapshot {
+    fn new(progress: SettlementProgress, cooldown: Option<Value>) -> Self {
+        Self { progress, cooldown }
+    }
+
+    fn progress_only(progress: SettlementProgress) -> Self {
+        Self::new(progress, None)
+    }
+}
+
 fn probe_expiry(key: &StoredProviderCatalogKey, format: &str) -> Option<u64> {
     [
         (
@@ -130,14 +149,16 @@ fn probe_expiry(key: &StoredProviderCatalogKey, format: &str) -> Option<u64> {
 async fn settle_once(
     state: &AppState,
     pending: &ProviderCatalogKeyHealthPendingFact,
-) -> Result<SettlementProgress, GatewayError> {
+) -> Result<SettlementSnapshot, GatewayError> {
     let lock = super::effects::chat_health_effect_lock(&pending.key_id);
     let _guard = lock.lock().await;
     if state
         .provider_catalog_key_health_attempt_is_settled(pending)
         .await?
     {
-        return Ok(SettlementProgress::AlreadyApplied);
+        return Ok(SettlementSnapshot::progress_only(
+            SettlementProgress::AlreadyApplied,
+        ));
     }
     if current_unix_secs()
         >= pending
@@ -145,26 +166,34 @@ async fn settle_once(
             .saturating_add(FACT_TTL_SECS)
         || pending.policy_version != super::chat_health::CHAT_HEALTH_POLICY_VERSION as u32
     {
-        return Ok(SettlementProgress::Obsolete);
+        return Ok(SettlementSnapshot::progress_only(
+            SettlementProgress::Obsolete,
+        ));
     }
     let terminal: TerminalFact = match serde_json::from_value(pending.fact.clone()) {
         Ok(fact) => fact,
         Err(_) => {
             warn!(event_name = "chat_health_pending_fact_invalid", attempt_id = %pending.attempt_id);
-            return Ok(SettlementProgress::Obsolete);
+            return Ok(SettlementSnapshot::progress_only(
+                SettlementProgress::Obsolete,
+            ));
         }
     };
     if terminal.fence.attempt_id != pending.attempt_id
         || terminal.fence.started_at_unix_secs != pending.attempt_started_at_unix_secs
     {
-        return Ok(SettlementProgress::Obsolete);
+        return Ok(SettlementSnapshot::progress_only(
+            SettlementProgress::Obsolete,
+        ));
     }
     let Some(provider) = state
         .read_provider_catalog_providers_by_ids(std::slice::from_ref(&terminal.provider_id))
         .await?
         .pop()
     else {
-        return Ok(SettlementProgress::Obsolete);
+        return Ok(SettlementSnapshot::progress_only(
+            SettlementProgress::Obsolete,
+        ));
     };
     let report = json!({PROBE_LEASES_REPORT_FIELD: terminal.probe_leases});
     for _ in 0..4 {
@@ -173,7 +202,9 @@ async fn settle_once(
             .await?
             .pop()
         else {
-            return Ok(SettlementProgress::Obsolete);
+            return Ok(SettlementSnapshot::progress_only(
+                SettlementProgress::Obsolete,
+            ));
         };
         let epoch = key
             .circuit_breaker_by_format
@@ -193,12 +224,16 @@ async fn settle_once(
                 current_unix_secs(),
             )
         {
-            return Ok(SettlementProgress::Obsolete);
+            return Ok(SettlementSnapshot::progress_only(
+                SettlementProgress::Obsolete,
+            ));
         }
         let projection = match terminal.failure.as_ref() {
             Some(failure) => {
                 let Some(fact) = failure.fact() else {
-                    return Ok(SettlementProgress::Obsolete);
+                    return Ok(SettlementSnapshot::progress_only(
+                        SettlementProgress::Obsolete,
+                    ));
                 };
                 super::chat_health::project_chat_failure(
                     key.health_by_format.as_ref(),
@@ -218,8 +253,12 @@ async fn settle_once(
             ),
         };
         let Some(projection) = projection else {
-            return Ok(SettlementProgress::Obsolete);
+            return Ok(SettlementSnapshot::progress_only(
+                SettlementProgress::Obsolete,
+            ));
         };
+        let cooldown =
+            rate_limit_cooldown_from_projection(&projection.health_by_format, &pending.api_format);
         let settlement = ProviderCatalogKeyHealthSettlement {
             attempt_id: pending.attempt_id.clone(),
             api_format: pending.api_format.clone(),
@@ -248,30 +287,57 @@ async fn settle_once(
             .await?
         {
             ProviderCatalogKeyHealthSettlementResult::Applied => {
-                return Ok(SettlementProgress::Applied)
+                return Ok(SettlementSnapshot::new(
+                    SettlementProgress::Applied,
+                    cooldown,
+                ))
             }
             ProviderCatalogKeyHealthSettlementResult::Duplicate => {
-                return Ok(SettlementProgress::AlreadyApplied)
+                return Ok(SettlementSnapshot::progress_only(
+                    SettlementProgress::AlreadyApplied,
+                ))
             }
             ProviderCatalogKeyHealthSettlementResult::Conflict => tokio::task::yield_now().await,
-            _ => return Ok(SettlementProgress::Obsolete),
+            _ => {
+                return Ok(SettlementSnapshot::progress_only(
+                    SettlementProgress::Obsolete,
+                ))
+            }
         }
     }
-    Ok(SettlementProgress::Pending)
+    Ok(SettlementSnapshot::progress_only(
+        SettlementProgress::Pending,
+    ))
 }
 
 async fn process_pending(state: &AppState, pending: &ProviderCatalogKeyHealthPendingFact) -> bool {
-    let progress = match tokio::time::timeout(SETTLE_TIMEOUT, settle_once(state, pending)).await {
-        Ok(Ok(progress)) => progress,
+    settle_with_cleanup(state, pending)
+        .await
+        .is_some_and(|snapshot| {
+            matches!(
+                snapshot.progress,
+                SettlementProgress::Applied | SettlementProgress::AlreadyApplied
+            )
+        })
+}
+
+/// 完成一次结算及其 pending 清理；清理不在 Key 锁内，避免持久化等待阻塞调度。
+async fn settle_with_cleanup(
+    state: &AppState,
+    pending: &ProviderCatalogKeyHealthPendingFact,
+) -> Option<SettlementSnapshot> {
+    let snapshot = match tokio::time::timeout(SETTLE_TIMEOUT, settle_once(state, pending)).await {
+        Ok(Ok(snapshot)) => snapshot,
         Ok(Err(error)) => {
             warn!(event_name = "chat_health_settlement_deferred", attempt_id = %pending.attempt_id, ?error);
-            return false;
+            return None;
         }
         Err(_) => {
             warn!(event_name = "chat_health_settlement_timed_out", attempt_id = %pending.attempt_id);
-            return false;
+            return None;
         }
     };
+    let progress = snapshot.progress;
     if progress == SettlementProgress::Obsolete {
         warn!(event_name = "chat_health_fact_obsolete", attempt_id = %pending.attempt_id,
             key_id = %pending.key_id, api_format = %pending.api_format,
@@ -293,10 +359,7 @@ async fn process_pending(state: &AppState, pending: &ProviderCatalogKeyHealthPen
             }
         }
     }
-    matches!(
-        progress,
-        SettlementProgress::Applied | SettlementProgress::AlreadyApplied
-    )
+    Some(snapshot)
 }
 
 /// Start the durable handoff before the caller can cancel its effect-stage wait.
@@ -304,15 +367,42 @@ pub(super) async fn persist_and_settle(
     state: &AppState,
     pending: ProviderCatalogKeyHealthPendingFact,
 ) -> bool {
+    persist_and_settle_with_cooldown_snapshot(state, pending, None)
+        .await
+        .is_some()
+}
+
+/// 结算一次 Key 健康事实，并在 429 后读取实际生效的限流冷却窗口。
+///
+/// 读取与结算持有同一把 Key 锁，避免把并发请求刚改写的截止时间写给旧候选。
+/// 返回值仅在结算已应用且调用方请求冷却快照时读取成功才包含快照。
+pub(super) async fn persist_and_settle_with_cooldown_snapshot(
+    state: &AppState,
+    pending: ProviderCatalogKeyHealthPendingFact,
+    requested_format: Option<&str>,
+) -> Option<Option<Value>> {
     let state = state.clone();
+    let requested_format = requested_format.map(ToOwned::to_owned);
     let worker = tokio::spawn(async move {
+        let key_id = pending.key_id.clone();
+        let api_format = pending.api_format.clone();
+        let requested_cooldown = requested_format
+            .as_deref()
+            .filter(|format| *format == api_format);
         let retained = tokio::time::timeout(
             SETTLE_TIMEOUT,
             state.enqueue_provider_catalog_key_health_fact(&pending),
         )
         .await;
         match retained {
-            Ok(Ok(canonical)) => process_pending(&state, &canonical).await,
+            Ok(Ok(canonical)) => {
+                if requested_cooldown.is_some() {
+                    process_pending_with_cooldown_snapshot(&state, &canonical, key_id.as_str())
+                        .await
+                } else {
+                    process_pending(&state, &canonical).await.then_some(None)
+                }
+            }
             _ => {
                 // The enqueue may have committed before an uncertain failure.
                 // Without its authoritative payload, never settle this delivery:
@@ -320,11 +410,44 @@ pub(super) async fn persist_and_settle(
                 // Retain only the redacted DTO in diagnostics for recovery.
                 warn!(event_name = "chat_health_pending_retention_failed", attempt_id = %pending.attempt_id);
                 warn!(event_name = "chat_health_fact_not_persisted", fact = %serde_json::to_string(&pending).unwrap_or_default());
-                false
+                None
             }
         }
     });
-    worker.await.unwrap_or(false)
+    worker.await.ok().flatten()
+}
+
+/// 返回本次健康投影中实际生效的 429 冷却起止；未进入冷却时不伪造窗口。
+fn rate_limit_cooldown_from_projection(
+    health_by_format: &Value,
+    api_format: &str,
+) -> Option<Value> {
+    let health = health_by_format
+        .as_object()
+        .and_then(|health| health.get(api_format))?;
+    let until_unix_secs =
+        aether_scheduler_core::provider_key_rate_limit_cooldown_payload(health)?.until_unix_secs;
+    let started_at_unix_secs = health
+        .get("rate_limit_cooldown_started_at_unix_secs")
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)?;
+    Some(json!({
+        "started_at_unix_secs": started_at_unix_secs,
+        "until_unix_secs": until_unix_secs,
+    }))
+}
+
+/// 结算成功时只接受本次投影的冷却窗口，避免并发请求之间的窗口串线。
+async fn process_pending_with_cooldown_snapshot(
+    state: &AppState,
+    pending: &ProviderCatalogKeyHealthPendingFact,
+    _key_id: &str,
+) -> Option<Option<Value>> {
+    let snapshot = settle_with_cleanup(state, pending).await?;
+    if snapshot.progress != SettlementProgress::Applied {
+        return Some(None);
+    }
+    Some(snapshot.cooldown)
 }
 
 pub(crate) async fn drain_pending_health_facts(state: &AppState) -> Result<usize, GatewayError> {
@@ -354,4 +477,32 @@ pub(crate) fn spawn_health_settlement_worker(app: AppState) -> Option<tokio::tas
             }
         },
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rate_limit_cooldown_from_projection;
+    use serde_json::json;
+
+    #[test]
+    fn cooldown_snapshot_comes_from_the_settled_projection() {
+        let projection = json!({
+            "openai:chat": {
+                "rate_limit_cooldown_started_at_unix_secs": 1_000,
+                "rate_limit_cooldown_until_unix_secs": 1_600,
+            }
+        });
+
+        assert_eq!(
+            rate_limit_cooldown_from_projection(&projection, "openai:chat"),
+            Some(json!({
+                "started_at_unix_secs": 1_000,
+                "until_unix_secs": 1_600,
+            }))
+        );
+        assert_eq!(
+            rate_limit_cooldown_from_projection(&projection, "openai:responses"),
+            None
+        );
+    }
 }

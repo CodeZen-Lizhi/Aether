@@ -20,6 +20,8 @@ use super::{SchedulerMinimalCandidateSelectionCandidate, SchedulerRuntimeState};
 pub(crate) struct SchedulerSkippedCandidate {
     pub(crate) candidate: SchedulerMinimalCandidateSelectionCandidate,
     pub(crate) skip_reason: &'static str,
+    /// 限流冷却跳过时保存本次窗口起点，供请求详情展示与截止同源的起止时间。
+    pub(crate) rate_limit_cooldown_started_at_unix_secs: Option<u64>,
     /// 限流冷却跳过时保存 Key 在该 API 格式上的可靠恢复时刻，供调用方展示真实倒计时。
     pub(crate) rate_limit_cooldown_until_unix_secs: Option<u64>,
 }
@@ -285,6 +287,7 @@ pub(super) async fn collect_selectable_enumerated_candidates_with_skip_reasons(
                 .map(|candidate| SchedulerSkippedCandidate {
                     candidate,
                     skip_reason: API_KEY_CONCURRENCY_LIMIT_SKIP_REASON,
+                    rate_limit_cooldown_started_at_unix_secs: None,
                     rate_limit_cooldown_until_unix_secs: None,
                 })
                 .collect(),

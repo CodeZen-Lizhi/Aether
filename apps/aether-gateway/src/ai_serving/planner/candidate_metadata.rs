@@ -102,7 +102,7 @@ pub(crate) fn build_local_execution_candidate_contract_metadata_for_candidate(
     )
 }
 
-/// 补充 skipped 候选的展示原因元数据，保留限流冷却的真实截止时间。
+/// 补充 skipped 候选的展示原因元数据，保留限流冷却的真实起止时间。
 pub(crate) fn skipped_candidate_extra_fields(
     skipped_candidate: &crate::ai_serving::planner::candidate_resolution::SkippedLocalExecutionCandidate,
 ) -> Map<String, Value> {
@@ -113,17 +113,19 @@ pub(crate) fn skipped_candidate_extra_fields(
     else {
         return Map::new();
     };
-    let Some(until_unix_secs) = extra_data
-        .get("rate_limit_cooldown_until_unix_secs")
-        .and_then(Value::as_u64)
-        .filter(|value| *value > 0)
-    else {
-        return Map::new();
-    };
-    Map::from_iter([(
-        "rate_limit_cooldown_until_unix_secs".to_string(),
-        Value::from(until_unix_secs),
-    )])
+    [
+        "rate_limit_cooldown_started_at_unix_secs",
+        "rate_limit_cooldown_until_unix_secs",
+    ]
+    .into_iter()
+    .filter_map(|field| {
+        extra_data
+            .get(field)
+            .and_then(Value::as_u64)
+            .filter(|value| *value > 0)
+            .map(|value| (field.to_string(), Value::from(value)))
+    })
+    .collect()
 }
 
 #[cfg(test)]

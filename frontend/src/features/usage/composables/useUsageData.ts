@@ -17,7 +17,7 @@ import {
   mergeUsageRecordErrorMessage,
   mergeUsageRecordFirstByteTimeMs,
   mergeUsageRecordResponseTiming,
-  parseUsageTimestampMs,
+  usageLifecycleSnapshotIsOlder,
 } from '../utils/recordSync'
 
 export interface LoadStatsOptions {
@@ -420,11 +420,10 @@ export function useUsageData() {
       const hasNextStatus = typeof record.status === 'string' && record.status.length > 0
       const currentRank = hasExistingStatus ? (statusPriority[existing.status as string] ?? -1) : -1
       const nextRank = hasNextStatus ? (statusPriority[record.status as string] ?? -1) : -1
-      const existingUpdatedAtMs = parseUsageTimestampMs(existing.updated_at)
-      const nextUpdatedAtMs = parseUsageTimestampMs(record.updated_at)
-      const nextStatusSnapshotIsStale = existingUpdatedAtMs != null &&
-        nextUpdatedAtMs != null &&
-        nextUpdatedAtMs < existingUpdatedAtMs
+      const nextStatusSnapshotIsStale = usageLifecycleSnapshotIsOlder(
+        existing.updated_at,
+        record.updated_at,
+      )
       const sameRankTerminalTransition = currentRank === 2 && nextRank === 2
       const statusProgressed = hasNextStatus && !nextStatusSnapshotIsStale && (
         !hasExistingStatus ||

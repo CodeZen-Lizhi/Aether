@@ -27,7 +27,7 @@ use crate::api::response::{
     build_client_response, build_client_response_from_parts, build_local_auth_rejection_response,
     build_local_http_error_response, build_local_http_error_response_with_request_path,
     build_local_overloaded_response, build_local_provider_key_rate_limit_cooldown_response,
-    build_local_user_rpm_limited_response,
+    build_local_upstream_rate_limit_response, build_local_user_rpm_limited_response,
 };
 use crate::constants::{
     CONTROL_CANDIDATE_ID_HEADER, DEPENDENCY_REASON_HEADER, EXECUTION_PATH_CONTROL_EXECUTE_STREAM,
@@ -52,9 +52,9 @@ use crate::control::{
 };
 use crate::executor::{
     beautify_local_execution_client_error_message, build_local_execution_runtime_miss_context,
-    maybe_execute_stream_request, maybe_execute_sync_request,
+    maybe_execute_stream_request, maybe_execute_sync_request, record_deferred_usage_terminal,
     record_failed_usage_for_exhausted_request, record_failed_usage_for_runtime_miss_request,
-    LocalExecutionRequestOutcome,
+    take_deferred_usage_terminal, LocalExecutionRequestOutcome,
 };
 use crate::frontdoor_loop_guard::{
     frontdoor_self_loop_public_ai_path, request_has_execution_runtime_loop_guard,
@@ -1504,10 +1504,16 @@ async fn proxy_request_inner(
             );
             match stream_outcome {
                 LocalExecutionRequestOutcome::Responded(execution_runtime_response) => {
-                    let execution_runtime_response = restore_redacted_stream_execution_response(
-                        execution_runtime_response,
-                        &redaction_slot,
-                    )?;
+                    let mut execution_runtime_response =
+                        restore_redacted_stream_execution_response(
+                            execution_runtime_response,
+                            &redaction_slot,
+                        )?;
+                    if let Some(terminal) =
+                        take_deferred_usage_terminal(&mut execution_runtime_response)
+                    {
+                        record_deferred_usage_terminal(&state, terminal).await;
+                    }
                     state.clear_local_execution_runtime_miss_diagnostic(&trace_id);
                     return Ok(finalize_gateway_response_with_context(
                         &state,
@@ -1563,11 +1569,16 @@ async fn proxy_request_inner(
         );
         match sync_outcome {
             LocalExecutionRequestOutcome::Responded(execution_runtime_response) => {
-                let execution_runtime_response = restore_redacted_sync_execution_response(
+                let mut execution_runtime_response = restore_redacted_sync_execution_response(
                     execution_runtime_response,
                     &redaction_slot,
                 )
                 .await?;
+                if let Some(terminal) =
+                    take_deferred_usage_terminal(&mut execution_runtime_response)
+                {
+                    record_deferred_usage_terminal(&state, terminal).await;
+                }
                 state.clear_local_execution_runtime_miss_diagnostic(&trace_id);
                 return Ok(finalize_gateway_response_with_context(
                     &state,
@@ -1813,6 +1824,13 @@ async fn proxy_request_inner(
                 .unwrap_or_default(),
             local_execution_failure_log
         );
+        let exhausted_rate_limit = local_execution_exhaustion
+            .as_ref()
+            .filter(|exhaustion| {
+                exhaustion.upstream_status_code()
+                    == Some(http::StatusCode::TOO_MANY_REQUESTS.as_u16())
+            })
+            .map(|exhaustion| exhaustion.rate_limit_retry_after_secs());
         if let Some(exhaustion) = local_execution_exhaustion {
             record_failed_usage_for_exhausted_request(
                 &state,
@@ -1848,6 +1866,16 @@ async fn proxy_request_inner(
             build_local_provider_key_rate_limit_cooldown_response(
                 &trace_id,
                 control_decision,
+                retry_after_secs,
+            )?
+        } else if let Some(retry_after_secs) = exhausted_rate_limit {
+            build_local_upstream_rate_limit_response(
+                &trace_id,
+                control_decision,
+                local_execution_runtime_miss_client_message(
+                    local_execution_runtime_miss_detail.as_str(),
+                )
+                .as_str(),
                 retry_after_secs,
             )?
         } else {

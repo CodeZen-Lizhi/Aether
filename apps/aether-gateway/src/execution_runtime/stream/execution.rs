@@ -75,7 +75,6 @@ use crate::api::response::{
 use crate::clock::current_unix_ms as current_request_candidate_unix_ms;
 use crate::constants::{CONTROL_CANDIDATE_ID_HEADER, CONTROL_REQUEST_ID_HEADER};
 use crate::control::GatewayControlDecision;
-use crate::execution_runtime::build_direct_execution_frame_stream;
 use crate::execution_runtime::chat_retry::spawn_chat_stream_pump;
 #[cfg(test)]
 use crate::execution_runtime::remote_compat::post_stream_plan_to_remote_execution_runtime;
@@ -98,6 +97,10 @@ use crate::execution_runtime::{
     resolve_core_stream_error_finalize_report_kind,
     resolve_local_candidate_failover_analysis_stream, should_fallback_to_control_stream,
     should_retry_next_local_candidate_stream, LocalFailoverDecision, UpstreamAttemptLog,
+};
+use crate::execution_runtime::{
+    align_rate_limit_retry_after, build_direct_execution_frame_stream,
+    merge_rate_limit_cooldown_report_context,
 };
 use crate::execution_runtime::{
     MAX_ERROR_BODY_BYTES, MAX_STREAM_PREFETCH_BYTES, MAX_STREAM_PREFETCH_FRAMES,
@@ -3476,7 +3479,7 @@ async fn execute_execution_runtime_stream_inner(
                         "execution runtime returned HTTP {}",
                         response.status()
                     )),
-                    latency_ms: None,
+                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
                     started_at_unix_ms: Some(candidate_started_unix_secs),
                     finished_at_unix_ms: Some(terminal_unix_secs),
                 },
@@ -5111,7 +5114,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                         "execution runtime stream matched provider success failover rule"
                             .to_string(),
                     ),
-                    latency_ms: None,
+                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
                     started_at_unix_ms: Some(candidate_started_unix_secs),
                     finished_at_unix_ms: Some(terminal_unix_secs),
                 },
@@ -5206,7 +5209,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             }),
         )
         .await;
-        apply_local_execution_effect(
+        let cooldown = apply_local_execution_effect(
             state,
             LocalExecutionEffectContext {
                 plan: &plan,
@@ -5226,6 +5229,17 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             ),
         )
         .await;
+        let report_context =
+            merge_rate_limit_cooldown_report_context(report_context, cooldown.clone());
+        let error_trace_report_context = with_stream_error_trace_context(
+            report_context.as_ref(),
+            status_code,
+            &headers,
+            provider_body_json.as_ref(),
+            &provider_error_body,
+            error_response_text.as_deref(),
+            failover_analysis,
+        );
         let failover_decision = failover_analysis.decision;
         debug!(
             event_name = "execution_runtime_stream_failover_decided",
@@ -5262,29 +5276,55 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                         provider_body_json.as_ref(),
                     )
                     .await?;
-                    *retry_fallback = Some(attach_control_metadata_headers(
-                        build_client_response_from_parts(
-                            status_code,
-                            &fallback_headers,
-                            Body::from(provider_error_body.clone()),
-                            trace_id,
-                            Some(decision),
+                    align_rate_limit_retry_after(
+                        &mut fallback_headers,
+                        status_code,
+                        cooldown.as_ref(),
+                    );
+                    let payload = build_stream_error_sync_payload(
+                        trace_id,
+                        stream_error_finalize_kind
+                            .as_deref()
+                            .or(report_kind.as_deref())
+                            .unwrap_or_default()
+                            .to_string(),
+                        error_trace_report_context
+                            .clone()
+                            .or_else(|| report_context.clone()),
+                        status_code,
+                        headers.clone(),
+                        provider_body_json.clone(),
+                        provider_body_base64.clone(),
+                        fallback_headers.clone(),
+                        payload_client_body_json.clone(),
+                        Some(ExecutionTelemetry {
+                            ttfb_ms: None,
+                            elapsed_ms: Some(stream_elapsed_ms_since(stream_started_at)),
+                            upstream_bytes: None,
+                        }),
+                    );
+                    let terminal = crate::executor::DeferredUsageTerminal::from_sync_payload(
+                        &plan,
+                        payload.report_context.as_ref(),
+                        &payload,
+                    );
+                    *retry_fallback = Some(crate::executor::attach_deferred_usage_terminal(
+                        attach_control_metadata_headers(
+                            build_client_response_from_parts(
+                                status_code,
+                                &fallback_headers,
+                                Body::from(provider_error_body.clone()),
+                                trace_id,
+                                Some(decision),
+                            )?,
+                            Some(request_id),
+                            candidate_id,
                         )?,
-                        Some(request_id),
-                        candidate_id,
-                    )?);
+                        terminal,
+                    ));
                 }
             }
             let terminal_unix_secs = current_request_candidate_unix_ms();
-            let error_trace_report_context = with_stream_error_trace_context(
-                report_context.as_ref(),
-                status_code,
-                &headers,
-                provider_body_json.as_ref(),
-                &provider_error_body,
-                error_response_text.as_deref(),
-                failover_analysis,
-            );
             record_local_request_candidate_status(
                 state,
                 &plan,
@@ -5298,7 +5338,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                     error_message: Some(format!(
                         "execution runtime stream returned retryable status {status_code}"
                     )),
-                    latency_ms: None,
+                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
                     started_at_unix_ms: Some(candidate_started_unix_secs),
                     finished_at_unix_ms: Some(terminal_unix_secs),
                 },
@@ -5328,15 +5368,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             )
         {
             let terminal_unix_secs = current_request_candidate_unix_ms();
-            let error_trace_report_context = with_stream_error_trace_context(
-                report_context.as_ref(),
-                status_code,
-                &headers,
-                provider_body_json.as_ref(),
-                &provider_error_body,
-                error_response_text.as_deref(),
-                failover_analysis,
-            );
             record_local_request_candidate_status(
                 state,
                 &plan,
@@ -5350,7 +5381,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                     error_message: Some(format!(
                         "stream decision fell back to control after status {status_code}"
                     )),
-                    latency_ms: None,
+                    latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
                     started_at_unix_ms: Some(candidate_started_unix_secs),
                     finished_at_unix_ms: Some(terminal_unix_secs),
                 },
@@ -5383,15 +5414,6 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
         .await?;
 
         let client_response_headers = client_headers.clone();
-        let error_trace_report_context = with_stream_error_trace_context(
-            report_context.as_ref(),
-            status_code,
-            &headers,
-            provider_body_json.as_ref(),
-            &provider_error_body,
-            error_response_text.as_deref(),
-            failover_analysis,
-        );
         let payload = build_stream_error_sync_payload(
             trace_id,
             stream_error_finalize_kind
@@ -5406,7 +5428,11 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
             provider_body_base64,
             client_headers,
             payload_client_body_json,
-            None,
+            Some(ExecutionTelemetry {
+                ttfb_ms: None,
+                elapsed_ms: Some(stream_elapsed_ms_since(stream_started_at)),
+                upstream_bytes: None,
+            }),
         );
         record_sync_terminal_usage_with_handoff(
             state,
@@ -5427,7 +5453,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                 error_message: Some(format!(
                     "execution runtime stream returned non-success status {status_code}"
                 )),
-                latency_ms: None,
+                latency_ms: Some(stream_elapsed_ms_since(stream_started_at)),
                 started_at_unix_ms: Some(candidate_started_unix_secs),
                 finished_at_unix_ms: Some(terminal_unix_secs),
             },
@@ -5671,6 +5697,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                         headers,
                         prefetched_usage_telemetry.clone(),
                         &provider_prefetched_body,
+                        stream_elapsed_ms_since(stream_started_at),
                         status_code,
                         error_status_code,
                         error_body_json,
@@ -5781,6 +5808,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                                     headers,
                                     prefetched_usage_telemetry.clone(),
                                     &provider_prefetched_body,
+                                    stream_elapsed_ms_since(stream_started_at),
                                     status_code,
                                     error_status_code,
                                     error_body_json,
@@ -5812,6 +5840,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                                 headers,
                                 prefetched_usage_telemetry.clone(),
                                 &provider_prefetched_body,
+                                stream_elapsed_ms_since(stream_started_at),
                                 status_code,
                                 error_status_code,
                                 error_body_json,
@@ -6042,6 +6071,7 @@ async fn execute_stream_from_frame_stream_with_retry_scope(
                             headers,
                             prefetched_usage_telemetry.clone(),
                             &provider_prefetched_body,
+                            stream_elapsed_ms_since(stream_started_at),
                             status_code,
                             error_status_code,
                             error_body_json,

@@ -54,11 +54,12 @@ use crate::execution_runtime::transport::{
     ExecutionRuntimeTransportError,
 };
 use crate::execution_runtime::{
-    ai_attempt_retry_scope_from_failure_disposition, analyze_local_candidate_failover_sync,
-    apply_endpoint_response_header_rules, attach_provider_response_headers_to_report_context,
-    ensure_execution_trace_header, local_failover_response_text, log_upstream_attempt_started,
-    log_upstream_request_failed, log_upstream_response_completed,
-    log_upstream_response_headers_received, resolve_core_sync_error_finalize_report_kind,
+    ai_attempt_retry_scope_from_failure_disposition, align_rate_limit_retry_after,
+    analyze_local_candidate_failover_sync, apply_endpoint_response_header_rules,
+    attach_provider_response_headers_to_report_context, ensure_execution_trace_header,
+    local_failover_response_text, log_upstream_attempt_started, log_upstream_request_failed,
+    log_upstream_response_completed, log_upstream_response_headers_received,
+    merge_rate_limit_cooldown_report_context, resolve_core_sync_error_finalize_report_kind,
     should_fallback_to_control_sync, should_finalize_sync_response, LocalFailoverDecision,
     UpstreamAttemptLog,
 };
@@ -2301,7 +2302,7 @@ async fn execute_execution_runtime_sync_impl(
             }),
         )
         .await;
-        apply_local_execution_effect(
+        let cooldown = apply_local_execution_effect(
             state,
             LocalExecutionEffectContext {
                 plan: &plan,
@@ -2316,6 +2317,7 @@ async fn execute_execution_runtime_sync_impl(
             }, chat_failure),
         )
         .await;
+        report_context = merge_rate_limit_cooldown_report_context(report_context, cooldown);
     }
     if matches!(
         local_failover_analysis.decision,
@@ -2340,17 +2342,52 @@ async fn execute_execution_runtime_sync_impl(
                     body_json.as_ref(),
                 )
                 .await?;
-                *retry_fallback = Some(attach_control_metadata_headers(
-                    build_client_response_from_parts(
-                        result.status_code,
-                        &fallback_headers,
-                        Body::from(body_bytes.clone()),
-                        trace_id,
-                        Some(decision),
+                align_rate_limit_retry_after(
+                    &mut fallback_headers,
+                    result.status_code,
+                    report_context
+                        .as_ref()
+                        .and_then(|context| context.get("rate_limit_cooldown")),
+                );
+                let payload = build_sync_report_payload(
+                    trace_id,
+                    report_kind.clone().unwrap_or_default(),
+                    report_context.clone(),
+                    result.status_code,
+                    fallback_headers.clone(),
+                    body_json.clone(),
+                    body_base64.clone(),
+                    Some(ExecutionTelemetry {
+                        ttfb_ms: result
+                            .telemetry
+                            .as_ref()
+                            .and_then(|telemetry| telemetry.ttfb_ms),
+                        elapsed_ms: Some(elapsed_ms_since(candidate_started_at)),
+                        upstream_bytes: result
+                            .telemetry
+                            .as_ref()
+                            .and_then(|telemetry| telemetry.upstream_bytes),
+                    }),
+                );
+                let terminal = crate::executor::DeferredUsageTerminal::from_sync_payload(
+                    &plan,
+                    payload.report_context.as_ref(),
+                    &payload,
+                );
+                *retry_fallback = Some(crate::executor::attach_deferred_usage_terminal(
+                    attach_control_metadata_headers(
+                        build_client_response_from_parts(
+                            result.status_code,
+                            &fallback_headers,
+                            Body::from(body_bytes.clone()),
+                            trace_id,
+                            Some(decision),
+                        )?,
+                        Some(plan.request_id.as_str()),
+                        plan.candidate_id.as_deref(),
                     )?,
-                    Some(plan.request_id.as_str()),
-                    plan.candidate_id.as_deref(),
-                )?);
+                    terminal,
+                ));
             }
         }
         let terminal_unix_secs = current_request_candidate_unix_ms();

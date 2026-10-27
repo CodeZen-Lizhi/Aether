@@ -424,6 +424,21 @@ fn build_admin_monitoring_usage_routing_snapshot_extra_data(
     if let Some(candidate_index) = usage.routing_candidate_index() {
         object.insert("candidate_index".to_string(), json!(candidate_index));
     }
+    for field in [
+        "rate_limit_cooldown_started_at_unix_secs",
+        "rate_limit_cooldown_until_unix_secs",
+    ] {
+        if let Some(value) = usage
+            .request_metadata
+            .as_ref()
+            .and_then(Value::as_object)
+            .and_then(|metadata| metadata.get(field))
+            .and_then(Value::as_u64)
+            .filter(|value| *value > 0)
+        {
+            object.insert(field.to_string(), json!(value));
+        }
+    }
     if let Some(diagnostic) = usage.routing_failure_diagnostic() {
         object.insert("failure_diagnostic".to_string(), diagnostic.clone());
     }

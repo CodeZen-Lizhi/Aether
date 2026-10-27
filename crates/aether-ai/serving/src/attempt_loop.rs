@@ -18,7 +18,11 @@ pub trait AiExecutionAttempt {
 #[derive(Debug)]
 pub enum AiAttemptLoopOutcome<Response, Exhaustion> {
     Responded(Response),
-    Deferred(Response),
+    Deferred {
+        response: Response,
+        last_plan: aether_contracts::ExecutionPlan,
+        last_report_context: Option<serde_json::Value>,
+    },
     Exhausted(Exhaustion),
     NoPath,
 }
@@ -109,6 +113,7 @@ where
     let mut last_attempted = None;
     let mut retry_filters: Vec<AiAttemptRetryFilter> = Vec::new();
     let mut fallback_response = None;
+    let mut fallback_attempt = None;
 
     while let Some(attempt) = remaining.next() {
         if retry_filters.iter().any(|filter| filter.matches(&attempt))
@@ -141,6 +146,8 @@ where
                 port.record_attempt_failed(&attempt).await?;
                 if attempt_fallback_response.is_some() {
                     fallback_response = attempt_fallback_response;
+                    fallback_attempt =
+                        Some((attempt.execution_plan().clone(), attempt.report_context()));
                 }
                 if scope != AiAttemptRetryScope::Candidate {
                     retry_filters.push(AiAttemptRetryFilter::new(&attempt, scope));
@@ -154,7 +161,13 @@ where
     }
 
     if let Some(response) = fallback_response {
-        return Ok(AiAttemptLoopOutcome::Deferred(response));
+        let (last_plan, last_report_context) =
+            fallback_attempt.expect("a fallback response must retain its attempt context");
+        return Ok(AiAttemptLoopOutcome::Deferred {
+            response,
+            last_plan,
+            last_report_context,
+        });
     }
 
     let Some((last_plan, last_report_context)) = last_attempted else {
@@ -512,7 +525,10 @@ mod tests {
 
         assert!(matches!(
             outcome,
-            super::AiAttemptLoopOutcome::Deferred("provider-error")
+            super::AiAttemptLoopOutcome::Deferred {
+                response: "provider-error",
+                ..
+            }
         ));
         assert_eq!(
             *port.unused.lock().expect("unused attempts should lock"),

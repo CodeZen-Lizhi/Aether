@@ -24,8 +24,7 @@ pub(super) fn resolve_scheduler_candidate_selectability(
             current_candidate_runtime_skip_reason(&candidate, runtime_snapshot, now_unix_secs)
         {
             if emitted_skipped_keys.insert(key) {
-                let rate_limit_cooldown_until_unix_secs = (skip_reason
-                    == "key_rate_limit_cooldown")
+                let cooldown = (skip_reason == "key_rate_limit_cooldown")
                     .then(|| {
                         runtime_snapshot
                             .provider_key_rpm_states
@@ -36,13 +35,17 @@ pub(super) fn resolve_scheduler_candidate_selectability(
                                     candidate.endpoint_api_format.as_str(),
                                 )
                             })
-                            .map(|cooldown| cooldown.until_unix_secs)
                     })
                     .flatten();
                 skipped.push(SchedulerSkippedCandidate {
                     candidate,
                     skip_reason,
-                    rate_limit_cooldown_until_unix_secs,
+                    rate_limit_cooldown_started_at_unix_secs: cooldown
+                        .as_ref()
+                        .and_then(|value| value.started_at_unix_secs),
+                    rate_limit_cooldown_until_unix_secs: cooldown
+                        .as_ref()
+                        .map(|value| value.until_unix_secs),
                 });
             }
             continue;

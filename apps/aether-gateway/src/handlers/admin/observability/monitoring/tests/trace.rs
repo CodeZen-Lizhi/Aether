@@ -116,6 +116,7 @@ async fn admin_monitoring_trace_attempted_only_keeps_skipped_request_as_no_attem
     usage.local_execution_runtime_miss_reason = Some("key_rate_limit_cooldown".to_string());
     usage.request_metadata = Some(json!({
         "routing_candidate_skip_reason": "key_rate_limit_cooldown",
+        "rate_limit_cooldown_started_at_unix_secs": 1_795_139_547u64,
         "rate_limit_cooldown_until_unix_secs": 1_795_140_147u64
     }));
     let usage_repository = Arc::new(InMemoryUsageReadRepository::seed(vec![usage]));
@@ -147,6 +148,27 @@ async fn admin_monitoring_trace_attempted_only_keeps_skipped_request_as_no_attem
     assert_eq!(payload["total_candidates"], json!(0));
     assert_eq!(payload["final_status"], json!("no_attempt"));
     assert_eq!(payload["candidates"], json!([]));
+
+    let context = request_context(
+        http::Method::GET,
+        "/api/admin/monitoring/trace/request-cooldown?attempted_only=false",
+    );
+    let response = local_monitoring_response(&state, &context)
+        .await
+        .expect("handler should not error")
+        .expect("route should be handled locally");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let payload: serde_json::Value = serde_json::from_slice(&body).expect("json body should parse");
+    assert_eq!(
+        payload["candidates"][0]["extra_data"]["rate_limit_cooldown_started_at_unix_secs"],
+        json!(1_795_139_547u64)
+    );
+    assert_eq!(
+        payload["candidates"][0]["extra_data"]["rate_limit_cooldown_until_unix_secs"],
+        json!(1_795_140_147u64)
+    );
 }
 
 #[tokio::test]

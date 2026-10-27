@@ -34,6 +34,8 @@ const activeStatus = params.get('lifecycle') === 'streaming' ? 'streaming' : 'pe
 const totalMs = lifecycleFixture ? pending ? 181000 : 300008 : multiProvider ? 110 : upstreamFailure ? 1605 : cooldownFailure ? 4 : realUpstreamError ? 682 : singleKeyFailure ? 2940 : 21
 /** 本地限流恢复时刻由真实详情字段提供，路径和概览共用同一份可靠数据。 */
 const cooldownUntilUnixSecs = Math.floor(Date.now() / 1000) + 540
+/** 本地跳过沿用触发 429 时的窗口起点，便于验证与截止同源的限流时间。 */
+const cooldownStartedAtUnixSecs = cooldownUntilUnixSecs - 600
 const start = lifecycleFixture ? Date.now() - totalMs : Date.parse('2026-09-14T04:36:51.000Z')
 const iso = (elapsed) => new Date(start + elapsed).toISOString()
 const long = params.has('long')
@@ -66,6 +68,7 @@ const detail = {
     title: '本地限流冷却中，请求未发送',
     message: '本地限流冷却中，请求未发送到上游',
     status_code: 429,
+    rate_limit_cooldown_started_at_unix_secs: cooldownStartedAtUnixSecs,
     rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs,
     no_upstream_attempt: true,
   } : undefined,
@@ -110,6 +113,7 @@ const candidates = multiProvider ? multiProviderCandidates : upstreamFailure || 
   extra_data: {
     first_byte_time_ms: upstreamFailure ? 920 : null,
     provider_api_format: 'openai:responses', client_api_format: 'openai:responses', needs_conversion: false,
+    rate_limit_cooldown_started_at_unix_secs: cooldownFailure ? cooldownStartedAtUnixSecs : null,
     rate_limit_cooldown_until_unix_secs: cooldownFailure ? cooldownUntilUnixSecs - 60 : null,
     upstream_response: upstreamFailure ? { status_code: 500, headers: { 'content-type': 'application/json' }, body: { error: { code: 'model_load_failed', message: 'Failed to load model: CUDA out of memory', type: 'server_error' } } } : undefined,
   },
@@ -120,7 +124,11 @@ const candidates = multiProvider ? multiProviderCandidates : upstreamFailure || 
   status: 'skipped', skip_reason: cooldownFailure ? 'key_rate_limit_cooldown' : 'key_circuit_open', is_cached: false,
   latency_ms: upstreamFailure ? 5 : undefined,
   created_at: iso(1600), started_at: upstreamFailure ? iso(1600) : undefined, finished_at: upstreamFailure ? iso(1605) : undefined,
-  extra_data: { provider_api_format: 'openai:responses', client_api_format: 'openai:responses', rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs },
+  extra_data: {
+    provider_api_format: 'openai:responses', client_api_format: 'openai:responses',
+    rate_limit_cooldown_started_at_unix_secs: cooldownFailure ? cooldownStartedAtUnixSecs : null,
+    rate_limit_cooldown_until_unix_secs: cooldownUntilUnixSecs,
+  },
 }] : [])] : realUpstreamError ? [{
   id: 'real-upstream-400', request_id: detail.request_id, candidate_index: 0, retry_index: 0,
   provider_id: 'provider-real', provider_name: 'Magpie', key_id: 'key-real', key_name: '3425',
@@ -144,7 +152,11 @@ const candidates = multiProvider ? multiProviderCandidates : upstreamFailure || 
   endpoint_name: 'openai:responses',
   status: 'failed', status_code: 429, error_message: cardErrorMessage || 'Upstream rate limit exceeded', is_cached: false, latency_ms: 2940,
   created_at: iso(0), started_at: iso(0), finished_at: iso(2940),
-  extra_data: { first_byte_time_ms: 864 },
+  extra_data: {
+    first_byte_time_ms: 864,
+    rate_limit_cooldown_started_at_unix_secs: cooldownStartedAtUnixSecs,
+    rate_limit_cooldown_until_unix_secs: Math.floor(Date.now() / 1000) + 540,
+  },
 }] : Array.from({ length: count }, (_, index) => ({
   id: `attempt-${index}`, request_id: detail.request_id, candidate_index: lifecycleFixture ? 0 : index, retry_index: lifecycleFixture ? index : 0,
   provider_id: `provider-${Math.floor(index / 2)}`, provider_name: index < 2 ? 'Input · 国际线路' : 'Input · 备用线路',

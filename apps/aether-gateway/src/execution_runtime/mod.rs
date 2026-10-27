@@ -69,6 +69,91 @@ pub(crate) fn ensure_execution_trace_header(
     );
 }
 
+/// 用已结算的 Key 冷却窗口覆盖最终上游 429 的 `Retry-After`。
+///
+/// 上游建议可能超过本地 600 秒上限；最终响应必须与调度实际采用的截止时间一致。
+pub(crate) fn align_rate_limit_retry_after(
+    headers: &mut BTreeMap<String, String>,
+    status_code: u16,
+    cooldown: Option<&Value>,
+) {
+    if status_code != http::StatusCode::TOO_MANY_REQUESTS.as_u16() {
+        return;
+    }
+    let local_retry_after_secs = cooldown
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("until_unix_secs"))
+        .and_then(Value::as_u64)
+        .map(|until_unix_secs| {
+            until_unix_secs
+                .saturating_sub(crate::clock::current_unix_secs())
+                .clamp(1, aether_scheduler_core::RATE_LIMIT_COOLDOWN_MAX_SECS)
+        });
+    if let Some(retry_after_secs) = local_retry_after_secs {
+        headers.retain(|name, _| !name.eq_ignore_ascii_case("retry-after"));
+        headers.insert("retry-after".to_string(), retry_after_secs.to_string());
+        return;
+    }
+
+    // 没有可靠本地窗口时不能丢掉上游建议，但仍须受网关 10 分钟上限约束。
+    let Some((header_name, header_value)) = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("retry-after"))
+        .map(|(name, value)| (name.clone(), value.clone()))
+    else {
+        return;
+    };
+    let Some(upstream_retry_after_secs) = crate::orchestration::parse_chat_retry_after_secs(
+        Some(&header_value),
+        crate::clock::current_unix_secs(),
+    ) else {
+        return;
+    };
+    let retry_after_secs =
+        upstream_retry_after_secs.clamp(1, aether_scheduler_core::RATE_LIMIT_COOLDOWN_MAX_SECS);
+    headers.insert(header_name, retry_after_secs.to_string());
+}
+
+/// 把健康结算确认的冷却窗口并入本轮候选报告上下文。
+pub(crate) fn merge_rate_limit_cooldown_report_context(
+    report_context: Option<Value>,
+    cooldown: Option<Value>,
+) -> Option<Value> {
+    let Some(cooldown) = cooldown else {
+        return report_context;
+    };
+    let Some(cooldown) = cooldown.as_object() else {
+        return report_context;
+    };
+    let Some(started_at_unix_secs) = cooldown.get("started_at_unix_secs").cloned() else {
+        return report_context;
+    };
+    let Some(until_unix_secs) = cooldown.get("until_unix_secs").cloned() else {
+        return report_context;
+    };
+    let mut object = match report_context {
+        Some(Value::Object(object)) => object,
+        Some(other) => Map::from_iter([("seed".to_string(), other)]),
+        None => Map::new(),
+    };
+    object.insert(
+        "rate_limit_cooldown".to_string(),
+        serde_json::json!({
+            "started_at_unix_secs": started_at_unix_secs,
+            "until_unix_secs": until_unix_secs,
+        }),
+    );
+    object.insert(
+        "rate_limit_cooldown_started_at_unix_secs".to_string(),
+        started_at_unix_secs,
+    );
+    object.insert(
+        "rate_limit_cooldown_until_unix_secs".to_string(),
+        until_unix_secs,
+    );
+    Some(Value::Object(object))
+}
+
 pub(crate) fn ai_attempt_retry_scope_from_failure_disposition(
     disposition: crate::orchestration::FailureDisposition,
 ) -> aether_ai_serving::AiAttemptRetryScope {
@@ -94,9 +179,12 @@ pub(crate) fn ai_attempt_retry_scope_from_failure_disposition(
 
 #[cfg(test)]
 mod retry_scope_tests {
-    use aether_ai_serving::AiAttemptRetryScope;
+    use std::collections::BTreeMap;
 
-    use super::ai_attempt_retry_scope_from_failure_disposition;
+    use aether_ai_serving::AiAttemptRetryScope;
+    use serde_json::json;
+
+    use super::{ai_attempt_retry_scope_from_failure_disposition, align_rate_limit_retry_after};
     use crate::orchestration::{classify_failure_disposition, LocalFailoverClassification};
 
     #[test]
@@ -128,6 +216,38 @@ mod retry_scope_tests {
             AiAttemptRetryScope::Candidate
         );
         assert!(!disposition.preserve_upstream_error);
+    }
+
+    #[test]
+    fn final_rate_limit_retry_after_uses_the_local_capped_window() {
+        let mut headers = BTreeMap::from([
+            ("retry-after".to_string(), "3600".to_string()),
+            ("x-request-id".to_string(), "req-1".to_string()),
+        ]);
+        let until = crate::clock::current_unix_secs() + 3600;
+        align_rate_limit_retry_after(
+            &mut headers,
+            429,
+            Some(&json!({
+                "started_at_unix_secs": until - 600,
+                "until_unix_secs": until,
+            })),
+        );
+
+        let retry_after = headers["retry-after"]
+            .parse::<u64>()
+            .expect("retry-after should remain numeric");
+        assert!((1..=600).contains(&retry_after));
+        assert_eq!(headers["x-request-id"], "req-1");
+    }
+
+    #[test]
+    fn final_rate_limit_without_local_window_preserves_and_caps_upstream_retry_after() {
+        let mut headers = BTreeMap::from([("Retry-After".to_string(), "3600".to_string())]);
+
+        align_rate_limit_retry_after(&mut headers, 429, None);
+
+        assert_eq!(headers["Retry-After"], "600");
     }
 }
 pub use server::{

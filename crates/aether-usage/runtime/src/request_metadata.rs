@@ -396,6 +396,7 @@ fn copy_allowed_metadata_fields(source: &Map<String, Value>, target: &mut Map<St
     copy_non_null_value(source, target, "scheduling_audit");
     copy_non_empty_string(source, target, ROUTING_CANDIDATE_SKIP_REASON_METADATA_KEY);
     copy_non_null_value(source, target, ROUTING_FAILURE_DIAGNOSTIC_METADATA_KEY);
+    copy_number(source, target, "rate_limit_cooldown_started_at_unix_secs");
     copy_number(source, target, "rate_limit_cooldown_until_unix_secs");
     copy_non_null_value(source, target, "tls_fingerprint");
     copy_number(source, target, "rate_multiplier");
@@ -467,6 +468,11 @@ fn move_allowed_metadata_fields(mut source: Map<String, Value>, target: &mut Map
         ROUTING_CANDIDATE_SKIP_REASON_METADATA_KEY,
     );
     remove_non_null_value(&mut source, target, ROUTING_FAILURE_DIAGNOSTIC_METADATA_KEY);
+    remove_number(
+        &mut source,
+        target,
+        "rate_limit_cooldown_started_at_unix_secs",
+    );
     remove_number(&mut source, target, "rate_limit_cooldown_until_unix_secs");
     remove_non_null_value(&mut source, target, "tls_fingerprint");
     remove_number(&mut source, target, "rate_multiplier");
@@ -867,6 +873,7 @@ mod tests {
                 "message": "invalid reasoning summary",
                 "safe_to_show": true
             },
+            "rate_limit_cooldown_started_at_unix_secs": 1_795_139_547,
             "rate_limit_cooldown_until_unix_secs": 1_795_140_147,
             "rate_multiplier": 1.25,
             "is_free_tier": false,
@@ -920,6 +927,7 @@ mod tests {
                     "message": "invalid reasoning summary",
                     "safe_to_show": true
                 },
+                "rate_limit_cooldown_started_at_unix_secs": 1_795_139_547,
                 "rate_limit_cooldown_until_unix_secs": 1_795_140_147,
                 "rate_multiplier": 1.25,
                 "is_free_tier": false,
@@ -1324,12 +1332,20 @@ mod tests {
             "rate_limit_cooldown_until_unix_secs".to_string(),
             json!(1_795_139_547u64),
         );
+        input.insert(
+            "rate_limit_cooldown_started_at_unix_secs".to_string(),
+            json!(1_795_138_947u64),
+        );
         let metadata = sanitize_usage_request_metadata(Some(Value::Object(input)))
             .expect("cooldown metadata should be retained");
 
         assert_eq!(
             metadata["rate_limit_cooldown_until_unix_secs"],
             json!(1_795_139_547u64)
+        );
+        assert_eq!(
+            metadata["rate_limit_cooldown_started_at_unix_secs"],
+            json!(1_795_138_947u64)
         );
     }
 

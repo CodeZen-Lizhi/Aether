@@ -1,7 +1,7 @@
 use super::{
     any, build_router_with_state, build_state_with_execution_runtime_override, json, start_server,
     Arc, Body, Bytes, HeaderValue, Infallible, Json, Mutex, Request, Response, Router, StatusCode,
-    TRACE_ID_HEADER,
+    UsageRuntimeConfig, TRACE_ID_HEADER,
 };
 
 use aether_crypto::{encrypt_python_fernet_plaintext, DEVELOPMENT_ENCRYPTION_KEY};
@@ -11,12 +11,14 @@ use aether_data::repository::auth::{
 use aether_data::repository::candidate_selection::InMemoryMinimalCandidateSelectionReadRepository;
 use aether_data::repository::candidates::InMemoryRequestCandidateRepository;
 use aether_data::repository::provider_catalog::InMemoryProviderCatalogReadRepository;
+use aether_data::repository::usage::InMemoryUsageReadRepository;
 use aether_data_contracts::repository::candidate_selection::{
     StoredMinimalCandidateSelectionRow, StoredProviderModelMapping,
 };
 use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogKey, StoredProviderCatalogProvider,
 };
+use aether_data_contracts::repository::usage::UsageReadRepository;
 use sha2::{Digest, Sha256};
 
 use crate::data::GatewayDataState;
@@ -257,7 +259,7 @@ async fn gateway_completes_sync_response_on_local_execution_runtime_path_impl() 
     );
     let (gateway_url, gateway_handle) = start_server(gateway).await;
 
-    let response = reqwest::Client::new()
+    let mut response = reqwest::Client::new()
         .post(format!("{gateway_url}/v1/chat/completions"))
         .header(http::header::CONTENT_TYPE, "application/json")
         .header(
@@ -477,21 +479,27 @@ async fn gateway_returns_error_body_when_prefetch_detects_embedded_stream_error_
         vec![sample_local_openai_key()],
     ));
     let request_candidate_repository = Arc::new(InMemoryRequestCandidateRepository::default());
+    let usage_repository = Arc::new(InMemoryUsageReadRepository::default());
     let gateway = build_router_with_state(
         build_state_with_execution_runtime_override(execution_runtime_url)
             .with_data_state_for_tests(
-                GatewayDataState::with_auth_candidate_selection_provider_catalog_and_request_candidate_repository_for_tests(
+                GatewayDataState::with_auth_candidate_selection_provider_catalog_request_candidates_and_usage_for_tests(
                     auth_repository,
                     candidate_selection_repository,
                     provider_catalog_repository,
                     request_candidate_repository,
+                    Arc::clone(&usage_repository),
                     DEVELOPMENT_ENCRYPTION_KEY,
                 ),
-            ),
+            )
+            .with_usage_runtime_for_tests(UsageRuntimeConfig {
+                enabled: true,
+                ..UsageRuntimeConfig::default()
+            }),
     );
     let (gateway_url, gateway_handle) = start_server(gateway).await;
 
-    let response = reqwest::Client::new()
+    let mut response = reqwest::Client::new()
         .post(format!("{gateway_url}/v1/chat/completions"))
         .header(http::header::CONTENT_TYPE, "application/json")
         .header(
@@ -507,7 +515,7 @@ async fn gateway_returns_error_body_when_prefetch_detects_embedded_stream_error_
         .await
         .expect("request should succeed");
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(
         response
             .headers()
@@ -515,10 +523,43 @@ async fn gateway_returns_error_body_when_prefetch_detects_embedded_stream_error_
             .and_then(|value| value.to_str().ok()),
         Some("text/event-stream")
     );
+    let retry_after = response
+        .headers()
+        .get(http::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .expect("provider-private 429 fallback must use the local cooldown deadline");
+    assert!((1..=600).contains(&retry_after));
     let body_text = response.text().await.expect("response body should read");
     assert!(body_text.contains("\"rate_limit_error\""));
     assert!(body_text.contains("\"slow down\""));
     assert_eq!(*public_hits.lock().expect("mutex should lock"), 0);
+
+    let usage = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if let Some(usage) = usage_repository
+                .find_by_request_id("trace-openai-chat-stream-prefetch-error-123")
+                .await
+                .expect("usage lookup should succeed")
+            {
+                if usage.status == "failed" {
+                    return usage;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("prefetch error usage should promptly leave pending");
+    assert_eq!(
+        usage.status_code,
+        Some(StatusCode::TOO_MANY_REQUESTS.as_u16())
+    );
+    assert!(usage.response_time_ms.is_some_and(|latency| latency > 0));
+    assert!(usage
+        .response_body
+        .as_ref()
+        .is_some_and(|body| body.to_string().contains("slow down")));
 
     gateway_handle.abort();
     execution_runtime_handle.abort();

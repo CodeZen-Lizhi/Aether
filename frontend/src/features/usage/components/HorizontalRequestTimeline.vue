@@ -17,7 +17,7 @@
     </div>
 
     <section
-      v-else-if="trace && providerRounds.length > 0"
+      v-else-if="trace && layoutTimeline.length > 0"
       class="execution-waterfall"
       data-request-trace-waterfall
     >
@@ -81,6 +81,7 @@
                     ]"
                     :data-attempt-id="attempt.id"
                     :data-status="getTraceLineStatus(attempt)"
+                    :data-not-sent="isLocallySkippedAttempt(attempt) ? 'true' : undefined"
                     :aria-expanded="openedAttemptId === attempt.id"
                     :aria-label="getAttemptAriaLabel(attempt)"
                     @click="selectAttempt(attempt)"
@@ -105,11 +106,15 @@
                           class="path-key-endpoint"
                           :title="getAttemptEndpointLabel(attempt)"
                         >{{ getAttemptEndpointLabel(attempt) }}</span>
+                        <span
+                          v-else-if="isLocallySkippedAttempt(attempt)"
+                          class="path-key-endpoint"
+                        >本地限流冷却</span>
                       </span>
                       <span class="path-key-meta">
                         <span class="path-key-metric">
-                          <small>耗时</small>
-                          <b>{{ formatLatency(attempt.latency_ms) }}</b>
+                          <small>{{ isLocallySkippedAttempt(attempt) ? '上游' : '耗时' }}</small>
+                          <b>{{ isLocallySkippedAttempt(attempt) ? '未请求' : formatLatency(attempt.latency_ms) }}</b>
                         </span>
                         <span
                           v-if="getAttemptFirstByteMs(attempt) !== null"
@@ -143,7 +148,11 @@
               <span class="path-node-kicker">请求结果</span>
               <span class="path-response-status">{{ responseStatusText }}</span>
             </span>
-            <span class="path-response-total">
+            <span v-if="localCooldownResult" class="path-response-total path-response-cooldown">
+              预计恢复
+              <b data-trace-cooldown-recovery>{{ coalescedCooldownUntilLabel || '-' }}</b>
+            </span>
+            <span v-else class="path-response-total">
               总耗时
               <b data-trace-latency>{{ formatLatency(totalTraceLatency) }}</b>
             </span>
@@ -152,7 +161,7 @@
       </div>
 
       <span class="sr-only" data-route-summary>
-        {{ attemptedProviderCount }} 家供应商，{{ attemptedCallCount }} 次上游请求
+        {{ routeSummary }}
       </span>
 
       <section
@@ -167,14 +176,16 @@
         <dl class="waterfall-detail-facts">
           <div>
             <dt>HTTP</dt>
-            <dd class="mono" data-attempt-http-status>{{ openedAttempt.status_code ?? (getDisplayStatus(openedAttempt) === 'success' ? 200 : '-') }}</dd>
+            <dd class="mono" data-attempt-http-status>{{ getAttemptHttpLabel(openedAttempt) }}</dd>
           </div>
           <div>
             <dt>耗时</dt>
-            <dd class="mono">{{ getAttemptTimeRange(openedAttempt)?.durationLabel || formatLatency(openedAttempt.latency_ms) }}</dd>
+            <dd class="mono">
+              {{ isLocallySkippedAttempt(openedAttempt) ? '未请求上游' : (getAttemptTimeRange(openedAttempt)?.durationLabel || formatLatency(openedAttempt.latency_ms)) }}
+            </dd>
           </div>
           <div v-if="getAttemptTimeRange(openedAttempt)" class="waterfall-detail-time">
-            <dt>时间</dt>
+            <dt>请求时间</dt>
             <dd class="mono">
               {{ formatTime(getAttemptTimeRange(openedAttempt)!.startIso) }}
               <span class="waterfall-time-arrow">→</span>
@@ -185,7 +196,31 @@
             <dt>凭据</dt>
             <dd class="mono">{{ openedAttempt.key_preview }}</dd>
           </div>
+          <div
+            v-if="getAttemptRateLimitWindow(openedAttempt)"
+            class="waterfall-detail-rate-limit"
+            data-attempt-rate-limit-window
+          >
+            <dt>限流时间</dt>
+            <dd class="mono">{{ getAttemptRateLimitWindow(openedAttempt) }}</dd>
+          </div>
+          <div
+            v-if="getAttemptCooldownRemaining(openedAttempt)"
+            class="waterfall-detail-cooldown"
+            data-attempt-cooldown-remaining
+          >
+            <dt>剩余冷却</dt>
+            <dd class="mono">{{ getAttemptCooldownRemaining(openedAttempt) }}</dd>
+          </div>
         </dl>
+
+        <p
+          v-if="isLocallySkippedAttempt(openedAttempt)"
+          class="waterfall-local-skip-note"
+          data-local-skip-note
+        >
+          本次没有上游响应，也不会消耗上游额度。
+        </p>
 
         <div v-if="currentDetailImageProgress" class="image-progress-block">
           <div class="image-progress-header">
@@ -252,31 +287,6 @@
       </section>
     </section>
 
-    <div
-      v-else-if="noAttemptCooldown"
-      class="execution-waterfall execution-waterfall--no-attempt"
-      data-request-no-attempt
-    >
-      <p class="no-attempt-title">
-        本地限流冷却中，未发送到上游
-      </p>
-      <span class="path-entry-line no-attempt-route">
-        <span class="path-method">POST</span>
-        <span class="path-endpoint" :title="requestPath">{{ requestPath }}</span>
-      </span>
-      <p class="no-attempt-detail">
-        {{ noAttemptCooldown.keyLabel }} 命中限流冷却
-        <template v-if="noAttemptCooldown.untilLabel">
-          · 预计 {{ noAttemptCooldown.untilLabel }} 恢复
-        </template>
-      </p>
-      <p v-if="noAttemptCooldown.remainingLabel" class="no-attempt-detail">
-        本地冷却时间 {{ noAttemptCooldown.remainingLabel }}
-      </p>
-      <p class="no-attempt-note">
-        本次没有上游响应，也不会消耗上游额度。
-      </p>
-    </div>
     <div
       v-else
       class="execution-waterfall execution-waterfall--no-attempt"
@@ -444,19 +454,39 @@ const rawTimeline = computed<CandidateRecord[]>(() => {
 
 const timeline = computed<CandidateRecord[]>(() => rawTimeline.value)
 
-/** 真实发出的上游调用；未尝试、未使用和冷却跳过不进入请求路径。 */
+/** 真实发出的上游调用；未尝试、未使用和非冷却跳过不进入执行路径。 */
 const pathTimeline = computed<CandidateRecord[]>(() => (
   timeline.value.filter(isAttemptedCandidate)
 ))
 
-interface NoAttemptCooldown {
-  /** 按候选顺序列出命中的 Key 名称，同一 Key 只展示一次。 */
-  keyLabel: string
-  /** 所有命中 Key 中最晚的可靠恢复时刻，缺失时为空。 */
-  untilLabel: string
-  /** 距最晚可靠恢复时刻的剩余时长；恢复时刻已过时为空。 */
-  remainingLabel: string
+/**
+ * 判定候选是否仅因本地限流冷却而未发送。
+ *
+ * 普通 skipped 仍不进入执行路径；只有能够解释当前请求结果的限流冷却候选
+ * 才使用与真实调用相同的路径和详情结构。
+ */
+function isLocallySkippedAttempt(attempt: CandidateRecord): boolean {
+  return attempt.status === 'skipped' && attempt.skip_reason === 'key_rate_limit_cooldown'
 }
+
+/** 全部候选均因本地限流冷却跳过时，用这些记录构造可与真实调用共用的路径。 */
+const localCooldownTimeline = computed<CandidateRecord[]>(() => (
+  pathTimeline.value.length === 0
+  && rawTimeline.value.length > 0
+  && rawTimeline.value.every(isLocallySkippedAttempt)
+    ? rawTimeline.value
+    : []
+))
+
+/** 统一路径数据：真实调用优先，只有纯本地冷却请求才使用跳过候选。 */
+const layoutTimeline = computed<CandidateRecord[]>(() => (
+  pathTimeline.value.length > 0 ? pathTimeline.value : localCooldownTimeline.value
+))
+
+/** 纯本地冷却请求用同一路径外观，但结果节点必须标为未发送。 */
+const localCooldownResult = computed(() => (
+  pathTimeline.value.length === 0 && localCooldownTimeline.value.length > 0
+))
 
 /** 全部候选仅因本地限流冷却被跳过时，汇总冷却数量和最晚恢复时刻。 */
 const resolveCooldownUntilLabel = (untilUnixSecs: number): string => (
@@ -468,9 +498,14 @@ const resolveCooldownUntilLabel = (untilUnixSecs: number): string => (
   })
 )
 
+/** 每秒更新的时钟，只驱动冷却倒计时，不触发追踪接口轮询。 */
+const nowUnixSecs = ref(Date.now() / 1000)
+let cooldownClockTimer: ReturnType<typeof setInterval> | null = null
+const COOLDOWN_CLOCK_INTERVAL_MS = 1000
+
 /** 把冷却剩余秒数格式化为可核对的时分秒，不把本地处理耗时当作倒计时。 */
 const resolveCooldownRemainingLabel = (untilUnixSecs: number): string => {
-  const remainingSecs = Math.ceil(untilUnixSecs - Date.now() / 1000)
+  const remainingSecs = Math.ceil(untilUnixSecs - nowUnixSecs.value)
   if (remainingSecs <= 0) return ''
   const hours = Math.floor(remainingSecs / 3600)
   const minutes = Math.floor((remainingSecs % 3600) / 60)
@@ -478,27 +513,28 @@ const resolveCooldownRemainingLabel = (untilUnixSecs: number): string => {
   return `${hours > 0 ? `${hours}小时` : ''}${minutes}分${seconds}秒`
 }
 
-const noAttemptCooldown = computed<NoAttemptCooldown | null>(() => {
-  if (pathTimeline.value.length > 0 || rawTimeline.value.length === 0) return null
-  const cooldownCandidates = rawTimeline.value.filter(candidate => (
-    candidate.status === 'skipped'
-    && candidate.skip_reason === 'key_rate_limit_cooldown'
-  ))
-  if (cooldownCandidates.length !== rawTimeline.value.length) return null
-
-  const deadlines = cooldownCandidates
+/** 纯本地冷却时取命中 Key 中最晚的可靠恢复时刻，路径与详情使用同一截止。 */
+const coalescedCooldownUntilUnixSecs = computed<number | null>(() => {
+  const deadlines = localCooldownTimeline.value
     .map(getAttemptCooldownDeadlineValue)
     .filter((value): value is number => value != null)
-  const latestDeadline = deadlines.length > 0 ? Math.max(...deadlines) : null
-  const keyNames = Array.from(new Set(cooldownCandidates.map(attempt => (
-    attempt.key_account_label || attempt.key_name || attempt.key_id || '未知 Key'
-  ))))
-  return {
-    keyLabel: keyNames.length === 1 ? `Key ${keyNames[0]}` : `${keyNames.length} 个 Key`,
-    untilLabel: latestDeadline == null ? '' : resolveCooldownUntilLabel(latestDeadline),
-    remainingLabel: latestDeadline == null ? '' : resolveCooldownRemainingLabel(latestDeadline),
-  }
+  return deadlines.length > 0 ? Math.max(...deadlines) : null
 })
+
+/** 请求结果节点展示预计恢复时刻；没有可靠截止时不猜造。 */
+const coalescedCooldownUntilLabel = computed(() => (
+  coalescedCooldownUntilUnixSecs.value == null
+    ? ''
+    : resolveCooldownUntilLabel(coalescedCooldownUntilUnixSecs.value)
+))
+
+/** 路径中只要出现本地冷却或真实 429，就启动独立秒级时钟。 */
+const shouldRunCooldownClock = computed(() => (
+  layoutTimeline.value.some(attempt => (
+    attempt.status_code === 429
+    || isLocallySkippedAttempt(attempt)
+  ))
+))
 
 // 只合并连续的同供应商调用；供应商再次出现时另起节点，保持真实调度顺序。
 const providerRounds = computed<ProviderRound[]>(() => {
@@ -506,7 +542,7 @@ const providerRounds = computed<ProviderRound[]>(() => {
   let activeProviderId: string | null = null
   const colorToneByProvider = new Map<string, number>()
 
-  pathTimeline.value.forEach((attempt, attemptIndex) => {
+  layoutTimeline.value.forEach((attempt, attemptIndex) => {
     const providerId = String(attempt.provider_id || attempt.provider_name || '__unknown__')
     const activeRound = rounds[rounds.length - 1]
     if (activeRound && activeProviderId === providerId) {
@@ -535,14 +571,14 @@ const providerRounds = computed<ProviderRound[]>(() => {
   return rounds
 })
 
-/** 实际发出的上游调用数；本地冷却跳过项没有调用上游，不计入。 */
+/** 实际发出的上游调用数；纯本地冷却场景没有真实上游调用。 */
 const attemptedCallCount = computed(() => (
   pathTimeline.value.length
 ))
 
 /** 路径可能因 A → B → A 产生多个节点，但摘要里的供应商数仍按真实身份去重。 */
 const attemptedProviderCount = computed(() => (
-  new Set(pathTimeline.value.map(attempt => String(
+  new Set(layoutTimeline.value.map(attempt => String(
     attempt.provider_id || attempt.provider_name || '__unknown__',
   ))).size
 ))
@@ -561,6 +597,14 @@ function getTraceLineStatus(attempt: CandidateRecord): 'failed' | 'success' | 's
   if (isLiveCandidate(attempt)) return 'pending'
   return undefined
 }
+
+/** 路径摘要说明真实上游调用数；纯本地冷却时保留命中的供应商与 Key 身份。 */
+const routeSummary = computed(() => {
+  if (localCooldownResult.value) {
+    return `${attemptedProviderCount.value} 家供应商，本地限流跳过 ${layoutTimeline.value.length} 个 Key`
+  }
+  return `${attemptedProviderCount.value} 家供应商，${attemptedCallCount.value} 次上游请求`
+})
 
 // 供应商行与 Key 的位置来自同一实际调度索引，避免聚合后详情错位。
 const getProviderDisplayName = (attempt: CandidateRecord | null | undefined): string => {
@@ -624,7 +668,7 @@ const currentAttempt = computed(() => timeline.value[selectedAttemptIndex.value]
 /** 当前展开详情始终读取对应记录，刷新重排时由记录 ID 保持身份。 */
 const openedAttempt = computed(() => (
   openedAttemptId.value
-    ? pathTimeline.value.find(attempt => attempt.id === openedAttemptId.value) ?? null
+    ? layoutTimeline.value.find(attempt => attempt.id === openedAttemptId.value) ?? null
     : null
 ))
 
@@ -645,7 +689,7 @@ const responseState = computed<'success' | 'failed' | 'pending' | 'no_attempt'>(
 /** 请求结果状态码来自请求终态或最后一个真实 Key，未知时保留横杠。 */
 const responseStatusText = computed(() => {
   const status = computedFinalStatus.value
-  if (status === 'no_attempt') return '未发送'
+  if (status === 'no_attempt' || localCooldownResult.value) return '未发送'
   if (status === 'pending' || status === 'streaming') return '进行中'
   if (status === 'success') {
     return String(props.overrideStatusCode ?? pathTimeline.value.find(attempt => getDisplayStatus(attempt) === 'success')?.status_code ?? '-')
@@ -669,6 +713,7 @@ const pathGridTemplate = computed(() => {
 
 /** Key 卡片只显示真实 HTTP 状态；未知状态使用横杠而非伪造成功码。 */
 function getAttemptHttpLabel(attempt: CandidateRecord): string {
+  if (isLocallySkippedAttempt(attempt)) return '未请求'
   if (typeof attempt.status_code === 'number') return String(attempt.status_code)
   return '-'
 }
@@ -690,6 +735,7 @@ function getAttemptFirstByteMs(attempt: CandidateRecord): number | null {
 /** Key 卡片使用极简结果符号，与成功/失败语义色共同区分状态。 */
 function getAttemptStateSymbol(attempt: CandidateRecord): string {
   const status = getTraceLineStatus(attempt)
+  if (status === 'skipped') return '·'
   if (status === 'success') return '✓'
   if (status === 'failed') return '✕'
   return '…'
@@ -704,6 +750,14 @@ function getAttemptOrder(attempt: CandidateRecord): string {
 
 /** Key 卡片只展示一行真实原因；完整文本保留在 title 中，不撑高固定卡片。 */
 function getAttemptCardReason(attempt: CandidateRecord): string {
+  if (isLocallySkippedAttempt(attempt)) {
+    const until = formatCooldownDeadline(attempt)
+    const remaining = getAttemptCooldownRemaining(attempt)
+    return [
+      until ? `本地限流冷却至 ${until}` : '本地限流冷却中',
+      remaining,
+    ].filter(Boolean).join(' · ')
+  }
   const error = getAttemptError(attempt)
   if (error?.message) return error.message
   if (getTraceLineStatus(attempt) === 'success') return ''
@@ -714,7 +768,9 @@ function getAttemptCardReason(attempt: CandidateRecord): string {
 /** 读屏标签补充卡片上可见的耗时、首字和端点；成功状态与失败原因仍不重复。 */
 function getAttemptAriaLabel(attempt: CandidateRecord): string {
   const parts = [getAttemptKeyDisplay(attempt), formatAttemptOutcome(attempt)]
-  parts.push(`耗时 ${formatLatency(attempt.latency_ms)}`)
+  parts.push(isLocallySkippedAttempt(attempt)
+    ? '上游请求 未请求'
+    : `耗时 ${formatLatency(attempt.latency_ms)}`)
   const firstByteMs = getAttemptFirstByteMs(attempt)
   if (firstByteMs !== null) parts.push(`首字 ${formatLatency(firstByteMs)}`)
   const endpoint = getAttemptEndpointLabel(attempt)
@@ -977,6 +1033,28 @@ function formatCooldownDeadline(attempt: CandidateRecord): string {
   const raw = getAttemptCooldownDeadlineValue(attempt)
   if (raw == null) return ''
   return resolveCooldownUntilLabel(raw)
+}
+
+/** 读取同一 Key 的可靠冷却起止；本地跳过和真实 429 使用同一字段。 */
+function getAttemptRateLimitWindow(attempt: CandidateRecord): string {
+  if (attempt.status_code !== 429 && !isLocallySkippedAttempt(attempt)) return ''
+  const extra = extractObject(attempt.extra_data)
+  const readUnixSecs = (value: unknown): number | null => (
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+  )
+  const startedAt = readUnixSecs(extra?.rate_limit_cooldown_started_at_unix_secs)
+  const until = readUnixSecs(extra?.rate_limit_cooldown_until_unix_secs)
+  const startedLabel = startedAt == null ? '' : resolveCooldownUntilLabel(startedAt)
+  const untilLabel = until == null ? '' : resolveCooldownUntilLabel(until)
+  if (startedLabel && untilLabel) return `${startedLabel} → ${untilLabel}`
+  return untilLabel ? `截止 ${untilLabel}` : ''
+}
+
+/** 剩余冷却只依赖可靠截止；真实 429 和本地跳过都按同一时钟刷新。 */
+function getAttemptCooldownRemaining(attempt: CandidateRecord): string {
+  if (attempt.status_code !== 429 && !isLocallySkippedAttempt(attempt)) return ''
+  const until = getAttemptCooldownDeadlineValue(attempt)
+  return until == null ? '' : resolveCooldownRemainingLabel(until)
 }
 
 const isGenericExecutionRuntimeStatusMessage = (message: string): boolean =>
@@ -1394,9 +1472,26 @@ watch(shouldPollTrace, () => {
   scheduleTracePolling()
 }, { immediate: true })
 
+/** 只在路径存在冷却窗口时运行秒级时钟，并清理离开页面的定时器。 */
+watch(shouldRunCooldownClock, (enabled) => {
+  if (cooldownClockTimer) {
+    clearInterval(cooldownClockTimer)
+    cooldownClockTimer = null
+  }
+  if (!enabled) return
+  nowUnixSecs.value = Date.now() / 1000
+  cooldownClockTimer = setInterval(() => {
+    nowUnixSecs.value = Date.now() / 1000
+  }, COOLDOWN_CLOCK_INTERVAL_MS)
+}, { immediate: true })
+
 onBeforeUnmount(() => {
   traceLoadVersion += 1
   stopTracePolling()
+  if (cooldownClockTimer) {
+    clearInterval(cooldownClockTimer)
+    cooldownClockTimer = null
+  }
 })
 
 defineExpose({ refresh: () => loadTrace(true) })
@@ -1579,10 +1674,6 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .execution-waterfall--empty { padding: 1rem; color: var(--muted-foreground); font-size: 0.75rem; text-align: center; }
 .execution-waterfall--no-attempt { padding: 1rem; color: var(--muted-foreground); font-size: 0.75rem; text-align: center; }
 .no-attempt-title { margin: 0; color: var(--foreground); font-size: 0.82rem; font-weight: 600; }
-.no-attempt-route { justify-content: center; margin-top: 0.6rem; }
-.no-attempt-route .path-method { color: #b45309; }
-.no-attempt-detail { margin: 0.45rem 0 0; color: #b45309; font-weight: 500; }
-.no-attempt-note { margin: 0.35rem 0 0; color: var(--muted-foreground); }
 
 .path-scroll {
   width: 100%;
@@ -1691,15 +1782,6 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
     inset 0 0 0 1px color-mix(in srgb, #fff 24%, transparent),
     0 12px 28px -26px color-mix(in srgb, var(--provider-tone-accent) 55%, transparent);
 }
-.path-provider::after {
-  position: absolute;
-  inset: 4px;
-  z-index: 0;
-  border: 1px dashed color-mix(in srgb, var(--provider-tone-accent) 24%, transparent);
-  border-radius: 12px;
-  content: '';
-  pointer-events: none;
-}
 .path-provider > * { position: relative; z-index: 1; }
 .path-provider--tone-0 {
   --provider-tone-fill: #f6f2ff;
@@ -1765,15 +1847,18 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-key--failed { border-color: var(--path-failed-border); box-shadow: 0 4px 13px -11px color-mix(in srgb, var(--path-failed) 58%, transparent); }
 .path-key--success { border-color: var(--path-success-border); box-shadow: 0 0 0 3px color-mix(in srgb, var(--path-success) 8%, transparent), 0 5px 14px -12px color-mix(in srgb, var(--path-success) 65%, transparent); }
 .path-key--pending { border-color: var(--path-pending-border); }
+.path-key--skipped { border-color: #fbbf24; box-shadow: 0 4px 13px -11px color-mix(in srgb, #d97706 52%, transparent); }
 .path-key:focus-visible { outline: 1.5px solid color-mix(in srgb, var(--ring) 55%, transparent); outline-offset: 2px; }
 .path-key-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 9px; border-bottom: 1px solid color-mix(in srgb, var(--border) 42%, transparent); background: color-mix(in srgb, var(--muted) 52%, transparent); }
 .path-key--failed .path-key-head { background: var(--path-failed-soft); }
 .path-key--success .path-key-head { background: var(--path-success-soft); }
 .path-key--pending .path-key-head { background: var(--path-pending-soft); }
+.path-key--skipped .path-key-head { background: color-mix(in srgb, #fffbeb 82%, var(--card)); }
 .path-key-http { font-family: var(--monospace); font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .path-key--failed .path-key-http { color: var(--path-failed); }
 .path-key--success .path-key-http { color: var(--path-success); }
 .path-key--pending .path-key-http { color: var(--path-pending); }
+.path-key--skipped .path-key-http { color: #b45309; }
 .path-key-order { color: var(--muted-foreground); font-family: var(--monospace); font-size: 9px; }
 .path-key-body { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 10px 0; }
 .path-key-identity { display: grid; min-width: 0; flex: 1; align-content: center; gap: 2px; }
@@ -1788,16 +1873,19 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-key-reason { display: block; flex: none; min-width: 0; max-width: 100%; overflow: hidden; padding: 3px 10px 5px; color: var(--muted-foreground); font-family: var(--monospace); font-size: 8.5px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
 .path-key--failed .path-key-reason { color: var(--path-failed); }
 .path-key--success .path-key-reason { color: var(--path-success); }
+.path-key--skipped .path-key-reason { color: #b45309; }
 .path-key-hop { position: relative; display: block; min-height: 26px; }
 .path-key-hop::before { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--path-failed); content: ''; }
 .path-key-hop::after { position: absolute; bottom: 0; left: calc(50% - 3px); width: 6px; height: 6px; border-right: 1px solid var(--path-failed); border-bottom: 1px solid var(--path-failed); content: ''; transform: rotate(45deg); }
 .path-response { border-color: color-mix(in srgb, var(--path-success) 48%, var(--border)); }
 .path-response--failed { border-color: color-mix(in srgb, var(--path-failed) 48%, var(--border)); }
 .path-response--pending { border-color: color-mix(in srgb, var(--path-pending) 48%, var(--border)); }
+.path-response--no_attempt { border-color: color-mix(in srgb, #d97706 48%, var(--border)); }
 .path-response-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
 .path-response-status { flex: none; color: var(--path-success); font-family: var(--monospace); font-size: 11px; font-weight: 700; }
 .path-response--failed .path-response-status { color: var(--path-failed); }
 .path-response--pending .path-response-status { color: var(--path-pending); }
+.path-response--no_attempt .path-response-status { color: #b45309; }
 .path-response-total { display: flex; min-width: 0; align-items: baseline; gap: 4px; color: var(--muted-foreground); font-size: 9px; }
 .path-response-total b { min-width: 0; overflow: hidden; color: var(--foreground); font-family: var(--monospace); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .waterfall-detail { min-width: 0; margin: 0; padding: 0.72rem 0.9rem 0.8rem; border-top: 1px solid color-mix(in srgb, var(--border) 52%, transparent); background: transparent; }
@@ -1806,6 +1894,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .waterfall-detail-facts dt { flex: none; color: var(--muted-foreground); font-size: 0.62rem; }
 .waterfall-detail-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; font-weight: 500; }
 .waterfall-time-arrow { margin: 0 0.2rem; color: var(--muted-foreground); }
+.waterfall-local-skip-note { margin: 0.55rem 0 0; color: var(--muted-foreground); font-size: 0.68rem; line-height: 1.55; }
 
 .image-progress-block { margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
 .image-progress-header { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; margin-bottom: 0.55rem; }
@@ -1829,6 +1918,7 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .is-dark .path-key--failed .path-key-head { background: color-mix(in srgb, #991b1b 35%, var(--card)); }
 .is-dark .path-key--success .path-key-head { background: color-mix(in srgb, #166534 42%, var(--card)); }
 .is-dark .path-key--pending .path-key-head { background: color-mix(in srgb, #1e40af 32%, var(--card)); }
+.is-dark .path-key--skipped .path-key-head { background: color-mix(in srgb, #78350f 42%, var(--card)); }
 .is-dark .path-stage {
   background-color: color-mix(in srgb, var(--card) 93%, var(--muted));
   background-image:
