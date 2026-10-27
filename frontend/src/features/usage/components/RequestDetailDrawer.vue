@@ -190,13 +190,13 @@
                     data-request-detail-latency
                   >
                     <div class="text-base font-semibold tabular-nums">
-                      {{ localRateLimitCooldown ? localRateLimitRecoveryLabel : formatDurationMs(detail.end_to_end_time_ms ?? detail.response_time_ms) }}
+                      {{ formatDurationMs(detail.end_to_end_time_ms ?? detail.response_time_ms) }}
                     </div>
                     <div
                       class="mt-1 text-xs text-muted-foreground"
                       data-request-detail-latency-label
                     >
-                      {{ localRateLimitCooldown ? '本地限流预计恢复时间' : '总耗时' }}
+                      总耗时
                     </div>
                   </div>
                   <div class="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
@@ -1522,19 +1522,10 @@ const detailOutputRate = computed(() => {
   })
 })
 
-/** 本地限流跳过没有上游执行，概览不能用本地处理耗时冒充请求总耗时。 */
+/** 本地限流跳过仍使用请求级总耗时；头部只隐藏请求级 HTTP 状态，保留普通时间语义。 */
 const localRateLimitCooldown = computed(() => (
   detail.value?.scheduling_failure?.reason === 'key_rate_limit_cooldown'
 ))
-
-/** 展示可靠的本地限流恢复时刻；缺失时不猜测时间。 */
-const localRateLimitRecoveryLabel = computed(() => {
-  const untilUnixSecs = detail.value?.scheduling_failure?.rate_limit_cooldown_until_unix_secs
-  if (typeof untilUnixSecs !== 'number' || !Number.isFinite(untilUnixSecs) || untilUnixSecs <= 0) {
-    return '未记录'
-  }
-  return formatDateTime(new Date(untilUnixSecs * 1000).toISOString())
-})
 
 // 监听标签页切换
 watch(activeTab, (newTab) => {

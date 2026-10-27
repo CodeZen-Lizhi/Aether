@@ -39,10 +39,10 @@ async (page) => {
     if (metrics.length !== 5) throw new Error(`${scenario.name}: 首屏概览不是 5 项，实际 ${metrics.length}`)
     if (scenario.name === 'rate-limit-no-attempt') {
       const overviewText = metrics.join(' ')
-      if (!overviewText.includes('本地限流预计恢复时间')
-        || overviewText.includes('总耗时')
-        || !/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}/.test(overviewText)) {
-        throw new Error(`rate-limit-no-attempt: 概览仍把本地处理耗时当作总耗时：${overviewText}`)
+      if (!overviewText.includes('总耗时')
+        || !overviewText.includes('4ms')
+        || overviewText.includes('本地限流预计恢复时间')) {
+        throw new Error(`rate-limit-no-attempt: 概览未保留普通请求耗时：${overviewText}`)
       }
       if (await page.locator('[data-request-lifecycle-status]').count() !== 0) {
         throw new Error('rate-limit-no-attempt: 抽屉头部仍显示请求级 HTTP 状态')
@@ -122,6 +122,19 @@ async (page) => {
           present: Boolean(node.querySelector('.path-key-reason')),
           title: node.querySelector('.path-key-reason')?.getAttribute('title') ?? '',
           label: node.getAttribute('aria-label') ?? '',
+          cooldownUntil: node.querySelector('.path-key-cooldown-until')?.textContent?.trim() ?? '',
+          cooldownRemaining: node.querySelector('.path-key-cooldown-remaining')?.textContent?.trim() ?? '',
+          cooldownGap: (() => {
+            const until = node.querySelector('.path-key-cooldown-until')
+            const remaining = node.querySelector('.path-key-cooldown-remaining')
+            if (!until || !remaining) return null
+            const style = getComputedStyle(until.parentElement)
+            return {
+              pixels: Math.round(remaining.getBoundingClientRect().left - until.getBoundingClientRect().right),
+              display: style.display,
+              gap: Number.parseFloat(style.columnGap),
+            }
+          })(),
         })),
         summary: root.querySelector('[data-route-summary]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
         centers: {
@@ -249,7 +262,10 @@ async (page) => {
       throw new Error(`upstream: 请求入口不是失败正红：${JSON.stringify(trace.entryColor)}`)
     }
     if (scenario.name === 'rate-limit-no-attempt') {
-      if (trace.responseStatus !== '未发送' || !trace.responseText.includes('预计恢复')) {
+      if (trace.responseStatus !== '未发送'
+        || !trace.responseText.includes('总耗时')
+        || !trace.responseText.includes('4ms')
+        || trace.responseText.includes('预计恢复')) {
         throw new Error(`rate-limit-no-attempt: 请求结果未使用统一路径的未发送语义：${JSON.stringify(trace.responseText)}`)
       }
     } else if (!trace.responseText.includes('总耗时')) {
@@ -315,7 +331,15 @@ async (page) => {
       if (trace.notSent.some(value => value !== 'true')
         || trace.keyTexts.some(text => (
           !text.includes('未请求')
-          || !/本地限流冷却至 \d{2}:\d{2}:\d{2} · (?:\d+小时)?\d+分\d+秒/.test(text)
+          || !text.includes('本地限流冷却至')
+        ))
+        || trace.keyReasons.some(reason => (
+          !/^本地限流冷却至 \d{2}:\d{2}:\d{2}$/.test(reason.cooldownUntil)
+          || !/^(?:\d+小时)?\d+分\d+秒$/.test(reason.cooldownRemaining)
+          || reason.cooldownGap == null
+          || reason.cooldownGap.display !== 'flex'
+          || reason.cooldownGap.gap < 8
+          || reason.cooldownGap.pixels < 8
         ))
         || trace.rowIds.length !== 2) {
         throw new Error(`rate-limit-no-attempt: 本地冷却 Key 未使用未请求语义：${JSON.stringify(trace)}`)
@@ -338,11 +362,6 @@ async (page) => {
     if (trace && trace.providerIds.length === 1 && trace.scroll.scrollWidth > trace.scroll.clientWidth + 1) {
       throw new Error(`${scenario.name}: 单供应商在桌面宽度不应产生内部横向滚动：${JSON.stringify(trace.scroll)}`)
     }
-    if (trace && scenario.name === 'rate-limit-no-attempt'
-      && trace.responseText.includes('总耗时')) {
-      throw new Error(`rate-limit-no-attempt: 请求结果仍展示本地处理耗时：${trace.responseText}`)
-    }
-
     if (scenario.name === 'multi-provider') {
       if (JSON.stringify(trace.providerIds) !== JSON.stringify(['provider-a', 'provider-b'])) {
         throw new Error(`multi-provider: 供应商顺序错误：${JSON.stringify(trace)}`)
@@ -452,17 +471,10 @@ async (page) => {
       })
       if (!noAttempt.present
         || !noAttempt.text.includes('本地限流跳过 2 个 Key')
-        || !noAttempt.text.includes('预计恢复')
         || !noAttempt.text.includes('本地限流冷却至')
         || !noAttempt.text.includes('/v1/images/generations')
         || noAttempt.hasUpstreamResponse) {
         throw new Error(`rate-limit-no-attempt: 本地限流展示错误：${JSON.stringify(noAttempt)}`)
-      }
-      const coolingDeadline = await page.evaluate(() => {
-        return document.querySelector('[data-trace-cooldown-recovery]')?.textContent?.trim() ?? ''
-      })
-      if (!/^\d{2}:\d{2}:\d{2}$/.test(coolingDeadline)) {
-        throw new Error(`rate-limit-no-attempt: 恢复时刻格式错误：${coolingDeadline}`)
       }
       await page.locator('.attempt-stop').first().evaluate(element => element.click())
       await page.waitForFunction(() => Boolean(document.querySelector('.waterfall-detail')))
@@ -475,6 +487,7 @@ async (page) => {
           text: detail?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
           rateLimit: rateLimit?.querySelector('dd')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
           remaining: remaining?.querySelector('dd')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+          hasLocalSchedulingError: Boolean(detail?.querySelector('.error-block')),
           hasUpstreamResponse: Boolean(detail?.querySelector('[data-upstream-response]')),
         }
       })
@@ -483,6 +496,7 @@ async (page) => {
         || !localDetail.text.includes('本次没有上游响应，也不会消耗上游额度')
         || !/^\d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2}$/.test(localDetail.rateLimit)
         || !/^(?:\d+小时)?\d+分\d+秒$/.test(localDetail.remaining)
+        || localDetail.hasLocalSchedulingError
         || localDetail.hasUpstreamResponse) {
         throw new Error(`rate-limit-no-attempt: 本地冷却详情不完整：${JSON.stringify(localDetail)}`)
       }

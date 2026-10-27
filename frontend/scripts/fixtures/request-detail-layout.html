@@ -32,7 +32,7 @@ const count = retryGap ? 1 : lifecycleFixture ? 2 : Number(params.get('count') |
 const pending = scenario === 'pending' || retryGap || retryStarted
 const activeStatus = params.get('lifecycle') === 'streaming' ? 'streaming' : 'pending'
 const totalMs = lifecycleFixture ? pending ? 181000 : 300008 : multiProvider ? 110 : upstreamFailure ? 1605 : cooldownFailure ? 4 : realUpstreamError ? 682 : singleKeyFailure ? 2940 : 21
-/** 本地限流恢复时刻由真实详情字段提供，路径和概览共用同一份可靠数据。 */
+/** 本地限流恢复时刻只由 Key 卡片和展开详情消费，不再替换请求级耗时。 */
 const cooldownUntilUnixSecs = Math.floor(Date.now() / 1000) + 540
 /** 本地跳过沿用触发 429 时的窗口起点，便于验证与截止同源的限流时间。 */
 const cooldownStartedAtUnixSecs = cooldownUntilUnixSecs - 600
@@ -182,7 +182,7 @@ requestTraceApi.getRequestTrace = async () => ({
   candidates: structuredClone(candidates),
   total_candidates: candidates.length,
   final_status: cooldownFailure ? 'no_attempt' : pending ? activeStatus : success ? 'success' : 'failed',
-  total_latency_ms: cooldownFailure ? 0 : totalMs,
+  total_latency_ms: totalMs,
 })
 const open = ref(false)
 const row = ref({ ...detail, cost: 0, input_tokens: detail.tokens.input, output_tokens: detail.tokens.output, total_tokens: detail.tokens.total })

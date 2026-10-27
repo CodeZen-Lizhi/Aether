@@ -126,7 +126,18 @@
                       </span>
                     </span>
                     <span
-                      v-if="getAttemptCardReason(attempt)"
+                      v-if="isLocallySkippedAttempt(attempt)"
+                      class="path-key-reason path-key-reason--cooldown"
+                      :title="getAttemptCardReason(attempt)"
+                    >
+                      <span class="path-key-cooldown-until">{{ getAttemptCooldownUntilText(attempt) }}</span>
+                      <span
+                        v-if="getAttemptCooldownRemaining(attempt)"
+                        class="path-key-cooldown-remaining"
+                      >{{ getAttemptCooldownRemaining(attempt) }}</span>
+                    </span>
+                    <span
+                      v-else-if="getAttemptCardReason(attempt)"
                       class="path-key-reason"
                       :title="getAttemptCardReason(attempt)"
                     >{{ getAttemptCardReason(attempt) }}</span>
@@ -148,11 +159,7 @@
               <span class="path-node-kicker">请求结果</span>
               <span class="path-response-status">{{ responseStatusText }}</span>
             </span>
-            <span v-if="localCooldownResult" class="path-response-total path-response-cooldown">
-              预计恢复
-              <b data-trace-cooldown-recovery>{{ coalescedCooldownUntilLabel || '-' }}</b>
-            </span>
-            <span v-else class="path-response-total">
+            <span class="path-response-total">
               总耗时
               <b data-trace-latency>{{ formatLatency(totalTraceLatency) }}</b>
             </span>
@@ -279,7 +286,7 @@
         </div>
 
         <RequestAttemptErrorPanel
-          v-if="getAttemptError(openedAttempt)"
+          v-if="shouldShowAttemptErrorPanel(openedAttempt)"
           :key="openedAttempt.id"
           :error="getAttemptError(openedAttempt)!"
           :is-dark="isDark"
@@ -513,21 +520,6 @@ const resolveCooldownRemainingLabel = (untilUnixSecs: number): string => {
   return `${hours > 0 ? `${hours}小时` : ''}${minutes}分${seconds}秒`
 }
 
-/** 纯本地冷却时取命中 Key 中最晚的可靠恢复时刻，路径与详情使用同一截止。 */
-const coalescedCooldownUntilUnixSecs = computed<number | null>(() => {
-  const deadlines = localCooldownTimeline.value
-    .map(getAttemptCooldownDeadlineValue)
-    .filter((value): value is number => value != null)
-  return deadlines.length > 0 ? Math.max(...deadlines) : null
-})
-
-/** 请求结果节点展示预计恢复时刻；没有可靠截止时不猜造。 */
-const coalescedCooldownUntilLabel = computed(() => (
-  coalescedCooldownUntilUnixSecs.value == null
-    ? ''
-    : resolveCooldownUntilLabel(coalescedCooldownUntilUnixSecs.value)
-))
-
 /** 路径中只要出现本地冷却或真实 429，就启动独立秒级时钟。 */
 const shouldRunCooldownClock = computed(() => (
   layoutTimeline.value.some(attempt => (
@@ -751,10 +743,10 @@ function getAttemptOrder(attempt: CandidateRecord): string {
 /** Key 卡片只展示一行真实原因；完整文本保留在 title 中，不撑高固定卡片。 */
 function getAttemptCardReason(attempt: CandidateRecord): string {
   if (isLocallySkippedAttempt(attempt)) {
-    const until = formatCooldownDeadline(attempt)
+    const until = getAttemptCooldownUntilText(attempt)
     const remaining = getAttemptCooldownRemaining(attempt)
     return [
-      until ? `本地限流冷却至 ${until}` : '本地限流冷却中',
+      until,
       remaining,
     ].filter(Boolean).join(' · ')
   }
@@ -763,6 +755,17 @@ function getAttemptCardReason(attempt: CandidateRecord): string {
   if (getTraceLineStatus(attempt) === 'success') return ''
   if (!isLiveCandidate(attempt)) return getStatusLabel(getDisplayStatus(attempt))
   return attempt.status === 'streaming' ? '传输中' : '进行中'
+}
+
+/** 本地限流卡片的截止时刻与倒计时分别排版，避免两个随时间变化的事实挤成一段。 */
+function getAttemptCooldownUntilText(attempt: CandidateRecord): string {
+  const until = formatCooldownDeadline(attempt)
+  return until ? `本地限流冷却至 ${until}` : '本地限流冷却中'
+}
+
+/** 本地限流跳过已在 Key 详情解释原因，不再重复展开“本地调度”错误卡。 */
+function shouldShowAttemptErrorPanel(attempt: CandidateRecord): boolean {
+  return !isLocallySkippedAttempt(attempt) && Boolean(getAttemptError(attempt))
 }
 
 /** 读屏标签补充卡片上可见的耗时、首字和端点；成功状态与失败原因仍不重复。 */
@@ -1871,6 +1874,9 @@ function getDisplayStatus(attempt: CandidateRecord | null | undefined): string {
 .path-key-metric small { color: var(--muted-foreground); font-size: 8px; }
 .path-key-metric b { color: var(--foreground); font-family: var(--monospace); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .path-key-reason { display: block; flex: none; min-width: 0; max-width: 100%; overflow: hidden; padding: 3px 10px 5px; color: var(--muted-foreground); font-family: var(--monospace); font-size: 8.5px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
+.path-key-reason--cooldown { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; }
+.path-key-cooldown-until { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.path-key-cooldown-remaining { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .path-key--failed .path-key-reason { color: var(--path-failed); }
 .path-key--success .path-key-reason { color: var(--path-success); }
 .path-key--skipped .path-key-reason { color: #b45309; }

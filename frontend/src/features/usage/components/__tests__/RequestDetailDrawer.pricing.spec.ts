@@ -121,16 +121,8 @@ function buildFastTierDetail(): RequestDetail {
 }
 
 describe('RequestDetailDrawer request lifecycle', () => {
-  it('shows the reliable local rate-limit recovery time instead of local processing duration', async () => {
+  it('keeps the ordinary request duration for a local rate-limit skip', async () => {
     const cooldownUntilUnixSecs = Math.floor(Date.UTC(2026, 9, 26, 12, 42, 27) / 1000)
-    const expectedRecoveryLabel = new Date(cooldownUntilUnixSecs * 1000).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
     apiMocks.getRequestDetail.mockResolvedValue({
       ...buildEmbeddingDetail(),
       status: 'failed',
@@ -162,10 +154,9 @@ describe('RequestDetailDrawer request lifecycle', () => {
 
     await vi.waitFor(() => {
       const overview = document.body.querySelector('[data-request-detail-overview]')
-      expect(overview?.textContent).toContain('本地限流预计恢复时间')
-      expect(overview?.textContent).toContain(expectedRecoveryLabel)
-      expect(overview?.textContent).not.toContain('总耗时')
-      expect(overview?.textContent).not.toContain('4.54s')
+      expect(overview?.textContent).toContain('总耗时')
+      expect(overview?.textContent).toContain('4.54s')
+      expect(overview?.textContent).not.toContain('本地限流预计恢复时间')
       expect(document.body.querySelector('[data-request-lifecycle-status]')).toBeNull()
     })
   })

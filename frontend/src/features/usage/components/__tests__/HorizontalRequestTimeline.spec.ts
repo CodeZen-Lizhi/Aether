@@ -1086,7 +1086,7 @@ describe('HorizontalRequestTimeline', () => {
       }),
     ])
     trace.final_status = 'no_attempt'
-    trace.total_latency_ms = 0
+    trace.total_latency_ms = 4
 
     const root = mountTimeline(trace, { overrideStatusCode: 503 })
     await flushPendingUpdates()
@@ -1097,11 +1097,21 @@ describe('HorizontalRequestTimeline', () => {
     expect(root.querySelectorAll('.path-provider')).toHaveLength(1)
     expect(root.querySelectorAll('.attempt-stop')).toHaveLength(2)
     expect(root.querySelector('.path-response-status')?.textContent?.trim()).toBe('未发送')
-    expect(root.querySelector('[data-trace-cooldown-recovery]')?.textContent?.trim()).toMatch(/^\d{2}:\d{2}:\d{2}$/)
+    expect(root.querySelector('.path-response')?.textContent).toContain('总耗时')
+    expect(root.querySelector('.path-response')?.textContent).toContain('4ms')
+    expect(root.querySelector('[data-trace-cooldown-recovery]')).toBeNull()
     expect([...root.querySelectorAll('.attempt-stop')].every(node => node.getAttribute('data-not-sent') === 'true')).toBe(true)
     expect(root.querySelector('.attempt-stop')?.textContent).toContain('未请求')
     expect(root.querySelector('.attempt-stop')?.textContent).toContain('本地限流冷却')
-    expect(root.querySelector('.attempt-stop')?.textContent).toMatch(/本地限流冷却至 \d{2}:\d{2}:\d{2} · (?:\d+小时)?\d+分\d+秒/)
+    expect(root.querySelector('.path-key-cooldown-until')?.textContent?.trim()).toMatch(/^本地限流冷却至 \d{2}:\d{2}:\d{2}$/)
+    expect(root.querySelector('.path-key-cooldown-remaining')?.textContent?.trim()).toMatch(/^(?:\d+小时)?\d+分\d+秒$/)
+    const cooldownReason = root.querySelector('.path-key-reason--cooldown')
+    const cooldownUntil = root.querySelector('.path-key-cooldown-until')
+    const cooldownRemaining = root.querySelector('.path-key-cooldown-remaining')
+    expect(cooldownReason).not.toBeNull()
+    expect(cooldownUntil).not.toBeNull()
+    expect(cooldownRemaining).not.toBeNull()
+    const cooldownRemainingBeforeTick = cooldownRemaining?.textContent?.trim() ?? ''
     expect(root.querySelectorAll('.path-response')).toHaveLength(1)
     expect(root.textContent).not.toContain('503')
     expect(root.querySelector('[data-upstream-response]')).toBeNull()
@@ -1115,6 +1125,8 @@ describe('HorizontalRequestTimeline', () => {
     expect(detailText).toContain('限流时间')
     expect(detailText).toContain('剩余冷却')
     expect(detailText).toContain('本次没有上游响应，也不会消耗上游额度')
+    expect(root.querySelector('[data-execution-inspector]')?.textContent).not.toContain('本地调度')
+    expect(root.querySelector('[data-execution-inspector] .error-block')).toBeNull()
     const remainingBeforeTick = root.querySelector('[data-attempt-cooldown-remaining] dd')?.textContent?.trim() ?? ''
     expect(remainingBeforeTick).toMatch(/^\d+分\d+秒$/)
     expect(root.querySelector('[data-upstream-response]')).toBeNull()
@@ -1123,6 +1135,11 @@ describe('HorizontalRequestTimeline', () => {
     await flushPendingUpdates()
     const remainingAfterTick = root.querySelector('[data-attempt-cooldown-remaining] dd')?.textContent?.trim() ?? ''
     expect(remainingAfterTick).not.toBe(remainingBeforeTick)
+    await vi.waitFor(() => {
+      expect(root.querySelector('.path-key-cooldown-remaining')?.textContent?.trim()).not.toBe(
+        cooldownRemainingBeforeTick,
+      )
+    })
   })
 
   it('formats unsupported stream finish reasons with the failing field', async () => {
