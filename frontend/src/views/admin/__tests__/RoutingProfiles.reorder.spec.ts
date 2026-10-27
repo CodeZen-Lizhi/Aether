@@ -210,7 +210,7 @@ describe('RoutingProfiles provider reorder', () => {
     expect(providerNames(root).slice(0, 3)).toEqual(['A', 'B', 'C'])
   })
 
-  it('shows one drop indicator for a single upward drag instead of committing on every move', async () => {
+  it('moves rows live before drop and leaves no static insert marker', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     const app = createApp(RoutingProfiles)
@@ -229,13 +229,15 @@ describe('RoutingProfiles provider reorder', () => {
       syncRowLayout(root)
     }
 
-    expect(providerNames(root)).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G'])
-    expect(root.querySelectorAll('.provider-drop-indicator')).toHaveLength(1)
-    expect(root.querySelector('.provider-drop-indicator')?.parentElement?.dataset.providerId)
-      .toBe('provider-a')
+    expect(providerNames(root)).toEqual(['G', 'A', 'B', 'C', 'D', 'E', 'F'])
+    expect(root.querySelector('.provider-drop-indicator')).toBeNull()
+    expect(root.querySelectorAll('.provider-row--placeholder')).toHaveLength(1)
+    expect(document.body.querySelector('.provider-drag-preview')?.textContent).toContain('G')
 
     dispatchPointer(window, 'pointerup', 40)
     await nextTick()
     expect(providerNames(root)).toEqual(['G', 'A', 'B', 'C', 'D', 'E', 'F'])
+    expect(root.querySelector('.provider-row--placeholder')).toBeNull()
+    expect(document.body.querySelector('.provider-drag-preview')).toBeNull()
   })
 })
