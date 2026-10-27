@@ -117,11 +117,6 @@
                   class="provider-row rounded-lg border border-border bg-background"
                   :class="draggedProviderId === provider.id ? 'provider-row--placeholder' : ''"
                 >
-                  <span
-                    v-if="draggedProviderId && dropIndex === index"
-                    class="provider-drop-indicator"
-                    aria-hidden="true"
-                  />
                   <div class="flex items-center gap-2 px-3 py-2.5">
                     <span
                       class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
@@ -283,10 +278,8 @@ const systemDefaultGroup = ref<RoutingGroupRecord | null>(null)
 const savedSnapshot = ref<string | null>(null)
 const dragOrigin = ref<{ left: number, top: number, width: number, startX: number, startY: number } | null>(null)
 const dragPointer = ref({ x: 0, y: 0 })
-const dropSlot = ref<number | null>(null)
 let activeDragPointerId: number | null = null
 let activeDragHandle: HTMLElement | null = null
-let dragStartIndex: number | null = null
 
 const orderedProviders = computed(() => {
   const byId = new Map(providers.value.map(provider => [provider.id, provider]))
@@ -305,7 +298,6 @@ const orderedProviders = computed(() => {
 })
 
 const dirty = computed(() => currentSnapshot() !== savedSnapshot.value)
-const dropIndex = ref<number | null>(null)
 
 function currentSnapshot(): string {
   return JSON.stringify({
@@ -369,8 +361,6 @@ function onPointerDragStart(event: PointerEvent, providerId: string) {
   draggedProviderId.value = providerId
   dragPointer.value = { x: event.clientX, y: event.clientY }
   activeDragPointerId = event.pointerId
-  dragStartIndex = orderedProviderIds.value.indexOf(providerId)
-  dropSlot.value = dragStartIndex
 
   const row = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-provider-id]')
   const rect = row?.getBoundingClientRect()
@@ -402,8 +392,8 @@ function onPointerDragMove(event: PointerEvent) {
 }
 
 /**
- * 按指针位置计算拖动项在其余供应商中的插入槽位，并立即更新顺序。
- * 行位移动画会改变视觉坐标，因此使用不受 transform 影响的布局坐标。
+ * 指针跨过其他行中线时立即更新顺序，让目标空槽和其他行随拖动连续让位。
+ * TransitionGroup 的位移动画负责视觉连贯性，不额外插入占位元素。
  */
 function applyDragPosition(clientY: number, providerId: string) {
   const list = providerListElement.value?.querySelector<HTMLElement>('.provider-priority-list')
@@ -414,46 +404,37 @@ function applyDragPosition(clientY: number, providerId: string) {
   const currentIndex = next.indexOf(providerId)
   if (currentIndex < 0) return
 
-  let slot = rows.length
+  // 未命中的行间空隙沿用上一行的落点；只有跨过某行中线才继续换位。
+  let targetIndex = currentIndex
   for (const row of rows) {
     const rowProviderId = row.dataset.providerId
-    if (!rowProviderId) continue
+    if (!rowProviderId || rowProviderId === providerId) continue
     const rect = row.getBoundingClientRect()
     const rowIndex = next.indexOf(rowProviderId)
-    if (rowIndex < 0) return
+    if (rowIndex < 0) continue
     if (clientY < rect.top) {
-      slot = rowIndex
       break
     }
     if (clientY <= rect.bottom) {
-      slot = rowIndex + (clientY >= rect.top + rect.height / 2 ? 1 : 0)
+      if (clientY >= rect.top + rect.height / 2) {
+        targetIndex = rowIndex + 1
+      } else {
+        targetIndex = Math.min(targetIndex, rowIndex)
+      }
       break
     }
+    targetIndex = rowIndex + 1
   }
-  dropSlot.value = Math.max(0, Math.min(slot, next.length))
-  dropIndex.value = Math.max(
-    0,
-    Math.min(dropSlot.value > currentIndex ? dropSlot.value - 1 : dropSlot.value, rows.length - 1),
-  )
+  if (targetIndex === currentIndex) return
+
+  const [moved] = next.splice(currentIndex, 1)
+  const insertAt = targetIndex > currentIndex ? targetIndex - 1 : targetIndex
+  next.splice(insertAt, 0, moved)
+  orderedProviderIds.value = next
 }
 
 function onPointerDragEnd(event: PointerEvent) {
   if (event.pointerId !== activeDragPointerId) return
-  const providerId = draggedProviderId.value
-  if (providerId) {
-    if (Number.isFinite(event.clientY) && event.clientY > 0) {
-      applyDragPosition(event.clientY, providerId)
-    }
-    const targetSlot = dropSlot.value
-    const currentIndex = orderedProviderIds.value.indexOf(providerId)
-    if (targetSlot !== null && currentIndex >= 0) {
-      const next = [...orderedProviderIds.value]
-      const [moved] = next.splice(currentIndex, 1)
-      const insertAt = targetSlot > currentIndex ? targetSlot - 1 : targetSlot
-      next.splice(Math.min(insertAt, next.length), 0, moved)
-      orderedProviderIds.value = next
-    }
-  }
   finishPointerDrag()
 }
 
@@ -477,9 +458,6 @@ function finishPointerDrag() {
   }
   activeDragPointerId = null
   activeDragHandle = null
-  dragStartIndex = null
-  dropIndex.value = null
-  dropSlot.value = null
 }
 
 async function loadStrategy() {
@@ -608,19 +586,6 @@ onBeforeUnmount(finishPointerDrag)
 
 .provider-drag-preview__rank {
   background: color-mix(in srgb, var(--primary) 15%, transparent);
-}
-
-.provider-drop-indicator {
-  position: absolute;
-  right: 8px;
-  bottom: -6px;
-  left: 8px;
-  z-index: 2;
-  height: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--primary) 82%, white);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent);
-  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
