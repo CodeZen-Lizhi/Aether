@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "aether-desktop"
-version = "0.1.73"
+version = "0.1.74"
 dependencies = [
  "libc",
  "reqwest 0.12.28",
