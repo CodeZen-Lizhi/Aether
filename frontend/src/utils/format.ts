@@ -12,6 +12,13 @@ interface CompactNumberOptions {
   nullLabel?: string
 }
 
+interface LocaleCompactNumberOptions {
+  /** 最大小数位；省略时保留两位并按语言规则去掉末尾的 0。 */
+  fractionDigits?: number
+  /** 缺失或非法数值的展示文本；省略时显示 --。 */
+  nullLabel?: string
+}
+
 function trimTrailingDecimalZeros(value: string): string {
   return value.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')
 }
@@ -66,6 +73,24 @@ export function formatCompactNumber(
   }
 
   return `${sign}${formatCompactScaledValue(absValue, unitIndex, options.fractionDigits)}`
+}
+
+/**
+ * 按界面语言压缩大数：中文使用“万/亿”，英文使用 K/M/B 等，供长期累计指标控制展示长度。
+ */
+export function formatCompactNumberForLocale(
+  num: number | undefined | null,
+  locale: string,
+  options: LocaleCompactNumberOptions = {},
+): string {
+  if (num === undefined || num === null || !Number.isFinite(num)) {
+    return options.nullLabel ?? '--'
+  }
+
+  return new Intl.NumberFormat(locale, {
+    notation: 'compact',
+    maximumFractionDigits: options.fractionDigits ?? 2,
+  }).format(num)
 }
 
 export function formatByteSize(bytes: number | undefined | null): string {

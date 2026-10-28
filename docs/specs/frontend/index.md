@@ -82,7 +82,7 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 **Theme colors**: 当前 Tailwind 颜色配置直接引用完整 `var(--primary)` / `var(--muted)` 色值；不要用 `bg-primary/65` 之类 opacity 后缀，它在真实浏览器里没有有效背景。纯色用 `bg-primary`，条形透明度单独用 `opacity-*`；混色沿用项目的 `color-mix(...)`。用 computed style 和截图确认明暗主题，不只检查类名。
 
-**Lifetime**: `dashboardApi.getLifetimeStats({ timezone, tz_offset_minutes })` 从现有 `/api/dashboard/daily-stats` 读取 `1970-01-01` 至当地今天，累加每日 `requests`、`tokens`、`cost`、`actual_cost`，以首个非零日期作为起始日。每日总量已包含保留的历史缺失部分，不能再次相加 `unattributed_*`。拒绝非法或负数的部分结果；失败独立重试，不能显示假零值。只缓存压缩后的累计对象 60 秒，缓存键包含本地结束日期和时区。接口会返回空日，不能把几十年的行常驻前端缓存。
+**Lifetime**: `dashboardApi.getLifetimeStats({ timezone, tz_offset_minutes })` 从现有 `/api/dashboard/daily-stats` 读取 `1970-01-01` 至当地今天，累加每日 `requests`、`tokens`、`cost`、`actual_cost`，以首个非零日期作为起始日。每日总量已包含保留的历史缺失部分，不能再次相加 `unattributed_*`。拒绝非法或负数的部分结果；失败独立重试，不能显示假零值。累计 Token 主值按界面语言压缩（中文使用万/亿，英文使用 K/M/B），避免长期累计位数持续膨胀；累计请求数仍完整显示。只缓存压缩后的累计对象 60 秒，缓存键包含本地结束日期和时区。接口会返回空日，不能把几十年的行常驻前端缓存。
 
 **Sources**: `/api/admin/usage/stats` 默认窗口和原始 usage 范围不是全部历史；`/api/dashboard/stats` 的 `tokens.month` 在 SQLite 有聚合行时不能保证包含未聚合原始记录。累计应沿用 daily-stats 已修复的保留总量与原始记录去重。今日、累计与筛选周期互相独立，切换趋势不重新解释顶部指标。
 

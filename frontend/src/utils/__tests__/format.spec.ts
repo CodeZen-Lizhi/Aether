@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatByteSize, formatCompactNumber, formatTokens, formatUsageCount } from '../format'
+import {
+  formatByteSize,
+  formatCompactNumber,
+  formatCompactNumberForLocale,
+  formatTokens,
+  formatUsageCount,
+} from '../format'
 
 describe('format utils', () => {
   it('formats compact numbers beyond millions', () => {
@@ -15,6 +21,13 @@ describe('format utils', () => {
     expect(formatTokens(1_000_000_000)).toBe('1B')
     expect(formatTokens(1_500_000_000_000)).toBe('1.5T')
     expect(formatUsageCount(1_000_000_000)).toBe('1B')
+  })
+
+  it('formats lifetime counts with locale-specific compact units', () => {
+    expect(formatCompactNumberForLocale(417_000_000, 'zh-CN')).toBe('4.17亿')
+    expect(formatCompactNumberForLocale(1_569_000_000, 'zh-CN')).toBe('15.69亿')
+    expect(formatCompactNumberForLocale(417_000_000, 'en-US')).toBe('417M')
+    expect(formatCompactNumberForLocale(Number.NaN, 'zh-CN')).toBe('--')
   })
 
   it('formats byte sizes with automatic units', () => {

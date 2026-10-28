@@ -122,7 +122,7 @@
               class="h-7 w-32 max-w-full"
             />
             <template v-else>
-              {{ lifetime ? lifetime.tokens.toLocaleString(locale) : '--' }}
+              {{ lifetime ? formatCompactNumberForLocale(lifetime.tokens, locale) : '--' }}
             </template>
           </dd>
           <dd
@@ -201,7 +201,7 @@ import { Activity, Clock, Database, DollarSign, Hash, Key, TrendingUp, Zap } fro
 import type { DashboardLifetimeStats, DashboardStat, DashboardStatsResponse } from '@/api/dashboard'
 import { Badge, Button, Card, Skeleton } from '@/components/ui'
 import { useI18n } from '@/i18n'
-import { formatCurrency } from '@/utils/format'
+import { formatCompactNumberForLocale, formatCurrency } from '@/utils/format'
 
 const props = defineProps<{
   today: DashboardStatsResponse | null
