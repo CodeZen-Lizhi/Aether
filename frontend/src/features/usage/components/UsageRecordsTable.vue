@@ -255,6 +255,7 @@
                 stack-full-width
               />
               <Badge
+                v-if="!isUsageRecordInProgress(record)"
                 variant="outline"
                 data-usage-request-type="card"
                 :class="`${getRequestTypeBadgeClass(record.request_type)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
@@ -271,20 +272,12 @@
                 失败
               </Badge>
               <Badge
-                v-else-if="getDisplayStatus(record) === 'pending'"
-                variant="outline"
-                data-usage-lifecycle="card"
-                class="whitespace-normal animate-pulse border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
-              >
-                等待
-              </Badge>
-              <Badge
-                v-else-if="getDisplayStatus(record) === 'streaming'"
+                v-else-if="isUsageRecordInProgress(record)"
                 variant="outline"
                 data-usage-lifecycle="card"
                 class="whitespace-normal animate-pulse border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/70 dark:bg-sky-950/30 dark:text-sky-300 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
               >
-                传输
+                进行中
               </Badge>
               <Badge
                 v-else-if="record.status === 'cancelled'"
@@ -294,33 +287,35 @@
               >
                 取消
               </Badge>
-              <Badge
-                v-if="isUsageWebSocket(record)"
-                variant="outline"
-                data-usage-transport="websocket"
-                :title="getWebSocketTransportTitle(record)"
-                :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
-              >
-                WS
-              </Badge>
-              <Badge
-                v-else-if="getStreamModeSegments(record).hasConversion"
-                variant="outline"
-                data-usage-transport="http"
-                :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center gap-0.5 flex-shrink-0`"
-              >
-                <span>{{ getStreamModeSegments(record).client }}</span>
-                <span class="opacity-60">→</span>
-                <span>{{ getStreamModeSegments(record).upstream }}</span>
-              </Badge>
-              <Badge
-                v-else
-                variant="outline"
-                data-usage-transport="http"
-                :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
-              >
-                {{ getStreamModeLabel(record) }}
-              </Badge>
+              <template v-if="!isUsageRecordInProgress(record)">
+                <Badge
+                  v-if="isUsageWebSocket(record)"
+                  variant="outline"
+                  data-usage-transport="websocket"
+                  :title="getWebSocketTransportTitle(record)"
+                  :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
+                >
+                  WS
+                </Badge>
+                <Badge
+                  v-else-if="getStreamModeSegments(record).hasConversion"
+                  variant="outline"
+                  data-usage-transport="http"
+                  :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center gap-0.5 flex-shrink-0`"
+                >
+                  <span>{{ getStreamModeSegments(record).client }}</span>
+                  <span class="opacity-60">→</span>
+                  <span>{{ getStreamModeSegments(record).upstream }}</span>
+                </Badge>
+                <Badge
+                  v-else
+                  variant="outline"
+                  data-usage-transport="http"
+                  :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
+                >
+                  {{ getStreamModeLabel(record) }}
+                </Badge>
+              </template>
             </div>
           </div>
           <div class="flex flex-col items-end flex-shrink-0">
@@ -777,6 +772,7 @@
           >
             <div class="flex flex-col items-start gap-1">
               <Badge
+                v-if="!isUsageRecordInProgress(record)"
                 variant="outline"
                 data-usage-request-type="desktop"
                 :class="getRequestTypeBadgeClass(record.request_type)"
@@ -793,20 +789,12 @@
                   失败
                 </Badge>
                 <Badge
-                  v-else-if="getDisplayStatus(record) === 'pending'"
-                  variant="outline"
-                  data-usage-lifecycle="desktop"
-                  class="whitespace-nowrap animate-pulse border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300"
-                >
-                  等待中
-                </Badge>
-                <Badge
-                  v-else-if="getDisplayStatus(record) === 'streaming'"
+                  v-else-if="isUsageRecordInProgress(record)"
                   variant="outline"
                   data-usage-lifecycle="desktop"
                   class="whitespace-nowrap animate-pulse border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/70 dark:bg-sky-950/30 dark:text-sky-300"
                 >
-                  传输中
+                  进行中
                 </Badge>
                 <Badge
                   v-else-if="record.status === 'cancelled'"
@@ -816,33 +804,35 @@
                 >
                   已取消
                 </Badge>
-                <Badge
-                  v-if="isUsageWebSocket(record)"
-                  variant="outline"
-                  data-usage-transport="websocket"
-                  :title="getWebSocketTransportTitle(record)"
-                  :class="`${getTransportBadgeClass(record)} whitespace-nowrap`"
-                >
-                  WS
-                </Badge>
-                <Badge
-                  v-else-if="getStreamModeSegments(record).hasConversion"
-                  variant="outline"
-                  data-usage-transport="http"
-                  :class="`${getTransportBadgeClass(record)} whitespace-normal inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5`"
-                >
-                  <span class="whitespace-nowrap">{{ getStreamModeSegments(record).client }}</span>
-                  <span class="opacity-60">→</span>
-                  <span class="whitespace-nowrap">{{ getStreamModeSegments(record).upstream }}</span>
-                </Badge>
-                <Badge
-                  v-else
-                  variant="outline"
-                  data-usage-transport="http"
-                  :class="`${getTransportBadgeClass(record)} whitespace-nowrap`"
-                >
-                  {{ getStreamModeLabel(record) }}
-                </Badge>
+                <template v-if="!isUsageRecordInProgress(record)">
+                  <Badge
+                    v-if="isUsageWebSocket(record)"
+                    variant="outline"
+                    data-usage-transport="websocket"
+                    :title="getWebSocketTransportTitle(record)"
+                    :class="`${getTransportBadgeClass(record)} whitespace-nowrap`"
+                  >
+                    WS
+                  </Badge>
+                  <Badge
+                    v-else-if="getStreamModeSegments(record).hasConversion"
+                    variant="outline"
+                    data-usage-transport="http"
+                    :class="`${getTransportBadgeClass(record)} whitespace-normal inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5`"
+                  >
+                    <span class="whitespace-nowrap">{{ getStreamModeSegments(record).client }}</span>
+                    <span class="opacity-60">→</span>
+                    <span class="whitespace-nowrap">{{ getStreamModeSegments(record).upstream }}</span>
+                  </Badge>
+                  <Badge
+                    v-else
+                    variant="outline"
+                    data-usage-transport="http"
+                    :class="`${getTransportBadgeClass(record)} whitespace-nowrap`"
+                  >
+                    {{ getStreamModeLabel(record) }}
+                  </Badge>
+                </template>
               </div>
             </div>
           </TableCell>
@@ -1355,6 +1345,12 @@ const timeRangeModel = computed({
 
 function getDisplayStatus(record: UsageRecord) {
   return resolveDisplayRequestStatus(record)
+}
+
+/** 活跃请求只展示统一进度，完成后才展示请求类型与客户端传输方式。 */
+function isUsageRecordInProgress(record: UsageRecord): boolean {
+  const status = getDisplayStatus(record)
+  return status === 'pending' || status === 'streaming'
 }
 
 function getStreamModeLabel(record: UsageRecord): string {

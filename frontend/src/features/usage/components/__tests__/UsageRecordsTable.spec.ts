@@ -408,6 +408,31 @@ describe('UsageRecordsTable', () => {
     expect(root.querySelector('[data-active-latency-state="waiting-first-byte"]')).toBeNull()
   })
 
+  it.each([
+    ['pending', null],
+    ['streaming', 500],
+  ] as const)('collapses %s rows to a single in-progress badge', (status, firstByteTime) => {
+    const root = mountUsageRecordsTable([buildRecord({
+      status,
+      request_type: 'chat',
+      is_stream: true,
+      response_time_ms: null,
+      first_byte_time_ms: firstByteTime,
+    })])
+    const desktopTable = root.querySelector('tbody')
+    const mobileCards = root.querySelector('.responsive-list-cards')
+
+    expect(desktopTable?.querySelector('[data-usage-request-type="desktop"]')).toBeNull()
+    expect(desktopTable?.querySelector('[data-usage-transport]')).toBeNull()
+    expect(desktopTable?.querySelector('[data-usage-lifecycle="desktop"]')?.textContent?.trim())
+      .toBe('进行中')
+
+    expect(mobileCards?.querySelector('[data-usage-request-type="card"]')).toBeNull()
+    expect(mobileCards?.querySelector('[data-usage-transport]')).toBeNull()
+    expect(mobileCards?.querySelector('[data-usage-lifecycle="card"]')?.textContent?.trim())
+      .toBe('进行中')
+  })
+
   it('shows failed when Codex image progress fails before the usage record finalizes', () => {
     const root = mountUsageRecordsTable([buildRecord({
       status: 'pending',
@@ -432,9 +457,9 @@ describe('UsageRecordsTable', () => {
     })])
 
     expect(root.querySelector('tbody')?.textContent).not.toContain('失败')
-    expect(root.querySelector('tbody')?.textContent).toContain('等待中')
+    expect(root.querySelector('tbody')?.textContent).toContain('进行中')
     expect(root.querySelector('.responsive-list-cards')?.textContent).not.toContain('失败')
-    expect(root.querySelector('.responsive-list-cards')?.textContent).toContain('等待')
+    expect(root.querySelector('.responsive-list-cards')?.textContent).toContain('进行中')
   })
 
   it('renders output TPS in the usage table', () => {
