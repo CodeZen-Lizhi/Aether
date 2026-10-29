@@ -74,6 +74,9 @@ describe('ModelMappingTab response contracts', () => {
 
     expect(html).toContain('Default mapping')
     expect(html).toContain('Special mapping')
+    expect(html).toContain('1 个映射')
+    expect(html).not.toMatch(/>\s*精确\s*</)
+    expect(html).not.toMatch(/\|\s*1 个映射/)
     expect(html).not.toContain('全部端点')
     expect(html).not.toContain('全部请求')
     expect(html).not.toContain('Responses')
@@ -81,5 +84,8 @@ describe('ModelMappingTab response contracts', () => {
     expect(html).not.toContain('适用端点')
     expect(html).not.toContain('适用请求')
     expect(html).not.toContain('测试映射')
+    expect(html).toContain('aria-label="拖动 default-upstream 调整优先级"')
+    expect(html).not.toContain('aria-label="上移')
+    expect(html).not.toContain('aria-label="下移')
   })
 })

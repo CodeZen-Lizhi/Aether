@@ -24,6 +24,22 @@ const cacheCreationByRequest={
  'video-streaming-standard':2000,
  'chat-cancelled-standard':1600,
 };
+const costByRequest={
+  'compact-failed-stream':0.001044,
+  'chat-completed-standard':0.001236,
+  'realtime-completed-ws':0.000820,
+  'chat-pending-stream':0.000612,
+  'video-streaming-standard':0.005601,
+  'chat-cancelled-standard':0.000228,
+};
+const timingByRequest={
+  'compact-failed-stream':{first:3150,total:6920},
+  'chat-completed-standard':{first:250,total:1180},
+  'realtime-completed-ws':{first:120,total:860},
+  'chat-pending-stream':{first:340,total:2510},
+  'video-streaming-standard':{first:280,total:1740},
+  'chat-cancelled-standard':{first:500,total:2500},
+};
 const rows=[
  ['compact-failed-stream','compact','failed',true,false,false,true],
  ['chat-completed-standard','chat','completed',false,false,false,false],
@@ -39,14 +55,15 @@ const rows=[
  totalTokens+=cacheRead;
  totalTokens+=cacheCreation;
  totalTokens+=240;
- return {id,model:id,request_type,provider:'fixture',api_format:'openai:responses',is_stream:stream,is_websocket:websocket,upstream_is_stream:stream,client_requested_stream:stream,status,input_tokens:freshInput+cacheRead+cacheCreation,effective_input_tokens:freshInput,output_tokens:240,cache_creation_input_tokens:cacheCreation,cache_read_input_tokens:cacheRead,total_tokens:totalTokens,cost:0,has_retry:retry,has_fallback:fallback,created_at:now,updated_at:now,first_byte_time_ms:status==='streaming'?10:null};
+ const timing=timingByRequest[id];
+ return {id,model:id,request_type,provider:'fixture',api_format:'openai:responses',is_stream:stream,is_websocket:websocket,upstream_is_stream:stream,client_requested_stream:stream,status,input_tokens:freshInput+cacheRead+cacheCreation,effective_input_tokens:freshInput,output_tokens:240,cache_creation_input_tokens:cacheCreation,cache_read_input_tokens:cacheRead,total_tokens:totalTokens,cost:costByRequest[id],has_retry:retry,has_fallback:fallback,created_at:now,updated_at:now,first_byte_time_ms:timing.first,response_time_ms:status==='pending'?null:timing.total,end_to_end_first_byte_time_ms:status==='pending'?null:timing.first,end_to_end_time_ms:status==='pending'?null:timing.total};
 });
 // 保留查询参数，核对下拉事件是否实际触发分页请求。
 window.fixtureRequests=[];
+window.fixtureRequestTypeCalls=0;
 usageApi.getAllUsageRecords=async params=>{
  window.fixtureRequests.push({...params});
  const result=rows.filter(row=>{
-  if(params.request_type&&row.request_type!==params.request_type)return false;
   if(params.request_status==='active'&&!['pending','streaming'].includes(row.status))return false;
   if(params.request_status==='failed'&&row.status!=='failed')return false;
   if(params.request_status==='cancelled'&&row.status!=='cancelled')return false;
@@ -64,7 +81,7 @@ usageApi.getUsageStats=async()=>({});
 usageApi.getUsageByModel=async()=>[];
 usageApi.getUsageByProvider=async()=>[];
 usageApi.getUsageByApiFormat=async()=>[];
-usageApi.getUsageByRequestType=async()=>[...new Set(rows.map(row=>row.request_type))].map(request_type=>({request_type,request_count:rows.filter(row=>row.request_type===request_type).length}));
+usageApi.getUsageByRequestType=async()=>{window.fixtureRequestTypeCalls++;return[]};
 document.querySelector('#finish').onclick=()=>{for(const row of rows){if(['pending','streaming'].includes(row.status)){row.status='completed';row.updated_at=new Date().toISOString();}}};
 createApp(Usage).use(createPinia()).mount('#app');
 </script></body></html>

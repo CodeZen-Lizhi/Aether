@@ -207,8 +207,8 @@ const Preview = defineComponent({
         ],
         selectedModelMapping: null,
         keyOptions: [
-          { value: 'key-a', label: 'production-key-a · sk-prod-***91' },
-          { value: 'key-b', label: 'backup-key-b · sk-backup-***27' },
+          { value: 'key-a', label: 'production-key-a' },
+          { value: 'key-b', label: 'backup-key-b' },
         ],
         selectedKeyId: 'auto',
         requestHeadersDraft: '{}',

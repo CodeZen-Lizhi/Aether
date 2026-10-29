@@ -56,26 +56,28 @@ describe('normal-user usage record filter policy', () => {
     })).toBe(false)
   })
 
-  it('combines request type, lifecycle, transport and attempt filters', () => {
+  it('combines lifecycle, transport and attempt filters', () => {
     const matching = buildUsageRecord()
     expect(matchesUsageLiveFilters(matching, {
-      requestType: 'compact',
       requestStatus: 'failed',
       transport: 'stream',
       attempt: 'retry',
     })).toBe(true)
     expect(matchesUsageLiveFilters(matching, {
-      requestType: 'chat',
-      requestStatus: 'failed',
-      transport: 'stream',
-      attempt: 'retry',
-    })).toBe(false)
-    expect(matchesUsageLiveFilters(matching, {
-      requestType: 'compact',
       requestStatus: 'failed',
       transport: 'standard',
       attempt: 'retry',
     })).toBe(false)
+  })
+
+  it('does not treat the displayed request type as a filter dimension', () => {
+    const record = buildUsageRecord({ request_type: 'compact' })
+
+    expect(matchesUsageLiveFilters(record, {
+      requestStatus: '__all__',
+      transport: '__all__',
+      attempt: '__all__',
+    })).toBe(true)
   })
 
   it('uses the client-visible transport mode for converted HTTP requests', () => {
@@ -87,13 +89,11 @@ describe('normal-user usage record filter policy', () => {
       has_retry: false,
     })
     expect(matchesUsageLiveFilters(converted, {
-      requestType: '__all__',
       requestStatus: '__all__',
       transport: 'standard',
       attempt: '__all__',
     })).toBe(true)
     expect(matchesUsageLiveFilters(converted, {
-      requestType: '__all__',
       requestStatus: '__all__',
       transport: 'stream',
       attempt: '__all__',

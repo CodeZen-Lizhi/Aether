@@ -62,6 +62,18 @@ export type ModelTestCandidateKey = {
   allowed_models?: string[] | null
 }
 
+/** 测试 Key 选择项的最小展示字段；只用于生成用户可识别的名称。 */
+export type ModelTestKeyDisplaySource = {
+  id: string
+  name?: string | null
+  api_key_masked?: string | null
+}
+
+/** 返回测试 Key 的名称；没有名称时才回退到掩码或标识，不拼接认证类型。 */
+export function formatModelTestKeyName(key: ModelTestKeyDisplaySource): string {
+  return key.name?.trim() || key.api_key_masked?.trim() || key.id
+}
+
 /** 单个“映射 × Key”候选；mappingName 为空表示模型没有映射时的直连回退。 */
 export type ModelTestCandidate = {
   mappingName: string | null

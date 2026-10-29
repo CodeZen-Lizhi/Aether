@@ -82,7 +82,6 @@ vi.mock('lucide-vue-next', async () => {
 
   return {
     RefreshCcw: Icon,
-    EyeOff: Icon,
     Shuffle: Icon,
     ChevronDown: Icon,
     Check: Icon,
@@ -130,21 +129,18 @@ function mountUsageRecordsTable(records: UsageRecord[], overrides: Record<string
     filterModel: '__all__',
     filterProvider: '__all__',
     filterApiFormat: '__all__',
-    filterRequestType: '__all__',
     filterRequestStatus: '__all__',
     filterTransport: '__all__',
     filterAttempt: '__all__',
     filterClientFamily: '__all__',
     availableModels: [],
     availableProviders: [],
-    availableRequestTypes: [],
     availableClientFamilies: [],
     currentPage: 1,
     pageSize: 20,
     totalRecords: records.length,
     pageSizeOptions: [20, 50],
     autoRefresh: false,
-    hideUnknownRecords: false,
     ...overrides,
   })
 
@@ -196,17 +192,35 @@ describe('UsageRecordsTable', () => {
     expect(root.querySelector('tbody')?.textContent).toContain('已取消')
   })
 
-  it('right-aligns every numeric table header with its values', () => {
+  it('left-aligns every table header and column content', () => {
     const root = mountUsageRecordsTable([buildRecord()])
     const headers = [...root.querySelectorAll<HTMLElement>('thead th')]
-    const numericHeaders = headers.filter(header =>
-      header.textContent?.trim() === 'Tokens'
-      || header.textContent?.trim() === '费用'
-      || header.textContent?.includes('端到端')
+    const rowCells = [...root.querySelectorAll<HTMLElement>('tbody tr:first-child td')]
+
+    expect(headers.every(header =>
+      !header.classList.contains('text-right')
+      && !header.classList.contains('text-center')
+    )).toBe(true)
+    for (const label of ['类型 / 状态', 'Tokens', '费用', '端到端']) {
+      const index = headers.findIndex(header => header.textContent?.includes(label))
+      expect(index).toBeGreaterThanOrEqual(0)
+      expect(rowCells[index]?.classList.contains('text-right')).toBe(false)
+      expect(rowCells[index]?.querySelector('.justify-end, .items-end')).toBeNull()
+    }
+  })
+
+  it('keeps semantic colors in record rows instead of table headers', () => {
+    const root = mountUsageRecordsTable([buildRecord()])
+    const headers = [...root.querySelectorAll<HTMLElement>('thead th')]
+    const semanticHeaders = headers.filter(header =>
+      ['Tokens', '费用', '端到端'].some(label => header.textContent?.includes(label))
     )
 
-    expect(numericHeaders).toHaveLength(3)
-    expect(numericHeaders.every(header => header.classList.contains('text-right'))).toBe(true)
+    expect(semanticHeaders).toHaveLength(3)
+    expect(semanticHeaders.every(header =>
+      !header.matches('.text-sky-700, .text-blue-700, .text-amber-700, .text-emerald-700')
+      && header.querySelector('.text-sky-700, .text-blue-700, .text-amber-700, .text-emerald-700') === null
+    )).toBe(true)
   })
 
   it('keeps all selected client fields in both layouts and shares the available column width', () => {
@@ -457,16 +471,90 @@ describe('UsageRecordsTable', () => {
     expect(badges.every(badge => badge.title === 'WebSocket')).toBe(true)
   })
 
-  it('offers independent type, status, transport and scheduling filters', () => {
+  it('offers independent status, transport and scheduling filters', () => {
     const root = mountUsageRecordsTable([buildRecord()])
 
-    expect(root.textContent).toContain('全部类型')
+    expect(root.textContent).not.toContain('全部类型')
     expect(root.textContent).toContain('全部状态')
     expect(root.textContent).toContain('全部传输')
     expect(root.textContent).toContain('全部调度')
     expect(root.textContent).toContain('WebSocket')
     expect(root.textContent).toContain('HTTP 流式')
     expect(root.textContent).toContain('HTTP 标准')
+  })
+
+  it('renders three independent quick filters without action-bar dividers', () => {
+    const root = mountUsageRecordsTable([buildRecord()])
+    const quickFilters = root.querySelector('.usage-quick-filters')
+    const typeHeader = [...root.querySelectorAll<HTMLElement>('thead th')]
+      .find(header => header.textContent?.includes('类型 / 状态'))
+
+    expect(quickFilters).not.toBeNull()
+    expect(quickFilters?.querySelectorAll('[aria-label^="筛选"]')).toHaveLength(3)
+    expect(quickFilters?.classList.contains('border')).toBe(false)
+    expect(quickFilters?.classList.contains('bg-muted/30')).toBe(false)
+    expect(root.querySelector('[aria-label="筛选请求类型"]')).toBeNull()
+    expect(root.querySelector('[class~="h-4"][class~="w-px"][class~="bg-border"]')).toBeNull()
+    expect(typeHeader).toBeDefined()
+    expect(typeHeader?.querySelector('[data-table-filter-menu]')).toBeNull()
+  })
+
+  it('assigns distinct colors to request types and transport badges', () => {
+    const root = mountUsageRecordsTable([
+      buildRecord({ id: 'chat', request_type: 'chat', is_stream: true }),
+      buildRecord({
+        id: 'compact',
+        request_type: 'compact',
+        is_stream: false,
+        upstream_is_stream: false,
+        client_requested_stream: false,
+      }),
+      buildRecord({ id: 'video', request_type: 'video', is_stream: true }),
+      buildRecord({
+        id: 'unknown',
+        request_type: null,
+        is_stream: false,
+        upstream_is_stream: false,
+        client_requested_stream: false,
+      }),
+    ])
+    const typeBadges = [...root.querySelectorAll<HTMLElement>('[data-usage-request-type="desktop"]')]
+    const badgeByLabel = new Map(typeBadges.map(badge => [badge.textContent?.trim(), badge]))
+    const streamBadge = [...root.querySelectorAll<HTMLElement>('[data-usage-transport="http"]')]
+      .find(badge => badge.textContent?.trim() === '流式')
+    const standardBadge = [...root.querySelectorAll<HTMLElement>('[data-usage-transport="http"]')]
+      .find(badge => badge.textContent?.trim() === '标准')
+
+    expect(badgeByLabel.get('对话')?.classList.contains('text-sky-700')).toBe(true)
+    expect(badgeByLabel.get('会话压缩')?.classList.contains('text-amber-700')).toBe(true)
+    expect(badgeByLabel.get('视频')?.classList.contains('text-emerald-700')).toBe(true)
+    expect(badgeByLabel.get('未知类型')?.classList.contains('text-slate-600')).toBe(true)
+    expect(streamBadge?.classList.contains('text-teal-700')).toBe(true)
+    expect(standardBadge?.classList.contains('text-slate-600')).toBe(true)
+  })
+
+  it('uses semantic colors for status, tokens and performance details', () => {
+    const root = mountUsageRecordsTable([buildRecord({
+      status: 'failed',
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: 80,
+      end_to_end_first_byte_time_ms: 500,
+      end_to_end_time_ms: 1000,
+    })])
+    const failure = root.querySelector<HTMLElement>('[data-usage-lifecycle="desktop"]')
+    const tokenInput = root.querySelector<HTMLElement>('[data-usage-token-part="input"]')
+    const tokenOutput = root.querySelector<HTMLElement>('[data-usage-token-part="output"]')
+    const firstByte = root.querySelector<HTMLElement>('[data-usage-performance-part="first-byte"]')
+    const total = root.querySelector<HTMLElement>('[data-usage-performance-part="total"]')
+    const speed = root.querySelector<HTMLElement>('[data-usage-performance-part="speed"]')
+
+    expect(failure?.classList.contains('text-rose-700')).toBe(true)
+    expect(tokenInput?.classList.contains('text-sky-700')).toBe(true)
+    expect(tokenOutput?.classList.contains('text-emerald-700')).toBe(true)
+    expect(firstByte?.classList.contains('text-amber-700')).toBe(true)
+    expect(total?.classList.contains('text-blue-700')).toBe(true)
+    expect(speed?.classList.contains('text-emerald-700')).toBe(true)
   })
 
   it('keeps OpenAI Live transport rows under the single WS type without inventing usage', () => {
@@ -731,15 +819,11 @@ describe('UsageRecordsTable', () => {
     expect(root.querySelector('[title="OpenAI Live"]')).not.toBeNull()
   })
 
-  it('emits hide unknown toggle changes', () => {
-    const onUpdateHideUnknownRecords = vi.fn()
-    const root = mountUsageRecordsTable([buildRecord()], {
-      'onUpdate:hideUnknownRecords': onUpdateHideUnknownRecords,
-    })
+  it('does not render an unknown visibility toggle', () => {
+    const root = mountUsageRecordsTable([buildRecord()])
 
-    root.querySelector<HTMLElement>('[data-usage-hide-unknown-toggle="desktop"]')?.click()
-
-    expect(onUpdateHideUnknownRecords).toHaveBeenCalledWith(true)
+    expect(root.querySelector('[data-usage-hide-unknown-toggle]')).toBeNull()
+    expect(root.textContent).not.toContain('隐藏 unknown')
   })
 
   it('removes the user column and user filter', () => {

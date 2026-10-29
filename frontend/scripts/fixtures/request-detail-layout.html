@@ -191,9 +191,10 @@ createApp({ render: () => [
   lifecycleFixture ? h(UsageRecordsTable, {
     records: [row.value], loading: false, showActualCost: false,
     timeRange: { preset: 'today', tz_offset_minutes: 0 }, filterModel: '__all__', filterProvider: '__all__',
-    filterApiFormat: '__all__', filterStatus: '__all__', filterClientFamily: '__all__',
+    filterApiFormat: '__all__', filterRequestStatus: '__all__',
+    filterTransport: '__all__', filterAttempt: '__all__', filterClientFamily: '__all__',
     availableModels: [], availableProviders: [], availableClientFamilies: [],
-    currentPage: 1, pageSize: 20, totalRecords: 1, pageSizeOptions: [20], autoRefresh: false, hideUnknownRecords: false,
+    currentPage: 1, pageSize: 20, totalRecords: 1, pageSizeOptions: [20], autoRefresh: false,
     onShowDetail: () => { open.value = true },
   }) : null,
   h(RequestDetailDrawer, {

@@ -25,26 +25,22 @@
       :filter-model="filterModel"
       :filter-provider="filterProvider"
       :filter-api-format="filterApiFormat"
-      :filter-request-type="filterRequestType"
       :filter-request-status="filterRequestStatus"
       :filter-transport="filterTransport"
       :filter-attempt="filterAttempt"
       :filter-client-family="filterClientFamily"
       :available-models="availableModels"
       :available-providers="availableProviders"
-      :available-request-types="availableRequestTypes"
       :available-client-families="availableClientFamilies"
       :current-page="currentPage"
       :page-size="pageSize"
       :total-records="effectiveTotalRecords"
       :page-size-options="pageSizeOptions"
       :auto-refresh="globalAutoRefresh"
-      :hide-unknown-records="hideUnknownRecords"
       @update:time-range="handleTimeRangeChange"
       @update:filter-model="handleFilterModelChange"
       @update:filter-provider="handleFilterProviderChange"
       @update:filter-api-format="handleFilterApiFormatChange"
-      @update:filter-request-type="handleFilterRequestTypeChange"
       @update:filter-request-status="handleFilterRequestStatusChange"
       @update:filter-transport="handleFilterTransportChange"
       @update:filter-attempt="handleFilterAttemptChange"
@@ -52,7 +48,6 @@
       @update:current-page="handlePageChange"
       @update:page-size="handlePageSizeChange"
       @update:auto-refresh="handleAutoRefreshChange"
-      @update:hide-unknown-records="handleHideUnknownRecordsChange"
       @refresh="handleManualRefresh"
       @prefetch-detail="prefetchRequestDetail"
       @show-detail="showRequestDetail"
@@ -105,7 +100,6 @@ import type {
   RequestStatus,
   UsageAttemptFilterValue,
   UsageLifecycleFilterValue,
-  UsageRecord,
   UsageTransportFilterValue,
 } from '@/features/usage/types'
 import { log } from '@/utils/logger'
@@ -114,8 +108,6 @@ import { useToast } from '@/composables/useToast'
 const { warning } = useToast()
 const authStore = useAuthStore()
 
-
-const hideUnknownRecords = useLocalStorage('usage-hide-unknown-records', false)
 /** 沿用使用记录页的分析折叠偏好，初次访问默认展开。 */
 const statsExpanded = useLocalStorage('usage-stats-expanded', true)
 
@@ -133,7 +125,6 @@ const pageSizeOptions = [10, 20, 50, 100]
 const filterModel = ref('__all__')
 const filterProvider = ref('__all__')
 const filterApiFormat = ref('__all__')
-const filterRequestType = ref('__all__')
 const filterRequestStatus = ref<UsageLifecycleFilterValue>('__all__')
 const filterTransport = ref<UsageTransportFilterValue>('__all__')
 const filterAttempt = ref<UsageAttemptFilterValue>('__all__')
@@ -148,7 +139,6 @@ const {
   totalRecords,
   availableModels,
   availableProviders,
-  availableRequestTypes,
   loadStats,
   loadRecords
 } = useUsageData()
@@ -224,24 +214,10 @@ async function refreshAdminAnalyticsForSelectionChange() {
   await refreshAdminAnalytics({ force: true, preserveOnFailure: false })
 }
 
-function isUnknownUsageLabel(value: unknown): boolean {
-  if (typeof value !== 'string') return false
-  const normalized = value.trim().toLowerCase()
-  return normalized === 'unknown' || normalized === 'unknow'
-}
-
-function hasUnknownModelOrProvider(record: UsageRecord): boolean {
-  if (isUnknownUsageLabel(record.model)) return true
-  if (isUnknownUsageLabel(record.provider)) return true
-  return false
-}
-
-// 轮询更新后继续应用四个独立筛选，避免活跃行终结后仍留在筛选结果里。
+// 轮询更新后继续应用三个独立筛选，避免活跃行终结后仍留在筛选结果里。
 const filteredRecords = computed(() => {
   return currentRecords.value.filter(record =>
-    (!hideUnknownRecords.value || !hasUnknownModelOrProvider(record))
-    && matchesUsageLiveFilters(record, {
-      requestType: filterRequestType.value,
+    matchesUsageLiveFilters(record, {
       requestStatus: filterRequestStatus.value,
       transport: filterTransport.value,
       attempt: filterAttempt.value,
@@ -471,7 +447,6 @@ async function pollActiveRequests() {
 
     if (filterRequestStatus.value === 'active' && currentRecords.value.some(record =>
       !matchesUsageLiveFilters(record, {
-        requestType: filterRequestType.value,
         requestStatus: filterRequestStatus.value,
         transport: filterTransport.value,
         attempt: filterAttempt.value,
@@ -619,12 +594,6 @@ function handleAutoRefreshChange(value: boolean) {
   }
 }
 
-async function handleHideUnknownRecordsChange(value: boolean) {
-  hideUnknownRecords.value = value
-  currentPage.value = 1
-  await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
-}
-
 function handleVisibilityChange() {
   isPageVisible.value = !document.hidden
   if (!isPageVisible.value) {
@@ -724,12 +693,10 @@ function getCurrentFilters() {
     model: filterModel.value !== '__all__' ? filterModel.value : undefined,
     provider: filterProvider.value !== '__all__' ? filterProvider.value : undefined,
     api_format: filterApiFormat.value !== '__all__' ? filterApiFormat.value : undefined,
-    request_type: filterRequestType.value !== '__all__' ? filterRequestType.value : undefined,
     request_status: filterRequestStatus.value !== '__all__' ? filterRequestStatus.value : undefined,
     transport: filterTransport.value !== '__all__' ? filterTransport.value : undefined,
     attempt: filterAttempt.value !== '__all__' ? filterAttempt.value : undefined,
-    client_family: filterClientFamily.value !== '__all__' ? filterClientFamily.value : undefined,
-    hideUnknownRecords: hideUnknownRecords.value || undefined
+    client_family: filterClientFamily.value !== '__all__' ? filterClientFamily.value : undefined
   }
 }
 
@@ -750,12 +717,6 @@ async function handleFilterProviderChange(value: string) {
 
 async function handleFilterApiFormatChange(value: string) {
   filterApiFormat.value = value
-  currentPage.value = 1
-  await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
-}
-
-async function handleFilterRequestTypeChange(value: string) {
-  filterRequestType.value = value
   currentPage.value = 1
   await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
 }

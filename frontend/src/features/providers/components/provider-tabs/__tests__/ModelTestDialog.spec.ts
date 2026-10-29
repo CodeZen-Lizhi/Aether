@@ -55,6 +55,42 @@ describe('ModelTestDialog', () => {
     container.remove()
   })
 
+  it('presents request headers and body in the unified code editor surface', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const app = createApp({
+      render: () => h(ModelTestDialog, {
+        open: true,
+        result: null,
+        endpoints: [endpoint],
+        selectedEndpoint: endpoint,
+        requestHeadersDraft: '{\n  "x-test": "1"\n}',
+        requestBodyDraft: '{\n  "model": "gpt-5.6"\n}',
+      }),
+    })
+    app.mount(container)
+    await nextTick()
+
+    const composer = document.body.querySelector('.request-composer')
+    const editors = [...document.body.querySelectorAll<HTMLElement>('[data-request-editor]')]
+    const headerButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.includes('请求头') && button.getAttribute('aria-controls') === 'model-test-request-headers')
+
+    expect(composer).not.toBeNull()
+    expect(editors).toHaveLength(2)
+    expect(editors.every(editor => editor.querySelector('.request-code-toolbar') !== null)).toBe(true)
+    expect(editors.every(editor => editor.querySelector('.request-code-surface textarea') !== null)).toBe(true)
+    expect(headerButton).toBeDefined()
+
+    headerButton!.click()
+    await nextTick()
+    expect(headerButton!.getAttribute('aria-expanded')).toBe('true')
+    expect(document.body.querySelector<HTMLElement>('#model-test-request-headers')?.style.display).not.toBe('none')
+
+    app.unmount()
+    container.remove()
+  })
+
   it('renders Key, model, status and unused candidates in result order', async () => {
     const result = {
       success: true,

@@ -95,8 +95,10 @@
                 </template>
               </SortableTableHead>
               <SortableTableHead
+                class="text-center"
                 column-key="api_format"
                 :sortable="false"
+                align="center"
                 :filter-active="filterApiFormat !== 'all'"
                 :filter-title="legacyT('筛选 API 格式')"
                 filter-content-class="w-72 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"

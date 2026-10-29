@@ -40,6 +40,8 @@
         <!-- 行头部（可点击展开） -->
         <div
           class="flex items-start justify-between px-4 py-3 hover:bg-muted/20 cursor-pointer"
+          data-mapping-group-toggle
+          :data-mapping-group-key="item.key"
           @click="toggleExpand(item.key)"
         >
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -61,16 +63,9 @@
                   {{ item.group.model.provider_model_name }}
                 </span>
               </div>
-              <!-- 类型标签 -->
-              <Badge
-                variant="default"
-                class="text-xs shrink-0"
-              >
-                精确
-              </Badge>
-              <!-- 分隔符 + 映射数量 -->
+              <!-- 映射数量 -->
               <span class="text-xs text-muted-foreground shrink-0">
-                | {{ item.mappings.length }} 个映射
+                {{ item.mappings.length }} 个映射
               </span>
             </template>
             <!-- 正则映射 -->
@@ -141,17 +136,48 @@
           <!-- 精确映射详情 -->
           <div
             v-if="item.type === 'exact'"
-            class="px-4 py-2 space-y-1"
+            class="px-4 py-2"
           >
-            <div
-              v-for="mapping in item.mappings"
-              :key="mapping.name"
-              class="flex items-center justify-between gap-2 py-1"
+            <TransitionGroup
+              tag="div"
+              name="mapping-priority"
+              move-class="mapping-priority-move"
+              class="mapping-priority-list space-y-1.5"
             >
-              <span class="font-mono text-sm truncate">
-                {{ mapping.name }}
-              </span>
-            </div>
+              <div
+                v-for="(mapping, index) in getExactMappingItems(item)"
+                :key="mapping.name"
+                class="mapping-priority-row flex min-w-0 items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-1.5"
+                :class="{ 'mapping-priority-row--placeholder': draggedMappingName === mapping.name }"
+                :data-mapping-name="mapping.name"
+              >
+                <span
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold tabular-nums text-primary"
+                >
+                  {{ index + 1 }}
+                </span>
+                <button
+                  type="button"
+                  class="flex h-7 w-7 shrink-0 touch-none select-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  :class="draggedMappingName === mapping.name ? 'cursor-grabbing text-primary' : 'cursor-grab'"
+                  :disabled="isMappingReorderSaving(item)"
+                  :aria-label="`拖动 ${mapping.name} 调整优先级`"
+                  :title="`拖动 ${mapping.name} 调整优先级`"
+                  @pointerdown="onMappingPointerDown($event, item, mapping.name)"
+                >
+                  <GripVertical
+                    aria-hidden="true"
+                    class="h-4 w-4 pointer-events-none"
+                  />
+                </button>
+                <span
+                  class="min-w-0 flex-1 truncate font-mono text-sm"
+                  :title="mapping.name"
+                >
+                  {{ mapping.name }}
+                </span>
+              </div>
+            </TransitionGroup>
           </div>
 
           <!-- 正则映射详情（按 Key 分组显示） -->
@@ -250,6 +276,26 @@
     </div>
   </Card>
 
+  <Teleport to="body">
+    <div
+      v-if="draggedMappingPreview && dragPreviewStyle"
+      class="mapping-drag-preview"
+      :style="dragPreviewStyle"
+      aria-hidden="true"
+    >
+      <span class="mapping-drag-preview__rank flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-primary">
+        {{ draggedMappingPreview.index + 1 }}
+      </span>
+      <GripVertical
+        class="h-4 w-4 shrink-0 text-primary"
+        aria-hidden="true"
+      />
+      <span class="min-w-0 flex-1 truncate font-mono text-sm font-semibold">
+        {{ draggedMappingPreview.name }}
+      </span>
+    </div>
+  </Teleport>
+
   <!-- 统一模型映射工作台 -->
   <BatchModelMappingDialog
     v-if="batchDialogOpen"
@@ -275,9 +321,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useSmartPagination } from '@/composables/useSmartPagination'
-import { Tag, ListPlus, Edit, Trash2, ChevronRight } from 'lucide-vue-next'
+import { Tag, ListPlus, Edit, Trash2, ChevronRight, GripVertical } from 'lucide-vue-next'
 import {
   Card, Button, Badge,
 } from '@/components/ui'
@@ -361,6 +407,50 @@ const canFetchUpstreamModels = computed(() => props.provider.active_keys > 0)
 
 // 展开状态
 const expandedItems = ref<Set<string>>(new Set())
+const localMappingOrders = ref<Record<string, string[]>>({})
+const reorderSavingGroupKey = ref<string | null>(null)
+const draggedMappingGroup = ref<AliasGroup | null>(null)
+const draggedMappingName = ref<string | null>(null)
+const dragPointer = ref({ x: 0, y: 0 })
+const dragOrigin = ref<{
+  left: number
+  top: number
+  width: number
+  startX: number
+  startY: number
+} | null>(null)
+
+let activeDragPointerId: number | null = null
+let activeDragHandle: HTMLElement | null = null
+let activeDragList: HTMLElement | null = null
+let dragInitialNames: string[] = []
+
+/** 精确映射分组的稳定键；用于隔离各客户端模型的本地拖动顺序。 */
+function getExactGroupKey(group: AliasGroup): string {
+  return `exact-${group.model.id}-${group.apiFormatsKey}`
+}
+
+/** 返回当前展示顺序；拖动期间优先使用本地顺序，保存后等待父级刷新。 */
+function getExactMappingNames(group: AliasGroup): string[] {
+  return localMappingOrders.value[getExactGroupKey(group)]
+    ?? group.aliases.map(alias => alias.name)
+}
+
+/** 按当前展示顺序返回精确映射项，供列表摘要与展开区共同使用。 */
+function getExactMappingItems(item: CombinedMapping): MappingItem[] {
+  const group = item.group
+  if (item.type !== 'exact' || !group) return item.mappings
+  const aliasesByName = new Map(group.aliases.map(alias => [alias.name, alias]))
+  return getExactMappingNames(group).map((name, index) => ({
+    name,
+    priority: aliasesByName.get(name)?.priority ?? index + 1,
+  }))
+}
+
+/** 当前分组正在保存优先级时禁用拖动，避免并发写入覆盖。 */
+function isMappingReorderSaving(item: CombinedMapping): boolean {
+  return Boolean(item.group && reorderSavingGroupKey.value === getExactGroupKey(item.group))
+}
 
 // 生成 API 格式唯一键，用于合并同一模型下的映射。
 function getApiFormatsKey(formats: string[] | undefined): string {
@@ -486,17 +576,16 @@ const combinedMappings = computed<CombinedMapping[]>(() => {
 
   // 添加精确映射
   for (const group of exactMappingGroups.value) {
-    result.push({
+    const combined: CombinedMapping = {
       key: `exact-${group.model.id}-${group.apiFormatsKey}`,
       type: 'exact',
       targetModelName: group.model.global_model_display_name || group.model.provider_model_name,
       targetModelId: group.model.id,
-      mappings: group.aliases.map(a => ({
-        name: a.name,
-        priority: a.priority
-      })),
+      mappings: [],
       group
-    })
+    }
+    combined.mappings = getExactMappingItems(combined)
+    result.push(combined)
   }
 
   // 添加正则映射
@@ -571,6 +660,196 @@ function deleteGroup(group: AliasGroup) {
   deleteConfirmOpen.value = true
 }
 
+const draggedMappingPreview = computed(() => {
+  const group = draggedMappingGroup.value
+  const name = draggedMappingName.value
+  if (!group || !name) return null
+  return {
+    name,
+    index: getExactMappingNames(group).indexOf(name),
+  }
+})
+
+/** 拖动浮层跟随指针，并沿用调度策略列表的轻微倾斜与阴影反馈。 */
+const dragPreviewStyle = computed(() => {
+  const origin = dragOrigin.value
+  if (!origin) return undefined
+  const dx = dragPointer.value.x - origin.startX
+  const dy = dragPointer.value.y - origin.startY
+  const reduceMotion = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const tiltY = Math.max(-3, Math.min(3, dx * 0.02))
+  const tiltZ = Math.max(-1.8, Math.min(1.8, dx * 0.012))
+  return {
+    left: `${origin.left}px`,
+    top: `${origin.top}px`,
+    width: `${origin.width}px`,
+    transform: reduceMotion
+      ? `translate3d(${dx}px, ${dy}px, 0)`
+      : `perspective(900px) translate3d(${dx}px, ${dy}px, 0) rotateX(1.5deg) rotateY(${tiltY}deg) rotateZ(${tiltZ}deg) scale(1.025)`,
+  }
+})
+
+/** 将某个精确映射分组的本地顺序写回，不影响其他分组。 */
+function setMappingOrder(group: AliasGroup, names: string[]) {
+  localMappingOrders.value = {
+    ...localMappingOrders.value,
+    [getExactGroupKey(group)]: names,
+  }
+}
+
+/** 取消拖动时丢弃本地顺序覆盖，恢复服务端返回的基线。 */
+function clearMappingOrder(group: AliasGroup) {
+  const next = { ...localMappingOrders.value }
+  delete next[getExactGroupKey(group)]
+  localMappingOrders.value = next
+}
+
+/** 开始拖动当前展开分组中的单个映射。 */
+function onMappingPointerDown(event: PointerEvent, item: CombinedMapping, name: string) {
+  const group = item.group
+  if (item.type !== 'exact' || !group) return
+  if (event.button !== 0 || reorderSavingGroupKey.value === getExactGroupKey(group)) return
+  event.preventDefault()
+  const handle = event.currentTarget as HTMLElement
+  const row = handle.closest<HTMLElement>('[data-mapping-name]')
+  const list = handle.closest<HTMLElement>('.mapping-priority-list')
+  const rect = row?.getBoundingClientRect()
+  if (!rect || !list) return
+
+  draggedMappingGroup.value = group
+  draggedMappingName.value = name
+  dragInitialNames = getExactMappingNames(group)
+  dragPointer.value = { x: event.clientX, y: event.clientY }
+  dragOrigin.value = {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    startX: event.clientX,
+    startY: event.clientY,
+  }
+  activeDragPointerId = event.pointerId
+  activeDragHandle = handle
+  activeDragList = list
+  handle.setPointerCapture?.(event.pointerId)
+  window.addEventListener('pointermove', onMappingPointerMove)
+  window.addEventListener('pointerup', onMappingPointerEnd)
+  window.addEventListener('pointercancel', onMappingPointerCancel)
+  window.addEventListener('blur', onMappingPointerCancel)
+}
+
+/** 指针跨过其他行中线时实时交换顺序，让列表连续让位。 */
+function onMappingPointerMove(event: PointerEvent) {
+  const group = draggedMappingGroup.value
+  const name = draggedMappingName.value
+  if (!group || !name || event.pointerId !== activeDragPointerId || !activeDragList) return
+  event.preventDefault()
+  dragPointer.value = { x: event.clientX, y: event.clientY }
+
+  const rows = Array.from(activeDragList.querySelectorAll<HTMLElement>('[data-mapping-name]'))
+  const next = [...getExactMappingNames(group)]
+  const currentIndex = next.indexOf(name)
+  if (currentIndex < 0) return
+
+  let targetIndex = currentIndex
+  for (const row of rows) {
+    const rowName = row.dataset.mappingName
+    if (!rowName || rowName === name) continue
+    const rect = row.getBoundingClientRect()
+    const rowIndex = next.indexOf(rowName)
+    if (rowIndex < 0) continue
+    if (event.clientY < rect.top) break
+    if (event.clientY <= rect.bottom) {
+      if (event.clientY >= rect.top + rect.height / 2) {
+        targetIndex = rowIndex + 1
+      } else {
+        targetIndex = Math.min(targetIndex, rowIndex)
+      }
+      break
+    }
+    targetIndex = rowIndex + 1
+  }
+
+  if (targetIndex === currentIndex) return
+  const [moved] = next.splice(currentIndex, 1)
+  const insertAt = targetIndex > currentIndex ? targetIndex - 1 : targetIndex
+  next.splice(insertAt, 0, moved)
+  setMappingOrder(group, next)
+}
+
+function onMappingPointerEnd(event: PointerEvent) {
+  if (event.pointerId !== activeDragPointerId) return
+  finishMappingDrag(true)
+}
+
+function onMappingPointerCancel() {
+  finishMappingDrag(false)
+}
+
+/** 结束拖动；松手时保存顺序，取消或失焦时恢复原顺序。 */
+function finishMappingDrag(commit: boolean) {
+  const group = draggedMappingGroup.value
+  const finalNames = group ? [...getExactMappingNames(group)] : []
+  const changed = group
+    ? finalNames.some((name, index) => name !== dragInitialNames[index])
+      || finalNames.length !== dragInitialNames.length
+    : false
+
+  window.removeEventListener('pointermove', onMappingPointerMove)
+  window.removeEventListener('pointerup', onMappingPointerEnd)
+  window.removeEventListener('pointercancel', onMappingPointerCancel)
+  window.removeEventListener('blur', onMappingPointerCancel)
+
+  const handle = activeDragHandle
+  const pointerId = activeDragPointerId
+  if (handle && pointerId !== null && handle.hasPointerCapture?.(pointerId)) {
+    handle.releasePointerCapture(pointerId)
+  }
+
+  draggedMappingGroup.value = null
+  draggedMappingName.value = null
+  dragOrigin.value = null
+  activeDragPointerId = null
+  activeDragHandle = null
+  activeDragList = null
+  dragInitialNames = []
+
+  if (!group || !changed) return
+  if (commit) {
+    void persistMappingOrder(group, finalNames)
+  } else {
+    clearMappingOrder(group)
+  }
+}
+
+/** 将拖动顺序保存为连续的 `1..N` priority，并刷新供应商详情。 */
+async function persistMappingOrder(group: AliasGroup, names: string[]) {
+  const aliasesByName = new Map(group.aliases.map(alias => [alias.name, alias]))
+  const groupAliases = new Set(group.aliases)
+  const orderedAliases = names.flatMap((name, index) => {
+    const alias = aliasesByName.get(name)
+    return alias ? [{ ...alias, priority: index + 1 }] : []
+  })
+  const otherAliases = (group.model.provider_model_mappings ?? [])
+    .filter(alias => !groupAliases.has(alias))
+  const nextMappings = [...otherAliases, ...orderedAliases]
+
+  reorderSavingGroupKey.value = getExactGroupKey(group)
+  try {
+    await updateModel(props.provider.id, group.model.id, {
+      provider_model_mappings: nextMappings,
+    })
+    showSuccess('映射优先级已更新')
+    emit('refresh')
+  } catch (error: unknown) {
+    clearMappingOrder(group)
+    showError(parseApiError(error, '更新映射优先级失败'), '错误')
+  } finally {
+    reorderSavingGroupKey.value = null
+  }
+}
+
 // 确认删除
 async function confirmDelete() {
   if (!deletingGroup.value) return
@@ -609,4 +888,75 @@ defineExpose({
   dialogOpen: computed(() => batchDialogOpen.value || deleteConfirmOpen.value),
   reload: refresh
 })
+
+onBeforeUnmount(() => finishMappingDrag(false))
+
+watch(() => props.models, () => {
+  if (!draggedMappingGroup.value) {
+    localMappingOrders.value = {}
+  }
+})
 </script>
+
+<style scoped>
+.mapping-priority-list {
+  position: relative;
+}
+
+.mapping-priority-row {
+  position: relative;
+  transform-origin: center;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.mapping-priority-move {
+  transition: transform 190ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.mapping-priority-row--placeholder {
+  border-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--primary) 8%, var(--background));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.mapping-priority-row--placeholder > * {
+  opacity: 0;
+}
+
+.mapping-drag-preview {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  pointer-events: none;
+  color: var(--foreground);
+  border: 1px solid color-mix(in srgb, var(--primary) 72%, white 10%);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--background) 88%, var(--primary) 12%);
+  box-shadow:
+    0 22px 42px -18px color-mix(in srgb, var(--primary) 55%, black),
+    0 12px 20px -14px rgb(0 0 0 / 55%),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.mapping-drag-preview__rank {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mapping-priority-row,
+  .mapping-priority-move {
+    transition: none;
+  }
+}
+</style>

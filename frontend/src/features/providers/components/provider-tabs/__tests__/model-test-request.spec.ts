@@ -7,6 +7,7 @@ import {
   extractModelTestImagePreviews,
   extractModelTestResponsePreview,
   formatModelTestDiagnostic,
+  formatModelTestKeyName,
   getOpenAiImageModelTestMaxGenerationCount,
   isModelTestableEndpoint,
   isModelTestableApiFormat,
@@ -18,6 +19,21 @@ import {
   setModelTestRequestBodyModel,
   syncModelTestRequestBodyDraft,
 } from '../model-test-request'
+
+describe('formatModelTestKeyName', () => {
+  it('shows only the current Key name without mask or auth type', () => {
+    expect(formatModelTestKeyName({
+      id: 'key-1',
+      name: 'Codex Renamed',
+      api_key_masked: 'sk-***',
+    })).toBe('Codex Renamed')
+    expect(formatModelTestKeyName({
+      id: 'key-2',
+      name: '   ',
+      api_key_masked: 'sk-***',
+    })).toBe('sk-***')
+  })
+})
 
 describe('buildModelTestCandidatePlan', () => {
   const model = {

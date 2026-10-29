@@ -12,22 +12,86 @@
         class="responsive-list-desktop shrink-0"
       />
 
-      <!-- 分隔线 -->
-      <div class="hidden sm:block h-4 w-px bg-border" />
-
-      <Button
-        variant="ghost"
-        size="icon"
-        data-usage-hide-unknown-toggle="mobile"
-        class="absolute right-12 top-2.5 h-8 w-8 shrink-0 responsive-list-mobile"
-        :class="hideUnknownRecords ? 'text-primary' : ''"
-        :title="hideUnknownRecords ? '显示 unknown 请求' : '隐藏 unknown 请求'"
-        aria-label="隐藏 unknown 模型或提供商的请求"
-        :aria-pressed="hideUnknownRecords"
-        @click="$emit('update:hideUnknownRecords', !hideUnknownRecords)"
+      <!-- 三维快捷筛选与时间范围共用同一条桌面操作带，每个筛选保持独立控件。 -->
+      <div
+        class="usage-quick-filters order-2 grid w-full min-w-0 grid-cols-3 gap-2 sm:order-none sm:flex sm:w-auto sm:flex-nowrap"
       >
-        <EyeOff class="w-3.5 h-3.5" />
-      </Button>
+        <Select
+          :model-value="filterRequestStatus"
+          @update:model-value="$emit('update:filterRequestStatus', $event)"
+        >
+          <SelectTrigger
+            class="h-8 w-full min-w-0 px-2.5 text-xs sm:w-[6.5rem] sm:flex-none"
+            aria-label="筛选请求状态"
+          >
+            <SelectValue placeholder="状态" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">
+              全部状态
+            </SelectItem>
+            <SelectItem value="active">
+              活跃
+            </SelectItem>
+            <SelectItem value="failed">
+              失败
+            </SelectItem>
+            <SelectItem value="cancelled">
+              已取消
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          :model-value="filterTransport"
+          @update:model-value="$emit('update:filterTransport', $event)"
+        >
+          <SelectTrigger
+            class="h-8 w-full min-w-0 px-2.5 text-xs sm:w-[6.5rem] sm:flex-none"
+            aria-label="筛选传输方式"
+          >
+            <SelectValue placeholder="传输" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">
+              全部传输
+            </SelectItem>
+            <SelectItem value="stream">
+              HTTP 流式
+            </SelectItem>
+            <SelectItem value="standard">
+              HTTP 标准
+            </SelectItem>
+            <SelectItem value="websocket">
+              WebSocket
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          :model-value="filterAttempt"
+          @update:model-value="$emit('update:filterAttempt', $event)"
+        >
+          <SelectTrigger
+            class="h-8 w-full min-w-0 px-2.5 text-xs sm:w-[6.5rem] sm:flex-none"
+            aria-label="筛选调度情况"
+          >
+            <SelectValue placeholder="调度" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">
+              全部调度
+            </SelectItem>
+            <SelectItem value="retry">
+              发生重试
+            </SelectItem>
+            <SelectItem value="fallback">
+              发生转移
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <Button
         variant="ghost"
         size="icon"
@@ -138,9 +202,6 @@
         </Select>
       </div>
 
-      <!-- 分隔线 -->
-      <div class="hidden sm:block h-4 w-px bg-border" />
-
       <!-- 列显示配置（桌面端） -->
       <MultiSelect
         v-model="visibleColumnIds"
@@ -152,23 +213,7 @@
         :searchable="false"
       />
 
-      <!-- 分隔线 -->
-      <div class="hidden sm:block h-4 w-px bg-border" />
-
       <!-- 自动刷新按钮 -->
-      <Button
-        variant="ghost"
-        size="icon"
-        data-usage-hide-unknown-toggle="desktop"
-        class="responsive-list-desktop h-8 w-8 shrink-0"
-        :class="hideUnknownRecords ? 'text-primary' : ''"
-        :title="hideUnknownRecords ? '显示 unknown 请求' : '隐藏 unknown 请求'"
-        aria-label="隐藏 unknown 模型或提供商的请求"
-        :aria-pressed="hideUnknownRecords"
-        @click="$emit('update:hideUnknownRecords', !hideUnknownRecords)"
-      >
-        <EyeOff class="w-3.5 h-3.5" />
-      </Button>
       <Button
         variant="ghost"
         size="icon"
@@ -183,108 +228,6 @@
         />
       </Button>
     </template>
-
-    <!-- 请求语义、状态、传输和调度使用独立下拉，组间同时生效。 -->
-    <div class="usage-quick-filters grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-2 border-b border-border/60 px-4 py-2.5 sm:px-6">
-      <Select
-        :model-value="filterRequestType"
-        @update:model-value="$emit('update:filterRequestType', $event)"
-      >
-        <SelectTrigger
-          class="h-8 w-full min-w-0 text-xs border-border/60"
-          aria-label="筛选请求类型"
-        >
-          <SelectValue placeholder="类型" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all__">
-            全部类型
-          </SelectItem>
-          <SelectItem
-            v-for="option in requestTypeFilterOptions"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select
-        :model-value="filterRequestStatus"
-        @update:model-value="$emit('update:filterRequestStatus', $event)"
-      >
-        <SelectTrigger
-          class="h-8 w-full min-w-0 text-xs border-border/60"
-          aria-label="筛选请求状态"
-        >
-          <SelectValue placeholder="状态" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all__">
-            全部状态
-          </SelectItem>
-          <SelectItem value="active">
-            活跃
-          </SelectItem>
-          <SelectItem value="failed">
-            失败
-          </SelectItem>
-          <SelectItem value="cancelled">
-            已取消
-          </SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select
-        :model-value="filterTransport"
-        @update:model-value="$emit('update:filterTransport', $event)"
-      >
-        <SelectTrigger
-          class="h-8 w-full min-w-0 text-xs border-border/60"
-          aria-label="筛选传输方式"
-        >
-          <SelectValue placeholder="传输" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all__">
-            全部传输
-          </SelectItem>
-          <SelectItem value="stream">
-            HTTP 流式
-          </SelectItem>
-          <SelectItem value="standard">
-            HTTP 标准
-          </SelectItem>
-          <SelectItem value="websocket">
-            WebSocket
-          </SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select
-        :model-value="filterAttempt"
-        @update:model-value="$emit('update:filterAttempt', $event)"
-      >
-        <SelectTrigger
-          class="h-8 w-full min-w-0 text-xs border-border/60"
-          aria-label="筛选调度情况"
-        >
-          <SelectValue placeholder="调度" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all__">
-            全部调度
-          </SelectItem>
-          <SelectItem value="retry">
-            发生重试
-          </SelectItem>
-          <SelectItem value="fallback">
-            发生转移
-          </SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
 
     <!-- 紧凑卡片视图 -->
     <div class="responsive-list-cards">
@@ -312,38 +255,42 @@
                 stack-full-width
               />
               <Badge
-                variant="secondary"
+                variant="outline"
                 data-usage-request-type="card"
-                class="whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
+                :class="`${getRequestTypeBadgeClass(record.request_type)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
               >
                 {{ formatUsageRequestType(record.request_type) }}
               </Badge>
               <!-- 生命周期与传输方式作为独立次标签。 -->
               <Badge
                 v-if="isUsageRecordFailed(record)"
-                variant="destructive"
-                class="whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
+                variant="outline"
+                data-usage-lifecycle="card"
+                class="whitespace-normal border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/30 dark:text-rose-300 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
               >
                 失败
               </Badge>
               <Badge
                 v-else-if="getDisplayStatus(record) === 'pending'"
                 variant="outline"
-                class="whitespace-normal animate-pulse border-muted-foreground/30 text-muted-foreground text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
+                data-usage-lifecycle="card"
+                class="whitespace-normal animate-pulse border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
               >
                 等待
               </Badge>
               <Badge
                 v-else-if="getDisplayStatus(record) === 'streaming'"
                 variant="outline"
-                class="whitespace-normal animate-pulse border-primary/50 text-primary text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
+                data-usage-lifecycle="card"
+                class="whitespace-normal animate-pulse border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/70 dark:bg-sky-950/30 dark:text-sky-300 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
               >
                 传输
               </Badge>
               <Badge
                 v-else-if="record.status === 'cancelled'"
                 variant="outline"
-                class="whitespace-normal border-amber-500/50 text-amber-600 dark:text-amber-400 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
+                data-usage-lifecycle="card"
+                class="whitespace-normal border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800/70 dark:bg-orange-950/30 dark:text-orange-300 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
               >
                 取消
               </Badge>
@@ -352,16 +299,15 @@
                 variant="outline"
                 data-usage-transport="websocket"
                 :title="getWebSocketTransportTitle(record)"
-                class="whitespace-normal border-sky-500/50 text-sky-600 dark:text-sky-400 text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
+                :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
               >
                 WS
               </Badge>
               <Badge
                 v-else-if="getStreamModeSegments(record).hasConversion"
-                :variant="streamBadgeVariant(getStreamModeSegments(record).client === '流式')"
-                :class="(streamBadgeVariant(getStreamModeSegments(record).client === '流式') === 'secondary')
-                  ? 'whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center gap-0.5 flex-shrink-0'
-                  : 'whitespace-normal border-border/60 text-muted-foreground text-[10px] px-1.5 h-4 leading-4 inline-flex items-center gap-0.5 flex-shrink-0'"
+                variant="outline"
+                data-usage-transport="http"
+                :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center gap-0.5 flex-shrink-0`"
               >
                 <span>{{ getStreamModeSegments(record).client }}</span>
                 <span class="opacity-60">→</span>
@@ -369,10 +315,9 @@
               </Badge>
               <Badge
                 v-else
-                :variant="streamBadgeVariant(getUpstreamStream(record))"
-                :class="(streamBadgeVariant(getUpstreamStream(record)) === 'secondary')
-                  ? 'whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0'
-                  : 'whitespace-normal border-border/60 text-muted-foreground text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0'"
+                variant="outline"
+                data-usage-transport="http"
+                :class="`${getTransportBadgeClass(record)} whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0`"
               >
                 {{ getStreamModeLabel(record) }}
               </Badge>
@@ -381,7 +326,9 @@
           <div class="flex flex-col items-end flex-shrink-0">
             <span
               v-if="record.usage_available !== false && record.usage_pricing_available !== false"
-              class="text-sm text-primary font-semibold leading-5"
+              data-usage-cost-value="card"
+              class="text-sm leading-5"
+              :class="[getRecordCostClass(record.cost)]"
             >{{ formatRecordCost(record.cost) }}</span>
             <span
               v-else-if="record.usage_available === false"
@@ -432,25 +379,46 @@
           >
             <span class="text-muted-foreground">耗时&amp;速度</span>
             <template v-if="getDisplayStatus(record) === 'pending' || getDisplayStatus(record) === 'streaming'">
-              <span class="ml-1">{{ formatRecordDurationSeconds(record.first_byte_time_ms) }}</span>
+              <span
+                data-usage-performance-part="first-byte"
+                class="ml-1 text-amber-700 dark:text-amber-300"
+              >{{ formatRecordDurationSeconds(record.first_byte_time_ms) }}</span>
               <span class="text-muted-foreground"> / </span>
               <ElapsedTimeText
-                class="text-primary"
+                data-usage-performance-part="total"
+                class="text-blue-700 dark:text-blue-300"
                 :created-at="record.created_at"
                 :response-time-updated-at="record.response_time_updated_at ?? null"
                 :status="getDisplayStatus(record)"
                 :response-time-ms="record.response_time_ms ?? null"
               />
               <span class="text-muted-foreground"> / </span>
-              <span>{{ formatOutputRate(getRecordDisplayOutputRate(record)) }}</span>
+              <span
+                data-usage-performance-part="speed"
+                :class="getOutputRateClass(record)"
+              >{{ formatOutputRate(getRecordDisplayOutputRate(record)) }}</span>
+            </template>
+            <template
+              v-else-if="hasRecordDisplayLatency(record)"
+            >
+              <span
+                data-usage-performance-part="first-byte"
+                class="ml-1 text-amber-700 dark:text-amber-300"
+              >{{ getRecordFirstByteLatency(record) }}</span>
+              <span class="text-muted-foreground"> / </span>
+              <span
+                data-usage-performance-part="total"
+                class="text-blue-700 dark:text-blue-300"
+              >{{ getRecordTotalLatency(record) }}</span>
+              <span class="text-muted-foreground"> / </span>
+              <span
+                data-usage-performance-part="speed"
+                :class="getOutputRateClass(record)"
+              >{{ formatOutputRate(getRecordDisplayOutputRate(record)) }}</span>
             </template>
             <span
-              v-else-if="hasRecordDisplayLatency(record)"
-              class="ml-1"
-            >{{ formatRecordLatencyPair(record) }} / {{ formatOutputRate(getRecordDisplayOutputRate(record)) }}</span>
-            <span
               v-else
-              class="ml-1"
+              class="ml-1 text-muted-foreground"
             >- / {{ formatOutputRate(getRecordDisplayOutputRate(record)) }}</span>
           </span>
           <span class="text-muted-foreground/40">·</span>
@@ -462,7 +430,18 @@
             <span
               v-if="record.usage_available !== false"
               class="ml-1"
-            >{{ formatTokens(getRecordEffectiveInputTokens(record)) }} / {{ formatTokens(record.output_tokens || 0) }}</span>
+              title="输入 Token / 输出 Token"
+            >
+              <span
+                data-usage-token-part="input"
+                class="text-sky-700 dark:text-sky-300"
+              >{{ formatTokens(getRecordEffectiveInputTokens(record)) }}</span>
+              <span class="text-muted-foreground"> / </span>
+              <span
+                data-usage-token-part="output"
+                class="text-emerald-700 dark:text-emerald-300"
+              >{{ formatTokens(record.output_tokens || 0) }}</span>
+            </span>
             <span
               v-else
               data-usage-unavailable="tokens"
@@ -471,10 +450,14 @@
             >不可用</span>
             <template v-if="record.usage_available !== false && hasRecordCacheTokens(record)">
               <span class="text-muted-foreground"> | </span>
-              <span>{{ formatOptionalTokens(getRecordCacheReadTokens(record)) }} / </span>
+              <span
+                data-usage-token-part="cache-read"
+                class="text-cyan-700 dark:text-cyan-300"
+              >{{ formatOptionalTokens(getRecordCacheReadTokens(record)) }}</span>
+              <span class="text-muted-foreground"> / </span>
               <span
                 data-usage-cache-hit-rate="mobile"
-                class="text-muted-foreground tabular-nums"
+                class="text-emerald-700 dark:text-emerald-300 tabular-nums font-medium"
               >
                 {{ formatRecordCacheHitRate(record) }}
               </span>
@@ -594,46 +577,36 @@
               />
             </template>
           </SortableTableHead>
-          <SortableTableHead
+          <TableHead
             v-if="isColumnVisible('status')"
-            class="h-12 font-semibold text-center"
-            column-key="status"
-            :sortable="false"
-            align="center"
-            :filter-active="filterRequestType !== '__all__'"
-            filter-title="筛选类型"
-            filter-content-class="w-44 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"
+            class="h-12 text-left font-semibold"
           >
             <span class="whitespace-nowrap">类型 / 状态</span>
-            <template #filter="{ close }">
-              <TableFilterMenu
-                :model-value="filterRequestType"
-                :options="requestTypeMenuOptions"
-                @update:model-value="$emit('update:filterRequestType', $event)"
-                @select="close"
-              />
-            </template>
-          </SortableTableHead>
+          </TableHead>
           <TableHead
             v-if="isColumnVisible('tokens')"
-            class="h-12 font-semibold text-right"
+            class="h-12 font-semibold text-left"
           >
             Tokens
           </TableHead>
           <TableHead
             v-if="isColumnVisible('cost')"
-            class="h-12 font-semibold text-right"
+            class="h-12 font-semibold text-left"
           >
             费用
           </TableHead>
           <TableHead
             v-if="isColumnVisible('performance')"
-            class="h-12 font-semibold text-right"
+            class="h-12 font-semibold text-left"
             :title="firstByteTimingDescription"
           >
-            <div class="flex flex-col items-end text-[11px] leading-3">
+            <div class="flex flex-col items-start text-[11px] leading-3">
               <span class="whitespace-normal">端到端</span>
-              <span class="whitespace-normal">首字/总耗时</span>
+              <span class="whitespace-normal">
+                首字
+                <span class="text-muted-foreground font-normal">/</span>
+                总耗时
+              </span>
               <span class="text-muted-foreground font-normal">输出速度</span>
             </div>
           </TableHead>
@@ -800,42 +773,46 @@
           </TableCell>
           <TableCell
             v-if="isColumnVisible('status')"
-            class="usage-record-type text-center py-4 [&>div]:px-1.5"
+            class="usage-record-type text-left py-4 [&>div]:px-1.5"
           >
-            <div class="flex flex-col items-center gap-1">
+            <div class="flex flex-col items-start gap-1">
               <Badge
-                variant="secondary"
+                variant="outline"
                 data-usage-request-type="desktop"
-                class="whitespace-nowrap"
+                :class="getRequestTypeBadgeClass(record.request_type)"
               >
                 {{ formatUsageRequestType(record.request_type) }}
               </Badge>
-              <div class="flex flex-wrap items-center justify-center gap-1">
+              <div class="flex flex-wrap items-center justify-start gap-1">
                 <Badge
                   v-if="isUsageRecordFailed(record)"
-                  variant="destructive"
-                  class="whitespace-nowrap"
+                  variant="outline"
+                  data-usage-lifecycle="desktop"
+                  class="whitespace-nowrap border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/30 dark:text-rose-300"
                 >
                   失败
                 </Badge>
                 <Badge
                   v-else-if="getDisplayStatus(record) === 'pending'"
                   variant="outline"
-                  class="whitespace-nowrap animate-pulse border-muted-foreground/30 text-muted-foreground"
+                  data-usage-lifecycle="desktop"
+                  class="whitespace-nowrap animate-pulse border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300"
                 >
                   等待中
                 </Badge>
                 <Badge
                   v-else-if="getDisplayStatus(record) === 'streaming'"
                   variant="outline"
-                  class="whitespace-nowrap animate-pulse border-primary/50 text-primary"
+                  data-usage-lifecycle="desktop"
+                  class="whitespace-nowrap animate-pulse border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/70 dark:bg-sky-950/30 dark:text-sky-300"
                 >
                   传输中
                 </Badge>
                 <Badge
                   v-else-if="record.status === 'cancelled'"
                   variant="outline"
-                  class="whitespace-nowrap border-amber-500/50 text-amber-600 dark:text-amber-400"
+                  data-usage-lifecycle="desktop"
+                  class="whitespace-nowrap border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800/70 dark:bg-orange-950/30 dark:text-orange-300"
                 >
                   已取消
                 </Badge>
@@ -844,16 +821,15 @@
                   variant="outline"
                   data-usage-transport="websocket"
                   :title="getWebSocketTransportTitle(record)"
-                  class="whitespace-nowrap border-sky-500/50 text-sky-600 dark:text-sky-400"
+                  :class="`${getTransportBadgeClass(record)} whitespace-nowrap`"
                 >
                   WS
                 </Badge>
                 <Badge
                   v-else-if="getStreamModeSegments(record).hasConversion"
-                  :variant="streamBadgeVariant(getStreamModeSegments(record).client === '流式')"
-                  :class="(streamBadgeVariant(getStreamModeSegments(record).client === '流式') === 'secondary')
-                    ? 'whitespace-normal inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'
-                    : 'whitespace-normal border-border/60 text-muted-foreground inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'"
+                  variant="outline"
+                  data-usage-transport="http"
+                  :class="`${getTransportBadgeClass(record)} whitespace-normal inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5`"
                 >
                   <span class="whitespace-nowrap">{{ getStreamModeSegments(record).client }}</span>
                   <span class="opacity-60">→</span>
@@ -861,10 +837,9 @@
                 </Badge>
                 <Badge
                   v-else
-                  :variant="streamBadgeVariant(getUpstreamStream(record))"
-                  :class="(streamBadgeVariant(getUpstreamStream(record)) === 'secondary')
-                    ? 'whitespace-nowrap'
-                    : 'whitespace-nowrap border-border/60 text-muted-foreground'"
+                  variant="outline"
+                  data-usage-transport="http"
+                  :class="`${getTransportBadgeClass(record)} whitespace-nowrap`"
                 >
                   {{ getStreamModeLabel(record) }}
                 </Badge>
@@ -876,25 +851,37 @@
             class="py-4"
           >
             <template v-if="record.usage_available !== false">
-              <div class="flex w-full min-w-0 items-center justify-end gap-1 text-xs leading-tight tabular-nums whitespace-nowrap">
-                <span class="text-right">
+              <div
+                class="flex w-full min-w-0 items-center justify-start gap-1 text-xs leading-tight tabular-nums whitespace-nowrap"
+                title="输入 Token / 输出 Token"
+              >
+                <span
+                  data-usage-token-part="input"
+                  class="text-left text-sky-700 dark:text-sky-300"
+                >
                   {{ formatTokens(getRecordEffectiveInputTokens(record)) }}
                 </span>
                 <span class="text-muted-foreground">
                   /
                 </span>
-                <span class="text-left">
+                <span
+                  data-usage-token-part="output"
+                  class="text-left text-emerald-700 dark:text-emerald-300"
+                >
                   {{ formatTokens(record.output_tokens || 0) }}
                 </span>
               </div>
               <div
-                class="mt-0.5 flex w-full min-w-0 items-center justify-end gap-1 text-xs leading-tight tabular-nums text-muted-foreground whitespace-nowrap"
+                class="mt-0.5 flex w-full min-w-0 items-center justify-start gap-1 text-xs leading-tight tabular-nums text-muted-foreground whitespace-nowrap"
                 :title="getRecordCacheTokensTitle(record)"
               >
                 <span
-                  class="text-right"
+                  data-usage-token-part="cache-read"
+                  class="text-left"
                   :class="[
-                    hasPositiveTokens(getRecordCacheReadTokens(record)) ? 'text-foreground/70' : ''
+                    hasPositiveTokens(getRecordCacheReadTokens(record))
+                      ? 'text-cyan-700 dark:text-cyan-300'
+                      : ''
                   ]"
                 >
                   {{ formatOptionalTokens(getRecordCacheReadTokens(record)) }}
@@ -906,7 +893,9 @@
                   data-usage-cache-hit-rate="desktop"
                   class="text-left"
                   :class="[
-                    getRecordCacheHitRate(record) != null ? 'text-foreground/70' : ''
+                    getRecordCacheHitRate(record) != null
+                      ? 'text-emerald-700 dark:text-emerald-300 font-medium'
+                      : ''
                   ]"
                 >
                   {{ formatRecordCacheHitRate(record) }}
@@ -914,7 +903,7 @@
               </div>
               <div
                 v-if="(record.input_audio_tokens || 0) > 0 || (record.output_audio_tokens || 0) > 0"
-                class="mt-0.5 text-right text-[10px] leading-tight tabular-nums text-muted-foreground whitespace-nowrap"
+                class="mt-0.5 text-left text-[10px] leading-tight tabular-nums text-muted-foreground whitespace-nowrap"
               >
                 音频 {{ formatOptionalTokens(record.input_audio_tokens) }} / {{ formatOptionalTokens(record.output_audio_tokens) }}
               </div>
@@ -922,7 +911,7 @@
             <div
               v-else
               data-usage-unavailable="tokens"
-              class="text-right text-xs text-muted-foreground"
+              class="text-left text-xs text-muted-foreground"
               title="上游未提供可验证的 token/费用用量"
             >
               不可用
@@ -930,16 +919,20 @@
           </TableCell>
           <TableCell
             v-if="isColumnVisible('cost')"
-            class="text-right py-4"
+            class="text-left py-4"
           >
             <div
               v-if="record.usage_available !== false && record.usage_pricing_available !== false"
-              class="flex flex-col items-end text-xs gap-0.5 whitespace-nowrap"
+              class="flex flex-col items-start text-xs gap-0.5 whitespace-nowrap"
             >
-              <span class="text-primary font-medium whitespace-nowrap">{{ formatRecordCost(record.cost) }}</span>
+              <span
+                data-usage-cost-value="desktop"
+                class="whitespace-nowrap"
+                :class="[getRecordCostClass(record.cost)]"
+              >{{ formatRecordCost(record.cost) }}</span>
               <span
                 v-if="showActualCost && record.actual_cost !== undefined && record.rate_multiplier && record.rate_multiplier !== 1.0"
-                class="text-muted-foreground whitespace-nowrap"
+                class="text-blue-600/70 dark:text-blue-300/70 whitespace-nowrap"
               >
                 {{ formatRecordCost(record.actual_cost) }}
               </span>
@@ -963,19 +956,23 @@
           </TableCell>
           <TableCell
             v-if="isColumnVisible('performance')"
-            class="text-right py-4"
+            class="text-left py-4"
           >
             <!-- pending/streaming 状态：首字与动态总耗时保留在同一行 -->
             <div
               v-if="getDisplayStatus(record) === 'pending' || getDisplayStatus(record) === 'streaming'"
-              class="flex flex-col items-end text-xs gap-0.5"
+              class="flex flex-col items-start text-xs gap-0.5"
               :title="getRecordPerformanceTitle(record)"
             >
               <span class="tabular-nums whitespace-normal">
-                <span>{{ formatRecordDurationSeconds(record.first_byte_time_ms) }}</span>
+                <span
+                  data-usage-performance-part="first-byte"
+                  class="text-amber-700 dark:text-amber-300"
+                >{{ formatRecordDurationSeconds(record.first_byte_time_ms) }}</span>
                 <span class="text-muted-foreground"> / </span>
                 <ElapsedTimeText
-                  class="text-primary"
+                  data-usage-performance-part="total"
+                  class="text-blue-700 dark:text-blue-300"
                   :created-at="record.created_at"
                   :response-time-updated-at="record.response_time_updated_at ?? null"
                   :status="getDisplayStatus(record)"
@@ -986,11 +983,25 @@
             <!-- 已完成状态：首字 + 总耗时 -->
             <div
               v-else-if="hasRecordDisplayLatency(record)"
-              class="flex flex-col items-end text-xs gap-0.5"
+              class="flex flex-col items-start text-xs gap-0.5"
               :title="getRecordPerformanceTitle(record)"
             >
-              <span class="tabular-nums whitespace-normal">{{ formatRecordLatencyPair(record) }}</span>
-              <span class="text-muted-foreground tabular-nums whitespace-normal">
+              <span class="tabular-nums whitespace-normal">
+                <span
+                  data-usage-performance-part="first-byte"
+                  class="text-amber-700 dark:text-amber-300"
+                >{{ getRecordFirstByteLatency(record) }}</span>
+                <span class="text-muted-foreground"> / </span>
+                <span
+                  data-usage-performance-part="total"
+                  class="text-blue-700 dark:text-blue-300"
+                >{{ getRecordTotalLatency(record) }}</span>
+              </span>
+              <span
+                data-usage-performance-part="speed"
+                class="tabular-nums whitespace-normal"
+                :class="[getOutputRateClass(record)]"
+              >
                 {{ formatOutputRate(getRecordDisplayOutputRate(record)) }}
               </span>
             </div>
@@ -1067,7 +1078,7 @@ import {
   SortableTableHead,
   TableFilterMenu,
 } from '@/components/ui'
-import { EyeOff, RefreshCcw, Shuffle } from 'lucide-vue-next'
+import { RefreshCcw, Shuffle } from 'lucide-vue-next'
 import { formatHitRate, formatTokens } from '@/utils/format'
 import {
   getCacheCreationTokens,
@@ -1084,21 +1095,19 @@ import {
 import {
   formatUsageStreamLabel,
   isUsageRecordFailed,
-  isUsageUpstreamStream,
   isUsageWebSocket,
   resolveDisplayRequestStatus,
   resolveUsageStreamLabelSegments
 } from '../utils/status'
 import { useRowClick } from '@/composables/useRowClick'
-import { useDarkMode } from '@/composables/useDarkMode'
 import { API_FORMAT_ORDER, formatApiFormat } from '@/api/endpoints/types/api-format'
 import { formatClientFamily } from '@/features/usage/utils/clientFamily'
 import { formatServiceTierFact } from '../utils/service-tier'
 import { isCyberPolicyError } from '../utils/cyberError'
 import { formatUsageWebSocketTransportTitle as getWebSocketTransportTitle } from '../utils/websocketTransport'
 import {
-  buildUsageRequestTypeOptions,
   formatUsageRequestType,
+  normalizeUsageRequestType,
 } from '../utils/requestType'
 import type { DateRangeParams, UsageRecord } from '../types'
 import { MultiSelect, TimeRangePicker } from '@/components/common'
@@ -1151,14 +1160,12 @@ const props = defineProps<{
   filterModel: string
   filterProvider: string
   filterApiFormat: string
-  filterRequestType: string
   filterRequestStatus: string
   filterTransport: string
   filterAttempt: string
   filterClientFamily: string
   availableModels: string[]
   availableProviders: string[]
-  availableRequestTypes: string[]
   availableClientFamilies: string[]
   // 分页
   currentPage: number
@@ -1167,7 +1174,6 @@ const props = defineProps<{
   pageSizeOptions: number[]
   // 自动刷新
   autoRefresh: boolean
-  hideUnknownRecords: boolean
 }>()
 
 const emit = defineEmits<{
@@ -1175,7 +1181,6 @@ const emit = defineEmits<{
   'update:filterModel': [value: string]
   'update:filterProvider': [value: string]
   'update:filterApiFormat': [value: string]
-  'update:filterRequestType': [value: string]
   'update:filterRequestStatus': [value: string]
   'update:filterTransport': [value: string]
   'update:filterAttempt': [value: string]
@@ -1183,7 +1188,6 @@ const emit = defineEmits<{
   'update:currentPage': [value: number]
   'update:pageSize': [value: number]
   'update:autoRefresh': [value: boolean]
-  'update:hideUnknownRecords': [value: boolean]
   'refresh': []
   'showDetail': [id: string]
   'prefetchDetail': [id: string]
@@ -1219,6 +1223,20 @@ const DEFAULT_ADMIN_COLUMNS: UsageRecordColumnId[] = [
   'cost',
   'performance',
 ]
+
+/** 请求类型徽章色；颜色只辅助扫读，完整类型始终由文字表达。 */
+const REQUEST_TYPE_BADGE_CLASSES: Readonly<Record<string, string>> = {
+  chat: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/70 dark:bg-sky-950/30 dark:text-sky-300',
+  compact: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300',
+  image: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/30 dark:text-rose-300',
+  video: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/70 dark:bg-emerald-950/30 dark:text-emerald-300',
+  realtime: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-800/70 dark:bg-cyan-950/30 dark:text-cyan-300',
+  live: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-800/70 dark:bg-cyan-950/30 dark:text-cyan-300',
+  unknown: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300',
+}
+
+/** 未识别的新请求类型使用中性色，避免把未知值伪装成已知业务类型。 */
+const DEFAULT_REQUEST_TYPE_BADGE_CLASS = REQUEST_TYPE_BADGE_CLASSES.unknown
 
 // 使用统一 API 格式枚举，避免使用记录筛选项和系统格式列表漂移。
 const availableApiFormats = API_FORMAT_ORDER.map((value) => ({
@@ -1330,19 +1348,6 @@ const apiFormatFilterOptions = computed<FilterOption[]>(() => [
   })),
 ])
 
-const requestTypeFilterOptions = computed<FilterOption[]>(() =>
-  buildUsageRequestTypeOptions(
-    props.availableRequestTypes,
-    props.records,
-    props.filterRequestType,
-  )
-)
-
-const requestTypeMenuOptions = computed<FilterOption[]>(() => [
-  { value: '__all__', label: '全部类型' },
-  ...requestTypeFilterOptions.value,
-])
-
 const timeRangeModel = computed({
   get: () => props.timeRange,
   set: (value: DateRangeParams) => emit('update:timeRange', value)
@@ -1358,10 +1363,6 @@ function getStreamModeLabel(record: UsageRecord): string {
 
 function getStreamModeSegments(record: UsageRecord) {
   return resolveUsageStreamLabelSegments(record)
-}
-
-function getUpstreamStream(record: UsageRecord): boolean {
-  return isUsageUpstreamStream(record)
 }
 
 function parseRecordDateTime(dateStr: string): Date {
@@ -1392,17 +1393,26 @@ function formatRecordProviderSegment(record: UsageRecord): string {
   return `${record.provider || '-'} / ${record.provider_key_name || '-'}`
 }
 
+/** 返回请求类型对应的语义色徽章。 */
+function getRequestTypeBadgeClass(value: string | null | undefined): string {
+  return REQUEST_TYPE_BADGE_CLASSES[normalizeUsageRequestType(value)]
+    ?? DEFAULT_REQUEST_TYPE_BADGE_CLASS
+}
+
+/** 返回客户端传输徽章色；WS、流式和标准请求使用不同但低饱和的色系。 */
+function getTransportBadgeClass(record: UsageRecord): string {
+  if (isUsageWebSocket(record)) {
+    return 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800/70 dark:bg-indigo-950/30 dark:text-indigo-300'
+  }
+  const streamModes = getStreamModeSegments(record)
+  if (streamModes.client === '流式' || streamModes.upstream === '流式') {
+    return 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800/70 dark:bg-teal-950/30 dark:text-teal-300'
+  }
+  return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300'
+}
+
 // 使用复用的行点击逻辑
 const { handleMouseDown, shouldTriggerRowClick } = useRowClick()
-const { isDark } = useDarkMode()
-
-// 暗色模式下交换"流式"与"标准"徽章的填充/描边样式
-function streamBadgeVariant(isStream: boolean): 'secondary' | 'outline' {
-  if (isDark.value) {
-    return isStream ? 'outline' : 'secondary'
-  }
-  return isStream ? 'secondary' : 'outline'
-}
 
 function handleRowMouseDown(event: MouseEvent, id: string) {
   handleMouseDown(event)
@@ -1451,6 +1461,13 @@ function formatRecordCost(value: number | null | undefined): string {
   return `$${value.toFixed(6)}`
 }
 
+/** 非零费用使用主色强调，零费用保持弱化以降低视觉噪声。 */
+function getRecordCostClass(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? 'font-semibold text-blue-700 dark:text-blue-300'
+    : 'font-medium text-muted-foreground'
+}
+
 function hasRecordCacheTokens(record: UsageRecord): boolean {
   return hasPositiveTokens(getRecordCacheReadTokens(record)) || hasPositiveTokens(getRecordCacheCreationTokens(record))
 }
@@ -1464,12 +1481,16 @@ function getRecordCacheTokensTitle(record: UsageRecord): string {
   ].join('\n')
 }
 
-function formatRecordLatencyPair(record: UsageRecord): string {
-  const firstByte = formatRecordDurationSeconds(
+/** 返回端到端首字耗时，缺失时回退到成功候选首字。 */
+function getRecordFirstByteLatency(record: UsageRecord): string {
+  return formatRecordDurationSeconds(
     record.end_to_end_first_byte_time_ms ?? record.first_byte_time_ms,
   )
-  const total = formatRecordDurationSeconds(record.end_to_end_time_ms ?? record.response_time_ms)
-  return `${firstByte} / ${total}`
+}
+
+/** 返回端到端总耗时，缺失时回退到成功候选耗时。 */
+function getRecordTotalLatency(record: UsageRecord): string {
+  return formatRecordDurationSeconds(record.end_to_end_time_ms ?? record.response_time_ms)
 }
 
 function formatRecordDurationSeconds(ms: number | null | undefined): string {
@@ -1492,6 +1513,13 @@ function getRecordDisplayOutputRate(record: UsageRecord): number | null {
     is_stream: record.is_stream,
     upstream_is_stream: record.upstream_is_stream,
   })
+}
+
+/** 输出速度有值时使用绿色强调，缺失占位保持弱化。 */
+function getOutputRateClass(record: UsageRecord): string {
+  return getRecordDisplayOutputRate(record) == null
+    ? 'text-muted-foreground'
+    : 'font-medium text-emerald-700 dark:text-emerald-300'
 }
 
 function getRecordPerformanceTitle(record: UsageRecord): string {

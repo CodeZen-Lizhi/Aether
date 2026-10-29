@@ -205,7 +205,6 @@
                         @update-search="addSearch = $event"
                         @add="addMappingName"
                         @remove="removeMappingName(entry.model.id, $event)"
-                        @reorder="(fromIndex, toIndex) => reorderMappingNames(entry.model.id, fromIndex, toIndex)"
                       />
                     </td>
                     <td class="px-3 py-3 align-top">
@@ -286,7 +285,6 @@
                   @update-search="addSearch = $event"
                   @add="addMappingName"
                   @remove="removeMappingName(entry.model.id, $event)"
-                  @reorder="(fromIndex, toIndex) => reorderMappingNames(entry.model.id, fromIndex, toIndex)"
                 />
               </div>
 
@@ -653,19 +651,6 @@ function updateDraftNames(modelId: string, names: string[]) {
   }
   drafts.value = next
   clearFeedback()
-}
-
-/** 在工作台草稿内移动映射；保存时按最终数组顺序生成连续优先级。 */
-function reorderMappingNames(modelId: string, fromIndex: number, toIndex: number) {
-  const currentNames = drafts.value[modelId] ?? []
-  if (fromIndex === toIndex) return
-  if (fromIndex < 0 || fromIndex >= currentNames.length) return
-  if (toIndex < 0 || toIndex >= currentNames.length) return
-
-  const next = [...currentNames]
-  const [moved] = next.splice(fromIndex, 1)
-  next.splice(toIndex, 0, moved)
-  updateDraftNames(modelId, next)
 }
 
 /** 进入行内添加状态，并聚焦当前布局中可见的唯一输入。 */

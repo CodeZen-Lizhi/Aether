@@ -237,6 +237,7 @@ import {
   buildModelTestCandidatePlan,
   buildDefaultModelTestRequestHeaders,
   buildDefaultModelTestRequestBody,
+  formatModelTestKeyName,
   isModelTestableApiFormat,
   isModelTestableEndpoint,
   listModelTestMappedModelOptions,
@@ -346,10 +347,10 @@ const testKeyOptions = computed(() => {
       seen.add(key.id)
       return compatibleKeyIds.has(key.id)
     })
-    .sort((left, right) => formatTestKeyOptionLabel(left).localeCompare(formatTestKeyOptionLabel(right)))
+    .sort((left, right) => formatModelTestKeyName(left).localeCompare(formatModelTestKeyName(right)))
     .map(key => ({
       value: key.id,
-      label: formatTestKeyOptionLabel(key),
+      label: formatModelTestKeyName(key),
     }))
 })
 const effectiveTestRequestModelName = computed(() => (
@@ -623,7 +624,7 @@ async function testModelConnection(model: Model) {
   testRequestBodyDraft.value = testRequestBodyResetValue.value
   modelTest.testResult.value = null
   modelTest.dialogOpen.value = true
-  void ensureModelTestKeysLoaded()
+  void ensureModelTestKeysLoaded(true)
 }
 
 function normalizeSelectedTestKeyId(id: string | null | undefined): string {
@@ -637,12 +638,16 @@ function pruneSelectedTestKeyId() {
   selectedTestKeyId.value = normalizeSelectedTestKeyId(selectedTestKeyId.value)
 }
 
-async function ensureModelTestKeysLoaded() {
-  if (modelTestKeysLoadedProviderId.value === props.provider.id || loadingModelTestKeys.value) {
+/** 每次打开模型测试时重新读取 Key，确保名称等可变字段不是旧缓存。 */
+async function ensureModelTestKeysLoaded(forceRefresh = false) {
+  if ((!forceRefresh && modelTestKeysLoadedProviderId.value === props.provider.id) || loadingModelTestKeys.value) {
     return
   }
 
   loadingModelTestKeys.value = true
+  if (forceRefresh) {
+    modelTestKeysLoadedProviderId.value = null
+  }
   try {
     modelTestProviderKeys.value = await getProviderKeys(props.provider.id)
     modelTestKeysLoadedProviderId.value = props.provider.id
@@ -652,18 +657,6 @@ async function ensureModelTestKeysLoaded() {
   } finally {
     loadingModelTestKeys.value = false
   }
-}
-
-function formatTestKeyOptionLabel(key: EndpointAPIKey): string {
-  const name = key.name?.trim()
-  const masked = key.api_key_masked?.trim()
-  const authType = key.auth_type?.trim()
-  const primary = name || masked || key.id
-  const suffix = [
-    masked && masked !== primary ? masked : '',
-    authType || '',
-  ].filter(Boolean)
-  return suffix.length > 0 ? `${primary} · ${suffix.join(' · ')}` : primary
 }
 
 function getModelTestRequestedModelName(model: Model | null): string {

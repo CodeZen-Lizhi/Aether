@@ -133,4 +133,19 @@ describe('ModelsTab model testing', () => {
     })
     expect(modelTestStart.mock.calls[0][0].mappedModelNames).toBeUndefined()
   })
+
+  it('shows only the latest Key name each time the test dialog opens', async () => {
+    getProviderKeys
+      .mockResolvedValueOnce([{ ...key, name: 'Codex', auth_type: 'api_key' }])
+      .mockResolvedValueOnce([{ ...key, name: 'Codex Renamed', auth_type: 'api_key' }])
+    mountModelsTab()
+
+    findButton('测试模型').click()
+    await vi.waitFor(() => expect(getProviderKeys).toHaveBeenCalledTimes(1))
+
+    findButton('测试模型').click()
+    await vi.waitFor(() => expect(getProviderKeys).toHaveBeenCalledTimes(2))
+    expect(getProviderKeys).toHaveBeenNthCalledWith(1, 'provider-1')
+    expect(getProviderKeys).toHaveBeenNthCalledWith(2, 'provider-1')
+  })
 })

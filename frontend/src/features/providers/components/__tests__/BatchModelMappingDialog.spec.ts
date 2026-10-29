@@ -68,6 +68,10 @@ function visibleModelNames(): string[] {
 }
 
 async function addMapping(index: number) {
+  await addNamedMapping(index, `new-upstream-${index}`)
+}
+
+async function addNamedMapping(index: number, name: string) {
   const addButton = document.querySelector<HTMLButtonElement>(
     `[aria-label="为 Client ${index} 添加提供商模型"]`,
   )
@@ -79,7 +83,7 @@ async function addMapping(index: number) {
     `[data-mapping-add-input][aria-label="Client ${index} 的提供商模型"]`,
   )
   expect(input).not.toBeNull()
-  input!.value = `new-upstream-${index}`
+  input!.value = name
   input!.dispatchEvent(new Event('input', { bubbles: true }))
   await nextTick()
   input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -300,7 +304,7 @@ describe('BatchModelMappingDialog saving', () => {
     expect(feedback.confirm).not.toHaveBeenCalled()
   })
 
-  it('reorders mappings and saves contiguous priorities', async () => {
+  it('keeps selection order in the dialog without offering manual reordering', async () => {
     models[0].provider_model_mappings = [
       { name: 'existing-1', priority: 1 },
       { name: 'secondary-1', priority: 2 },
@@ -310,16 +314,39 @@ describe('BatchModelMappingDialog saving', () => {
     mountDialog()
     await vi.waitFor(() => expect(document.body.textContent).toContain('secondary-1'))
 
-    expect(document.querySelector('[data-batch-mapping-order-row][draggable="true"]')).not.toBeNull()
-    document.querySelector<HTMLButtonElement>('[aria-label="下移 existing-1"]')!.click()
+    expect(document.querySelector('[data-batch-mapping-order-row]')).toBeNull()
+    expect(document.querySelector('[aria-label^="上移"]')).toBeNull()
+    expect(document.querySelector('[aria-label^="下移"]')).toBeNull()
+    await addMapping(1)
     await nextTick()
 
     buttonWithText('保存 1 项更改').click()
     await vi.waitFor(() => expect(updateModel).toHaveBeenCalledOnce())
     expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
       provider_model_mappings: [
-        { name: 'secondary-1', priority: 1 },
-        { name: 'existing-1', priority: 2 },
+        { name: 'existing-1', priority: 1 },
+        { name: 'secondary-1', priority: 2 },
+        { name: 'new-upstream-1', priority: 3 },
+      ],
+    })
+  })
+
+  it('assigns priorities by the order new mappings are selected', async () => {
+    models[0].provider_model_mappings = []
+    models[1].provider_model_mappings = []
+    vi.mocked(updateModel).mockResolvedValue(models[0])
+    mountDialog()
+
+    await addNamedMapping(1, 'first-selected')
+    await addNamedMapping(1, 'second-selected')
+
+    buttonWithText('保存 1 项更改').click()
+
+    await vi.waitFor(() => expect(updateModel).toHaveBeenCalledOnce())
+    expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
+      provider_model_mappings: [
+        { name: 'first-selected', priority: 1 },
+        { name: 'second-selected', priority: 2 },
       ],
     })
   })

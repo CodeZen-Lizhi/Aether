@@ -14,10 +14,8 @@ import {
   resolveUsageStreamModes,
 } from './status'
 
-/** 使用记录页四个独立筛选维度；组间同时满足。 */
+/** 使用记录页三个独立筛选维度；组间同时满足。 */
 export interface UsageLiveFilters {
-  /** 请求语义类型；`__all__` 表示不限制。 */
-  requestType: string
   /** 请求生命周期；`active` 同时覆盖等待中和传输中。 */
   requestStatus: UsageLifecycleFilterValue
   /** 客户端可见传输方式。 */
@@ -41,13 +39,8 @@ export function matchesUsageLiveTypeFilter(record: UsageRecord, filter: FilterSt
   return true
 }
 
-/** 核对轮询后的四个独立筛选，避免终态更新后仍留在不匹配的结果中。 */
+/** 核对轮询后的三个独立筛选，避免终态更新后仍留在不匹配的结果中。 */
 export function matchesUsageLiveFilters(record: UsageRecord, filters: UsageLiveFilters): boolean {
-  if (filters.requestType !== '__all__') {
-    const recordType = record.request_type?.trim().toLowerCase() || 'unknown'
-    if (recordType !== filters.requestType.trim().toLowerCase()) return false
-  }
-
   if (filters.requestStatus === 'active') {
     const status = resolveDisplayRequestStatus(record)
     if (status !== 'pending' && status !== 'streaming') return false

@@ -90,4 +90,14 @@ describe('ProviderManagement provider list', () => {
     // 比例分配后不再按容器宽度分档。
     expect(layout).not.toContain('@container provider-list (min-width: 70rem)')
   })
+
+  it('centers the endpoint health header with its centered cell content', () => {
+    const healthHeader = source
+      .split('<SortableTableHead')
+      .find(block => block.includes("legacyT('端点健康')"))
+
+    expect(healthHeader).toBeTruthy()
+    expect(healthHeader).toContain('class="text-center"')
+    expect(healthHeader).toContain('align="center"')
+  })
 })

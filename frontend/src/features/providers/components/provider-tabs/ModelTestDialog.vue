@@ -150,7 +150,10 @@
                   :disabled="controlsDisabled || (keyOptionsLoading && keyOptions.length === 0)"
                   @update:model-value="handleKeyValueChange"
                 >
-                  <SelectTrigger class="h-10 w-full rounded-xl border-border/70 bg-background text-xs shadow-none">
+                  <SelectTrigger
+                    class="h-10 w-full rounded-xl border-border/70 bg-background text-xs shadow-none"
+                    aria-label="测试 Key"
+                  >
                     <SelectValue placeholder="自动" />
                   </SelectTrigger>
                   <SelectContent
@@ -217,130 +220,184 @@
                 <span class="field-meta">可选覆盖</span>
               </div>
 
-              <div class="request-editor">
-                <div class="request-editor-head">
+              <div class="request-composer">
+                <section
+                  class="request-editor"
+                  data-request-editor="headers"
+                >
                   <button
                     type="button"
-                    class="request-editor-toggle"
+                    class="request-editor-head"
                     :aria-expanded="requestHeadersExpanded"
                     aria-controls="model-test-request-headers"
                     @click="requestHeadersExpanded = !requestHeadersExpanded"
                   >
-                    <ChevronRight
-                      class="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
-                      :class="{ 'rotate-90': requestHeadersExpanded }"
+                    <span class="request-editor-icon">
+                      <Braces class="h-3.5 w-3.5" />
+                    </span>
+                    <span class="request-editor-copy">
+                      <span class="request-editor-title">请求头</span>
+                      <span class="request-editor-hint">自定义本次测试发送的 Header</span>
+                    </span>
+                    <span class="request-editor-format">JSON</span>
+                    <ChevronDown
+                      class="request-editor-chevron h-4 w-4"
+                      :class="{ 'rotate-180': requestHeadersExpanded }"
                     />
-                    <Code2 class="h-3.5 w-3.5 text-primary/70" />
-                    <span>测试请求头</span>
                   </button>
                   <div
-                    v-if="requestHeadersExpanded"
-                    class="flex shrink-0 items-center gap-0.5"
+                    v-show="requestHeadersExpanded"
+                    id="model-test-request-headers"
+                    class="request-editor-content"
                   >
-                    <button
-                      type="button"
-                      class="editor-icon-button"
-                      title="格式化请求头 JSON"
-                      aria-label="格式化请求头 JSON"
-                      :disabled="controlsDisabled"
-                      @click="formatRequestHeadersDraft"
+                    <div class="request-code-toolbar">
+                      <span class="request-code-label">
+                        <Code2 class="h-3 w-3" />
+                        Headers
+                      </span>
+                      <div class="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          class="editor-icon-button"
+                          title="格式化请求头 JSON"
+                          aria-label="格式化请求头 JSON"
+                          :disabled="controlsDisabled"
+                          @click="formatRequestHeadersDraft"
+                        >
+                          <Braces class="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          class="editor-icon-button"
+                          title="重置请求头"
+                          aria-label="重置请求头"
+                          :disabled="controlsDisabled"
+                          @click="resetRequestHeadersDraft"
+                        >
+                          <RotateCcw class="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      class="request-code-surface"
+                      :class="{ 'is-invalid': requestHeadersError }"
                     >
-                      <Braces class="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      class="editor-icon-button"
-                      title="重置请求头"
-                      aria-label="重置请求头"
-                      :disabled="controlsDisabled"
-                      @click="resetRequestHeadersDraft"
+                      <Textarea
+                        :model-value="requestHeadersDraft"
+                        class="request-code-textarea h-[150px] min-h-[150px]"
+                        :disabled="controlsDisabled"
+                        placeholder="输入 JSON 请求头"
+                        spellcheck="false"
+                        @update:model-value="emit('update:requestHeadersDraft', $event)"
+                      />
+                    </div>
+                    <div
+                      v-if="requestHeadersError"
+                      class="field-error"
                     >
-                      <RotateCcw class="h-3.5 w-3.5" />
-                    </button>
+                      {{ requestHeadersError }}
+                    </div>
+                    <div
+                      v-else
+                      class="request-code-footer"
+                    >
+                      <span class="request-code-state">
+                        <span />
+                        JSON 可用
+                      </span>
+                      <span>{{ requestHeadersLineCount }} 行 · {{ requestHeadersDraft.length }} 字符</span>
+                    </div>
                   </div>
-                </div>
-                <div
-                  v-show="requestHeadersExpanded"
-                  id="model-test-request-headers"
-                  class="request-editor-content"
-                >
-                  <Textarea
-                    :model-value="requestHeadersDraft"
-                    class="h-[140px] min-h-[140px] font-mono text-[11px] leading-5"
-                    :disabled="controlsDisabled"
-                    placeholder="输入 JSON 请求头"
-                    @update:model-value="emit('update:requestHeadersDraft', $event)"
-                  />
-                  <div
-                    v-if="requestHeadersError"
-                    class="field-error"
-                  >
-                    {{ requestHeadersError }}
-                  </div>
-                </div>
-              </div>
+                </section>
 
-              <div class="request-editor">
-                <div class="request-editor-head">
+                <section
+                  class="request-editor"
+                  data-request-editor="body"
+                >
                   <button
                     type="button"
-                    class="request-editor-toggle"
+                    class="request-editor-head"
                     :aria-expanded="requestBodyExpanded"
                     aria-controls="model-test-request-body"
                     @click="requestBodyExpanded = !requestBodyExpanded"
                   >
-                    <ChevronRight
-                      class="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
-                      :class="{ 'rotate-90': requestBodyExpanded }"
+                    <span class="request-editor-icon">
+                      <Code2 class="h-3.5 w-3.5" />
+                    </span>
+                    <span class="request-editor-copy">
+                      <span class="request-editor-title">请求体</span>
+                      <span class="request-editor-hint">按需覆盖测试请求 JSON</span>
+                    </span>
+                    <span class="request-editor-format">JSON</span>
+                    <ChevronDown
+                      class="request-editor-chevron h-4 w-4"
+                      :class="{ 'rotate-180': requestBodyExpanded }"
                     />
-                    <Code2 class="h-3.5 w-3.5 text-primary/70" />
-                    <span>测试请求体</span>
                   </button>
                   <div
-                    v-if="requestBodyExpanded"
-                    class="flex shrink-0 items-center gap-0.5"
+                    v-show="requestBodyExpanded"
+                    id="model-test-request-body"
+                    class="request-editor-content"
                   >
-                    <button
-                      type="button"
-                      class="editor-icon-button"
-                      title="格式化请求体 JSON"
-                      aria-label="格式化请求体 JSON"
-                      :disabled="controlsDisabled"
-                      @click="formatRequestBodyDraft"
+                    <div class="request-code-toolbar">
+                      <span class="request-code-label">
+                        <Code2 class="h-3 w-3" />
+                        Body
+                      </span>
+                      <div class="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          class="editor-icon-button"
+                          title="格式化请求体 JSON"
+                          aria-label="格式化请求体 JSON"
+                          :disabled="controlsDisabled"
+                          @click="formatRequestBodyDraft"
+                        >
+                          <Braces class="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          class="editor-icon-button"
+                          title="重置请求体"
+                          aria-label="重置请求体"
+                          :disabled="controlsDisabled"
+                          @click="resetRequestBodyDraft"
+                        >
+                          <RotateCcw class="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      class="request-code-surface"
+                      :class="{ 'is-invalid': requestBodyError }"
                     >
-                      <Braces class="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      class="editor-icon-button"
-                      title="重置请求体"
-                      aria-label="重置请求体"
-                      :disabled="controlsDisabled"
-                      @click="resetRequestBodyDraft"
+                      <Textarea
+                        :model-value="requestBodyDraft"
+                        class="request-code-textarea h-[210px] min-h-[210px]"
+                        :disabled="controlsDisabled"
+                        placeholder="输入 JSON 请求体"
+                        spellcheck="false"
+                        @update:model-value="emit('update:requestBodyDraft', $event)"
+                      />
+                    </div>
+                    <div
+                      v-if="requestBodyError"
+                      class="field-error"
                     >
-                      <RotateCcw class="h-3.5 w-3.5" />
-                    </button>
+                      {{ requestBodyError }}
+                    </div>
+                    <div
+                      v-else
+                      class="request-code-footer"
+                    >
+                      <span class="request-code-state">
+                        <span />
+                        JSON 可用
+                      </span>
+                      <span>{{ requestBodyLineCount }} 行 · {{ requestBodyDraft.length }} 字符</span>
+                    </div>
                   </div>
-                </div>
-                <div
-                  v-show="requestBodyExpanded"
-                  id="model-test-request-body"
-                  class="request-editor-content"
-                >
-                  <Textarea
-                    :model-value="requestBodyDraft"
-                    class="h-[180px] min-h-[180px] font-mono text-[11px] leading-5"
-                    :disabled="controlsDisabled"
-                    placeholder="输入 JSON 请求体"
-                    @update:model-value="emit('update:requestBodyDraft', $event)"
-                  />
-                  <div
-                    v-if="requestBodyError"
-                    class="field-error"
-                  >
-                    {{ requestBodyError }}
-                  </div>
-                </div>
+                </section>
               </div>
             </div>
           </div>
@@ -1256,10 +1313,16 @@ const requestBodyExpanded = ref(false)
 const configExpanded = ref(true)
 const requestHeadersDraft = computed(() => props.requestHeadersDraft ?? '')
 const requestBodyDraft = computed(() => props.requestBodyDraft ?? '')
+const requestHeadersLineCount = computed(() => countDraftLines(requestHeadersDraft.value))
+const requestBodyLineCount = computed(() => countDraftLines(requestBodyDraft.value))
 const traceCandidates = computed(() => props.trace?.candidates ?? [])
 const controlsDisabled = computed(() => props.testing === true)
 const { isDark } = useDarkMode()
 const { copyToClipboard } = useClipboard()
+
+function countDraftLines(value: string): number {
+  return value ? value.split('\n').length : 1
+}
 
 function handleModelMappingValueChange(value: string) {
   emit('selectModelMapping', value === 'auto' ? '' : value)
