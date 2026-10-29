@@ -188,6 +188,7 @@
     :endpoints="activeEndpoints"
     :selected-endpoint="selectedTestEndpoint"
     :testing="modelTest.testing.value"
+    :stopped="modelTest.testStopped.value"
     :trace="modelTest.testTrace.value"
     :request-id="modelTest.requestId.value"
     :request-headers-draft="testRequestHeadersDraft"
@@ -203,7 +204,7 @@
     :key-options-loading="loadingModelTestKeys"
     :start-disabled="!selectedTestEndpoint || !!testRequestHeadersError || !!testRequestBodyError || testCandidateCount === 0"
     @close="handleTestDialogClose"
-    @back="handleTestDialogBack"
+    @cancel="modelTest.cancelTest"
     @start="handleStartPendingTest"
     @select-endpoint="handleSelectTestEndpoint"
     @select-model-mapping="handleSelectModelMapping"
@@ -529,12 +530,6 @@ function handleTestDialogClose() {
   testRequestHeadersResetValue.value = ''
   testRequestBodyDraft.value = ''
   testRequestBodyResetValue.value = ''
-}
-
-function handleTestDialogBack() {
-  if (modelTest.testing.value) return
-  modelTest.testResult.value = null
-  modelTest.stopPolling()
 }
 
 function handleSelectTestEndpoint(endpointId: string) {

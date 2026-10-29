@@ -45,6 +45,8 @@ export function useModelTest(options: UseModelTestOptions) {
   const LOCAL_FAILOVER_UNCONFIGURED_MESSAGE = 'Rust local provider-query failover simulation is not configured'
 
   const testing = ref(false)
+  /** 当前一轮测试是否由用户主动停止；保留已有追踪记录供结果区展示。 */
+  const testStopped = ref(false)
   const testMode = ref<'global' | 'direct'>('global')
   const testResult = ref<TestModelFailoverResponse | null>(null)
   const testTrace = ref<RequestTrace | null>(null)
@@ -53,6 +55,7 @@ export function useModelTest(options: UseModelTestOptions) {
 
   let tracePollTimer: ReturnType<typeof setInterval> | null = null
   let tracePollToken = 0
+  let testRunToken = 0
   let activeAbortController: AbortController | null = null
 
   function buildTestRequestId(): string {
@@ -244,15 +247,32 @@ export function useModelTest(options: UseModelTestOptions) {
   }
 
   function resetState() {
+    testRunToken += 1
     abortActiveRequest()
     stopPolling()
     dialogOpen.value = false
     testResult.value = null
+    testStopped.value = false
+  }
+
+  /**
+   * 停止当前模型测试请求并保留已经取得的追踪记录。
+   * 停止后通过 `testStopped` 区分主动停止与尚未开始，迟到的接口结果不会覆盖当前状态。
+   */
+  function cancelTest() {
+    if (!testing.value && !activeAbortController) return
+    testRunToken += 1
+    testStopped.value = true
+    testing.value = false
+    abortActiveRequest()
+    stopPolling({ clearState: false })
   }
 
   async function startTest(params: StartTestParams) {
+    const runToken = ++testRunToken
     abortActiveRequest()
     testing.value = true
+    testStopped.value = false
     testMode.value = params.mode
     dialogOpen.value = true
     testResult.value = null
@@ -286,6 +306,7 @@ export function useModelTest(options: UseModelTestOptions) {
         }, {
           signal: abortController.signal,
         })
+      if (testRunToken !== runToken) return
 
       if (
         params.mode === 'global'
@@ -293,6 +314,7 @@ export function useModelTest(options: UseModelTestOptions) {
         && result.error === LOCAL_FAILOVER_UNCONFIGURED_MESSAGE
       ) {
         result = await runDirectTest(params, reqId, abortController.signal)
+        if (testRunToken !== runToken) return
       }
 
       const keepTraceContext = resultHasTraceContext(result)
@@ -325,7 +347,7 @@ export function useModelTest(options: UseModelTestOptions) {
         testResult.value = result
       }
     } catch (err: unknown) {
-      if (isRequestCancelled(err)) {
+      if (isRequestCancelled(err) || testRunToken !== runToken) {
         return
       }
       stopPolling()
@@ -338,7 +360,9 @@ export function useModelTest(options: UseModelTestOptions) {
       if (activeAbortController === abortController) {
         activeAbortController = null
       }
-      testing.value = false
+      if (testRunToken === runToken) {
+        testing.value = false
+      }
     }
   }
 
@@ -348,12 +372,14 @@ export function useModelTest(options: UseModelTestOptions) {
 
   return {
     testing,
+    testStopped,
     testMode,
     testResult,
     testTrace,
     requestId,
     dialogOpen,
     startTest,
+    cancelTest,
     resetState,
     stopPolling,
   }

@@ -6,6 +6,7 @@ import type { EndpointAPIKey } from '@/api/endpoints/keys'
 import ModelsTab from '../ModelsTab.vue'
 
 const modelTestStart = vi.hoisted(() => vi.fn())
+const modelTestCancel = vi.hoisted(() => vi.fn())
 const getProviderKeys = vi.hoisted(() => vi.fn())
 
 vi.mock('@/composables/useModelTest', async () => {
@@ -16,9 +17,11 @@ vi.mock('@/composables/useModelTest', async () => {
       testResult: createRef(null),
       testMode: createRef('global'),
       testing: createRef(false),
+      testStopped: createRef(false),
       testTrace: createRef(null),
       requestId: createRef(null),
       startTest: modelTestStart,
+      cancelTest: modelTestCancel,
       stopPolling: vi.fn(),
       resetState: vi.fn(),
     }),
