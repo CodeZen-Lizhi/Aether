@@ -24,3 +24,10 @@
 - `npm run type-check`、目标 ESLint、`npm run build` 通过。
 - 真实组件浏览器检查 1200×900、900×640、390×844 和浅深主题，无页面或弹窗横向溢出。
 - 实际验证开始、进行中、停止、成功、失败、请求 ID、执行记录选中与诊断详情滚动；结果态无“返回”，页脚操作符合状态。
+
+## 桌面交付
+
+- `build:verified` 生成 Aether `0.1.76` arm64 候选包。
+- 交付门禁 5 项通过：模型测试 UI、TypeScript、桌面脚本、随包网关生命周期、应用与 DMG 产物校验。
+- 产物：`target/release/bundle/dmg/Aether_0.1.76_aarch64.dmg`
+- SHA-256：`3d909a3f0e284f5abda1b1c6b3df5d47d698f7ebd28f3aed4616ee1518289142`
