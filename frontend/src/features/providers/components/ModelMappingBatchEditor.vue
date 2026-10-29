@@ -3,30 +3,89 @@
   <div class="min-w-0">
     <div
       v-if="names.length > 0 || !editing"
-      class="flex min-w-0 flex-wrap items-center gap-1.5"
+      class="space-y-1.5"
     >
-      <span
-        v-for="name in names"
-        :key="name"
-        class="inline-flex max-w-full min-w-0 items-center gap-1 rounded-lg border border-[#bfdbfe] bg-[#f5f9ff] py-1 pl-2 pr-1 font-mono text-[11px] text-[#1d4ed8] dark:border-[#1e40af]/40 dark:bg-[#1e3a8a]/25 dark:text-[#93c5fd]"
+      <TransitionGroup
+        v-if="names.length > 0"
+        tag="div"
+        name="mapping-order"
+        class="space-y-1.5"
       >
-        <span
-          class="min-w-0 truncate"
-          :title="name"
+        <div
+          v-for="(name, index) in names"
+          :key="name"
+          class="group flex min-w-0 items-center gap-2 rounded-lg border bg-background px-2 py-1.5 transition-colors"
+          :class="[
+            draggedIndex === index
+              ? 'border-primary/60 bg-primary/5 opacity-70'
+              : dragOverIndex === index
+                ? 'border-primary/40 bg-primary/5'
+                : 'border-border/60 hover:border-border hover:bg-muted/20',
+          ]"
+          :draggable="!disabled"
+          data-batch-mapping-order-row
+          :data-batch-mapping-order-name="name"
+          @dragstart="handleDragStart(index, $event)"
+          @dragend="handleDragEnd"
+          @dragover.prevent="handleDragOver(index)"
+          @dragleave="handleDragLeave(index)"
+          @drop.prevent="handleDrop(index)"
         >
-          {{ name }}
-        </span>
-        <button
-          type="button"
-          class="shrink-0 rounded p-0.5 text-primary/60 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50"
-          :aria-label="`移除 ${name}`"
-          :title="`移除 ${name}`"
-          :disabled="disabled"
-          @click="$emit('remove', name)"
-        >
-          <X class="h-3 w-3" />
-        </button>
-      </span>
+          <span
+            class="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/60 transition-colors group-hover:text-muted-foreground active:cursor-grabbing"
+            title="拖动调整顺序"
+            aria-hidden="true"
+          >
+            <GripVertical class="h-3.5 w-3.5" />
+          </span>
+          <span
+            class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold tabular-nums text-primary"
+          >
+            {{ index + 1 }}
+          </span>
+          <span
+            class="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground"
+            :title="name"
+          >
+            {{ name }}
+          </span>
+          <span class="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-30"
+              :disabled="disabled || index === 0"
+              :aria-label="`上移 ${name}`"
+              :title="`上移 ${name}`"
+              draggable="false"
+              @click="$emit('reorder', index, index - 1)"
+            >
+              <ArrowUp class="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-30"
+              :disabled="disabled || index === names.length - 1"
+              :aria-label="`下移 ${name}`"
+              :title="`下移 ${name}`"
+              draggable="false"
+              @click="$emit('reorder', index, index + 1)"
+            >
+              <ArrowDown class="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              class="rounded p-0.5 text-primary/60 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50"
+              :aria-label="`移除 ${name}`"
+              :title="`移除 ${name}`"
+              draggable="false"
+              :disabled="disabled"
+              @click="$emit('remove', name)"
+            >
+              <X class="h-3 w-3" />
+            </button>
+          </span>
+        </div>
+      </TransitionGroup>
       <button
         v-if="!editing"
         type="button"
@@ -137,8 +196,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Plus, Search, X } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { ArrowDown, ArrowUp, GripVertical, Plus, Search, X } from 'lucide-vue-next'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui'
 import type { UpstreamModel } from '@/api/endpoints'
 
@@ -172,6 +231,8 @@ const emit = defineEmits<{
   add: [name: string]
   /** 从当前客户端模型移除指定提供商模型。 */
   remove: [name: string]
+  /** 将映射从原下标移动到目标下标，数组顺序即保存优先级。 */
+  reorder: [fromIndex: number, toIndex: number]
 }>()
 
 const inputId = computed(() => `batch-mapping-add-${props.surface}-${props.modelId}`)
@@ -179,6 +240,12 @@ const listboxId = computed(() => `batch-mapping-options-${props.surface}-${props
 const normalizedSearch = computed(() => props.search.trim())
 const selectedNames = computed(() => new Set(props.names))
 const selectedIds = computed(() => new Set(props.options.map(option => option.id)))
+
+// 当前拖动项下标；只用于批量行内排序的临时视觉状态。
+const draggedIndex = ref<number | null>(null)
+
+// 当前拖动经过的目标下标；用于提示可放置位置。
+const dragOverIndex = ref<number | null>(null)
 
 /** 搜索限制在尚未映射的名称内，并最多展示五个候选项。 */
 const suggestions = computed(() => {
@@ -208,5 +275,48 @@ function handleKeydown(event: KeyboardEvent) {
   } else if (canCreateCustom.value) {
     emit('add', normalizedSearch.value)
   }
+}
+
+/** 记录拖拽起点，并声明本次操作为移动而非复制。 */
+function handleDragStart(index: number, event: DragEvent) {
+  if (props.disabled) {
+    event.preventDefault()
+    return
+  }
+  draggedIndex.value = index
+  dragOverIndex.value = null
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', props.names[index] ?? '')
+  }
+}
+
+/** 高亮当前拖动经过的目标位置。 */
+function handleDragOver(index: number) {
+  if (draggedIndex.value === null || draggedIndex.value === index) return
+  dragOverIndex.value = index
+}
+
+/** 离开当前目标位置后清除高亮。 */
+function handleDragLeave(index: number) {
+  if (dragOverIndex.value === index) {
+    dragOverIndex.value = null
+  }
+}
+
+/** 将拖拽项提交给父组件重排，并清理临时状态。 */
+function handleDrop(targetIndex: number) {
+  const sourceIndex = draggedIndex.value
+  if (sourceIndex === null) return
+  if (sourceIndex !== targetIndex) {
+    emit('reorder', sourceIndex, targetIndex)
+  }
+  handleDragEnd()
+}
+
+/** 结束或取消拖拽时清理高亮和拖动状态。 */
+function handleDragEnd() {
+  draggedIndex.value = null
+  dragOverIndex.value = null
 }
 </script>

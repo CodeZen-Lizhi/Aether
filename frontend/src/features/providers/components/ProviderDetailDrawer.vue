@@ -185,17 +185,6 @@
                         :provider-id="provider.id"
                         @refresh="loadProviderKeys"
                       />
-                      <!-- 自动获取模型状态 -->
-                      <template v-if="key.auto_fetch_models">
-                        <span class="text-muted-foreground/40">|</span>
-                        <span
-                          class="cursor-help"
-                          :class="key.last_models_fetch_error ? 'text-amber-600 dark:text-amber-400' : ''"
-                          :title="getAutoFetchStatusTitle(key)"
-                        >
-                          {{ legacyT(key.last_models_fetch_error ? '同步失败' : '自动同步') }}
-                        </span>
-                      </template>
                       <!-- RPM 限制信息（第二位） -->
                       <template>
                         <span class="text-muted-foreground/40">|</span>
@@ -260,8 +249,6 @@
                   ref="modelMappingTabRef"
                   :key="`mapping-${provider.id}`"
                   :provider="provider"
-                  :endpoints="endpoints"
-                  :provider-keys="providerKeys"
                   :models="providerModels"
                   :mapping-preview="providerMappingPreview"
                   :loading="loadingProviderMappingPreview"
@@ -1110,22 +1097,6 @@ function getRecoverKeyTitle(key: EndpointAPIKey): string {
     return legacyT('重置熔断器并恢复健康状态')
   }
   return legacyT('刷新健康状态')
-}
-
-// 获取自动获取模型状态的 title 提示
-function getAutoFetchStatusTitle(key: EndpointAPIKey): string {
-  const parts: string[] = [legacyT('自动获取模型已启用')]
-
-  if (key.last_models_fetch_at) {
-    const date = new Date(key.last_models_fetch_at)
-    parts.push(`${legacyT('上次同步')}: ${date.toLocaleString(locale.value)}`)
-  }
-
-  if (key.last_models_fetch_error) {
-    parts.push(`${legacyT('错误')}: ${key.last_models_fetch_error}`)
-  }
-
-  return parts.join('\n')
 }
 
 // 检查指定格式是否熔断

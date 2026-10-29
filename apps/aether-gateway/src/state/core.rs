@@ -43,7 +43,6 @@ use super::super::cache::{
 use super::super::data::{GatewayDataConfig, GatewayDataState};
 use super::super::fallback_metrics;
 use super::super::fallback_metrics::{GatewayFallbackMetricKind, GatewayFallbackReason};
-use super::super::model_fetch::spawn_model_fetch_worker;
 use super::super::rate_limit::{FrontdoorUserRpmConfig, FrontdoorUserRpmLimiter};
 use super::super::request_candidate_queue::{
     RequestCandidateQueueConfig, RequestCandidateQueueRuntime,
@@ -2130,10 +2129,6 @@ impl AppState {
         supervise_worker(
             crate::task_runtime::TASK_KEY_GEMINI_FILES_CLEANUP,
             spawn_gemini_file_mapping_cleanup_worker(background_state.clone()),
-        );
-        supervise_worker(
-            crate::task_runtime::TASK_KEY_MODEL_FETCH_WORKER,
-            spawn_model_fetch_worker(background_state.clone()),
         );
         supervise_worker(
             crate::task_runtime::TASK_KEY_VIDEO_TASK_POLLER,

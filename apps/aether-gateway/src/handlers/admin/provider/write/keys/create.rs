@@ -177,12 +177,6 @@ pub(crate) async fn build_admin_create_provider_key_record(
     key.success_count = Some(0);
     key.error_count = Some(0);
     key.total_response_time_ms = Some(0);
-    key.auto_fetch_models = payload.auto_fetch_models.unwrap_or(false);
-    key.locked_models = normalize_string_list(payload.locked_models).map(|value| json!(value));
-    key.model_include_patterns =
-        normalize_string_list(payload.model_include_patterns).map(|value| json!(value));
-    key.model_exclude_patterns =
-        normalize_string_list(payload.model_exclude_patterns).map(|value| json!(value));
     key.health_by_format = Some(json!({}));
     key.circuit_breaker_by_format = Some(json!({}));
     key.auth_type_by_format = auth_type_by_format;

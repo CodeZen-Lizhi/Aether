@@ -1,7 +1,6 @@
 const MODEL_FETCH_INTERVAL_MINUTES_DEFAULT: u64 = 1440;
 const MODEL_FETCH_INTERVAL_MINUTES_MIN: u64 = 60;
 const MODEL_FETCH_INTERVAL_MINUTES_MAX: u64 = 10080;
-const MODEL_FETCH_STARTUP_DELAY_SECONDS_DEFAULT: u64 = 10;
 
 pub fn model_fetch_interval_minutes() -> u64 {
     std::env::var("MODEL_FETCH_INTERVAL_MINUTES")
@@ -16,26 +15,9 @@ pub fn model_fetch_interval_minutes() -> u64 {
         .unwrap_or(MODEL_FETCH_INTERVAL_MINUTES_DEFAULT)
 }
 
-pub fn model_fetch_startup_enabled() -> bool {
-    std::env::var("MODEL_FETCH_STARTUP_ENABLED")
-        .ok()
-        .map(|value| value.trim().eq_ignore_ascii_case("true"))
-        .unwrap_or(true)
-}
-
-pub fn model_fetch_startup_delay_seconds() -> u64 {
-    std::env::var("MODEL_FETCH_STARTUP_DELAY_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(MODEL_FETCH_STARTUP_DELAY_SECONDS_DEFAULT)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        model_fetch_interval_minutes, model_fetch_startup_delay_seconds,
-        model_fetch_startup_enabled,
-    };
+    use super::model_fetch_interval_minutes;
 
     struct TestEnvVarGuard {
         key: &'static str,
@@ -65,13 +47,5 @@ mod tests {
 
         let _interval = set_test_env_var("MODEL_FETCH_INTERVAL_MINUTES", "20000");
         assert_eq!(model_fetch_interval_minutes(), 10080);
-    }
-
-    #[test]
-    fn startup_flags_read_from_environment() {
-        let _enabled = set_test_env_var("MODEL_FETCH_STARTUP_ENABLED", "false");
-        let _delay = set_test_env_var("MODEL_FETCH_STARTUP_DELAY_SECONDS", "3");
-        assert!(!model_fetch_startup_enabled());
-        assert_eq!(model_fetch_startup_delay_seconds(), 3);
     }
 }

@@ -149,7 +149,6 @@
               :get-quota-used-color-class="getQuotaUsedColorClass"
               @mousedown="handleMouseDown"
               @row-click="handleRowClick"
-              @view-detail="openProviderDrawer"
               @edit-provider="openEditProviderDialog"
               @open-ops-config="openOpsConfigDialog"
               @toggle-status="toggleProviderStatus"

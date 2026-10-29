@@ -295,9 +295,6 @@ function createProviderKey(overrides: Partial<EndpointAPIKey> = {}): EndpointAPI
     note: '',
     created_at: '2026-04-27T00:00:00Z',
     updated_at: '2026-04-27T00:00:00Z',
-    auto_fetch_models: false,
-    model_include_patterns: [],
-    model_exclude_patterns: [],
     ...overrides,
   }
 }
@@ -367,6 +364,35 @@ afterEach(() => {
 })
 
 describe('provider key concurrent_limit form behavior', () => {
+  it.each([
+    ['creating', null],
+    ['editing', createProviderKey()],
+  ] as const)('does not expose retired auto-fetch controls when %s a key', async (_mode, editingKey) => {
+    const root = mountDialog(KeyFormDialog, {
+      open: true,
+      endpoint: null,
+      editingKey,
+      providerId: 'provider-1',
+      providerType: 'openai',
+      availableApiFormats: ['openai:chat'],
+    })
+    await settle()
+
+    expect(root.textContent).not.toContain('自动获取上游可用模型')
+    expect(root.textContent).not.toContain('定时更新上游模型')
+    expect(root.textContent).not.toContain('包含规则')
+    expect(root.textContent).not.toContain('排除规则')
+
+    if (editingKey) {
+      await submit(root)
+      const payload = lastUpdatePayload()
+      expect(payload).not.toHaveProperty('auto_fetch_models')
+      expect(payload).not.toHaveProperty('locked_models')
+      expect(payload).not.toHaveProperty('model_include_patterns')
+      expect(payload).not.toHaveProperty('model_exclude_patterns')
+    }
+  })
+
   it('keeps default advanced settings collapsed when creating a key and lets the user expand them', async () => {
     const root = mountDialog(KeyFormDialog, {
       open: true,

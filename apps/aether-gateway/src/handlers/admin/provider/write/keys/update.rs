@@ -52,8 +52,6 @@ pub(crate) fn build_admin_update_provider_key_record_with_existing_keys(
     let state = state.as_ref();
     let mut updated = existing.clone();
     let (fields, payload) = patch.into_parts();
-    let auto_fetch_disabled =
-        existing.auto_fetch_models && matches!(payload.auto_fetch_models, Some(false));
     let current_auth_type = normalize_auth_type(Some(&existing.auth_type))?;
     let target_auth_type = payload
         .auth_type
@@ -295,24 +293,6 @@ pub(crate) fn build_admin_update_provider_key_record_with_existing_keys(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
     }
-    if let Some(auto_fetch_models) = payload.auto_fetch_models {
-        updated.auto_fetch_models = auto_fetch_models;
-    }
-    if auto_fetch_disabled && !fields.contains("allowed_models") {
-        updated.allowed_models = None;
-    }
-    if fields.contains("locked_models") {
-        updated.locked_models =
-            normalize_string_list(payload.locked_models).map(|value| json!(value));
-    }
-    if fields.contains("model_include_patterns") {
-        updated.model_include_patterns =
-            normalize_string_list(payload.model_include_patterns).map(|value| json!(value));
-    }
-    if fields.contains("model_exclude_patterns") {
-        updated.model_exclude_patterns =
-            normalize_string_list(payload.model_exclude_patterns).map(|value| json!(value));
-    }
     if fields.contains("proxy") {
         updated.proxy = normalize_json_object(payload.proxy, "proxy")?;
     }
@@ -337,17 +317,6 @@ pub(crate) fn build_admin_update_provider_key_record_with_existing_keys(
         .ok()
         .map(|duration| duration.as_secs());
     Ok(updated)
-}
-
-pub(crate) fn admin_provider_key_update_requires_immediate_model_fetch(
-    existing: &StoredProviderCatalogKey,
-    updated: &StoredProviderCatalogKey,
-) -> bool {
-    let filters_changed = existing.model_include_patterns != updated.model_include_patterns
-        || existing.model_exclude_patterns != updated.model_exclude_patterns;
-    let locked_models_changed = existing.locked_models != updated.locked_models;
-    updated.auto_fetch_models
-        && (!existing.auto_fetch_models || filters_changed || locked_models_changed)
 }
 
 pub(crate) fn build_provider_catalog_key_admin_cas_update(

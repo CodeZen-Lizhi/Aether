@@ -901,24 +901,6 @@ pub trait ProviderCatalogWriteRepository: Send + Sync {
         updated_at_unix_secs: Option<u64>,
     ) -> Result<bool, crate::DataLayerError>;
 
-    async fn update_key_model_fetch_state(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: Option<u64>,
-        last_models_fetch_error: Option<&str>,
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, crate::DataLayerError>;
-
-    async fn update_key_model_fetch_success(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: u64,
-        upstream_metadata_updates: &[ProviderCatalogUpstreamMetadataNamespaceUpdate],
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, crate::DataLayerError>;
-
     async fn delete_key(&self, key_id: &str) -> Result<bool, crate::DataLayerError>;
 
     async fn compare_and_delete_key_oauth_credential(

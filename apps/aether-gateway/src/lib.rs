@@ -51,7 +51,6 @@ mod image_capabilities;
 mod log_ids;
 mod maintenance;
 pub(crate) mod middleware;
-mod model_fetch;
 mod orchestration;
 mod privacy;
 mod process_metrics;

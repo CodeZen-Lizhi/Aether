@@ -1,9 +1,9 @@
 <template>
-  <!-- 全供应商客户端模型批量映射工作台，桌面为表格、窄内容宽度为卡片。 -->
+  <!-- 全供应商客户端模型统一映射工作台，桌面为表格、窄内容宽度为卡片。 -->
   <Dialog
     :model-value="open"
-    title="批量添加模型映射"
-    description="为每个客户端模型维护提供商模型集合，更改统一保存"
+    title="模型映射"
+    description="统一管理客户端模型的提供商映射与优先级"
     :icon="ListPlus"
     size="4xl"
     :no-padding="true"
@@ -205,6 +205,7 @@
                         @update-search="addSearch = $event"
                         @add="addMappingName"
                         @remove="removeMappingName(entry.model.id, $event)"
+                        @reorder="(fromIndex, toIndex) => reorderMappingNames(entry.model.id, fromIndex, toIndex)"
                       />
                     </td>
                     <td class="px-3 py-3 align-top">
@@ -285,6 +286,7 @@
                   @update-search="addSearch = $event"
                   @add="addMappingName"
                   @remove="removeMappingName(entry.model.id, $event)"
+                  @reorder="(fromIndex, toIndex) => reorderMappingNames(entry.model.id, fromIndex, toIndex)"
                 />
               </div>
 
@@ -329,8 +331,8 @@
       </div>
 
       <div
-        class="pb-1"
         v-if="feedback"
+        class="pb-1"
       >
         <div
           class="border-t border-border bg-[var(--color-background-mute)] px-4 pb-3 sm:px-6"
@@ -425,8 +427,10 @@ interface Props {
   providerId: string
   /** 当前供应商下的客户端模型及其已保存映射。 */
   models: Model[]
-  /** 是否存在可用于自动拉取上游模型的活跃密钥。 */
-  hasAutoFetchKey?: boolean
+  /** 是否允许在打开时尝试手动拉取上游模型。 */
+  canFetchUpstreamModels?: boolean
+  /** 从单个客户端模型进入时预填的模型标识；仅用于定位，不改变保存范围。 */
+  initialModelId?: string | null
 }
 
 interface DraftEntry {
@@ -540,7 +544,8 @@ const visibleEntries = computed(() => {
     if (statusFilter.value === 'changed' && !entry.isChanged) return false
     if (showOnlyChanged.value && !entry.isChanged) return false
     if (!query) return true
-    return clientModelLabel(entry.model).toLowerCase().includes(query)
+    return entry.model.id.toLowerCase().includes(query)
+      || clientModelLabel(entry.model).toLowerCase().includes(query)
       || entry.model.provider_model_name.toLowerCase().includes(query)
       || entry.upstreamNames.some(name => name.toLowerCase().includes(query))
   })
@@ -577,8 +582,8 @@ function normalizeUpstreamNames(names: string[]): string[] {
 }
 
 function sameUpstreamNames(left: string[], right: string[]): boolean {
-  const normalizedLeft = normalizeUpstreamNames(left).sort()
-  const normalizedRight = normalizeUpstreamNames(right).sort()
+  const normalizedLeft = normalizeUpstreamNames(left)
+  const normalizedRight = normalizeUpstreamNames(right)
   return normalizedLeft.length === normalizedRight.length
     && normalizedLeft.every((name, index) => name === normalizedRight[index])
 }
@@ -599,11 +604,16 @@ function isDefaultScopeMapping(mapping: ProviderModelMapping): boolean {
 }
 
 function defaultMappingNames(model: Model): string[] {
-  return normalizeUpstreamNames(
-    (model.provider_model_mappings ?? [])
-      .filter(isDefaultScopeMapping)
-      .map(mapping => mapping.name),
-  )
+  return (model.provider_model_mappings ?? [])
+    .filter(isDefaultScopeMapping)
+    .slice()
+    .sort((left, right) => (
+      left.priority - right.priority
+      || left.name.localeCompare(right.name)
+    ))
+    .map(mapping => mapping.name.trim())
+    .filter(Boolean)
+    .filter((name, index, names) => names.indexOf(name) === index)
 }
 
 function initialMappingsFromModels(): Record<string, string[]> {
@@ -617,15 +627,10 @@ function initialMappingsFromModels(): Record<string, string[]> {
 
 function replaceDefaultMappings(model: Model, names: string[]): ProviderModelMapping[] {
   const existingMappings = model.provider_model_mappings ?? []
-  const existingDefaultsByName = new Map<string, ProviderModelMapping>()
-  for (const mapping of existingMappings) {
-    if (isDefaultScopeMapping(mapping) && !existingDefaultsByName.has(mapping.name)) {
-      existingDefaultsByName.set(mapping.name, mapping)
-    }
-  }
-  const nextDefaultMappings = normalizeUpstreamNames(names).map(name => (
-    existingDefaultsByName.get(name) ?? { name, priority: 1 }
-  ))
+  const nextDefaultMappings = normalizeUpstreamNames(names).map((name, index) => ({
+    name,
+    priority: index + 1,
+  }))
   return [
     ...existingMappings.filter(mapping => !isDefaultScopeMapping(mapping)),
     ...nextDefaultMappings,
@@ -648,6 +653,19 @@ function updateDraftNames(modelId: string, names: string[]) {
   }
   drafts.value = next
   clearFeedback()
+}
+
+/** 在工作台草稿内移动映射；保存时按最终数组顺序生成连续优先级。 */
+function reorderMappingNames(modelId: string, fromIndex: number, toIndex: number) {
+  const currentNames = drafts.value[modelId] ?? []
+  if (fromIndex === toIndex) return
+  if (fromIndex < 0 || fromIndex >= currentNames.length) return
+  if (toIndex < 0 || toIndex >= currentNames.length) return
+
+  const next = [...currentNames]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, moved)
+  updateDraftNames(modelId, next)
 }
 
 /** 进入行内添加状态，并聚焦当前布局中可见的唯一输入。 */
@@ -856,7 +874,11 @@ watch(() => props.open, async isOpen => {
     return
   }
   resetState()
-  if (props.hasAutoFetchKey) await fetchUpstreamModels()
+  const initialModelId = props.initialModelId?.trim()
+  if (initialModelId && props.models.some(model => model.id === initialModelId)) {
+    searchQuery.value = initialModelId
+  }
+  if (props.canFetchUpstreamModels) await fetchUpstreamModels()
 }, { immediate: true })
 
 defineExpose({

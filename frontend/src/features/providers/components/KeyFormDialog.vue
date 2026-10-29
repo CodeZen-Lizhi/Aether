@@ -341,53 +341,6 @@
           </div>
         </CollapsibleContent>
       </Collapsible>
-
-      <!-- 自动获取模型 -->
-      <div class="space-y-3 py-2 px-3 rounded-md border border-border/60 bg-muted/30">
-        <div class="flex items-center justify-between">
-          <div class="space-y-0.5">
-            <Label class="text-sm font-medium">{{ legacyT('自动获取上游可用模型') }}</Label>
-            <p class="text-xs text-muted-foreground">
-              {{ legacyT('定时更新上游模型, 配合模型映射使用') }}
-            </p>
-            <p
-              v-if="showAutoFetchWarning"
-              class="text-xs text-amber-600 dark:text-amber-400"
-            >
-              {{ autoFetchWarningMessage }}
-            </p>
-          </div>
-          <Switch v-model="form.auto_fetch_models" />
-        </div>
-
-        <!-- 模型过滤规则（仅当开启自动获取时显示） -->
-        <div
-          v-if="form.auto_fetch_models"
-          class="space-y-2 pt-2 border-t border-border/40"
-        >
-          <div class="dialog-grid-2 gap-3">
-            <div>
-              <Label class="text-xs">{{ legacyT('包含规则') }}</Label>
-              <Input
-                v-model="form.model_include_patterns_text"
-                :placeholder="legacyT('gpt-*, claude-*, 留空包含全部')"
-                class="h-8 text-sm"
-              />
-            </div>
-            <div>
-              <Label class="text-xs">{{ legacyT('排除规则') }}</Label>
-              <Input
-                v-model="form.model_exclude_patterns_text"
-                placeholder="*-preview, *-beta"
-                class="h-8 text-sm"
-              />
-            </div>
-          </div>
-          <p class="text-xs text-muted-foreground">
-            {{ legacyT('逗号分隔，支持 * ? 通配符，不区分大小写') }}
-          </p>
-        </div>
-      </div>
     </form>
 
     <template #footer>
@@ -470,7 +423,7 @@ const emit = defineEmits<{
 }>()
 
 const { success, error: showError } = useToast()
-const { legacyT, locale } = useI18n()
+const { legacyT } = useI18n()
 
 function isRawSecretAuthType(authType: string | null | undefined): authType is RawSecretAuthType {
   return authType === 'api_key' || authType === 'bearer'
@@ -649,33 +602,6 @@ function getDefaultAllowAuthChannelMismatchFormats(formats = getDefaultApiFormat
   return sanitizeAllowAuthChannelMismatchFormats(formats, formats)
 }
 
-// 显示自动获取模型警告：编辑模式下，原本未启用但现在启用，且已有 allowed_models
-const showAutoFetchWarning = computed(() => {
-  if (!props.editingKey) return false
-  // 原本已启用，不需要警告
-  if (props.editingKey.auto_fetch_models) return false
-  // 现在未启用，不需要警告
-  if (!form.value.auto_fetch_models) return false
-  // 检查是否有已配置的模型权限
-  const allowedModels = props.editingKey.allowed_models
-  if (!allowedModels) return false
-  if (Array.isArray(allowedModels) && allowedModels.length === 0) return false
-  if (typeof allowedModels === 'object' && Object.keys(allowedModels).length === 0) return false
-  return true
-})
-
-const autoFetchWarningMessage = computed(() => {
-  if (!showAutoFetchWarning.value || !props.editingKey?.allowed_models) return ''
-  const models = Array.isArray(props.editingKey.allowed_models)
-    ? props.editingKey.allowed_models
-    : []
-  if (models.length === 0) return ''
-  const formattedModels = models.map(model => locale.value === 'en-US' ? `"${model}"` : `“${model}”`).join(locale.value === 'en-US' ? ', ' : '、')
-  return locale.value === 'en-US'
-    ? `Current key model permissions include these models: ${formattedModels}. Enabling auto fetch will overwrite them.`
-    : `当前 Key 模型权限存在以下模型：${formattedModels}，开启自动获取后将被覆盖`
-})
-
 // 表单是否可以保存
 const canSave = computed(() => {
   // 必须填写密钥名称
@@ -693,9 +619,6 @@ const keyNameInputId = computed(() => `key-name-${formNonce.value}`)
 const apiKeyInputId = computed(() => `api-key-${formNonce.value}`)
 const keyNameFieldName = computed(() => `key-name-field-${formNonce.value}`)
 const apiKeyFieldName = computed(() => `api-key-field-${formNonce.value}`)
-
-// 新增密钥时默认不自动开启上游模型获取
-const defaultAutoFetchModels = computed(() => false)
 
 /** 新增密钥默认排在当前供应商已有密钥之后；无密钥时从 1 开始。 */
 const getDefaultInternalPriority = () => {
@@ -721,9 +644,6 @@ const form = ref({
   max_probe_interval_minutes: 32,
   note: '',
   is_active: true,
-  auto_fetch_models: false,
-  model_include_patterns_text: '',  // 包含规则文本（逗号分隔）
-  model_exclude_patterns_text: ''   // 排除规则文本（逗号分隔）
 })
 
 const rpmLimitSummary = computed(() => {
@@ -843,9 +763,6 @@ function resetForm() {
     max_probe_interval_minutes: 32,
     note: '',
     is_active: true,
-    auto_fetch_models: defaultAutoFetchModels.value,
-    model_include_patterns_text: '',
-    model_exclude_patterns_text: ''
   }
 }
 
@@ -892,9 +809,6 @@ function loadKeyData() {
     max_probe_interval_minutes: props.editingKey.max_probe_interval_minutes ?? 32,
     note: props.editingKey.note || '',
     is_active: props.editingKey.is_active,
-    auto_fetch_models: props.editingKey.auto_fetch_models ?? false,
-    model_include_patterns_text: (props.editingKey.model_include_patterns || []).join(', '),
-    model_exclude_patterns_text: (props.editingKey.model_exclude_patterns || []).join(', ')
   }
 }
 
@@ -910,17 +824,6 @@ const { isEditMode, handleDialogUpdate, handleCancel } = useFormDialog({
 
 function createFieldNonce(): string {
   return Math.random().toString(36).slice(2, 10)
-}
-
-// 将逗号分隔的文本解析为数组（去空、去重）
-// 返回空数组而非 undefined，以便后端能正确清除已有规则
-function parsePatternText(text: string): string[] {
-  if (!text.trim()) return []
-  const patterns = text
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s.length > 0)
-  return [...new Set(patterns)]
 }
 
 /** 密钥已保存后单独保存来源；失败明确说明部分成功，避免重复创建密钥。 */
@@ -976,7 +879,6 @@ async function handleSave() {
     const allowAuthChannelMismatchFormats = buildAllowAuthChannelMismatchFormatsPayload()
 
     if (props.editingKey) {
-      const shouldClearAllowedModels = !!props.editingKey.auto_fetch_models && !form.value.auto_fetch_models
       // 更新模式
       // rpm_limit 使用 null 表示无限制
       // undefined 表示"保持原值不变"（会在 JSON 序列化时被忽略）
@@ -996,10 +898,6 @@ async function handleSave() {
         max_probe_interval_minutes: form.value.max_probe_interval_minutes,
         note: form.value.note,
         is_active: form.value.is_active,
-        allowed_models: shouldClearAllowedModels ? null : undefined,
-        auto_fetch_models: form.value.auto_fetch_models,
-        model_include_patterns: parsePatternText(form.value.model_include_patterns_text),
-        model_exclude_patterns: parsePatternText(form.value.model_exclude_patterns_text)
       }
 
       // 根据认证类型设置对应字段
@@ -1036,9 +934,6 @@ async function handleSave() {
         cache_ttl_minutes: form.value.cache_ttl_minutes,
         max_probe_interval_minutes: form.value.max_probe_interval_minutes,
         note: form.value.note,
-        auto_fetch_models: form.value.auto_fetch_models,
-        model_include_patterns: parsePatternText(form.value.model_include_patterns_text),
-        model_exclude_patterns: parsePatternText(form.value.model_exclude_patterns_text)
       })
 
       const applied = form.value.multiplier_source !== 'upstream'

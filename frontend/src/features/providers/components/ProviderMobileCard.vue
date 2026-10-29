@@ -35,15 +35,6 @@
           variant="ghost"
           size="icon"
           class="h-7 w-7"
-          :title="legacyT('查看详情')"
-          @click="$emit('viewDetail', provider.id)"
-        >
-          <Eye class="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7"
           :title="legacyT('编辑')"
           @click="$emit('editProvider', provider)"
         >
@@ -82,15 +73,15 @@
     <div class="flex flex-wrap items-center gap-3 text-xs">
       <ProviderBalanceCell
         :provider="provider"
-        :is-balance-loading="props.isBalanceLoading"
-        :get-provider-balance="props.getProviderBalance"
-        :get-provider-balance-breakdown="props.getProviderBalanceBreakdown"
-        :get-provider-balance-error="props.getProviderBalanceError"
-        :get-provider-checkin="props.getProviderCheckin"
-        :get-provider-balance-extra="props.getProviderBalanceExtra"
-        :format-balance-display="props.formatBalanceDisplay"
-        :format-reset-countdown="props.formatResetCountdown"
-        :get-quota-used-color-class="props.getQuotaUsedColorClass"
+        :is-balance-loading="isBalanceLoading"
+        :get-provider-balance="getProviderBalance"
+        :get-provider-balance-breakdown="getProviderBalanceBreakdown"
+        :get-provider-balance-error="getProviderBalanceError"
+        :get-provider-checkin="getProviderCheckin"
+        :get-provider-balance-extra="getProviderBalanceExtra"
+        :format-balance-display="formatBalanceDisplay"
+        :format-reset-countdown="formatResetCountdown"
+        :get-quota-used-color-class="getQuotaUsedColorClass"
         class="min-w-0 max-w-full"
       />
       <Badge
@@ -145,17 +136,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
 import {
   Edit,
-  Eye,
   Trash2,
   Power,
   KeyRound,
   ExternalLink,
-  Pencil,
-  Check,
-  X,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button.vue'
 import Badge from '@/components/ui/badge.vue'
@@ -166,7 +152,7 @@ import type { BalanceExtraItem } from '@/features/providers/auth-templates'
 import { sortEndpoints, isEndpointAvailable, getEndpointDotColor, getEndpointTooltip } from '@/features/providers/composables/useEndpointStatus'
 import { useI18n } from '@/i18n'
 
-const props = defineProps<{
+defineProps<{
   provider: ProviderWithEndpointsSummary
   isBalanceLoading: (providerId: string) => boolean
   getProviderBalance: (providerId: string) => { available: number | null; currency: string } | null
@@ -179,7 +165,7 @@ const props = defineProps<{
   getQuotaUsedColorClass: (provider: ProviderWithEndpointsSummary) => string
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   'viewDetail': [providerId: string]
   'editProvider': [provider: ProviderWithEndpointsSummary]
   'openOpsConfig': [provider: ProviderWithEndpointsSummary]

@@ -101,15 +101,6 @@
           variant="ghost"
           size="icon"
           class="h-7 w-7 text-muted-foreground/70 hover:text-foreground"
-          :title="legacyT('查看详情')"
-          @click="$emit('viewDetail', provider.id)"
-        >
-          <Eye class="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7 text-muted-foreground/70 hover:text-foreground"
           :title="legacyT('编辑提供商')"
           @click="$emit('editProvider', provider)"
         >
@@ -151,7 +142,6 @@
 <script setup lang="ts">
 import {
   Edit,
-  Eye,
   Trash2,
   Power,
   KeyRound,
@@ -167,7 +157,7 @@ import { sortEndpoints, isEndpointAvailable, getEndpointDotColor, getEndpointToo
 import type { BalanceExtraItem } from '@/features/providers/auth-templates'
 import { useI18n } from '@/i18n'
 
-const props = defineProps<{
+defineProps<{
   provider: ProviderWithEndpointsSummary
   isBalanceLoading: (providerId: string) => boolean
   getProviderBalance: (providerId: string) => { available: number | null; currency: string } | null
@@ -180,10 +170,9 @@ const props = defineProps<{
   getQuotaUsedColorClass: (provider: ProviderWithEndpointsSummary) => string
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   'mousedown': [event: MouseEvent]
   'rowClick': [event: MouseEvent, providerId: string]
-  'viewDetail': [providerId: string]
   'editProvider': [provider: ProviderWithEndpointsSummary]
   'openOpsConfig': [provider: ProviderWithEndpointsSummary]
   'toggleStatus': [provider: ProviderWithEndpointsSummary]

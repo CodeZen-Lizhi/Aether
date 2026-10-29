@@ -33,7 +33,7 @@ const models: Model[] = [1, 2].map(index => ({
 
 const mountedApps: Array<{ app: App, root: HTMLElement }> = []
 
-function mountDialog(hasAutoFetchKey = false) {
+function mountDialog(canFetchUpstreamModels = false, initialModelId: string | null = null) {
   const open = ref(true)
   const saved = vi.fn()
   const root = document.createElement('div')
@@ -43,7 +43,8 @@ function mountDialog(hasAutoFetchKey = false) {
       open: open.value,
       providerId: 'provider-1',
       models,
-      hasAutoFetchKey,
+      canFetchUpstreamModels,
+      initialModelId,
       'onUpdate:open': (value: boolean) => { open.value = value },
       onSaved: saved,
     }) : null,
@@ -146,7 +147,7 @@ describe('BatchModelMappingDialog saving', () => {
     expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
       provider_model_mappings: [
         { name: 'existing-1', priority: 1 },
-        { name: 'new-upstream-1', priority: 1 },
+        { name: 'new-upstream-1', priority: 2 },
       ],
     })
   })
@@ -176,7 +177,7 @@ describe('BatchModelMappingDialog saving', () => {
           endpoint_ids: ['endpoint-1'],
         },
         { name: 'existing-1', priority: 1 },
-        { name: 'new-upstream-1', priority: 1 },
+        { name: 'new-upstream-1', priority: 2 },
       ],
     })
   })
@@ -252,13 +253,13 @@ describe('BatchModelMappingDialog saving', () => {
     expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
       provider_model_mappings: [
         { name: 'existing-1', priority: 1 },
-        { name: 'new-upstream-1', priority: 1 },
+        { name: 'new-upstream-1', priority: 2 },
       ],
     })
 
     finishSecondSave!(models[1])
     await vi.waitFor(() => expect(open.value).toBe(false))
-    expect(document.body.textContent).not.toContain('批量添加模型映射')
+    expect(document.body.textContent).not.toContain('统一管理客户端模型的提供商映射与优先级')
     expect(saved).toHaveBeenCalledOnce()
     expect(feedback.success).toHaveBeenCalledWith('已成功保存 2 个客户端模型的映射。')
     expect(feedback.confirm).not.toHaveBeenCalled()
@@ -276,7 +277,7 @@ describe('BatchModelMappingDialog saving', () => {
     buttonWithText('保存 2 项更改').click()
     await vi.waitFor(() => expect(feedback.error).toHaveBeenCalledOnce())
     expect(open.value).toBe(true)
-    expect(document.body.textContent).toContain('批量添加模型映射')
+    expect(document.body.textContent).toContain('统一管理客户端模型的提供商映射与优先级')
     expect(document.body.textContent).toContain('new-upstream-2')
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('仍待保存')
     expect(saved).toHaveBeenCalledTimes(partialSuccess ? 1 : 0)
@@ -293,10 +294,45 @@ describe('BatchModelMappingDialog saving', () => {
     expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-2', {
       provider_model_mappings: [
         { name: 'existing-2', priority: 1 },
-        { name: 'new-upstream-2', priority: 1 },
+        { name: 'new-upstream-2', priority: 2 },
       ],
     })
     expect(feedback.confirm).not.toHaveBeenCalled()
+  })
+
+  it('reorders mappings and saves contiguous priorities', async () => {
+    models[0].provider_model_mappings = [
+      { name: 'existing-1', priority: 1 },
+      { name: 'secondary-1', priority: 2 },
+    ]
+    models[1].provider_model_mappings = []
+    vi.mocked(updateModel).mockResolvedValue(models[0])
+    mountDialog()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('secondary-1'))
+
+    expect(document.querySelector('[data-batch-mapping-order-row][draggable="true"]')).not.toBeNull()
+    document.querySelector<HTMLButtonElement>('[aria-label="下移 existing-1"]')!.click()
+    await nextTick()
+
+    buttonWithText('保存 1 项更改').click()
+    await vi.waitFor(() => expect(updateModel).toHaveBeenCalledOnce())
+    expect(updateModel).toHaveBeenCalledWith('provider-1', 'client-1', {
+      provider_model_mappings: [
+        { name: 'secondary-1', priority: 1 },
+        { name: 'existing-1', priority: 2 },
+      ],
+    })
+  })
+
+  it('opens focused on the requested client model', async () => {
+    mountDialog(false, 'client-2')
+    await vi.waitFor(() => expect(visibleModelNames()).toHaveLength(1))
+
+    expect(visibleModelNames()[0]).toContain('Client 2')
+    const search = document.querySelector<HTMLInputElement>(
+      'input[placeholder="搜索客户端或提供商模型…"]',
+    )
+    expect(search?.value).toBe('client-2')
   })
 
   it('filters by model status without changing the draft', async () => {

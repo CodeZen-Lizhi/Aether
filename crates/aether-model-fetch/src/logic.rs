@@ -4,7 +4,6 @@ use aether_data_contracts::repository::provider_catalog::{
     StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
 };
 use aether_provider_transport::url::build_openai_compatible_models_url;
-use regex::Regex;
 use serde_json::Value;
 
 const MODEL_FETCH_FORMAT_PRIORITY: &[&[&str]] = &[
@@ -16,20 +15,6 @@ const MODEL_FETCH_FORMAT_PRIORITY: &[&[&str]] = &[
     &["claude:messages"],
     &["gemini:generate_content"],
 ];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ModelFetchRunSummary {
-    pub attempted: usize,
-    pub succeeded: usize,
-    pub failed: usize,
-    pub skipped: usize,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModelsFetchSuccess {
-    pub fetched_model_ids: Vec<String>,
-    pub cached_models: Vec<Value>,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelsFetchPage {
@@ -76,17 +61,6 @@ pub fn build_models_fetch_url(
         None
     }?;
     Some((url, api_format))
-}
-
-pub fn parse_models_response(
-    endpoint_api_format: &str,
-    body: &Value,
-) -> Result<ModelsFetchSuccess, String> {
-    let parsed = parse_models_response_page(endpoint_api_format, body)?;
-    Ok(ModelsFetchSuccess {
-        fetched_model_ids: parsed.fetched_model_ids,
-        cached_models: parsed.cached_models,
-    })
 }
 
 pub fn parse_models_response_page(
@@ -204,15 +178,6 @@ pub fn selected_models_fetch_endpoints(
         .collect()
 }
 
-pub fn select_models_fetch_endpoint(
-    endpoints: &[StoredProviderCatalogEndpoint],
-    key: &StoredProviderCatalogKey,
-) -> Option<StoredProviderCatalogEndpoint> {
-    selected_models_fetch_endpoints(endpoints, key)
-        .into_iter()
-        .next()
-}
-
 pub fn endpoint_supports_rust_models_fetch(api_format: &str) -> bool {
     let api_format = normalize_api_format(api_format);
     matches!(
@@ -287,43 +252,6 @@ pub fn upstream_metadata_namespace_updates(
                 .map(|value| (namespace.clone(), value))
         })
         .collect()
-}
-
-pub fn apply_model_filters(
-    fetched_model_ids: &[String],
-    locked_models: Vec<String>,
-    include_patterns: Vec<String>,
-    exclude_patterns: Vec<String>,
-) -> Vec<String> {
-    let mut filtered = BTreeSet::new();
-    for model_id in fetched_model_ids {
-        if model_id.trim().is_empty() {
-            continue;
-        }
-        let included = if include_patterns.is_empty() {
-            true
-        } else {
-            include_patterns
-                .iter()
-                .any(|pattern| wildcard_matches(pattern, model_id))
-        };
-        if !included {
-            continue;
-        }
-        let excluded = exclude_patterns
-            .iter()
-            .any(|pattern| wildcard_matches(pattern, model_id));
-        if !excluded {
-            filtered.insert(model_id.trim().to_string());
-        }
-    }
-    for model in locked_models {
-        let trimmed = model.trim();
-        if !trimmed.is_empty() {
-            filtered.insert(trimmed.to_string());
-        }
-    }
-    filtered.into_iter().collect()
 }
 
 pub fn json_string_list(value: Option<&Value>) -> Vec<String> {
@@ -584,21 +512,6 @@ fn normalize_cached_model(item: &Value, model_id: &str, api_format: &str) -> Val
     Value::Object(object)
 }
 
-fn wildcard_matches(pattern: &str, model_id: &str) -> bool {
-    let mut regex = String::from("^");
-    for ch in pattern.chars() {
-        match ch {
-            '*' => regex.push_str(".*"),
-            '?' => regex.push('.'),
-            other => regex.push_str(&regex::escape(&other.to_string())),
-        }
-    }
-    regex.push('$');
-    Regex::new(&regex)
-        .ok()
-        .is_some_and(|compiled| compiled.is_match(model_id))
-}
-
 fn normalize_api_format(value: &str) -> String {
     aether_ai_formats::normalize_api_format_alias(value)
 }
@@ -611,9 +524,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        aggregate_models_for_cache, apply_model_filters, build_gemini_models_url,
-        build_models_fetch_url, merge_upstream_metadata, parse_models_response,
-        parse_models_response_page, selected_models_fetch_endpoints,
+        aggregate_models_for_cache, build_gemini_models_url, build_models_fetch_url,
+        merge_upstream_metadata, parse_models_response_page, selected_models_fetch_endpoints,
     };
 
     fn sample_endpoint(
@@ -669,24 +581,6 @@ mod tests {
             None,
         )
         .expect("key transport should build")
-    }
-
-    #[test]
-    fn apply_model_filters_respects_include_exclude_and_locked_models() {
-        let filtered = apply_model_filters(
-            &[
-                "gpt-5".to_string(),
-                "gpt-beta".to_string(),
-                "claude-4".to_string(),
-            ],
-            vec!["locked-model".to_string()],
-            vec!["gpt-*".to_string()],
-            vec!["gpt-beta".to_string()],
-        );
-        assert_eq!(
-            filtered,
-            vec!["gpt-5".to_string(), "locked-model".to_string()]
-        );
     }
 
     #[test]
@@ -827,20 +721,6 @@ mod tests {
                 "https://api.deepseek.com/models".to_string(),
                 "claude:messages".to_string()
             ))
-        );
-    }
-
-    #[test]
-    fn parse_models_response_normalizes_openai_payload() {
-        let parsed = parse_models_response(
-            "openai:chat",
-            &json!({"data": [{"id": "gpt-5"}, {"id": "gpt-5"}]}),
-        )
-        .expect("response should parse");
-        assert_eq!(parsed.fetched_model_ids, vec!["gpt-5".to_string()]);
-        assert_eq!(
-            parsed.cached_models[0]["api_formats"],
-            json!(["openai:chat"])
         );
     }
 

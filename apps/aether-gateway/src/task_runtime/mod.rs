@@ -21,7 +21,6 @@ pub(crate) const TASK_KEY_USAGE_QUEUE_WORKER: &str = "usage.queue.worker";
 pub(crate) const TASK_KEY_USAGE_COUNTER_FLUSH: &str = "usage.counter.flush.worker";
 pub(crate) const TASK_KEY_CHAT_HEALTH_SETTLEMENT: &str = "provider.chat_health.settlement.worker";
 pub(crate) const TASK_KEY_VIDEO_TASK_POLLER: &str = "video.task.poller";
-pub(crate) const TASK_KEY_MODEL_FETCH_WORKER: &str = "model.fetch.worker";
 pub(crate) const TASK_KEY_PROVIDER_QUOTA_RESET: &str = "provider.quota.reset.worker";
 pub(crate) const TASK_KEY_POOL_MONITOR: &str = "pool.monitor.worker";
 pub(crate) const TASK_KEY_AUDIT_CLEANUP: &str = "maintenance.audit.cleanup";
@@ -167,14 +166,6 @@ const TASK_DEFINITIONS: &[TaskDefinition] = &[
     ),
     TaskDefinition::new(
         TASK_KEY_VIDEO_TASK_POLLER,
-        TaskKind::Scheduled,
-        "interval",
-        true,
-        true,
-        RETRY_ONCE,
-    ),
-    TaskDefinition::new(
-        TASK_KEY_MODEL_FETCH_WORKER,
         TaskKind::Scheduled,
         "interval",
         true,

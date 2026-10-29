@@ -203,9 +203,6 @@ export async function addProviderKey(
     capabilities?: Record<string, boolean>
     note?: string
     is_active?: boolean
-    auto_fetch_models?: boolean  // 是否启用自动获取模型
-    model_include_patterns?: string[]  // 模型包含规则
-    model_exclude_patterns?: string[]  // 模型排除规则
     proxy?: ProxyConfig | null  // Key 级别代理配置
   }
 ): Promise<EndpointAPIKey> {
@@ -234,13 +231,9 @@ export async function updateProviderKey(
     cache_ttl_minutes: number
     max_probe_interval_minutes: number
     allowed_models: AllowedModels
-    locked_models: string[]  // 被锁定的模型列表
     capabilities: Record<string, boolean> | null
     is_active: boolean
     note: string
-    auto_fetch_models: boolean  // 是否启用自动获取模型
-    model_include_patterns: string[]  // 模型包含规则
-    model_exclude_patterns: string[]  // 模型排除规则
     proxy: import('./types').ProxyConfig | null  // Key 级别代理配置
   }>,
   requestOptions?: KeyRequestOptions,

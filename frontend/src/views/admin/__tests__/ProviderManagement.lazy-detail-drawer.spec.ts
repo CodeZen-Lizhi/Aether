@@ -6,6 +6,14 @@ const source = readFileSync(
   resolve(process.cwd(), 'src/views/admin/ProviderManagement.vue'),
   'utf8',
 )
+const tableRowSource = readFileSync(
+  resolve(process.cwd(), 'src/features/providers/components/ProviderTableRow.vue'),
+  'utf8',
+)
+const mobileCardSource = readFileSync(
+  resolve(process.cwd(), 'src/features/providers/components/ProviderMobileCard.vue'),
+  'utf8',
+)
 
 describe('ProviderManagement detail drawer loading', () => {
   it('keeps the heavy detail drawer out of the initial route chunk', () => {
@@ -33,6 +41,21 @@ describe('ProviderManagement provider list', () => {
     const template = source.split('<script setup lang="ts">')[0]
 
     expect(template).not.toContain('<Pagination')
+  })
+
+  it('opens details from the row without a redundant eye action', () => {
+    const rowTemplate = source
+      .split('<ProviderTableRow')[1]
+      ?.split('/>')[0]
+
+    expect(rowTemplate).toBeTruthy()
+    expect(rowTemplate).toContain('@row-click="handleRowClick"')
+    expect(rowTemplate).not.toContain('@view-detail=')
+    expect(tableRowSource).not.toContain("legacyT('查看详情')")
+    expect(tableRowSource).not.toContain('<Eye')
+    expect(mobileCardSource).not.toContain("legacyT('查看详情')")
+    expect(mobileCardSource).not.toContain('<Eye')
+    expect(mobileCardSource).toContain("@click=\"$emit('viewDetail', provider.id)\"")
   })
 
   it('keeps the provider list in table layout at narrow widths', () => {

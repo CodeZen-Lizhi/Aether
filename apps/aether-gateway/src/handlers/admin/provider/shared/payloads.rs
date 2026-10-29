@@ -51,14 +51,6 @@ pub(crate) struct AdminProviderKeyCreateRequest {
     #[serde(default)]
     pub(crate) note: Option<String>,
     #[serde(default)]
-    pub(crate) auto_fetch_models: Option<bool>,
-    #[serde(default)]
-    pub(crate) locked_models: Option<Vec<String>>,
-    #[serde(default)]
-    pub(crate) model_include_patterns: Option<Vec<String>>,
-    #[serde(default)]
-    pub(crate) model_exclude_patterns: Option<Vec<String>>,
-    #[serde(default)]
     pub(crate) fingerprint: Option<serde_json::Value>,
 }
 
@@ -103,14 +95,6 @@ pub(crate) struct AdminProviderKeyUpdateRequest {
     pub(crate) is_active: Option<bool>,
     #[serde(default)]
     pub(crate) note: Option<String>,
-    #[serde(default)]
-    pub(crate) auto_fetch_models: Option<bool>,
-    #[serde(default)]
-    pub(crate) locked_models: Option<Vec<String>>,
-    #[serde(default)]
-    pub(crate) model_include_patterns: Option<Vec<String>>,
-    #[serde(default)]
-    pub(crate) model_exclude_patterns: Option<Vec<String>>,
     #[serde(default)]
     pub(crate) proxy: Option<serde_json::Value>,
     #[serde(default)]

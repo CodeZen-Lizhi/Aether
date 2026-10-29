@@ -7,15 +7,11 @@ const BATCH_EDITABLE_KEY_FIELDS: &[&str] = &[
     "allowed_models",
     "api_formats",
     "auth_type_by_format",
-    "auto_fetch_models",
     "cache_ttl_minutes",
     "capabilities",
     "concurrent_limit",
     "is_active",
-    "locked_models",
     "max_probe_interval_minutes",
-    "model_exclude_patterns",
-    "model_include_patterns",
     "note",
     "proxy",
     "rate_multipliers",
@@ -63,15 +59,13 @@ mod tests {
     fn accepts_shared_key_configuration_fields() {
         let patch = parse_admin_provider_key_batch_update_patch(json!({
             "api_formats": ["openai:responses"],
-            "auto_fetch_models": true,
-            "model_include_patterns": ["gpt-*"],
             "allowed_models": ["gpt-5.6-sol"],
             "rpm_limit": null
         }))
         .expect("batch patch should parse");
 
-        assert_eq!(patch.len(), 5);
-        assert_eq!(patch["auto_fetch_models"], json!(true));
+        assert_eq!(patch.len(), 3);
+        assert_eq!(patch["allowed_models"], json!(["gpt-5.6-sol"]));
     }
 
     #[test]

@@ -1,7 +1,8 @@
 use super::{AppState, GatewayError, LocalMutationOutcome, LocalProviderDeleteTaskState};
 use aether_data_contracts::repository::{candidates, global_models, provider_catalog};
+use aether_model_fetch::{aggregate_models_for_cache, model_fetch_interval_minutes};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::warn;
+use tracing::{debug, warn};
 
 impl AppState {
     pub fn has_provider_catalog_data_reader(&self) -> bool {
@@ -760,54 +761,39 @@ impl AppState {
         Ok(updated)
     }
 
-    pub(crate) async fn update_provider_catalog_key_model_fetch_state(
+    /// 缓存手动查询到的上游模型；缓存时长沿用模型目录配置，不影响密钥配置或后台任务。
+    pub(crate) async fn write_upstream_models_cache(
         &self,
+        provider_id: &str,
         key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: Option<u64>,
-        last_models_fetch_error: Option<&str>,
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, GatewayError> {
-        let updated = self
-            .data
-            .update_provider_catalog_key_model_fetch_state(
-                key_id,
-                allowed_models,
-                last_models_fetch_at_unix_secs,
-                last_models_fetch_error,
-                updated_at_unix_secs,
+        cached_models: &[serde_json::Value],
+    ) {
+        let models = aggregate_models_for_cache(cached_models);
+        if models.is_empty() {
+            return;
+        }
+        let Ok(serialized) = serde_json::to_string(&models) else {
+            return;
+        };
+        let cache_key = format!("upstream_models:{provider_id}:{key_id}");
+        if let Err(err) = self
+            .runtime_state
+            .kv_set(
+                &cache_key,
+                serialized,
+                Some(std::time::Duration::from_secs(
+                    model_fetch_interval_minutes().saturating_mul(60),
+                )),
             )
             .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))?;
-        if updated {
-            self.invalidate_provider_routing_caches();
+        {
+            debug!(
+                provider_id = %provider_id,
+                key_id = %key_id,
+                error = %err,
+                "gateway upstream models cache write failed"
+            );
         }
-        Ok(updated)
-    }
-
-    pub(crate) async fn update_provider_catalog_key_model_fetch_success(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: u64,
-        upstream_metadata_updates: &[provider_catalog::ProviderCatalogUpstreamMetadataNamespaceUpdate],
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, GatewayError> {
-        let updated = self
-            .data
-            .update_provider_catalog_key_model_fetch_success(
-                key_id,
-                allowed_models,
-                last_models_fetch_at_unix_secs,
-                upstream_metadata_updates,
-                updated_at_unix_secs,
-            )
-            .await
-            .map_err(|err| GatewayError::Internal(err.to_string()))?;
-        if updated {
-            self.invalidate_provider_routing_caches();
-        }
-        Ok(updated)
     }
 
     pub(crate) async fn delete_provider_catalog_key(

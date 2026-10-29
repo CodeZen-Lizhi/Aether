@@ -2,7 +2,7 @@
   <Dialog
     :model-value="isOpen"
     :title="props.apiKey?.name ? `模型权限 - ${props.apiKey.name}` : '模型权限'"
-    :description="isAutoFetchMode ? '自动获取模式：只允许已选择的模型，锁定的模型刷新时不会被删除' : '选中的模型将被允许访问，不选择则允许全部'"
+    description="选中的模型将被允许访问，不选择则允许全部"
     :icon="Shield"
     size="2xl"
     @update:model-value="handleDialogUpdate"
@@ -21,16 +21,10 @@
           </div>
           <!-- 已选数量徽章 -->
           <span
-            v-if="selectedModels.length === 0 && !isAutoFetchMode"
+            v-if="selectedModels.length === 0"
             class="h-7 px-2.5 text-xs rounded-md flex items-center bg-muted text-muted-foreground shrink-0"
           >
             全部模型
-          </span>
-          <span
-            v-else-if="selectedModels.length === 0 && isAutoFetchMode"
-            class="h-7 px-2.5 text-xs rounded-md flex items-center bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0"
-          >
-            未选择模型
           </span>
           <span
             v-else
@@ -131,22 +125,6 @@
                       />
                     </div>
                     <span class="text-sm font-mono truncate flex-1">{{ model }}</span>
-                    <button
-                      v-if="selectedModels.includes(model)"
-                      type="button"
-                      class="p-1 rounded hover:bg-muted-foreground/10 transition-colors shrink-0 text-muted-foreground"
-                      :title="isLocked(model) ? '已锁定 - 点击解锁' : '点击锁定（刷新时不会被删除）'"
-                      @click="toggleLock(model, $event)"
-                    >
-                      <Lock
-                        v-if="isLocked(model)"
-                        class="w-3.5 h-3.5"
-                      />
-                      <LockOpen
-                        v-else
-                        class="w-3.5 h-3.5"
-                      />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -205,22 +183,6 @@
                         {{ model.global_model_display_name || model.global_model_name }}
                       </p>
                     </div>
-                    <button
-                      v-if="selectedModels.includes(model.name)"
-                      type="button"
-                      class="p-1 rounded hover:bg-muted-foreground/10 transition-colors shrink-0 text-muted-foreground"
-                      :title="isLocked(model.name) ? '已锁定 - 点击解锁' : '点击锁定（刷新时不会被删除）'"
-                      @click="toggleLock(model.name, $event)"
-                    >
-                      <Lock
-                        v-if="isLocked(model.name)"
-                        class="w-3.5 h-3.5"
-                      />
-                      <LockOpen
-                        v-else
-                        class="w-3.5 h-3.5"
-                      />
-                    </button>
                   </div>
                 </div>
               </template>
@@ -239,15 +201,8 @@
                     />
                     <span class="text-xs font-medium">上游模型</span>
                     <span class="text-xs text-muted-foreground">({{ upstreamModelNames.length }})</span>
-                    <span
-                      v-if="isAutoFetchMode"
-                      class="text-xs text-muted-foreground"
-                    >
-                      (自动同步)
-                    </span>
                   </div>
                   <button
-                    v-if="!isAutoFetchMode"
                     type="button"
                     class="text-xs text-primary hover:underline"
                     @click.stop="toggleAllUpstreamModels"
@@ -263,16 +218,12 @@
                   <div
                     v-for="model in filteredUpstreamModels"
                     :key="model.id"
-                    class="flex items-center gap-2 px-2 py-1.5 rounded"
-                    :class="isAutoFetchMode ? 'opacity-80' : 'hover:bg-muted cursor-pointer'"
+                    class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
                     @click="handleUpstreamModelClick(model)"
                   >
                     <div
                       class="w-4 h-4 border rounded flex items-center justify-center shrink-0"
-                      :class="[
-                        selectedModels.includes(model.id) ? 'bg-primary border-primary' : '',
-                        isAutoFetchMode ? 'opacity-50' : ''
-                      ]"
+                      :class="selectedModels.includes(model.id) ? 'bg-primary border-primary' : ''"
                     >
                       <Check
                         v-if="selectedModels.includes(model.id)"
@@ -290,22 +241,6 @@
                         {{ formatApiFormatShort(fmt) }}
                       </span>
                     </div>
-                    <button
-                      v-if="selectedModels.includes(model.id)"
-                      type="button"
-                      class="p-1 rounded hover:bg-muted-foreground/10 transition-colors shrink-0 text-muted-foreground"
-                      :title="isLocked(model.id) ? '已锁定 - 点击解锁' : '点击锁定（刷新时不会被删除）'"
-                      @click="toggleLock(model.id, $event)"
-                    >
-                      <Lock
-                        v-if="isLocked(model.id)"
-                        class="w-3.5 h-3.5"
-                      />
-                      <LockOpen
-                        v-else
-                        class="w-3.5 h-3.5"
-                      />
-                    </button>
                   </div>
                 </div>
               </template>
@@ -359,8 +294,6 @@ import {
   Plus,
   Check,
   ChevronDown,
-  Lock,
-  LockOpen,
   RefreshCw,
   Zap
 } from 'lucide-vue-next'
@@ -420,15 +353,8 @@ const upstreamModels = ref<UpstreamModel[]>([])
 const selectedModels = ref<string[]>([])
 const initialSelectedModels = ref<string[]>([])
 
-// 已锁定的模型
-const lockedModels = ref<string[]>([])
-const initialLockedModels = ref<string[]>([])
-
 // 所有添加过的自定义模型（包括已取消勾选的，保存前不消失）
 const allCustomModels = ref<string[]>([])
-
-// 是否为自动获取模式
-const isAutoFetchMode = computed(() => props.apiKey?.auto_fetch_models ?? false)
 
 // 空状态判断
 const showEmptyState = computed(() => {
@@ -448,11 +374,7 @@ const hasChanges = computed(() => {
   const sorted2 = [...initialSelectedModels.value].sort()
   if (sorted1.some((v, i) => v !== sorted2[i])) return true
 
-  // 检查锁定模型是否有变化
-  if (lockedModels.value.length !== initialLockedModels.value.length) return true
-  const sortedLocked1 = [...lockedModels.value].sort()
-  const sortedLocked2 = [...initialLockedModels.value].sort()
-  return sortedLocked1.some((v, i) => v !== sortedLocked2[i])
+  return false
 })
 
 // 所有已知模型的集合（提供商模型 + 上游模型）
@@ -467,11 +389,6 @@ const allKnownModels = computed(() => {
 const providerModelNamesSet = computed(() => {
   return new Set(allProviderModels.value.map(m => m.name))
 })
-
-// 判断模型是否为“提供商模型”分组项
-function isProviderModel(modelId: string): boolean {
-  return providerModelNamesSet.value.has(modelId)
-}
 
 // 上游模型列表（后端已按 id 聚合，包含 api_formats 数组）
 // 这里只做排序
@@ -509,11 +426,9 @@ function toggleAllUpstreamModels() {
   }
 }
 
-// 处理上游模型点击（自动同步模式下禁用）
+// 处理上游模型点击。
 function handleUpstreamModelClick(model: UpstreamModel) {
-  if (!isAutoFetchMode.value) {
-    toggleModel(model.id)
-  }
+  toggleModel(model.id)
 }
 
 // 自定义模型列表（显示所有添加过的，不因取消勾选而消失）
@@ -576,40 +491,9 @@ function toggleModel(modelId: string) {
   const idx = selectedModels.value.indexOf(modelId)
   if (idx === -1) {
     selectedModels.value.push(modelId)
-    // 自动获取模式下，勾选提供商模型时自动锁定
-    // 防止下次刷新时被覆盖（即使全局模型与上游模型同名）
-    if (isAutoFetchMode.value && isProviderModel(modelId)) {
-      if (!lockedModels.value.includes(modelId)) {
-        lockedModels.value.push(modelId)
-      }
-    }
   } else {
     selectedModels.value.splice(idx, 1)
-    // 取消选中时也取消锁定
-    const lockIdx = lockedModels.value.indexOf(modelId)
-    if (lockIdx !== -1) {
-      lockedModels.value.splice(lockIdx, 1)
-    }
   }
-}
-
-// 切换模型锁定状态
-function toggleLock(modelId: string, event: Event) {
-  event.stopPropagation()
-  // 只有已选中的模型才能锁定
-  if (!selectedModels.value.includes(modelId)) return
-
-  const idx = lockedModels.value.indexOf(modelId)
-  if (idx === -1) {
-    lockedModels.value.push(modelId)
-  } else {
-    lockedModels.value.splice(idx, 1)
-  }
-}
-
-// 检查模型是否被锁定
-function isLocked(modelId: string): boolean {
-  return lockedModels.value.includes(modelId)
 }
 
 // 添加自定义模型
@@ -631,17 +515,11 @@ function toggleAllProviderModels() {
   if (isAllProviderModelsSelected.value) {
     // 取消全选
     selectedModels.value = selectedModels.value.filter(id => !allNames.includes(id))
-    // 同时取消锁定
-    lockedModels.value = lockedModels.value.filter(id => !allNames.includes(id))
   } else {
     // 全选
     allNames.forEach(name => {
       if (!selectedModels.value.includes(name)) {
         selectedModels.value.push(name)
-        // 自动获取模式下，勾选提供商模型时自动锁定
-        if (isAutoFetchMode.value && !lockedModels.value.includes(name)) {
-          lockedModels.value.push(name)
-        }
       }
     })
   }
@@ -727,26 +605,14 @@ async function initializeDialogState(apiKey: EndpointAPIKey) {
   selectedModels.value = [...parsed]
   initialSelectedModels.value = [...parsed]
 
-  const locked = apiKey.locked_models ?? []
-  lockedModels.value = [...locked]
-  initialLockedModels.value = [...locked]
-
   searchQuery.value = ''
   upstreamModels.value = []
   upstreamModelsLoaded.value = false
   allCustomModels.value = []
 
-  if (apiKey.auto_fetch_models) {
-    collapsedGroups.value = new Set(['global', 'custom'])
-  } else {
-    collapsedGroups.value = new Set()
-  }
+  collapsedGroups.value = new Set()
 
   await loadProviderModels()
-
-  if (apiKey.auto_fetch_models) {
-    await fetchUpstreamModels()
-  }
 
   const upstreamModelIdsSet = new Set(upstreamModels.value.map(m => m.id))
   allCustomModels.value = selectedModels.value.filter(m =>
@@ -793,12 +659,8 @@ async function handleSave() {
       ? [...selectedModels.value]
       : null
 
-    // 只保存已选中且被锁定的模型
-    const newLocked = lockedModels.value.filter(m => selectedModels.value.includes(m))
-
     await updateProviderKey(props.apiKey.id, {
-      allowed_models: newAllowed,
-      locked_models: newLocked
+      allowed_models: newAllowed
     })
     success('模型权限已更新', '成功')
     emit('saved')

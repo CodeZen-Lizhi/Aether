@@ -24,7 +24,6 @@ use crate::handlers::shared::{
     parse_catalog_auth_config_json, provider_key_health_summary,
     provider_key_status_snapshot_payload,
 };
-use crate::model_fetch::ModelFetchRuntimeState;
 use crate::provider_key_auth::{provider_key_auth_semantics, provider_key_configured_api_formats};
 use crate::usage::GatewaySyncReportRequest;
 use crate::{AppState, GatewayError};
@@ -408,13 +407,10 @@ async fn provider_query_fetch_models_for_key(
     all_errors.extend(outcome.errors);
     let unique_models = outcome.legacy_models;
     if outcome.has_success && !unique_models.is_empty() {
-        <AppState as ModelFetchRuntimeState>::write_upstream_models_cache(
-            state.app(),
-            &provider.id,
-            &key.id,
-            &unique_models,
-        )
-        .await;
+        state
+            .app()
+            .write_upstream_models_cache(&provider.id, &key.id, &unique_models)
+            .await;
     }
     if let Some(upstream_metadata) = outcome.upstream_metadata.as_ref() {
         provider_query_persist_upstream_metadata(state, key, upstream_metadata).await?;

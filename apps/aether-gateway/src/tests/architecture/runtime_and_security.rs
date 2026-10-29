@@ -1054,102 +1054,58 @@ fn gateway_data_state_does_not_depend_on_scheduler_candidate_selection() {
 }
 
 #[test]
-fn model_fetch_runtime_paths_depend_on_shared_crates_not_local_pure_helpers() {
-    let runtime = read_workspace_file("apps/aether-gateway/src/model_fetch/runtime.rs");
-    assert!(
-        runtime.contains("aether_model_fetch"),
-        "model_fetch/runtime.rs should depend on aether_model_fetch"
-    );
-    assert!(
-        runtime.contains("ModelFetchRuntimeState"),
-        "model_fetch/runtime.rs should depend on ModelFetchRuntimeState"
-    );
-    assert!(
-        runtime.contains("build_models_fetch_execution_plan"),
-        "model_fetch/runtime.rs should depend on shared models fetch plan builder"
-    );
-    for pattern in [
-        "fn apply_model_filters(",
-        "fn aggregate_models_for_cache(",
-        "fn build_models_fetch_url(",
-        "fn build_models_fetch_execution_plan(",
-        "fn parse_models_response(",
-        "fn select_models_fetch_endpoint(",
-        "fn model_fetch_interval_minutes(",
-        "fn resolve_models_fetch_auth(",
-        "state.data.has_provider_catalog_reader()",
-        "execute_execution_runtime_sync_plan(state, None, &plan)",
-        "resolve_local_standard_auth(",
-        "resolve_local_gemini_auth(",
-        "resolve_local_openai_bearer_auth(",
-        "resolve_local_vertex_api_key_query_auth(",
-        "apply_local_header_rules(",
-        "ensure_upstream_auth_header(",
-    ] {
-        assert!(
-            !runtime.contains(pattern),
-            "model_fetch/runtime.rs should not own {pattern}"
-        );
-    }
-
-    assert!(
-        runtime.contains("sync_provider_model_whitelist_associations"),
-        "model_fetch/runtime.rs should call shared whitelist sync helper"
-    );
-    assert!(
-        !runtime.contains("mod association_sync;"),
-        "model_fetch/runtime.rs should not keep a local association_sync module"
-    );
-    assert!(
-        !runtime.contains("fn sync_provider_model_whitelist_associations("),
-        "model_fetch/runtime.rs should not own whitelist sync logic"
-    );
-
-    let runtime_state = read_workspace_file("apps/aether-gateway/src/model_fetch/runtime/state.rs");
-    assert!(
-        runtime_state.contains("pub(crate) trait ModelFetchRuntimeState"),
-        "model_fetch/runtime/state.rs should host the runtime state trait definition"
-    );
-    for pattern in [
-        "impl ModelFetchTransportRuntime for AppState",
-        "impl ModelFetchRuntimeState for AppState",
-        "impl ModelFetchAssociationStore for AppState",
-    ] {
-        assert!(
-            !runtime_state.contains(pattern),
-            "model_fetch/runtime/state.rs should not host {pattern} anymore"
-        );
-    }
-
-    let state_integrations = read_workspace_file("apps/aether-gateway/src/state/integrations.rs");
-    for pattern in [
-        "impl provider_transport::TransportTunnelAffinityLookup for AppState",
-        "impl ModelFetchTransportRuntime for AppState",
-        "impl ModelFetchRuntimeState for AppState",
-        "impl ModelFetchAssociationStore for AppState",
-    ] {
-        assert!(
-            state_integrations.contains(pattern),
-            "state/integrations.rs should host {pattern}"
-        );
-    }
-
-    let app_state = read_workspace_file("apps/aether-gateway/src/state/app.rs");
-    assert!(
-        !app_state.contains("impl provider_transport::TransportTunnelAffinityLookup for AppState"),
-        "state/app.rs should not host provider transport integration impls anymore"
-    );
-
+fn automatic_key_model_fetch_runtime_is_removed_while_manual_queries_remain() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .expect("workspace root should resolve");
-    let association_sync_path =
-        workspace_root.join("apps/aether-gateway/src/model_fetch/runtime/association_sync.rs");
     assert!(
-        !association_sync_path.exists(),
-        "model_fetch/runtime/association_sync.rs should be removed after extraction"
+        !workspace_root
+            .join("apps/aether-gateway/src/model_fetch")
+            .exists(),
+        "gateway must not retain the retired automatic key model fetch runtime"
     );
+
+    let task_runtime = read_workspace_file("apps/aether-gateway/src/task_runtime/mod.rs");
+    assert!(
+        !task_runtime.contains("model.fetch.worker"),
+        "automatic key model fetch worker must not be registered"
+    );
+
+    let state_integrations = read_workspace_file("apps/aether-gateway/src/state/integrations.rs");
+    assert!(
+        state_integrations.contains("impl ModelFetchTransportRuntime for AppState"),
+        "manual provider model queries still need transport integration"
+    );
+    for retired_impl in [
+        "impl ModelFetchRuntimeState for AppState",
+        "impl ModelFetchAssociationStore for AppState",
+    ] {
+        assert!(
+            !state_integrations.contains(retired_impl),
+            "retired automatic fetch integration must be removed: {retired_impl}"
+        );
+    }
+
+    let provider_query_models =
+        read_workspace_file("apps/aether-gateway/src/handlers/admin/provider/query/models/mod.rs");
+    assert!(
+        provider_query_models.contains("fetch_models_from_transports"),
+        "manual provider model queries must keep the shared fetch implementation"
+    );
+
+    for path in [
+        "apps/aether-gateway/src/handlers/admin/provider/write/keys/create.rs",
+        "apps/aether-gateway/src/handlers/admin/provider/write/keys/update.rs",
+        "apps/aether-gateway/src/handlers/admin/provider/endpoint_keys/mutations/create.rs",
+        "apps/aether-gateway/src/handlers/admin/provider/endpoint_keys/mutations/update.rs",
+    ] {
+        let source = read_workspace_file(path);
+        assert!(
+            !source.contains("perform_model_fetch_for_key"),
+            "{path} must not invoke automatic key model fetch"
+        );
+    }
 }
 
 #[test]

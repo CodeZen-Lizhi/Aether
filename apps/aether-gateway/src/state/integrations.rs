@@ -9,22 +9,16 @@ use aether_data_contracts::repository::global_models::{
     StoredAdminProviderModel, UpsertAdminProviderModelRecord,
 };
 use aether_data_contracts::repository::provider_catalog::{
-    ProviderCatalogUpstreamMetadataNamespaceUpdate, StoredProviderCatalogEndpoint,
     StoredProviderCatalogKey, StoredProviderCatalogProvider,
 };
 use aether_data_contracts::repository::quota::StoredProviderQuotaSnapshot;
-use aether_model_fetch::{
-    aggregate_models_for_cache, fetch_models_from_transports, model_fetch_interval_minutes,
-    ModelFetchAssociationStore, ModelFetchTransportRuntime,
-};
+use aether_model_fetch::ModelFetchTransportRuntime;
 use aether_scheduler_core::SchedulerAffinityTarget;
 use async_trait::async_trait;
 use serde_json::Value;
-use tracing::debug;
 
 use super::{AppState, GatewayError};
 use crate::clock::current_unix_secs;
-use crate::model_fetch::ModelFetchRuntimeState;
 use crate::provider_transport::GatewayProviderTransportSnapshot;
 use crate::request_candidate_runtime::{
     RequestCandidateRuntimeCapabilityReader, RequestCandidateRuntimeReader,
@@ -89,174 +83,6 @@ impl ModelFetchTransportRuntime for AppState {
         execution_runtime::execute_execution_runtime_sync_plan(self, None, &bounded_plan)
             .await
             .map_err(GatewayError::into_message)
-    }
-}
-
-#[async_trait]
-impl ModelFetchRuntimeState for AppState {
-    fn has_provider_catalog_data_reader(&self) -> bool {
-        AppState::has_provider_catalog_data_reader(self)
-    }
-
-    fn has_provider_catalog_data_writer(&self) -> bool {
-        AppState::has_provider_catalog_data_writer(self)
-    }
-
-    async fn list_provider_catalog_providers(
-        &self,
-        active_only: bool,
-    ) -> Result<Vec<StoredProviderCatalogProvider>, GatewayError> {
-        AppState::list_provider_catalog_providers(self, active_only).await
-    }
-
-    async fn list_provider_catalog_endpoints_by_provider_ids(
-        &self,
-        provider_ids: &[String],
-    ) -> Result<Vec<StoredProviderCatalogEndpoint>, GatewayError> {
-        AppState::list_provider_catalog_endpoints_by_provider_ids(self, provider_ids).await
-    }
-
-    async fn read_provider_transport_snapshot(
-        &self,
-        provider_id: &str,
-        endpoint_id: &str,
-        key_id: &str,
-    ) -> Result<Option<GatewayProviderTransportSnapshot>, GatewayError> {
-        AppState::read_provider_transport_snapshot(self, provider_id, endpoint_id, key_id).await
-    }
-
-    async fn execute_execution_runtime_sync_plan(
-        &self,
-        plan: &ExecutionPlan,
-    ) -> Result<ExecutionResult, GatewayError> {
-        execution_runtime::execute_execution_runtime_sync_plan(self, None, plan).await
-    }
-
-    async fn update_provider_catalog_key_model_fetch_state(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&Value>,
-        last_models_fetch_at_unix_secs: Option<u64>,
-        last_models_fetch_error: Option<&str>,
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<(), GatewayError> {
-        AppState::update_provider_catalog_key_model_fetch_state(
-            self,
-            key_id,
-            allowed_models,
-            last_models_fetch_at_unix_secs,
-            last_models_fetch_error,
-            updated_at_unix_secs,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn update_provider_catalog_key_model_fetch_success(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&Value>,
-        last_models_fetch_at_unix_secs: u64,
-        upstream_metadata_updates: &[ProviderCatalogUpstreamMetadataNamespaceUpdate],
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<(), GatewayError> {
-        AppState::update_provider_catalog_key_model_fetch_success(
-            self,
-            key_id,
-            allowed_models,
-            last_models_fetch_at_unix_secs,
-            upstream_metadata_updates,
-            updated_at_unix_secs,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn write_upstream_models_cache(
-        &self,
-        provider_id: &str,
-        key_id: &str,
-        cached_models: &[Value],
-    ) {
-        let models = aggregate_models_for_cache(cached_models);
-        if models.is_empty() {
-            return;
-        }
-        let Ok(serialized) = serde_json::to_string(&models) else {
-            return;
-        };
-        let cache_key = format!("upstream_models:{provider_id}:{key_id}");
-        if let Err(err) = self
-            .runtime_state
-            .kv_set(
-                &cache_key,
-                serialized,
-                Some(std::time::Duration::from_secs(
-                    model_fetch_interval_minutes().saturating_mul(60),
-                )),
-            )
-            .await
-        {
-            debug!(
-                provider_id = %provider_id,
-                key_id = %key_id,
-                error = %err,
-                "gateway model fetch cache write failed"
-            );
-        }
-    }
-}
-
-#[async_trait]
-impl ModelFetchAssociationStore for AppState {
-    type Error = String;
-
-    fn has_global_model_reader(&self) -> bool {
-        self.data.has_global_model_reader()
-    }
-
-    fn has_global_model_writer(&self) -> bool {
-        self.data.has_global_model_writer()
-    }
-
-    fn model_fetch_internal_error(&self, message: String) -> Self::Error {
-        message
-    }
-
-    async fn list_admin_provider_models(
-        &self,
-        query: &AdminProviderModelListQuery,
-    ) -> Result<Vec<StoredAdminProviderModel>, Self::Error> {
-        AppState::list_admin_provider_models(self, query)
-            .await
-            .map_err(|err| format!("{err:?}"))
-    }
-
-    async fn list_admin_global_models(
-        &self,
-        query: &AdminGlobalModelListQuery,
-    ) -> Result<StoredAdminGlobalModelPage, Self::Error> {
-        AppState::list_admin_global_models(self, query)
-            .await
-            .map_err(|err| format!("{err:?}"))
-    }
-
-    async fn create_admin_provider_model(
-        &self,
-        record: &UpsertAdminProviderModelRecord,
-    ) -> Result<Option<StoredAdminProviderModel>, Self::Error> {
-        AppState::create_admin_provider_model(self, record)
-            .await
-            .map_err(|err| format!("{err:?}"))
-    }
-
-    async fn list_provider_catalog_keys_by_provider_ids(
-        &self,
-        provider_ids: &[String],
-    ) -> Result<Vec<StoredProviderCatalogKey>, Self::Error> {
-        AppState::list_provider_catalog_keys_by_provider_ids(self, provider_ids)
-            .await
-            .map_err(|err| format!("{err:?}"))
     }
 }
 

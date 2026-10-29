@@ -2412,29 +2412,6 @@ pub(crate) fn build_admin_provider_key_response(
     payload.insert("is_active".to_string(), json!(key.is_active));
     payload.insert("note".to_string(), json!(key.note));
     payload.insert(
-        "auto_fetch_models".to_string(),
-        json!(key.auto_fetch_models),
-    );
-    payload.insert(
-        "last_models_fetch_at".to_string(),
-        json!(key
-            .last_models_fetch_at_unix_secs
-            .and_then(unix_secs_to_rfc3339)),
-    );
-    payload.insert(
-        "last_models_fetch_error".to_string(),
-        json!(key.last_models_fetch_error),
-    );
-    payload.insert("locked_models".to_string(), json!(key.locked_models));
-    payload.insert(
-        "model_include_patterns".to_string(),
-        json!(key.model_include_patterns),
-    );
-    payload.insert(
-        "model_exclude_patterns".to_string(),
-        json!(key.model_exclude_patterns),
-    );
-    payload.insert(
         "upstream_metadata".to_string(),
         json!(key.upstream_metadata),
     );

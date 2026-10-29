@@ -282,14 +282,6 @@ export interface EndpointAPIKey {
   half_open_successes?: number
   half_open_failures?: number
   request_results_window?: Array<{ ts: number; ok: boolean }>  // 请求结果滑动窗口
-  // 自动获取模型
-  auto_fetch_models?: boolean  // 是否启用自动获取模型
-  last_models_fetch_at?: string  // 最后获取模型时间
-  last_models_fetch_error?: string  // 最后获取模型错误信息
-  locked_models?: string[]  // 被锁定的模型列表
-  // 模型过滤规则（仅当 auto_fetch_models=true 时生效）
-  model_include_patterns?: string[]  // 模型包含规则（支持 * 和 ? 通配符）
-  model_exclude_patterns?: string[]  // 模型排除规则（支持 * 和 ? 通配符）
   // Key 级别代理配置（覆盖 Provider 级别代理）
   proxy?: ProxyConfig | null
 }
@@ -343,11 +335,6 @@ export interface EndpointAPIKeyUpdate {
   max_probe_interval_minutes?: number
   note?: string
   is_active?: boolean
-  auto_fetch_models?: boolean  // 是否启用自动获取模型
-  locked_models?: string[]  // 被锁定的模型列表
-  // 模型过滤规则（仅当 auto_fetch_models=true 时生效）
-  model_include_patterns?: string[]  // 模型包含规则（支持 * 和 ? 通配符）
-  model_exclude_patterns?: string[]  // 模型排除规则（支持 * 和 ? 通配符）
   // Key 级别代理配置（覆盖 Provider 级别代理），null=清除
   proxy?: ProxyConfig | null
 }

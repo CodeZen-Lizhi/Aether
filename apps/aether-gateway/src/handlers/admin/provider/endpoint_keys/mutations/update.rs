@@ -1,12 +1,9 @@
 use crate::handlers::admin::provider::shared::paths::admin_update_key_id;
 use crate::handlers::admin::provider::shared::payloads::AdminProviderKeyUpdatePatch;
-use crate::handlers::admin::provider::write::keys::{
-    admin_provider_key_update_requires_immediate_model_fetch,
-    build_provider_catalog_key_admin_cas_update,
-};
+use crate::handlers::admin::provider::write::keys::build_provider_catalog_key_admin_cas_update;
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
 use crate::provider_key_auth::provider_key_effective_api_formats;
-use crate::{model_fetch::perform_model_fetch_for_key, GatewayError};
+use crate::GatewayError;
 use axum::{
     body::{Body, Bytes},
     http,
@@ -96,40 +93,13 @@ pub(super) async fn maybe_handle(
             "Key 凭据或配置已被其他请求更新，请刷新后重试",
         )));
     }
-    let Some(mut updated) = state
+    let Some(updated) = state
         .read_provider_catalog_keys_by_ids(std::slice::from_ref(&key_id))
         .await?
         .into_iter()
         .next()
     else {
         return Ok(None);
-    };
-    let should_overwrite_allowed_models_immediately =
-        admin_provider_key_update_requires_immediate_model_fetch(&existing_key, &updated);
-    let updated = if should_overwrite_allowed_models_immediately {
-        let summary =
-            perform_model_fetch_for_key(state.as_ref(), &provider.id, &updated.id).await?;
-        if summary.succeeded == 0 {
-            let detail = state
-                .read_provider_catalog_keys_by_ids(std::slice::from_ref(&key_id))
-                .await?
-                .into_iter()
-                .next()
-                .and_then(|key| key.last_models_fetch_error)
-                .unwrap_or_else(|| "未获取到可用上游模型".to_string());
-            return Err(GatewayError::Internal(format!(
-                "开启自动获取模型后同步上游模型失败: {detail}"
-            )));
-        }
-
-        state
-            .read_provider_catalog_keys_by_ids(std::slice::from_ref(&key_id))
-            .await?
-            .into_iter()
-            .next()
-            .unwrap_or(updated)
-    } else {
-        updated
     };
     let now_unix_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)

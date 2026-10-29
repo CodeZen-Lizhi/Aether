@@ -10,10 +10,10 @@
           variant="outline"
           size="sm"
           class="h-8"
-          @click="openBatchDialog"
+          @click="openBatchDialog()"
         >
           <ListPlus class="w-3.5 h-3.5 mr-1.5" />
-          批量映射
+          管理映射
         </Button>
       </div>
     </div>
@@ -245,29 +245,19 @@
         暂无模型映射
       </p>
       <p class="text-xs mt-1">
-        点击上方“批量映射”为多个模型统一配置映射
+        点击上方“管理映射”统一配置模型映射
       </p>
     </div>
   </Card>
 
-  <!-- 编辑映射对话框 -->
-  <ModelMappingDialog
-    v-if="dialogOpen"
-    v-model:open="dialogOpen"
-    :provider-id="provider.id"
-    :models="models"
-    :editing-group="editingGroup"
-    :has-auto-fetch-key="hasAutoFetchKey"
-    @saved="onDialogSaved"
-  />
-
-  <!-- 批量映射工作台 -->
+  <!-- 统一模型映射工作台 -->
   <BatchModelMappingDialog
     v-if="batchDialogOpen"
     v-model:open="batchDialogOpen"
     :provider-id="provider.id"
     :models="models"
-    :has-auto-fetch-key="hasAutoFetchKey"
+    :can-fetch-upstream-models="canFetchUpstreamModels"
+    :initial-model-id="batchInitialModelId"
     @saved="onDialogSaved"
   />
 
@@ -293,15 +283,12 @@ import {
 } from '@/components/ui'
 import AlertDialog from '@/components/common/AlertDialog.vue'
 import BatchModelMappingDialog from '../BatchModelMappingDialog.vue'
-import ModelMappingDialog, { type AliasGroup } from '../ModelMappingDialog.vue'
 import { useToast } from '@/composables/useToast'
 import {
   type Model,
-  type ProviderEndpoint,
   type ProviderModelAlias,
   type ProviderMappingPreviewResponse,
 } from '@/api/endpoints'
-import { type EndpointAPIKey } from '@/api/endpoints/keys'
 import { updateModel } from '@/api/endpoints/models'
 import { parseApiError } from '@/utils/errorParser'
 import type { ProviderWithEndpointsSummary } from '@/api/endpoints'
@@ -330,10 +317,22 @@ interface CombinedMapping {
   group?: AliasGroup
 }
 
+/** 同一客户端模型的映射分组；数组顺序由保存的 priority 决定。 */
+interface AliasGroup {
+  model: Model
+  /** @deprecated 历史 API 格式分组键，只用于兼容旧数据。 */
+  apiFormatsKey: string
+  /** @deprecated 历史 API 格式范围，只用于兼容旧数据。 */
+  apiFormats: string[]
+  endpointIdsKey: string
+  endpointIds: string[]
+  operationsKey: string
+  operations: string[]
+  aliases: ProviderModelAlias[]
+}
+
 const props = defineProps<{
   provider: ProviderWithEndpointsSummary
-  endpoints?: ProviderEndpoint[]
-  providerKeys?: EndpointAPIKey[]
   models?: Model[]
   mappingPreview?: ProviderMappingPreviewResponse | null
   loading?: boolean
@@ -347,22 +346,18 @@ const { error: showError, success: showSuccess } = useToast()
 
 // 状态
 const localLoading = ref(false)
-const dialogOpen = ref(false)
 const batchDialogOpen = ref(false)
 const deleteConfirmOpen = ref(false)
-const editingGroup = ref<AliasGroup | null>(null)
+const batchInitialModelId = ref<string | null>(null)
 const deletingGroup = ref<AliasGroup | null>(null)
-const providerKeysState = computed(() => props.providerKeys ?? [])
 const isLoading = computed(() => Boolean(props.loading) || localLoading.value)
 
 // 使用 props 传入的数据
 const models = computed(() => props.models ?? [])
 const aliasMappingPreview = computed(() => props.mappingPreview ?? null)
 
-// 后端分页下当前页不一定包含 auto_fetch key；有活跃 key 时允许弹窗尝试拉取上游模型。
-const hasAutoFetchKey = computed(() => {
-  return providerKeysState.value.some(k => k.auto_fetch_models) || props.provider.active_keys > 0
-})
+// 有活跃密钥时允许弹窗手动拉取上游模型；该操作不依赖自动同步配置。
+const canFetchUpstreamModels = computed(() => props.provider.active_keys > 0)
 
 // 展开状态
 const expandedItems = ref<Set<string>>(new Set())
@@ -419,7 +414,7 @@ const exactMappingGroups = computed<AliasGroup[]>(() => {
   }
 
   for (const group of groups) {
-    group.aliases.sort((a, b) => a.priority - b.priority)
+    group.aliases.sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name))
   }
 
   return groups
@@ -559,15 +554,15 @@ function getKeyPatterns(keyItem: MatchedKeyInfo): string[] {
   return Array.from(patterns)
 }
 
-// 打开批量映射工作台
-function openBatchDialog() {
+/** 打开统一映射工作台；传入模型标识时只定位该客户端模型。 */
+function openBatchDialog(initialModelId: string | null = null) {
+  batchInitialModelId.value = initialModelId
   batchDialogOpen.value = true
 }
 
-// 编辑分组
+/** 从映射列表进入统一工作台，并定位到当前客户端模型。 */
 function editGroup(group: AliasGroup) {
-  editingGroup.value = group
-  dialogOpen.value = true
+  openBatchDialog(group.model.id)
 }
 
 // 删除分组
@@ -611,7 +606,7 @@ async function onDialogSaved() {
 
 // 暴露给父组件
 defineExpose({
-  dialogOpen: computed(() => dialogOpen.value || batchDialogOpen.value || deleteConfirmOpen.value),
+  dialogOpen: computed(() => batchDialogOpen.value || deleteConfirmOpen.value),
   reload: refresh
 })
 </script>

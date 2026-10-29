@@ -12,10 +12,9 @@ use aether_data_contracts::repository::provider_catalog::{
     ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery,
     ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthRuntimeStateCasUpdate,
     ProviderCatalogKeyRuntimeMetadataUpdate, ProviderCatalogKeyStatusSnapshotUpdate,
-    ProviderCatalogReadRepository, ProviderCatalogUpstreamMetadataNamespaceUpdate,
-    ProviderCatalogWriteRepository, StoredProviderCatalogEndpoint, StoredProviderCatalogKey,
-    StoredProviderCatalogKeyMaintenanceSummary, StoredProviderCatalogKeyPage,
-    StoredProviderCatalogKeyStats, StoredProviderCatalogProvider,
+    ProviderCatalogReadRepository, ProviderCatalogWriteRepository, StoredProviderCatalogEndpoint,
+    StoredProviderCatalogKey, StoredProviderCatalogKeyMaintenanceSummary,
+    StoredProviderCatalogKeyPage, StoredProviderCatalogKeyStats, StoredProviderCatalogProvider,
 };
 use aether_data_contracts::repository::provider_catalog::{
     ProviderCatalogKeyHealthPendingFact, ProviderCatalogKeyHealthSettlement,
@@ -1471,124 +1470,6 @@ WHERE id = ?
         Ok(rows_affected > 0)
     }
 
-    pub async fn update_key_model_fetch_state(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: Option<u64>,
-        last_models_fetch_error: Option<&str>,
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, DataLayerError> {
-        validate_non_empty(key_id, "provider catalog key_id")?;
-        let rows_affected = sqlx::query(
-            r#"
-UPDATE provider_api_keys
-SET allowed_models = ?, last_models_fetch_at = ?, last_models_fetch_error = ?, updated_at = ?
-WHERE id = ?
-"#,
-        )
-        .bind(optional_json_ref_to_string(
-            allowed_models,
-            "provider_api_keys.allowed_models",
-        )?)
-        .bind(optional_i64_from_u64(
-            last_models_fetch_at_unix_secs,
-            "provider_api_keys.last_models_fetch_at",
-        )?)
-        .bind(last_models_fetch_error)
-        .bind(updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64)
-        .bind(key_id)
-        .execute(&mut *self.source.acquire().await.map_sql_err()?)
-        .await
-        .map_sql_err()?
-        .rows_affected();
-        Ok(rows_affected > 0)
-    }
-
-    pub async fn update_key_model_fetch_success(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: u64,
-        upstream_metadata_updates: &[ProviderCatalogUpstreamMetadataNamespaceUpdate],
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, DataLayerError> {
-        validate_non_empty(key_id, "provider catalog key_id")?;
-        let allowed_models =
-            optional_json_ref_to_string(allowed_models, "provider_api_keys.allowed_models")?;
-        let namespace_updates = upstream_metadata_updates
-            .iter()
-            .map(|update| {
-                validate_non_empty(
-                    &update.namespace,
-                    "provider catalog upstream metadata namespace",
-                )?;
-                let path = format!(
-                    "$.{}",
-                    serde_json::to_string(&update.namespace).map_err(|err| {
-                        DataLayerError::UnexpectedValue(format!(
-                            "provider_api_keys.upstream_metadata namespace is not serializable: {err}"
-                        ))
-                    })?
-                );
-                let value = serde_json::to_string(&update.value).map_err(|err| {
-                    DataLayerError::UnexpectedValue(format!(
-                        "provider_api_keys.upstream_metadata namespace is not serializable: {err}"
-                    ))
-                })?;
-                Ok((path, value))
-            })
-            .collect::<Result<Vec<_>, DataLayerError>>()?;
-        let updated_at = updated_at_unix_secs.unwrap_or_else(current_unix_secs) as i64;
-        let mut connection = self.source.acquire().await.map_sql_err()?;
-        let mut tx = sqlx::Connection::begin(&mut *connection)
-            .await
-            .map_sql_err()?;
-        let rows_affected = sqlx::query(
-            r#"
-UPDATE provider_api_keys
-SET allowed_models = ?, last_models_fetch_at = ?, last_models_fetch_error = NULL, updated_at = ?
-WHERE id = ?
-"#,
-        )
-        .bind(allowed_models)
-        .bind(optional_i64_from_u64(
-            Some(last_models_fetch_at_unix_secs),
-            "provider_api_keys.last_models_fetch_at",
-        )?)
-        .bind(updated_at)
-        .bind(key_id)
-        .execute(&mut *tx)
-        .await
-        .map_sql_err()?
-        .rows_affected();
-        if rows_affected == 0 {
-            tx.rollback().await.map_sql_err()?;
-            return Ok(false);
-        }
-        for (path, value) in namespace_updates {
-            sqlx::query(
-                r#"
-UPDATE provider_api_keys
-SET upstream_metadata = json_set(
-      COALESCE(NULLIF(upstream_metadata, ''), '{}'),
-      ?, json(?)
-    )
-WHERE id = ?
-"#,
-            )
-            .bind(path)
-            .bind(value)
-            .bind(key_id)
-            .execute(&mut *tx)
-            .await
-            .map_sql_err()?;
-        }
-        tx.commit().await.map_sql_err()?;
-        drop(connection);
-        Ok(true)
-    }
-
     pub async fn clear_key_oauth_invalid_marker(
         &self,
         key_id: &str,
@@ -2513,44 +2394,6 @@ impl ProviderCatalogWriteRepository for SqliteProviderCatalogReadRepository {
             key_id,
             namespace,
             value,
-            updated_at_unix_secs,
-        )
-        .await
-    }
-
-    async fn update_key_model_fetch_state(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: Option<u64>,
-        last_models_fetch_error: Option<&str>,
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, DataLayerError> {
-        Self::update_key_model_fetch_state(
-            self,
-            key_id,
-            allowed_models,
-            last_models_fetch_at_unix_secs,
-            last_models_fetch_error,
-            updated_at_unix_secs,
-        )
-        .await
-    }
-
-    async fn update_key_model_fetch_success(
-        &self,
-        key_id: &str,
-        allowed_models: Option<&serde_json::Value>,
-        last_models_fetch_at_unix_secs: u64,
-        upstream_metadata_updates: &[ProviderCatalogUpstreamMetadataNamespaceUpdate],
-        updated_at_unix_secs: Option<u64>,
-    ) -> Result<bool, DataLayerError> {
-        Self::update_key_model_fetch_success(
-            self,
-            key_id,
-            allowed_models,
-            last_models_fetch_at_unix_secs,
-            upstream_metadata_updates,
             updated_at_unix_secs,
         )
         .await
@@ -3530,8 +3373,7 @@ mod tests {
         ProviderCatalogKeyListOrder, ProviderCatalogKeyListQuery,
         ProviderCatalogKeyOAuthCredentialCasDelete, ProviderCatalogKeyOAuthCredentialFence,
         ProviderCatalogKeyOAuthRuntimeStateCasUpdate, ProviderCatalogKeyRuntimeMetadataUpdate,
-        ProviderCatalogUpstreamMetadataNamespaceExpectation,
-        ProviderCatalogUpstreamMetadataNamespaceUpdate, StoredProviderCatalogEndpoint,
+        ProviderCatalogUpstreamMetadataNamespaceExpectation, StoredProviderCatalogEndpoint,
         StoredProviderCatalogKey, StoredProviderCatalogProvider,
     };
     use serde_json::json;
@@ -4981,25 +4823,21 @@ mod tests {
             .await
             .expect("upstream metadata should update"));
         assert!(repository
-            .update_key_model_fetch_success(
+            .upsert_key_upstream_metadata_namespace(
                 "key-write-1",
-                Some(&json!(["gpt-5.6-sol"])),
-                1_740_000_002,
-                &[ProviderCatalogUpstreamMetadataNamespaceUpdate {
-                    namespace: "codex_models".to_string(),
-                    value: json!({
+                "codex_models",
+                &json!({
                     "cards": {
                         "gpt-5.6-sol": {
                             "slug": "gpt-5.6-sol",
                             "use_responses_lite": true
                         }
                     }
-                    }),
-                }],
+                }),
                 Some(1_740_000_002),
             )
             .await
-            .expect("model fetch success should update atomically"));
+            .expect("upstream metadata namespace should update"));
         assert!(repository
             .update_key_oauth_credentials(
                 "key-write-1",
@@ -5051,10 +4889,13 @@ mod tests {
                 }
             }))
         );
-        assert_eq!(reloaded_key.allowed_models, Some(json!(["gpt-5.6-sol"])));
+        assert_eq!(
+            reloaded_key.allowed_models,
+            Some(json!(["gpt-4.1", "gpt-4.1-mini"]))
+        );
         assert_eq!(
             reloaded_key.last_models_fetch_at_unix_secs,
-            Some(1_740_000_002)
+            Some(1_730_000_100)
         );
         assert!(reloaded_key.is_active);
 

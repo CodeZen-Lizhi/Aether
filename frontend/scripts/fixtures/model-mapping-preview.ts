@@ -1,5 +1,4 @@
 import { createApp, defineComponent, h, ref } from 'vue'
-import ModelMappingDialog, { type AliasGroup } from '@/features/providers/components/ModelMappingDialog.vue'
 import BatchModelMappingDialog from '@/features/providers/components/BatchModelMappingDialog.vue'
 import ModelMappingTab from '@/features/providers/components/provider-tabs/ModelMappingTab.vue'
 import { createI18n, setI18nLocale } from '@/i18n'
@@ -16,7 +15,11 @@ const models = [
     provider_model_name: 'gpt-5.6-sol',
     global_model_name: 'gpt-5.6-sol',
     global_model_display_name: 'GPT-5.6 Sol',
-    provider_model_mappings: [{ name: 'gpt-5.6-sol', priority: 1 }],
+    provider_model_mappings: [
+      { name: 'gpt-5.6-sol', priority: 1 },
+      { name: 'gpt-5.6-pro', priority: 2 },
+      { name: 'gpt-5.6-mini', priority: 3 },
+    ],
   },
   {
     id: 'model-gpt-6-astra',
@@ -47,17 +50,6 @@ const provider = {
   active_keys: 1,
   api_formats: ['openai:responses', 'openai:responses:compact', 'openai:search'],
 }
-const defaultGroup: AliasGroup = {
-  model: models[0] as never,
-  apiFormatsKey: '',
-  apiFormats: [],
-  endpointIdsKey: '',
-  endpointIds: [],
-  operationsKey: '',
-  operations: [],
-  aliases: [],
-}
-
 // 上游模型请求由固定业务数据拦截，避免预览修改真实供应商配置。
 adminApi.queryProviderModels = async () => ({
   success: true,
@@ -114,13 +106,11 @@ client.get = async url => {
 const Preview = defineComponent({
   setup() {
     const mode = ref(new URLSearchParams(location.search).get('mode') ?? 'list')
-    const singleOpen = ref(mode.value === 'single')
     const batchOpen = ref(mode.value === 'batch')
     return () => h('main', { class: 'min-h-screen bg-background p-6 text-foreground' }, [
       h('div', { class: 'mb-4 flex gap-2' }, [
         h('button', { id: 'show-list', onClick: () => { mode.value = 'list' } }, '映射列表'),
-        h('button', { id: 'show-single', onClick: () => { singleOpen.value = true } }, '单条编辑'),
-        h('button', { id: 'show-batch', onClick: () => { batchOpen.value = true } }, '批量编辑'),
+        h('button', { id: 'show-batch', onClick: () => { batchOpen.value = true } }, '管理映射'),
       ]),
       mode.value === 'list' ? h(ModelMappingTab, {
         provider,
@@ -129,19 +119,11 @@ const Preview = defineComponent({
         mappingPreview: null,
         loading: false,
       }) : null,
-      h(ModelMappingDialog, {
-        open: singleOpen.value,
-        providerId: provider.id,
-        models,
-        editingGroup: defaultGroup,
-        hasAutoFetchKey: true,
-        'onUpdate:open': (value: boolean) => { singleOpen.value = value },
-      }),
       h(BatchModelMappingDialog, {
         open: batchOpen.value,
         providerId: provider.id,
         models,
-        hasAutoFetchKey: true,
+        canFetchUpstreamModels: true,
         'onUpdate:open': (value: boolean) => { batchOpen.value = value },
       }),
     ])
