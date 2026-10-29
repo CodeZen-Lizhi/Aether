@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { getCacheCreationTokens, getCacheReadTokens, getEffectiveInputTokens } from '../token-normalization'
+import {
+  getCacheCreationTokens,
+  getCacheHitRate,
+  getCacheReadTokens,
+  getEffectiveInputTokens,
+  getTotalInputContextTokens,
+} from '../token-normalization'
 
 describe('usage token normalization', () => {
   it('prefers explicit cache creation totals when present', () => {
@@ -49,5 +55,38 @@ describe('usage token normalization', () => {
       output_tokens: 973,
       api_format: 'claude:messages',
     } as unknown as Parameters<typeof getEffectiveInputTokens>[0])).toBe(4941)
+  })
+
+  it.each([
+    ['openai:chat', 120, 10, 15, 120, 12.5],
+    ['gemini:generate_content', 120, 10, 15, 120, 12.5],
+    ['claude:messages', 60, 15, 5, 80, 6.25],
+    [null, 20, 10, 5, 35, 14.29],
+  ])(
+    'calculates cache hit rate with backend context semantics for %s',
+    (apiFormat, inputTokens, cacheCreation, cacheRead, expectedContext, expectedRate) => {
+      const usage = {
+        input_tokens: inputTokens,
+        cache_creation_input_tokens: cacheCreation,
+        cache_read_input_tokens: cacheRead,
+        api_format: apiFormat,
+      }
+
+      expect(getTotalInputContextTokens(usage)).toBe(expectedContext)
+      expect(getCacheHitRate(usage)).toBe(expectedRate)
+    },
+  )
+
+  it('returns no cache hit rate when the normalized input context is empty', () => {
+    expect(getTotalInputContextTokens({
+      input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    })).toBe(0)
+    expect(getCacheHitRate({
+      input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    })).toBeNull()
   })
 })

@@ -17,7 +17,7 @@
 
 **Lists**: 公共 `Table` 使用 `table-fixed`、`w-full` 和 `overflow-wrap:anywhere`，外层不创建横向滚动容器。复杂列表在外层设置 `responsive-list`，内部用 `responsive-list-table` / `responsive-list-cards`、`responsive-list-desktop` / `responsive-list-mobile` 切换。普通容器达到 52rem 才显示表格；`responsive-list--wide` 将门槛提高到 80rem。以内容容器宽度判断，不能只根据 viewport 断点忽略侧边栏。CSS 选择器必须能覆盖 Tailwind 的 `grid` / `inline-flex` 显示类。
 
-**Usage records**: 按实际 DOM 列顺序输出 colgroup；类型列与其他列同时显示时保留 88px，其余可见列按权重分配剩余宽度。通过实际表格宽度换算为纯百分比，避免在 col 上使用浏览器无法正确分配的混合单位 calc；th / td 不再独立分配百分比。类型表头和状态词保持横排，转换标签仅在完整词组之间换行。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
+**Usage records**: 按实际 DOM 列顺序输出 colgroup；类型列与其他列同时显示时保留 88px，其余可见列按权重分配剩余宽度。通过实际表格宽度换算为纯百分比，避免在 col 上使用浏览器无法正确分配的混合单位 calc；th / td 不再独立分配百分比。类型表头和状态词保持横排，转换标签仅在完整词组之间换行。文本列按左对齐或居中输出，Tokens、费用和耗时等数值表头必须与首行内容使用相同右侧边界，不能以居中表头搭配右对齐数值。Tokens 列固定两行：上行为输入 / 输出，下行为缓存读取 / 缓存命中率；缓存写入仅保留在悬停说明，不以恒为横杠的无意义槽位占位。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
 
 **Usage filters**: 类型列主标签使用 `request_type`，状态与客户端传输方式作为次标签。类型、状态、传输和调度是四个独立筛选维度，服务端分页与总数按“组间同时满足”组合；HTTP 流式/标准按客户端请求模式判断，不能使用转换后的上游 `is_stream` 代替。请求类型选项来自当前时间范围的 `request_type` 聚合，并补充当前页历史值与已选值；轮询更新后，前端本地结果复用 `matchesUsageLiveFilters` 判断四个维度，活跃行终结后立即移出并重新读取当前页与总数。
 

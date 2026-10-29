@@ -471,7 +471,13 @@
             >不可用</span>
             <template v-if="record.usage_available !== false && hasRecordCacheTokens(record)">
               <span class="text-muted-foreground"> | </span>
-              <span>{{ formatOptionalTokens(getRecordCacheReadTokens(record)) }} / {{ formatOptionalTokens(getRecordCacheCreationTokens(record)) }}</span>
+              <span>{{ formatOptionalTokens(getRecordCacheReadTokens(record)) }} / </span>
+              <span
+                data-usage-cache-hit-rate="mobile"
+                class="text-muted-foreground tabular-nums"
+              >
+                {{ formatRecordCacheHitRate(record) }}
+              </span>
             </template>
             <template v-if="record.usage_available !== false && ((record.input_audio_tokens || 0) > 0 || (record.output_audio_tokens || 0) > 0)">
               <span class="text-muted-foreground"> | 音频 </span>
@@ -610,7 +616,7 @@
           </SortableTableHead>
           <TableHead
             v-if="isColumnVisible('tokens')"
-            class="h-12 font-semibold text-center"
+            class="h-12 font-semibold text-right"
           >
             Tokens
           </TableHead>
@@ -881,7 +887,10 @@
                   {{ formatTokens(record.output_tokens || 0) }}
                 </span>
               </div>
-              <div class="mt-0.5 flex w-full min-w-0 items-center justify-end gap-1 text-xs leading-tight tabular-nums text-muted-foreground whitespace-nowrap">
+              <div
+                class="mt-0.5 flex w-full min-w-0 items-center justify-end gap-1 text-xs leading-tight tabular-nums text-muted-foreground whitespace-nowrap"
+                :title="getRecordCacheTokensTitle(record)"
+              >
                 <span
                   class="text-right"
                   :class="[
@@ -894,12 +903,13 @@
                   /
                 </span>
                 <span
+                  data-usage-cache-hit-rate="desktop"
                   class="text-left"
                   :class="[
-                    hasPositiveTokens(getRecordCacheCreationTokens(record)) ? 'text-foreground/70' : ''
+                    getRecordCacheHitRate(record) != null ? 'text-foreground/70' : ''
                   ]"
                 >
-                  {{ formatOptionalTokens(getRecordCacheCreationTokens(record)) }}
+                  {{ formatRecordCacheHitRate(record) }}
                 </span>
               </div>
               <div
@@ -1058,8 +1068,13 @@ import {
   TableFilterMenu,
 } from '@/components/ui'
 import { EyeOff, RefreshCcw, Shuffle } from 'lucide-vue-next'
-import { formatTokens } from '@/utils/format'
-import { getCacheCreationTokens, getCacheReadTokens, getEffectiveInputTokens } from '../token-normalization'
+import { formatHitRate, formatTokens } from '@/utils/format'
+import {
+  getCacheCreationTokens,
+  getCacheHitRate,
+  getCacheReadTokens,
+  getEffectiveInputTokens,
+} from '../token-normalization'
 import {
   formatOutputRate,
   formatOutputRateValue,
@@ -1413,6 +1428,16 @@ function getRecordCacheCreationTokens(record: UsageRecord): number {
   return getCacheCreationTokens(record)
 }
 
+/** 返回单条记录的缓存命中率；缺少输入上下文时返回 null。 */
+function getRecordCacheHitRate(record: UsageRecord): number | null {
+  return getCacheHitRate(record)
+}
+
+/** 将缓存命中率格式化为两位小数百分比。 */
+function formatRecordCacheHitRate(record: UsageRecord): string {
+  return formatHitRate(getRecordCacheHitRate(record) ?? undefined)
+}
+
 function hasPositiveTokens(value: number | null | undefined): boolean {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
@@ -1430,10 +1455,12 @@ function hasRecordCacheTokens(record: UsageRecord): boolean {
   return hasPositiveTokens(getRecordCacheReadTokens(record)) || hasPositiveTokens(getRecordCacheCreationTokens(record))
 }
 
+/** 返回缓存读取、写入和命中率的完整说明，供列表悬停查看。 */
 function getRecordCacheTokensTitle(record: UsageRecord): string {
   return [
     `缓存读取: ${formatOptionalTokens(getRecordCacheReadTokens(record))}`,
     `缓存写入: ${formatOptionalTokens(getRecordCacheCreationTokens(record))}`,
+    `缓存命中率: ${formatRecordCacheHitRate(record)}`,
   ].join('\n')
 }
 

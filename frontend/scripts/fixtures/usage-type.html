@@ -8,6 +8,22 @@ import {usageApi} from '/src/api/usage.ts';
 import '/src/style.css';
 // 固定接口数据挂载真实使用记录页；此入口只证明 UI 与轮询，不证明真实后端。
 const now=new Date().toISOString();
+const cacheReadByRequest={
+ 'compact-failed-stream':78000,
+ 'chat-completed-standard':0,
+ 'realtime-completed-ws':0,
+ 'chat-pending-stream':42000,
+ 'video-streaming-standard':18000,
+ 'chat-cancelled-standard':6400,
+};
+const cacheCreationByRequest={
+ 'compact-failed-stream':12000,
+ 'chat-completed-standard':0,
+ 'realtime-completed-ws':0,
+ 'chat-pending-stream':8000,
+ 'video-streaming-standard':2000,
+ 'chat-cancelled-standard':1600,
+};
 const rows=[
  ['compact-failed-stream','compact','failed',true,false,false,true],
  ['chat-completed-standard','chat','completed',false,false,false,false],
@@ -15,7 +31,16 @@ const rows=[
  ['chat-pending-stream','chat','pending',true,false,false,false],
  ['video-streaming-standard','video','streaming',false,false,true,false],
  ['chat-cancelled-standard','chat','cancelled',false,true,false,false],
-].map(([id,request_type,status,stream,websocket,retry,fallback])=>({id,model:id,request_type,provider:'fixture',api_format:'openai:responses',is_stream:stream,is_websocket:websocket,upstream_is_stream:stream,client_requested_stream:stream,status,input_tokens:1,output_tokens:1,total_tokens:2,cost:0,has_retry:retry,has_fallback:fallback,created_at:now,updated_at:now,first_byte_time_ms:status==='streaming'?10:null}));
+].map(([id,request_type,status,stream,websocket,retry,fallback])=>{
+ const cacheRead=cacheReadByRequest[id]||0;
+ const cacheCreation=cacheCreationByRequest[id]||0;
+ const freshInput=request_type==='chat'?1200:request_type==='realtime'?600:800;
+ let totalTokens=freshInput;
+ totalTokens+=cacheRead;
+ totalTokens+=cacheCreation;
+ totalTokens+=240;
+ return {id,model:id,request_type,provider:'fixture',api_format:'openai:responses',is_stream:stream,is_websocket:websocket,upstream_is_stream:stream,client_requested_stream:stream,status,input_tokens:freshInput+cacheRead+cacheCreation,effective_input_tokens:freshInput,output_tokens:240,cache_creation_input_tokens:cacheCreation,cache_read_input_tokens:cacheRead,total_tokens:totalTokens,cost:0,has_retry:retry,has_fallback:fallback,created_at:now,updated_at:now,first_byte_time_ms:status==='streaming'?10:null};
+});
 // 保留查询参数，核对下拉事件是否实际触发分页请求。
 window.fixtureRequests=[];
 usageApi.getAllUsageRecords=async params=>{

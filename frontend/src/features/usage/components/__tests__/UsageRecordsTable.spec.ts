@@ -196,6 +196,19 @@ describe('UsageRecordsTable', () => {
     expect(root.querySelector('tbody')?.textContent).toContain('已取消')
   })
 
+  it('right-aligns every numeric table header with its values', () => {
+    const root = mountUsageRecordsTable([buildRecord()])
+    const headers = [...root.querySelectorAll<HTMLElement>('thead th')]
+    const numericHeaders = headers.filter(header =>
+      header.textContent?.trim() === 'Tokens'
+      || header.textContent?.trim() === '费用'
+      || header.textContent?.includes('端到端')
+    )
+
+    expect(numericHeaders).toHaveLength(3)
+    expect(numericHeaders.every(header => header.classList.contains('text-right'))).toBe(true)
+  })
+
   it('keeps all selected client fields in both layouts and shares the available column width', () => {
     localStorage.setItem('usage-records-visible-columns-admin', JSON.stringify([
       'user_agent', 'time', 'model', 'client_family', 'client_ip',
@@ -262,6 +275,22 @@ describe('UsageRecordsTable', () => {
     ].join('\n')))).toBe(true)
     expect(titles.join('\n')).not.toContain('500ms')
     expect(titles.join('\n')).not.toContain('首字后生成耗时')
+  })
+
+  it('replaces the cache creation slot with the cache hit rate in both layouts', () => {
+    const root = mountUsageRecordsTable([buildRecord({
+      api_format: 'openai:chat',
+      input_tokens: 100,
+      cache_creation_input_tokens: 10,
+      cache_read_input_tokens: 80,
+    })])
+
+    const cacheHitCells = [...root.querySelectorAll<HTMLElement>('[data-usage-cache-hit-rate]')]
+    expect(cacheHitCells).toHaveLength(2)
+    expect(cacheHitCells.every(cell => cell.textContent?.trim() === '80.00%')).toBe(true)
+    expect(cacheHitCells.every(cell => !cell.textContent?.includes('命中'))).toBe(true)
+    expect(root.textContent).toContain('80 / 80.00%')
+    expect(root.querySelector('[data-usage-cache-hit-rate-fill]')).toBeNull()
   })
 
   it('shows end-to-end latency while keeping output TPS scoped to the successful candidate', () => {
@@ -462,6 +491,7 @@ describe('UsageRecordsTable', () => {
     expect(unavailableCosts.length).toBeGreaterThanOrEqual(2)
     expect(unavailableTokens.every(element => element.textContent?.trim() === '不可用')).toBe(true)
     expect(unavailableCosts.every(element => element.textContent?.trim() === '不可用')).toBe(true)
+    expect(root.querySelector('[data-usage-cache-hit-rate]')).toBeNull()
   })
 
   it('keeps OpenAI Realtime rows under the single WS type in both layouts', () => {
