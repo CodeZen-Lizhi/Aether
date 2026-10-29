@@ -70,6 +70,14 @@ export interface CandidateRecord {
     first_byte_time_ms?: number | null
     needs_conversion?: boolean
     provider_api_format?: string | null
+    /** Provider 模型测试写入的映射与实际模型信息，用于实时结果展示。 */
+    admin_model_test?: {
+      mapping_name?: string | null
+      effective_model?: string | null
+      endpoint_api_format?: string | null
+      endpoint_base_url?: string | null
+      provider_type?: string | null
+    } | null
     proxy?: {
       node_name?: string | null
       url?: string | null

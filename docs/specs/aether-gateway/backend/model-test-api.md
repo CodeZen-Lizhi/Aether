@@ -6,7 +6,9 @@ provider/key actually works **before** enabling it for traffic.
 
 ## 1. Scope / Trigger
 
-- Trigger: admin UI "模型测试" button in the provider detail drawer.
+- Trigger: admin UI "测试模型" button in the provider detail drawer's model list.
+- The model mapping pages keep configuration and maintenance only; they do not expose
+  separate test buttons or another test dialog.
 - Behavior contract introduced by task `model-test-bypass-status` (2026-09-03).
 
 ## 2. Signatures
@@ -14,8 +16,11 @@ provider/key actually works **before** enabling it for traffic.
 - `POST /api/admin/provider-query/test-model`
 - `POST /api/admin/provider-query/test-model-failover`
 - Payload: `{ provider_id, model?, failover_models?, api_format?, endpoint_id?,
-  api_key_id? / api_key_ids?, apply_model_mapping?, mapped_model_name?, message?,
-  request_body?, request_headers? }` (see `handlers/admin/provider/query/models/model_test.rs`).
+  api_key_id? / api_key_ids?, apply_model_mapping?, mapped_model_name?,
+  mapped_model_names?, message?, request_body?, request_headers? }` (see
+  `handlers/admin/provider/query/models/model_test.rs`).
+- `mapped_model_names: []` is interpreted as automatic mode. The legacy
+  `mapped_model_name` remains accepted and is merged into the same explicit selection.
 
 ## 3. Contracts
 
@@ -30,10 +35,25 @@ provider/key actually works **before** enabling it for traffic.
   (`ADMIN_PROVIDER_QUERY_NO_ACTIVE_TEST_CANDIDATE_DETAIL`).
 - **Endpoint fallback**: active endpoints are preferred; if none is active, any
   endpoint (including disabled) is used so the test stays possible.
-- **Non-status validations stay in place**: `selected_key_ids` must exist,
-  `allowed_models` still demotes disallowed keys to `key_model_not_allowed` skipped
-  candidates, and real capability limits (api-format mismatch, header/body rules,
-  oauth resolution, proxy/profile) still produce skipped attempts.
+- **Mapping selection**: with no explicit `mapped_model_names`, the gateway tests every
+  endpoint-compatible configured mapping for the requested model, ordered by mapping
+  priority and then name. If the model has no configured mapping, it falls back to the
+  requested model. `mode=direct` or `apply_model_mapping=false` also keeps the direct
+  requested-model path when no explicit mapping was selected.
+- **Key selection**: an empty key selection means automatic Key order. A selected key
+  narrows the same mapping plan to that key.
+- **Candidate order and permissions**: candidates are built mapping-first and Key-second.
+  Keys follow the existing circuit/health/consecutive-failure order with name and id as
+  stable tie-breakers. A Key that is incompatible with the endpoint or not allowed for
+  the requested/mapped model is omitted from that candidate combination; it is not added
+  as a `key_model_not_allowed` skipped attempt.
+- **Execution**: candidates run sequentially and stop at the first success. The response
+  includes attempted candidates plus remaining candidates as `status=unused`, so the UI
+  can render the full actual order. Each attempt carries both `mapping_name` and
+  `effective_model`, and the same identity is persisted in trace `extra_data`.
+- **Non-status validations stay in place**: `selected_key_ids` must exist, and real
+  capability limits (api-format mismatch, header/body rules, oauth resolution,
+  proxy/profile) still produce skipped attempts.
 - **Upstream stream policy**: the test executes non-streaming plans. Provider bodies
   for non-streaming tests must omit the `stream` field rather than send
   `stream: false` — `enforce_request_body_stream_field` only rewrites `stream` when
@@ -48,7 +68,7 @@ provider/key actually works **before** enabling it for traffic.
 | `api_key_ids` names a nonexistent key | 404 `API Key not found` |
 | No format-compatible key (incl. zero keys) | 404 `No usable API key found for this provider` |
 | Key disabled, provider disabled, endpoint disabled | **Test still executes** |
-| Key blocked by `allowed_models` | Attempt recorded as `skipped` with `key_model_not_allowed` |
+| Key blocked by `allowed_models` | Candidate combination omitted; if none remain, 404 `No usable API key found for this provider` |
 | Transport capability unsupported (format/rules/oauth/proxy) | Attempt `skipped` with the capability reason |
 
 ## 5. Good/Base/Bad Cases
@@ -69,6 +89,10 @@ provider/key actually works **before** enabling it for traffic.
   probe below.
 - `gateway_handles_openai_responses_test_model_locally` — non-streaming responses
   body must not carry `stream: false`.
+- `gateway_maps_admin_provider_model_before_model_list_test_request` — automatic
+  mapping runs all mappings and returns remaining candidates as `unused`.
+- `gateway_runs_multi_mapping_model_test_in_priority_and_key_order` — multiple mappings
+  and keys execute mapping-first, skip unauthorized combinations, and stop on success.
   All live in `src/handlers/admin/provider/query/models/model_test/tests.rs` and
   `src/tests/control/admin/provider_query.rs`.
 

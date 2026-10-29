@@ -157,6 +157,16 @@ const text = `测试通过：延迟 ${result.latency_ms}ms · 出口 IP ${result
 
 **Verification**: `ModelMappingDialog.spec.ts` 覆盖首次缓存读取、手动强制刷新、新模型回显，并断言范围控件与“仅会话压缩”不出现、保存映射载荷不含 `endpoint_ids` 和 `operations`；`ModelMappingTab` 与 `BatchModelMappingDialog` 测试断言列表和批量界面不展示范围信息。需要浏览器核对的改动应在落地时检查表单布局和操作可达性；这些检查不代替真实上游接口的可用性。
 
+## Convention: 模型测试统一从模型列表进入
+
+**Entry**: 精确映射和正则映射页只维护映射，不提供“测试映射”按钮、测试状态或测试弹窗。模型测试入口固定为模型列表每行的“测试模型”，弹窗同时承载端点、Key、映射、请求头/请求体和结果。
+
+**Selection**: “测试 Key”在左，“模型映射”在右，两者默认均为“自动”。映射选项来自当前模型且兼容所选端点的 `provider_model_mappings`；Key 只展示端点兼容且允许请求模型或至少一个候选映射的项。请求头和请求体默认收起，可独立展开、格式化、重置。
+
+**Execution**: 自动映射测试全部候选映射；自动 Key 按网关返回顺序执行。选中映射或 Key 时收窄到对应组合，成功立即停止。结果表固定按“顺序、Key、模型、状态、耗时、详情”展示，成功后剩余候选显示“未使用”；主区域不展示候选总数、候选路径或统计徽标。
+
+**Verification**: `model-test-request.spec.ts` 覆盖四种选择组合、映射优先级、Key 权限和端点过滤；`ModelTestDialog.spec.ts` 验证默认自动、Key/模型顺序及完整结果列；`ModelMappingTab.contract.spec.ts` 验证测试入口不存在。浏览器至少检查 900×640 与 390px 的收起/展开、明暗主题和无横向溢出。
+
 ---
 
 ## Convention: 批量模型映射使用全模型工作台

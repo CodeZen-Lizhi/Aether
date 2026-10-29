@@ -29,47 +29,8 @@
         v-if="endpoints.length > 0"
         class="space-y-2"
       >
-        <div class="dialog-grid-2 min-h-8 w-full items-center gap-2">
-          <div class="text-sm font-medium text-foreground">
-            选择测试端点
-          </div>
-          <div
-            v-if="modelMappingAvailable"
-            class="grid w-full grid-cols-[auto_1fr] items-center gap-2"
-          >
-            <div class="text-sm font-medium text-foreground">
-              模型映射
-            </div>
-            <Select
-              :model-value="selectedModelMappingValue"
-              @update:model-value="handleModelMappingValueChange"
-            >
-              <SelectTrigger class="h-8 min-h-8 w-full shrink-0 overflow-hidden border-border/60 py-0 text-xs leading-none [transition-property:none] [&>span:first-child]:min-w-0 [&>span:first-child]:flex-1 [&>span:first-child]:text-left [&>span:first-child]:leading-none">
-                <SelectValue :placeholder="requestedModelName || '当前模型'" />
-              </SelectTrigger>
-              <SelectContent
-                class="w-[var(--radix-select-trigger-width)]"
-                align="end"
-                :disable-portal="false"
-                :searchable="false"
-              >
-                <SelectItem
-                  :value="requestedModelName"
-                  :text-value="requestedModelName"
-                >
-                  {{ requestedModelName }}
-                </SelectItem>
-                <SelectItem
-                  v-for="option in modelMappingOptions"
-                  :key="option.name"
-                  :value="option.name"
-                  :text-value="option.name"
-                >
-                  {{ option.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <div class="text-sm font-medium text-foreground">
+          选择测试端点
         </div>
         <div class="dialog-grid-2 gap-2">
           <button
@@ -100,39 +61,97 @@
       </div>
 
       <div
-        v-if="showKeySelector"
-        class="space-y-2"
+        v-if="endpoints.length > 0"
+        class="dialog-grid-2 gap-2"
       >
-        <div class="flex items-center justify-between gap-3">
+        <div class="space-y-2">
           <div class="text-sm font-medium text-foreground">
             测试 Key
           </div>
-          <div class="text-xs text-muted-foreground">
-            {{ keySelectionStatus }}
-          </div>
+          <Select
+            :model-value="selectedKeyValue"
+            :disabled="keyOptionsLoading && keyOptions.length === 0"
+            @update:model-value="handleKeyValueChange"
+          >
+            <SelectTrigger class="h-9 w-full border-border/60 text-xs">
+              <SelectValue placeholder="自动" />
+            </SelectTrigger>
+            <SelectContent
+              class="w-[var(--radix-select-trigger-width)]"
+              :disable-portal="false"
+            >
+              <SelectItem
+                value="auto"
+                text-value="自动"
+              >
+                自动
+              </SelectItem>
+              <SelectItem
+                v-for="option in keyOptions"
+                :key="option.value"
+                :value="option.value"
+                :text-value="option.label"
+              >
+                {{ option.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <MultiSelect
-          :model-value="selectedKeyIds"
-          :options="keyOptions"
-          :placeholder="keySelectorPlaceholder"
-          search-placeholder="搜索 Key"
-          empty-text="暂无可选 Key"
-          no-results-text="未找到匹配 Key"
-          trigger-class="h-9 min-h-9 rounded-md border-border/60 text-xs"
-          dropdown-min-width="24rem"
-          :search-threshold="0"
-          :disabled="keyOptionsLoading && keyOptions.length === 0"
-          @update:model-value="emit('update:selectedKeyIds', $event)"
-        />
+        <div class="space-y-2">
+          <div class="text-sm font-medium text-foreground">
+            模型映射
+          </div>
+          <Select
+            :model-value="selectedModelMappingValue"
+            @update:model-value="handleModelMappingValueChange"
+          >
+            <SelectTrigger class="h-9 w-full border-border/60 text-xs">
+              <SelectValue placeholder="自动" />
+            </SelectTrigger>
+            <SelectContent
+              class="w-[var(--radix-select-trigger-width)]"
+              :disable-portal="false"
+              :searchable="false"
+            >
+              <SelectItem
+                value="auto"
+                text-value="自动"
+              >
+                自动
+              </SelectItem>
+              <SelectItem
+                v-for="option in modelMappingOptions"
+                :key="option.name"
+                :value="option.name"
+                :text-value="option.name"
+              >
+                {{ option.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div class="dialog-grid-wide items-start gap-3">
         <div class="space-y-2">
-          <div class="flex items-center justify-between gap-3">
-            <div class="text-sm font-medium">
-              测试请求头
-            </div>
-            <div class="flex items-center gap-1">
+          <div class="flex min-h-9 items-center justify-between gap-3 rounded-md border border-border/60 px-2">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-2 py-2 text-left text-sm font-medium"
+              :aria-expanded="requestHeadersExpanded"
+              aria-controls="model-test-request-headers"
+              @click="requestHeadersExpanded = !requestHeadersExpanded"
+            >
+              <ChevronRight
+                class="h-4 w-4 shrink-0 text-muted-foreground transition-transform"
+                :class="{ 'rotate-90': requestHeadersExpanded }"
+              />
+              <span>测试请求头</span>
+            </button>
+            <div
+              v-if="requestHeadersExpanded"
+              class="flex shrink-0 items-center gap-1"
+            >
               <Button
                 variant="ghost"
                 size="icon"
@@ -153,29 +172,45 @@
               </Button>
             </div>
           </div>
-          <Textarea
-            :model-value="requestHeadersDraft"
-            class="h-[120px] min-h-[120px] font-mono text-xs"
-            placeholder="输入 JSON 请求头"
-            @update:model-value="emit('update:requestHeadersDraft', $event)"
-          />
           <div
-            v-if="requestHeadersError"
-            class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            v-show="requestHeadersExpanded"
+            id="model-test-request-headers"
+            class="space-y-2"
           >
-            {{ requestHeadersError }}
-          </div>
-          <div class="rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground">
-            这里的请求头会合并到测试请求里；鉴权头和必要系统头仍由后端按端点规则补齐。
+            <Textarea
+              :model-value="requestHeadersDraft"
+              class="h-[120px] min-h-[120px] font-mono text-xs"
+              placeholder="输入 JSON 请求头"
+              @update:model-value="emit('update:requestHeadersDraft', $event)"
+            />
+            <div
+              v-if="requestHeadersError"
+              class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              {{ requestHeadersError }}
+            </div>
           </div>
         </div>
 
         <div class="space-y-2">
-          <div class="flex items-center justify-between gap-3">
-            <div class="text-sm font-medium">
-              测试请求体
-            </div>
-            <div class="flex items-center gap-1">
+          <div class="flex min-h-9 items-center justify-between gap-3 rounded-md border border-border/60 px-2">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-2 py-2 text-left text-sm font-medium"
+              :aria-expanded="requestBodyExpanded"
+              aria-controls="model-test-request-body"
+              @click="requestBodyExpanded = !requestBodyExpanded"
+            >
+              <ChevronRight
+                class="h-4 w-4 shrink-0 text-muted-foreground transition-transform"
+                :class="{ 'rotate-90': requestBodyExpanded }"
+              />
+              <span>测试请求体</span>
+            </button>
+            <div
+              v-if="requestBodyExpanded"
+              class="flex shrink-0 items-center gap-1"
+            >
               <Button
                 variant="ghost"
                 size="icon"
@@ -196,31 +231,35 @@
               </Button>
             </div>
           </div>
-          <Textarea
-            :model-value="requestBodyDraft"
-            class="h-[120px] min-h-[120px] font-mono text-xs"
-            placeholder="输入 JSON 请求体"
-            @update:model-value="emit('update:requestBodyDraft', $event)"
-          />
           <div
-            v-if="requestBodyError"
-            class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            v-show="requestBodyExpanded"
+            id="model-test-request-body"
+            class="space-y-2"
           >
-            {{ requestBodyError }}
-          </div>
-          <div class="rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground">
-            请求体中的 model 会按当前编辑内容发送；未填写时使用当前测试模型，实际发送时会按端点格式转换并应用规则。
+            <Textarea
+              :model-value="requestBodyDraft"
+              class="h-[120px] min-h-[120px] font-mono text-xs"
+              placeholder="输入 JSON 请求体"
+              @update:model-value="emit('update:requestBodyDraft', $event)"
+            />
+            <div
+              v-if="requestBodyError"
+              class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              {{ requestBodyError }}
+            </div>
           </div>
         </div>
       </div>
 
-      <Button
-        class="w-full"
-        :disabled="startDisabled"
-        @click="emit('start')"
-      >
-        开始测试
-      </Button>
+      <div class="flex justify-end">
+        <Button
+          :disabled="startDisabled"
+          @click="emit('start')"
+        >
+          开始测试
+        </Button>
+      </div>
     </div>
 
     <div
@@ -257,56 +296,26 @@
               :style="{ width: `${liveProgressPercent}%` }"
             />
           </div>
-          <div
-            v-if="liveTraceSummary.total_candidates > 0"
-            class="flex flex-wrap gap-1.5"
-          >
-            <Badge
-              v-for="item in liveSummaryItems"
-              :key="item.key"
-              :variant="item.variant"
-              class="px-1.5 py-0 text-[10px]"
-            >
-              {{ item.label }} {{ item.value }}
-            </Badge>
-          </div>
-          <div
-            v-else
-            class="text-xs text-muted-foreground"
-          >
-            正在准备测试请求
-          </div>
         </div>
 
-        <div class="dialog-grid-2 gap-3">
-          <div class="rounded-md border border-border/60 bg-background/80 p-3 space-y-1">
-            <div class="text-xs text-muted-foreground">
-              {{ liveEntityLabel }}
-            </div>
-            <div class="break-all text-sm font-medium">
-              {{ liveAccountTitle }}
-            </div>
-            <div
-              v-if="liveAccountMeta"
-              class="break-all text-xs text-muted-foreground"
-            >
-              {{ liveAccountMeta }}
-            </div>
-          </div>
-          <div class="rounded-md border border-border/60 bg-background/80 p-3 space-y-1">
-            <div class="text-xs text-muted-foreground">
-              状态
-            </div>
-            <div class="text-sm font-medium">
-              {{ liveStatusTitle }}
-            </div>
-            <div
-              v-if="liveStatusDetail"
-              class="break-all text-xs text-muted-foreground"
-            >
-              {{ liveStatusDetail }}
-            </div>
-          </div>
+        <div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+          <Loader2 class="h-4 w-4 shrink-0 animate-spin text-primary" />
+          <span
+            v-if="activeTraceCandidate"
+            class="truncate"
+          >
+            {{ formatTraceCandidateIndex(activeTraceCandidate) }}
+            · {{ formatTraceCandidateAccount(activeTraceCandidate) }}
+            <template v-if="traceCandidateMappingName(activeTraceCandidate)">
+              · {{ traceCandidateMappingName(activeTraceCandidate) }}
+            </template>
+          </span>
+          <span
+            v-else
+            class="text-muted-foreground"
+          >
+            正在准备测试请求
+          </span>
         </div>
 
         <div
@@ -339,6 +348,12 @@
                     {{ statusDisplay(candidate) }}
                   </Badge>
                   <span class="truncate font-medium">{{ formatTraceCandidateAccount(candidate) }}</span>
+                  <span
+                    v-if="traceCandidateMappingName(candidate)"
+                    class="shrink-0 text-muted-foreground"
+                  >
+                    · {{ traceCandidateMappingName(candidate) }}
+                  </span>
                 </div>
                 <div
                   v-if="traceCandidateDetail(candidate)"
@@ -360,63 +375,20 @@
       v-else-if="result"
       class="space-y-4"
     >
-      <div class="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
-            <Badge
-              :variant="result.success ? 'success' : 'destructive'"
-              class="px-2 py-0.5"
-            >
-              {{ result.success ? '测试成功' : '测试失败' }}
-            </Badge>
-          </div>
-          <div
-            v-if="hasEffectiveModel"
-            class="text-xs text-muted-foreground"
-          >
-            请求模型：{{ resultModelTitle }}
-          </div>
-        </div>
-
-        <div class="dialog-grid-3 gap-3">
-          <div class="rounded-md border border-border/60 bg-background/80 p-3 space-y-1">
-            <div class="text-xs text-muted-foreground">
-              {{ resultEntityLabel }}
-            </div>
-            <div class="break-all text-sm font-medium">
-              {{ resultWinningTitle }}
-            </div>
-          </div>
-          <div class="rounded-md border border-border/60 bg-background/80 p-3 space-y-1">
-            <div class="text-xs text-muted-foreground">
-              调度结果
-            </div>
-            <div class="text-sm font-medium">
-              {{ resultDispatchTitle }}
-            </div>
-          </div>
-          <div class="rounded-md border border-border/60 bg-background/80 p-3 space-y-1">
-            <div class="text-xs text-muted-foreground">
-              实际请求
-            </div>
-            <div class="break-all text-sm font-medium">
-              {{ resultModelTitle }}
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-if="showCandidateDiagnostics"
-          class="flex flex-wrap gap-1.5"
-        >
+      <div class="rounded-lg border border-border/60 bg-muted/20 p-4">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
           <Badge
-            v-for="item in resultSummaryItems"
-            :key="item.key"
-            :variant="item.variant"
-            class="px-1.5 py-0 text-[10px]"
+            :variant="result.success ? 'success' : 'destructive'"
+            class="px-2 py-0.5"
           >
-            {{ item.label }} {{ item.value }}
+            {{ result.success ? '测试成功' : '测试失败' }}
           </Badge>
+          <span
+            v-if="resultSummaryText"
+            class="min-w-0 break-all text-xs text-muted-foreground"
+          >
+            {{ resultSummaryText }}
+          </span>
         </div>
       </div>
 
@@ -445,9 +417,9 @@
           :class="attemptRowClass(attempt.status, selectedInspectionKey === inspectionKey(attempt))"
           role="button"
           tabindex="0"
-          @click="selectInspectionAttempt(attempt)"
-          @keydown.enter.prevent="selectInspectionAttempt(attempt)"
-          @keydown.space.prevent="selectInspectionAttempt(attempt)"
+          @click="toggleInspectionAttempt(attempt)"
+          @keydown.enter.prevent="toggleInspectionAttempt(attempt)"
+          @keydown.space.prevent="toggleInspectionAttempt(attempt)"
         >
           <div class="flex items-center justify-between gap-2">
             <div class="flex min-w-0 items-center gap-1.5">
@@ -469,6 +441,9 @@
           <div class="mt-1.5 space-y-0.5">
             <div class="truncate font-medium">
               {{ attempt.key_name || maskKey(attempt.key_id) }}
+            </div>
+            <div class="truncate text-muted-foreground">
+              {{ attempt.mapping_name || attempt.effective_model || '-' }}
             </div>
             <div
               v-if="attemptImagePreviews(attempt).length > 0"
@@ -492,7 +467,7 @@
             </div>
             <div
               v-else-if="attemptDetail(attempt) !== '-'"
-              class="mt-1 break-all text-muted-foreground"
+              class="mt-1 break-words text-muted-foreground"
             >
               {{ attemptDetail(attempt) }}
             </div>
@@ -506,10 +481,11 @@
       >
         <table class="w-full table-fixed text-xs">
           <colgroup>
-            <col class="w-8">
-            <col class="w-[28%]">
+            <col class="w-10">
+            <col class="w-[30%]">
+            <col class="w-[26%]">
             <col class="w-16">
-            <col class="w-16">
+            <col class="w-20">
             <col>
           </colgroup>
           <thead class="sticky top-0 z-10">
@@ -521,10 +497,13 @@
                 Key
               </th>
               <th class="px-3 py-2 text-left font-medium">
+                模型
+              </th>
+              <th class="px-3 py-2 text-left font-medium">
                 状态
               </th>
               <th class="px-3 py-2 text-right font-medium">
-                延迟
+                耗时
               </th>
               <th class="px-3 py-2 text-left font-medium">
                 详情
@@ -538,9 +517,9 @@
               class="last:border-b-0 align-top border-b"
               :class="attemptRowClass(attempt.status, selectedInspectionKey === inspectionKey(attempt))"
               tabindex="0"
-              @click="selectInspectionAttempt(attempt)"
-              @keydown.enter.prevent="selectInspectionAttempt(attempt)"
-              @keydown.space.prevent="selectInspectionAttempt(attempt)"
+              @click="toggleInspectionAttempt(attempt)"
+              @keydown.enter.prevent="toggleInspectionAttempt(attempt)"
+              @keydown.space.prevent="toggleInspectionAttempt(attempt)"
             >
               <td class="py-2 pl-3 pr-1 text-muted-foreground">
                 {{ formatAttemptIndex(attempt) }}
@@ -554,6 +533,14 @@
                 </div>
               </td>
               <td class="px-3 py-2">
+                <div
+                  class="truncate text-muted-foreground"
+                  :title="attempt.mapping_name || attempt.effective_model || '-'"
+                >
+                  {{ attempt.mapping_name || attempt.effective_model || '-' }}
+                </div>
+              </td>
+              <td class="px-3 py-2">
                 <Badge
                   :variant="statusVariant(attempt.status)"
                   class="px-1.5 py-0 text-[10px]"
@@ -561,7 +548,7 @@
                   {{ statusDisplay(attempt) }}
                 </Badge>
               </td>
-              <td class="px-3 py-2 text-right tabular-nums text-muted-foreground">
+              <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-muted-foreground">
                 {{ attempt.latency_ms != null ? attempt.latency_ms + 'ms' : '-' }}
               </td>
               <td class="px-3 py-2 text-muted-foreground">
@@ -593,7 +580,7 @@
                 </div>
                 <div
                   v-else
-                  class="line-clamp-2 break-all"
+                  class="line-clamp-2 break-words"
                   :title="attemptDetail(attempt)"
                 >
                   {{ attemptDetail(attempt) }}
@@ -620,7 +607,6 @@
           class="space-y-3"
         >
           <div
-            v-if="showAttemptDiagnostics"
             class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
           >
             <span class="font-medium text-foreground">
@@ -784,7 +770,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, Code2, Copy, Loader2, Maximize2, Minimize2, RotateCcw } from 'lucide-vue-next'
+import { Check, ChevronRight, Code2, Copy, Loader2, Maximize2, Minimize2, RotateCcw } from 'lucide-vue-next'
 import {
   Badge,
   Card,
@@ -799,11 +785,9 @@ import {
 } from '@/components/ui'
 import Button from '@/components/ui/button.vue'
 import Textarea from '@/components/ui/textarea.vue'
-import MultiSelect from '@/components/common/MultiSelect.vue'
 import { formatApiFormat } from '@/api/endpoints/types/api-format'
-import type { TestAttemptDetail, TestCandidateSummary, TestModelFailoverResponse } from '@/api/endpoints/providers'
+import type { TestAttemptDetail, TestModelFailoverResponse } from '@/api/endpoints/providers'
 import type { CandidateRecord, RequestTrace } from '@/api/requestTrace'
-import type { MultiSelectOption } from '@/components/common/MultiSelect.vue'
 import JsonContent from '@/features/usage/components/RequestDetailDrawer/JsonContent.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useDarkMode } from '@/composables/useDarkMode'
@@ -826,15 +810,15 @@ type TestModelMappingOption = {
   priority?: number
 }
 
-type TestKeyOption = MultiSelectOption
+type TestKeyOption = {
+  value: string
+  label: string
+}
 
 const props = defineProps<{
   open: boolean
   result: TestModelFailoverResponse | null
-  mode?: 'global' | 'direct'
-  providerType?: string | null
   selectingModelName?: string | null
-  requestedModelName?: string | null
   endpoints?: TestEndpointOption[]
   selectedEndpoint?: TestEndpointOption | null
   testing?: boolean
@@ -846,11 +830,10 @@ const props = defineProps<{
   requestBodyDraft?: string
   requestBodyResetValue?: string
   requestBodyError?: string | null
-  modelMappingAvailable?: boolean
   modelMappingOptions?: TestModelMappingOption[]
   selectedModelMapping?: string | null
   keyOptions?: TestKeyOption[]
-  selectedKeyIds?: string[]
+  selectedKeyId?: string
   keyOptionsLoading?: boolean
   startDisabled?: boolean
 }>()
@@ -861,7 +844,7 @@ const emit = defineEmits<{
   start: []
   selectEndpoint: [endpointId: string]
   selectModelMapping: [modelName: string]
-  'update:selectedKeyIds': [value: string[]]
+  'update:selectedKeyId': [value: string]
   'update:requestHeadersDraft': [value: string]
   'update:requestBodyDraft': [value: string]
 }>()
@@ -869,45 +852,29 @@ const emit = defineEmits<{
 const endpoints = computed(() => props.endpoints ?? [])
 const modelMappingOptions = computed(() => props.modelMappingOptions ?? [])
 const keyOptions = computed(() => props.keyOptions ?? [])
-const selectedKeyIds = computed(() => props.selectedKeyIds ?? [])
 const keyOptionsLoading = computed(() => props.keyOptionsLoading === true)
-const modelMappingAvailable = computed(
-  () => props.modelMappingAvailable === true && modelMappingOptions.value.length > 0,
-)
-const showKeySelector = computed(() => (
-  keyOptionsLoading.value || keyOptions.value.length > 0 || selectedKeyIds.value.length > 0
-))
-const keySelectorPlaceholder = computed(() => (
-  keyOptionsLoading.value && keyOptions.value.length === 0 ? '正在加载 Key' : '默认调度（不指定 Key）'
-))
-const keySelectionStatus = computed(() => {
-  if (selectedKeyIds.value.length > 0) return `已选 ${selectedKeyIds.value.length}`
-  if (keyOptionsLoading.value) return '加载中'
-  return '默认'
-})
-const requestedModelName = computed(() => props.requestedModelName?.trim() || '')
 const selectedModelMapping = computed(() => props.selectedModelMapping?.trim() || '')
-const selectedModelMappingValue = computed(() => (
-  selectedModelMapping.value || requestedModelName.value
-))
+const selectedModelMappingValue = computed(() => selectedModelMapping.value || 'auto')
+const selectedKeyValue = computed(() => {
+  const selected = props.selectedKeyId?.trim() || ''
+  return selected && selected !== 'auto' ? selected : 'auto'
+})
+const requestHeadersExpanded = ref(false)
+const requestBodyExpanded = ref(false)
 const requestHeadersDraft = computed(() => props.requestHeadersDraft ?? '')
 const requestBodyDraft = computed(() => props.requestBodyDraft ?? '')
 const traceCandidates = computed(() => props.trace?.candidates ?? [])
 const showSetup = computed(() => props.open && !props.testing && !props.result)
 const showResult = computed(() => !!props.result)
-const resultSummary = computed(() => deriveSummaryFromAttempts(props.result))
-const showCandidateDiagnostics = computed(() => resultSummary.value.total_candidates > 1)
-const showAttemptDiagnostics = computed(() => (
-  showCandidateDiagnostics.value
-))
 const { isDark } = useDarkMode()
 const { copyToClipboard } = useClipboard()
 
 function handleModelMappingValueChange(value: string) {
-  emit(
-    'selectModelMapping',
-    value === requestedModelName.value ? '' : value,
-  )
+  emit('selectModelMapping', value === 'auto' ? '' : value)
+}
+
+function handleKeyValueChange(value: string) {
+  emit('update:selectedKeyId', value === 'auto' ? 'auto' : value)
 }
 
 const dialogTitle = computed(() => {
@@ -926,13 +893,6 @@ const dialogDescription = computed(() => {
 })
 
 const resultAttempts = computed(() => props.result?.attempts ?? [])
-
-const hasEffectiveModel = computed(() => {
-  if (!props.result) return false
-  return resultAttempts.value.some(
-    attempt => attempt.effective_model && attempt.effective_model !== props.result?.model,
-  )
-})
 
 const resultEmptyMessage = computed(() => {
   if (!props.result) return '没有可用的候选进行测试'
@@ -956,15 +916,8 @@ watch(() => props.result, () => {
   showAllAttempts.value = false
   inspectionExpandDepth.value = 0
   inspectionCopiedStates.value = {}
-  const defaultAttempt = resultImageAttempt.value
-    ?? resultAttempts.value.find(attempt => attempt.status === 'success')
-    ?? inspectableAttempts.value[0]
-    ?? resultAttempts.value[0]
-    ?? null
-  selectedInspectionKey.value = defaultAttempt ? inspectionKey(defaultAttempt) : null
-  inspectionTab.value = defaultAttempt && attemptImagePreviews(defaultAttempt).length > 0
-    ? 'response-body'
-    : 'request-body'
+  selectedInspectionKey.value = null
+  inspectionTab.value = 'request-body'
 })
 
 const shouldCollapseAttempts = computed(() => resultAttempts.value.length > 20)
@@ -976,127 +929,9 @@ const visibleAttempts = computed(() => {
   return resultAttempts.value.slice(0, 20)
 })
 
-type SummaryView = {
-  total_candidates: number
-  attempted: number
-  success: number
-  failed: number
-  skipped: number
-  unused: number
-  pending: number
-  available: number
-  completed: number
-  stop_reason?: string | null
-  winning_candidate_index?: number | null
-  winning_key_name?: string | null
-  winning_key_id?: string | null
-  winning_auth_type?: string | null
-  winning_effective_model?: string | null
-  winning_endpoint_api_format?: string | null
-  winning_endpoint_base_url?: string | null
-  winning_latency_ms?: number | null
-  winning_status_code?: number | null
-}
-
-type SummaryBadgeItem = {
-  key: string
-  label: string
-  value: number
-  variant: 'default' | 'secondary' | 'outline' | 'success' | 'destructive'
-}
-
-function toCount(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
-}
-
-function normalizeCandidateSummary(summary: TestCandidateSummary | null | undefined): SummaryView | null {
-  if (!summary) return null
-  const success = toCount(summary.success)
-  const failed = toCount(summary.failed)
-  const skipped = toCount(summary.skipped)
-  const unused = toCount(summary.unused)
-  const pending = toCount(summary.pending)
-  const available = toCount(summary.available)
-  return {
-    total_candidates: toCount(summary.total_candidates),
-    attempted: toCount(summary.attempted),
-    success,
-    failed,
-    skipped,
-    unused,
-    pending,
-    available,
-    completed: toCount(summary.completed) || success + failed + skipped + unused,
-    stop_reason: summary.stop_reason ?? null,
-    winning_candidate_index: summary.winning_candidate_index ?? null,
-    winning_key_name: summary.winning_key_name ?? null,
-    winning_key_id: summary.winning_key_id ?? null,
-    winning_auth_type: summary.winning_auth_type ?? null,
-    winning_effective_model: summary.winning_effective_model ?? null,
-    winning_endpoint_api_format: summary.winning_endpoint_api_format ?? null,
-    winning_endpoint_base_url: summary.winning_endpoint_base_url ?? null,
-    winning_latency_ms: summary.winning_latency_ms ?? null,
-    winning_status_code: summary.winning_status_code ?? null,
-  }
-}
-
-function deriveSummaryFromAttempts(result: TestModelFailoverResponse | null): SummaryView {
-  const normalized = normalizeCandidateSummary(result?.candidate_summary)
-  if (normalized) return normalized
-
-  const attempts = result?.attempts ?? []
-  const success = attempts.filter(attempt => attempt.status === 'success').length
-  const failed = attempts.filter(attempt => ['failed', 'cancelled', 'stream_interrupted'].includes(attempt.status)).length
-  const skipped = attempts.filter(attempt => attempt.status === 'skipped').length
-  const pending = attempts.filter(attempt => ['pending', 'streaming'].includes(attempt.status)).length
-  const available = attempts.filter(attempt => attempt.status === 'available').length
-  const totalCandidates = Math.max(result?.total_candidates ?? 0, attempts.length)
-  const explicitUnused = attempts.filter(attempt => attempt.status === 'unused').length
-  const winningAttempt = attempts.find(attempt => attempt.status === 'success') ?? null
-  const unused = explicitUnused > 0
-    ? explicitUnused
-    : success > 0 && winningAttempt
-      ? Math.max(0, totalCandidates - winningAttempt.candidate_index - 1)
-      : 0
-  const attempted = result?.total_attempts ?? attempts.filter(attempt => !['skipped', 'available', 'unused'].includes(attempt.status)).length
-  const stopReason = totalCandidates === 0
-    ? 'no_candidate'
-    : success > 0
-      ? 'first_success'
-      : attempted === 0 && skipped > 0
-        ? 'all_skipped'
-        : failed > 0 || skipped > 0
-          ? 'exhausted'
-          : 'pending'
-
-  return {
-    total_candidates: totalCandidates,
-    attempted,
-    success,
-    failed,
-    skipped,
-    unused,
-    pending,
-    available,
-    completed: success + failed + skipped + unused,
-    stop_reason: stopReason,
-    winning_candidate_index: winningAttempt?.candidate_index ?? null,
-    winning_key_name: winningAttempt?.key_name ?? null,
-    winning_key_id: winningAttempt?.key_id ?? null,
-    winning_auth_type: winningAttempt?.auth_type ?? null,
-    winning_effective_model: winningAttempt?.effective_model ?? null,
-    winning_endpoint_api_format: winningAttempt?.endpoint_api_format ?? null,
-    winning_endpoint_base_url: winningAttempt?.endpoint_base_url ?? null,
-    winning_latency_ms: winningAttempt?.latency_ms ?? null,
-    winning_status_code: winningAttempt?.status_code ?? null,
-  }
-}
-
 const liveTraceSummary = computed(() => {
-  const summary: SummaryView = {
+  const summary = {
     total_candidates: traceCandidates.value.length,
-    attempted: 0,
-    available: 0,
     pending: 0,
     success: 0,
     failed: 0,
@@ -1107,7 +942,6 @@ const liveTraceSummary = computed(() => {
   }
 
   for (const candidate of traceCandidates.value) {
-    if (candidate.status === 'available') summary.available += 1
     if (candidate.status === 'unused') summary.unused += 1
     if (candidate.status === 'pending' || candidate.status === 'streaming') summary.pending += 1
     if (candidate.status === 'success') summary.success += 1
@@ -1115,59 +949,11 @@ const liveTraceSummary = computed(() => {
     if (candidate.status === 'skipped') summary.skipped += 1
   }
 
-  summary.attempted = summary.pending + summary.success + summary.failed
   summary.completed = summary.success + summary.failed + summary.skipped + summary.unused
   if (summary.success > 0) summary.stop_reason = 'first_success'
   if (summary.success === 0 && summary.pending === 0 && summary.failed + summary.skipped > 0) summary.stop_reason = 'exhausted'
   return summary
 })
-
-const normalizedProviderType = computed(() => (
-  props.providerType
-  || props.result?.provider?.provider_type
-  || ''
-).toLowerCase())
-
-const testScenario = computed<'custom' | 'direct' | 'provider'>(() => {
-  if (normalizedProviderType.value === 'custom') return 'custom'
-  if (props.mode === 'direct') return 'direct'
-  return 'provider'
-})
-
-const candidateNoun = computed(() => {
-  if (testScenario.value === 'custom') return 'Key'
-  return '候选'
-})
-
-const liveEntityLabel = computed(() => {
-  if (testScenario.value === 'custom') return '当前 Key'
-  return '当前候选'
-})
-
-const resultEntityLabel = computed(() => {
-  if (testScenario.value === 'custom') return '命中 Key'
-  return '命中候选'
-})
-
-function buildSummaryItems(summary: SummaryView): SummaryBadgeItem[] {
-  const totalLabel = testScenario.value === 'custom' ? '候选 Key' : '候选'
-  const successLabel = testScenario.value === 'custom' ? '命中 Key' : '成功'
-  const failedLabel = '失败'
-  const skippedLabel = '跳过'
-  const unusedLabel = '未执行'
-
-  return [
-    { key: 'total', label: totalLabel, value: summary.total_candidates, variant: 'secondary' },
-    { key: 'attempted', label: '已尝试', value: summary.attempted, variant: 'outline' },
-    { key: 'success', label: successLabel, value: summary.success, variant: 'success' },
-    { key: 'failed', label: failedLabel, value: summary.failed, variant: 'destructive' },
-    { key: 'skipped', label: skippedLabel, value: summary.skipped, variant: 'secondary' },
-    { key: 'unused', label: unusedLabel, value: summary.unused, variant: 'secondary' },
-  ]
-}
-
-const liveSummaryItems = computed(() => buildSummaryItems(liveTraceSummary.value))
-const resultSummaryItems = computed(() => buildSummaryItems(resultSummary.value))
 
 const liveProgressText = computed(() => {
   if (liveTraceSummary.value.total_candidates <= 0) return '准备中'
@@ -1189,42 +975,6 @@ const activeTraceCandidate = computed(() => {
   return traceCandidates.value[0] ?? null
 })
 
-const liveAccountTitle = computed(() => {
-  const candidate = activeTraceCandidate.value
-  if (!candidate) return '等待候选'
-  return candidate.key_account_label || candidate.key_name || candidate.key_preview || '-'
-})
-
-const liveAccountMeta = computed(() => {
-  const candidate = activeTraceCandidate.value
-  if (!candidate) return ''
-  const parts: string[] = []
-  if (candidate.key_auth_type) parts.push(formatAuthType(candidate.key_auth_type))
-  if (candidate.key_preview && candidate.key_preview !== candidate.key_account_label) parts.push(candidate.key_preview)
-  return parts.join(' · ')
-})
-
-const liveStatusTitle = computed(() => {
-  const candidate = activeTraceCandidate.value
-  if (!candidate) return '正在准备测试请求'
-  if (candidate.status === 'pending' || candidate.status === 'streaming') {
-    return `正在请求 ${formatTraceCandidateIndex(candidate)}`
-  }
-  if (candidate.status === 'success') {
-    return `命中 ${formatTraceCandidateIndex(candidate)}`
-  }
-  if (candidate.status === 'unused') {
-    return '成功后未执行'
-  }
-  return statusLabel(candidate.status)
-})
-
-const liveStatusDetail = computed(() => {
-  const candidate = activeTraceCandidate.value
-  if (!candidate) return ''
-  return traceCandidateDetail(candidate)
-})
-
 const liveRecentCandidates = computed(() => {
   return traceCandidates.value
     .filter(candidate => candidate.status !== 'available')
@@ -1232,12 +982,28 @@ const liveRecentCandidates = computed(() => {
     .reverse()
 })
 
+const resultSummaryText = computed(() => {
+  const winner = resultAttempts.value.find(attempt => attempt.status === 'success')
+  if (winner) {
+    const parts = [
+      winner.key_name || maskKey(winner.key_id),
+      winner.mapping_name || winner.effective_model,
+      winner.status_code != null ? `HTTP ${winner.status_code}` : '',
+      winner.latency_ms != null ? `${winner.latency_ms}ms` : '',
+    ].filter(Boolean)
+    return parts.join(' · ')
+  }
+  return typeof props.result?.error === 'string' && props.result.error.trim()
+    ? formatModelTestDiagnostic(props.result.error)
+    : ''
+})
+
 const inspectableAttempts = computed(() => {
   return resultAttempts.value.filter(hasDebugData)
 })
 
 const showDebugInspector = computed(() => {
-  return inspectableAttempts.value.length > 0
+  return selectedInspectionKey.value !== null && inspectableAttempts.value.length > 0
 })
 
 const detailTabs = [
@@ -1263,65 +1029,6 @@ function asJsonDataValue(value: unknown): JsonDataValue {
   return value as JsonDataValue
 }
 
-const resultImageAttempt = computed(() => {
-  return resultAttempts.value.find(attempt => attempt.status === 'success' && attemptImagePreviews(attempt).length > 0)
-    ?? resultAttempts.value.find(attempt => attemptImagePreviews(attempt).length > 0)
-    ?? null
-})
-
-const resultWinningTitle = computed(() => {
-  const summary = resultSummary.value
-  const keyName = summary.winning_key_name || summary.winning_key_id
-  if (keyName) return keyName
-  if (props.result?.success) return `已命中 ${candidateNoun.value}`
-  return `无${resultEntityLabel.value}`
-})
-
-const resultDispatchTitle = computed(() => {
-  const summary = resultSummary.value
-  return `${summary.attempted}/${summary.total_candidates} 已尝试`
-})
-
-const attemptedEffectiveModelTitle = computed(() => {
-  const successAttempt = resultAttempts.value.find(
-    attempt => attempt.status === 'success' && attempt.effective_model,
-  )
-  if (successAttempt?.effective_model) return successAttempt.effective_model
-
-  const attempted = resultAttempts.value.find(
-    attempt => !['skipped', 'available', 'unused'].includes(attempt.status) && attempt.effective_model,
-  )
-  if (attempted?.effective_model) return attempted.effective_model
-
-  return resultAttempts.value.find(attempt => attempt.effective_model)?.effective_model ?? null
-})
-
-const attemptedRequestModelTitle = computed(() => {
-  const successAttempt = resultAttempts.value.find(
-    attempt => attempt.status === 'success' && extractAttemptRequestModel(attempt),
-  )
-  const successRequestModel = successAttempt ? extractAttemptRequestModel(successAttempt) : null
-  if (successRequestModel) return successRequestModel
-
-  const attempted = resultAttempts.value.find(
-    attempt => !['skipped', 'available', 'unused'].includes(attempt.status)
-      && extractAttemptRequestModel(attempt),
-  )
-  const attemptedRequestModel = attempted ? extractAttemptRequestModel(attempted) : null
-  if (attemptedRequestModel) return attemptedRequestModel
-
-  const anyAttempt = resultAttempts.value.find(attempt => extractAttemptRequestModel(attempt))
-  return anyAttempt ? extractAttemptRequestModel(anyAttempt) : null
-})
-
-const resultModelTitle = computed(() => {
-  return attemptedRequestModelTitle.value
-    || resultSummary.value.winning_effective_model
-    || attemptedEffectiveModelTitle.value
-    || props.result?.model
-    || props.selectingModelName
-    || '-'
-})
 
 function statusVariant(status: string) {
   if (status === 'success') return 'success' as const
@@ -1338,7 +1045,7 @@ function statusLabel(status: string) {
   if (status === 'cancelled') return '已取消'
   if (status === 'stream_interrupted') return '流中断'
   if (status === 'available') return '待请求'
-  if (status === 'unused') return '未执行'
+  if (status === 'unused') return '未使用'
   return status
 }
 
@@ -1370,44 +1077,27 @@ function maskKey(key: string): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`
 }
 
-function formatAuthType(authType: string): string {
-  const lowered = authType.toLowerCase()
-  if (lowered === 'api_key') return 'API Key'
-  if (lowered === 'bearer') return 'Bearer Token'
-  return authType
-}
-
 function formatAttemptIndex(attempt: TestAttemptDetail): string {
   const retryIndex = attempt.retry_index ?? 0
-  return retryIndex > 0 ? `#${attempt.candidate_index}.${retryIndex}` : `#${attempt.candidate_index}`
+  const candidateIndex = attempt.candidate_index + 1
+  return retryIndex > 0 ? `#${candidateIndex}.${retryIndex}` : `#${candidateIndex}`
 }
 
 function formatTraceCandidateIndex(candidate: CandidateRecord): string {
-  return candidate.retry_index > 0 ? `#${candidate.candidate_index}.${candidate.retry_index}` : `#${candidate.candidate_index}`
+  const candidateIndex = candidate.candidate_index + 1
+  return candidate.retry_index > 0 ? `#${candidateIndex}.${candidate.retry_index}` : `#${candidateIndex}`
 }
 
 function formatTraceCandidateAccount(candidate: CandidateRecord): string {
   return candidate.key_account_label || candidate.key_name || candidate.key_preview || '-'
 }
 
-function extractAttemptRequestModel(attempt: TestAttemptDetail): string | null {
-  const body = attempt.request_body
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return null
-
-  const model = (body as Record<string, unknown>).model
-  if (typeof model === 'string' && model.trim()) return model.trim()
-
-  const conversationState = (body as Record<string, unknown>).conversationState
-  if (!conversationState || typeof conversationState !== 'object' || Array.isArray(conversationState)) return null
-
-  const currentMessage = (conversationState as Record<string, unknown>).currentMessage
-  if (!currentMessage || typeof currentMessage !== 'object' || Array.isArray(currentMessage)) return null
-
-  const userInputMessage = (currentMessage as Record<string, unknown>).userInputMessage
-  if (!userInputMessage || typeof userInputMessage !== 'object' || Array.isArray(userInputMessage)) return null
-
-  const modelId = (userInputMessage as Record<string, unknown>).modelId
-  return typeof modelId === 'string' && modelId.trim() ? modelId.trim() : null
+function traceCandidateMappingName(candidate: CandidateRecord): string {
+  const adminData = candidate.extra_data?.admin_model_test
+  if (!adminData || typeof adminData !== 'object' || Array.isArray(adminData)) return ''
+  const value = (adminData as Record<string, unknown>).mapping_name
+    ?? (adminData as Record<string, unknown>).effective_model
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function traceCandidateDetail(candidate: CandidateRecord): string {
@@ -1421,7 +1111,7 @@ function traceCandidateDetail(candidate: CandidateRecord): string {
 
 function attemptDetail(attempt: TestAttemptDetail): string {
   if (attempt.status === 'cancelled') return '测试已取消'
-  if (attempt.status === 'unused') return '成功后未请求'
+  if (attempt.status === 'unused') return '-'
   if (attempt.skip_reason) return formatModelTestDiagnostic(attempt.skip_reason)
   if (attempt.error_message) return formatModelTestDiagnostic(attempt.error_message)
   if (attempt.status === 'success') {
@@ -1443,8 +1133,13 @@ function inspectionKey(attempt: TestAttemptDetail): string {
   return `${attempt.candidate_index}:${attempt.retry_index ?? 0}:${attempt.key_id}`
 }
 
-function selectInspectionAttempt(attempt: TestAttemptDetail) {
-  selectedInspectionKey.value = inspectionKey(attempt)
+function toggleInspectionAttempt(attempt: TestAttemptDetail) {
+  const nextKey = inspectionKey(attempt)
+  if (selectedInspectionKey.value === nextKey) {
+    selectedInspectionKey.value = null
+    return
+  }
+  selectedInspectionKey.value = nextKey
   inspectionTab.value = attemptImagePreviews(attempt).length > 0 ? 'response-body' : 'request-body'
 }
 

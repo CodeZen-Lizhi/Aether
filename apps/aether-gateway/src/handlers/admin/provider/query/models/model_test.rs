@@ -19,14 +19,10 @@ use crate::ai_serving::{
 use crate::clock::current_unix_ms;
 use crate::execution_runtime;
 use crate::handlers::admin::request::{AdminAppState, AdminGatewayProviderTransportSnapshot};
-use crate::model_fetch::ModelFetchRuntimeState;
 use crate::provider_key_auth::provider_key_auth_semantics;
 use crate::usage::GatewaySyncReportRequest;
 use crate::{AppState, GatewayError};
 use aether_contracts::{ExecutionPlan, RequestBody};
-use aether_data_contracts::repository::candidate_selection::{
-    StoredMinimalCandidateSelectionRow, StoredProviderModelMapping,
-};
 use aether_data_contracts::repository::candidates::{
     RequestCandidateStatus, UpsertRequestCandidateRecord,
 };
@@ -71,11 +67,11 @@ use self::capabilities::{
     provider_query_openai_image_normalize_options,
 };
 use self::model_mapping::{
-    provider_query_resolve_explicit_mapped_effective_model,
-    provider_query_resolve_global_effective_model,
+    provider_query_resolve_test_effective_models, ProviderQueryTestEffectiveModel,
 };
 use self::summary::{
     provider_query_candidate_summary_payload, provider_query_test_attempt_payload,
+    provider_query_unused_test_attempt_payload,
 };
 
 pub(crate) const ADMIN_PROVIDER_QUERY_LOCAL_TEST_MODEL_MESSAGE: &str =
@@ -91,13 +87,18 @@ const ADMIN_PROVIDER_QUERY_NO_ACTIVE_TEST_CANDIDATE_DETAIL: &str =
     "No usable API key found for this provider";
 const ADMIN_PROVIDER_QUERY_INVALID_MAPPED_MODEL_DETAIL: &str =
     "mapped_model_name is not valid for the selected model and endpoint";
-const PROVIDER_QUERY_KEY_MODEL_NOT_ALLOWED_SKIP_REASON: &str = "key_model_not_allowed";
 const DEFAULT_PROVIDER_QUERY_TEST_MESSAGE: &str = "Hello! This is a test message.";
+
+/// 管理端模型测试的单个执行候选，按映射外层、Key 内层的顺序生成。
 struct ProviderQueryTestCandidate {
+    /// 当前候选使用的测试端点。
     endpoint: StoredProviderCatalogEndpoint,
+    /// 当前候选使用的 Provider Key。
     key: StoredProviderCatalogKey,
+    /// 配置映射名；模型没有映射时为空。
+    mapping_name: Option<String>,
+    /// 实际发送给上游的模型名。
     effective_model: String,
-    scheduler_skip_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +178,7 @@ fn provider_query_test_candidate_trace_extra_data(
             "provider_type": provider.provider_type,
             "endpoint_api_format": candidate.endpoint.api_format,
             "endpoint_base_url": candidate.endpoint.base_url,
+            "mapping_name": candidate.mapping_name,
             "effective_model": candidate.effective_model,
         }
     })
@@ -424,6 +426,30 @@ fn provider_query_extract_mapped_model_name(payload: &Value) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+/// 读取模型测试显式选择的映射，兼容旧的单值 `mapped_model_name`。
+///
+/// 空数组或缺失表示自动模式；返回值去除首尾空白并按大小写去重。
+fn provider_query_extract_mapped_model_names(payload: &Value) -> Option<Vec<String>> {
+    let mut names = Vec::new();
+    if let Some(items) = payload.get("mapped_model_names").and_then(Value::as_array) {
+        names.extend(
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
+        );
+    }
+    if let Some(single) = provider_query_extract_mapped_model_name(payload) {
+        names.push(single);
+    }
+
+    let mut seen = BTreeSet::new();
+    names.retain(|name| seen.insert(name.to_lowercase()));
+    (!names.is_empty()).then_some(names)
+}
+
 fn provider_query_extract_endpoint_id(payload: &Value) -> Option<String> {
     payload
         .get("endpoint_id")
@@ -500,7 +526,7 @@ fn provider_query_build_test_request_body_for_route(
     route_path: &str,
 ) -> Value {
     let override_custom_model = route_path.ends_with("/test-model-failover")
-        || provider_query_extract_mapped_model_name(payload).is_some();
+        || provider_query_extract_mapped_model_names(payload).is_some();
     provider_query_build_test_request_body_with_model_policy(payload, model, override_custom_model)
 }
 
@@ -528,7 +554,7 @@ fn provider_query_build_test_request_body_for_api_format_with_search_session(
 ) -> Value {
     let client_api_format = provider_query_normalize_api_format_alias(client_api_format);
     let override_custom_model = route_path.ends_with("/test-model-failover")
-        || provider_query_extract_mapped_model_name(payload).is_some();
+        || provider_query_extract_mapped_model_names(payload).is_some();
     if let Some(mut body) = provider_query_extract_request_body(payload) {
         let has_conversation = provider_query_request_body_has_conversation_for_api_format(
             &body,
@@ -2041,100 +2067,80 @@ async fn provider_query_build_test_candidates(
             )
         })?;
     let test_mode = provider_query_test_mode(payload);
-    let explicit_mapped_model = provider_query_extract_mapped_model_name(payload);
-    let effective_model = if let Some(mapped_model_name) = explicit_mapped_model {
-        if let Some(effective_model) = provider_query_resolve_explicit_mapped_effective_model(
+    let selected_mapping_names = provider_query_extract_mapped_model_names(payload);
+    let effective_models = if selected_mapping_names.is_some()
+        || (test_mode != "direct" && provider_query_should_apply_model_mapping(payload))
+    {
+        provider_query_resolve_test_effective_models(
             state,
             &provider.id,
-            &provider.provider_type,
             &requested_model,
             &endpoint,
-            &mapped_model_name,
+            selected_mapping_names.as_deref(),
         )
         .await
         .map_err(|_| {
             build_admin_provider_query_bad_request_response(
                 ADMIN_PROVIDER_QUERY_INVALID_MAPPED_MODEL_DETAIL,
             )
-        })? {
-            effective_model
-        } else {
-            return Err(build_admin_provider_query_bad_request_response(
+        })?
+        .ok_or_else(|| {
+            build_admin_provider_query_bad_request_response(
                 ADMIN_PROVIDER_QUERY_INVALID_MAPPED_MODEL_DETAIL,
-            ));
-        }
-    } else if test_mode.eq_ignore_ascii_case("direct") {
-        requested_model.clone()
-    } else if !provider_query_should_apply_model_mapping(payload) {
-        requested_model.clone()
+            )
+        })?
     } else {
-        provider_query_resolve_global_effective_model(
-            state,
-            &provider.id,
-            &requested_model,
-            &endpoint,
-        )
-        .await
-        .unwrap_or(requested_model.clone())
+        vec![ProviderQueryTestEffectiveModel {
+            name: requested_model.clone(),
+            mapping_name: None,
+        }]
     };
 
     let now_unix_secs = current_unix_ms() / 1000;
-    let mut keys = Vec::new();
-    let mut model_skipped_candidates = Vec::new();
-
-    // Model tests ignore key enabled state and health: any key compatible with
-    // the endpoint becomes a candidate, sorted by health/circuit state only.
-    for key in all_keys
+    let mut keys = all_keys
         .into_iter()
         .filter(|key| provider_query_selected_key_ids_allow_key(selected_key_ids.as_ref(), &key.id))
         .filter(|key| {
             provider_query_key_supports_endpoint(key, &provider.provider_type, &endpoint.api_format)
         })
-    {
-        if provider_query_key_allows_effective_test_model(&key, &requested_model, &effective_model)
-        {
-            keys.push(key);
-        } else {
-            model_skipped_candidates.push(ProviderQueryTestCandidate {
-                endpoint: endpoint.clone(),
+        .collect::<Vec<_>>();
+
+    keys.sort_by(|left, right| {
+        provider_query_test_key_sort_key(
+            provider.provider_type.as_str(),
+            left,
+            &endpoint.api_format,
+            now_unix_secs,
+        )
+        .cmp(&provider_query_test_key_sort_key(
+            provider.provider_type.as_str(),
+            right,
+            &endpoint.api_format,
+            now_unix_secs,
+        ))
+        .then_with(|| {
+            provider_query_key_display_name(left).cmp(&provider_query_key_display_name(right))
+        })
+        .then_with(|| left.id.cmp(&right.id))
+    });
+    let mut candidates = Vec::new();
+    for effective_model in effective_models {
+        for key in &keys {
+            if !provider_query_key_allows_effective_test_model(
                 key,
-                effective_model: effective_model.clone(),
-                scheduler_skip_reason: Some(
-                    PROVIDER_QUERY_KEY_MODEL_NOT_ALLOWED_SKIP_REASON.to_string(),
-                ),
+                &requested_model,
+                &effective_model.name,
+            ) {
+                continue;
+            }
+            candidates.push(ProviderQueryTestCandidate {
+                endpoint: endpoint.clone(),
+                key: key.clone(),
+                mapping_name: effective_model.mapping_name.clone(),
+                effective_model: effective_model.name.clone(),
             });
         }
     }
-
-    model_skipped_candidates.sort_by_key(|candidate| {
-        provider_query_test_key_sort_key(
-            provider.provider_type.as_str(),
-            &candidate.key,
-            &endpoint.api_format,
-            now_unix_secs,
-        )
-    });
-
-    // 号池调度已随号池体系裁剪：测试候选一律走直接路径。
-    keys.sort_by_key(|key| {
-        provider_query_test_key_sort_key(
-            provider.provider_type.as_str(),
-            key,
-            &endpoint.api_format,
-            now_unix_secs,
-        )
-    });
-    let scheduled_candidates = keys
-        .into_iter()
-        .map(|key| ProviderQueryTestCandidate {
-            endpoint: endpoint.clone(),
-            key,
-            effective_model: effective_model.clone(),
-            scheduler_skip_reason: None,
-        })
-        .collect::<Vec<_>>();
-    let mut candidates = model_skipped_candidates;
-    candidates.extend(scheduled_candidates);
 
     if candidates.is_empty() {
         return Err(build_admin_provider_query_not_found_response(
@@ -2214,54 +2220,41 @@ async fn build_admin_provider_query_test_model_candidates_response(
             &provider.provider_type,
             &candidate.endpoint.api_format,
         );
-        let execution_result = if let Some(skip_reason) = candidate.scheduler_skip_reason.as_ref() {
-            Ok(provider_query_skipped_execution_outcome(
+        provider_query_mark_pending_test_candidate_trace(
+            app_state,
+            &trace_id,
+            &provider,
+            candidate,
+            candidate_index,
+        )
+        .await;
+        let execution_result = match adapter {
+            Some(ProviderQueryTestAdapter::OpenAiImage) => {
+                provider_query_execute_openai_image_test_candidate(
+                    state,
+                    &provider,
+                    candidate,
+                    payload,
+                    route_path,
+                    &trace_id,
+                    &requested_model,
+                )
+                .await
+            }
+            Some(ProviderQueryTestAdapter::Standard | ProviderQueryTestAdapter::Grok) => {
+                provider_query_execute_standard_test_candidate(
+                    state, &provider, candidate, payload, route_path, &trace_id,
+                )
+                .await
+            }
+            None => Ok(provider_query_skipped_execution_outcome(
                 provider_query_build_test_request_body_for_route(
                     payload,
                     &candidate.effective_model,
                     route_path,
                 ),
-                skip_reason.clone(),
-            ))
-        } else {
-            provider_query_mark_pending_test_candidate_trace(
-                app_state,
-                &trace_id,
-                &provider,
-                candidate,
-                candidate_index,
-            )
-            .await;
-            match adapter {
-                Some(ProviderQueryTestAdapter::OpenAiImage) => {
-                    provider_query_execute_openai_image_test_candidate(
-                        state,
-                        &provider,
-                        candidate,
-                        payload,
-                        route_path,
-                        &trace_id,
-                        &requested_model,
-                    )
-                    .await
-                }
-                Some(ProviderQueryTestAdapter::Standard | ProviderQueryTestAdapter::Grok) => {
-                    provider_query_execute_standard_test_candidate(
-                        state, &provider, candidate, payload, route_path, &trace_id,
-                    )
-                    .await
-                }
-                None => Ok(provider_query_skipped_execution_outcome(
-                    provider_query_build_test_request_body_for_route(
-                        payload,
-                        &candidate.effective_model,
-                        route_path,
-                    ),
-                    provider_query_unsupported_test_api_format_message(
-                        &candidate.endpoint.api_format,
-                    ),
-                )),
-            }
+                provider_query_unsupported_test_api_format_message(&candidate.endpoint.api_format),
+            )),
         };
         let execution = match execution_result {
             Ok(execution) => execution,
@@ -2310,6 +2303,16 @@ async fn build_admin_provider_query_test_model_candidates_response(
         }
     }
     if let Some(winning_candidate_index) = winning_candidate_index {
+        for (candidate_index, candidate) in candidates
+            .iter()
+            .enumerate()
+            .skip(winning_candidate_index.saturating_add(1))
+        {
+            attempts.push(provider_query_unused_test_attempt_payload(
+                candidate_index,
+                candidate,
+            ));
+        }
         provider_query_mark_unused_test_candidate_traces(
             app_state,
             &trace_id,
@@ -2524,60 +2527,47 @@ async fn build_admin_provider_query_failover_response(
             &provider.provider_type,
             &candidate.endpoint.api_format,
         );
-        let execution_result = if let Some(skip_reason) = candidate.scheduler_skip_reason.as_ref() {
-            Ok(provider_query_skipped_execution_outcome(
+        provider_query_mark_pending_test_candidate_trace(
+            app_state,
+            &trace_id,
+            &provider,
+            candidate,
+            candidate_index,
+        )
+        .await;
+        let execution_result = match adapter {
+            Some(ProviderQueryTestAdapter::OpenAiImage) => {
+                provider_query_execute_openai_image_test_candidate(
+                    state,
+                    &provider,
+                    candidate,
+                    payload,
+                    route_path,
+                    &trace_id,
+                    &requested_model,
+                )
+                .await
+            }
+            Some(ProviderQueryTestAdapter::Standard) => {
+                provider_query_execute_standard_test_candidate(
+                    state, &provider, candidate, payload, route_path, &trace_id,
+                )
+                .await
+            }
+            Some(ProviderQueryTestAdapter::Grok) => {
+                provider_query_execute_standard_test_candidate(
+                    state, &provider, candidate, payload, route_path, &trace_id,
+                )
+                .await
+            }
+            None => Ok(provider_query_skipped_execution_outcome(
                 provider_query_build_test_request_body_for_route(
                     payload,
                     &candidate.effective_model,
                     route_path,
                 ),
-                skip_reason.clone(),
-            ))
-        } else {
-            provider_query_mark_pending_test_candidate_trace(
-                app_state,
-                &trace_id,
-                &provider,
-                candidate,
-                candidate_index,
-            )
-            .await;
-            match adapter {
-                Some(ProviderQueryTestAdapter::OpenAiImage) => {
-                    provider_query_execute_openai_image_test_candidate(
-                        state,
-                        &provider,
-                        candidate,
-                        payload,
-                        route_path,
-                        &trace_id,
-                        &requested_model,
-                    )
-                    .await
-                }
-                Some(ProviderQueryTestAdapter::Standard) => {
-                    provider_query_execute_standard_test_candidate(
-                        state, &provider, candidate, payload, route_path, &trace_id,
-                    )
-                    .await
-                }
-                Some(ProviderQueryTestAdapter::Grok) => {
-                    provider_query_execute_standard_test_candidate(
-                        state, &provider, candidate, payload, route_path, &trace_id,
-                    )
-                    .await
-                }
-                None => Ok(provider_query_skipped_execution_outcome(
-                    provider_query_build_test_request_body_for_route(
-                        payload,
-                        &candidate.effective_model,
-                        route_path,
-                    ),
-                    provider_query_unsupported_test_api_format_message(
-                        &candidate.endpoint.api_format,
-                    ),
-                )),
-            }
+                provider_query_unsupported_test_api_format_message(&candidate.endpoint.api_format),
+            )),
         };
         let execution = match execution_result {
             Ok(execution) => execution,
@@ -2625,6 +2615,16 @@ async fn build_admin_provider_query_failover_response(
         }
     }
     if let Some(winning_candidate_index) = winning_candidate_index {
+        for (candidate_index, candidate) in candidates
+            .iter()
+            .enumerate()
+            .skip(winning_candidate_index.saturating_add(1))
+        {
+            attempts.push(provider_query_unused_test_attempt_payload(
+                candidate_index,
+                candidate,
+            ));
+        }
         provider_query_mark_unused_test_candidate_traces(
             app_state,
             &trace_id,

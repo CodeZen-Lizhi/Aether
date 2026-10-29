@@ -5,6 +5,7 @@ import {
 import type { ProviderModelMapping } from '@/api/endpoints/types'
 import type { TestModelRequest } from '@/api/endpoints/providers'
 import {
+  modelTestKeySupportsEndpoint,
   modelSupportsImageGeneration,
   normalizeModelTestStringList,
   type ModelTestImageSource,
@@ -51,6 +52,30 @@ export type ModelTestMappingEndpoint = {
 export type ModelTestMappedModelOption = {
   name: string
   priority: number
+}
+
+/** 模型测试候选 Key 的最小字段集合，用于前端与后端保持相同的端点及模型权限筛选。 */
+export type ModelTestCandidateKey = {
+  id: string
+  api_formats?: string[] | null
+  is_active?: boolean | null
+  allowed_models?: string[] | null
+}
+
+/** 单个“映射 × Key”候选；mappingName 为空表示模型没有映射时的直连回退。 */
+export type ModelTestCandidate = {
+  mappingName: string | null
+  effectiveModel: string
+  keyId: string
+}
+
+export type BuildModelTestCandidatePlanInput = {
+  requestedModelName: string
+  model: ModelTestMappingSource | null | undefined
+  endpoint: ModelTestMappingEndpoint | null | undefined
+  keys: ModelTestCandidateKey[]
+  selectedMappingName?: string | null
+  selectedKeyId?: string | null
 }
 
 export function modelTestMappingScopeMatchesEndpoint(
@@ -106,6 +131,98 @@ export function normalizeModelTestMappedModelSelection(
   const preferred = preferredName?.trim()
   if (!preferred) return null
   return options.find(option => option.name === preferred)?.name ?? null
+}
+
+const MODEL_DIRECTIVE_SUFFIXES = new Set([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'fast',
+])
+
+/** 解析已启用的模型名后缀，返回上游实际模型名；普通模型名返回空。 */
+export function modelTestDirectiveBaseModel(modelName: string): string | null {
+  let base = modelName.trim()
+  let matched = false
+  let matchedReasoning = false
+  let matchedServiceTier = false
+
+  while (true) {
+    const separator = base.lastIndexOf('-')
+    if (separator <= 0) break
+    const suffix = base.slice(separator + 1).toLowerCase()
+    if (!MODEL_DIRECTIVE_SUFFIXES.has(suffix)) break
+    const isServiceTier = suffix === 'fast'
+    if ((isServiceTier && matchedServiceTier) || (!isServiceTier && matchedReasoning)) {
+      return null
+    }
+    base = base.slice(0, separator).trim()
+    matched = true
+    matchedServiceTier ||= isServiceTier
+    matchedReasoning ||= !isServiceTier
+  }
+
+  return matched && base ? base : null
+}
+
+/** Key 的空 allowed_models 表示不限制；否则请求模型或映射后的模型任一命中即可。 */
+export function modelTestKeyAllowsModel(
+  key: Pick<ModelTestCandidateKey, 'allowed_models'>,
+  requestedModelName: string,
+  effectiveModelName: string,
+): boolean {
+  const allowedModels = normalizeModelTestStringList(key.allowed_models)
+  if (allowedModels.length === 0) return true
+
+  const requested = requestedModelName.trim().toLowerCase()
+  const effective = effectiveModelName.trim().toLowerCase()
+  const directiveBase = modelTestDirectiveBaseModel(requestedModelName)?.toLowerCase() ?? null
+  return allowedModels.some((model) => {
+    const normalized = model.toLowerCase()
+    return normalized === requested
+      || normalized === effective
+      || (directiveBase !== null && normalized === directiveBase)
+  })
+}
+
+/**
+ * 生成当前端点下的“映射 × Key”候选。
+ * 有映射时仅枚举映射；没有映射时才回退到请求模型。Key 不兼容端点或缺少模型权限时不生成组合。
+ */
+export function buildModelTestCandidatePlan(
+  input: BuildModelTestCandidatePlanInput,
+): ModelTestCandidate[] {
+  const requestedModelName = input.requestedModelName.trim()
+  const endpoint = input.endpoint
+  if (!requestedModelName || !endpoint) return []
+
+  const mappingOptions = listModelTestMappedModelOptions(input.model, endpoint)
+  const selectedMapping = normalizeModelTestMappedModelSelection(
+    mappingOptions,
+    input.selectedMappingName,
+  )
+  const effectiveModels = selectedMapping
+    ? [{ name: selectedMapping, mapped: true }]
+    : mappingOptions.length > 0
+      ? mappingOptions.map(option => ({ name: option.name, mapped: true }))
+      : [{ name: requestedModelName, mapped: false }]
+  const selectedKeyId = input.selectedKeyId?.trim() || ''
+
+  return effectiveModels.flatMap(({ name, mapped }) => input.keys.flatMap((key) => {
+    if (selectedKeyId && key.id !== selectedKeyId) return []
+    if (!modelTestKeySupportsEndpoint(key, endpoint)) return []
+    if (!modelTestKeyAllowsModel(key, requestedModelName, name)) return []
+
+    return [{
+      mappingName: mapped ? name : null,
+      effectiveModel: name,
+      keyId: key.id,
+    }]
+  }))
 }
 
 export function setModelTestRequestBodyModel(draft: string, modelName: string): string {

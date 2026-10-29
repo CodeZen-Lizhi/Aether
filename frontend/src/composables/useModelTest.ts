@@ -23,6 +23,8 @@ export interface StartTestParams {
   apiKeyIds?: string[]
   applyModelMapping?: boolean
   mappedModelName?: string
+  /** 本次显式选择的映射列表；为空时由后端自动枚举当前端点兼容映射。 */
+  mappedModelNames?: string[]
   requestHeaders?: Record<string, unknown>
   requestBody?: Record<string, unknown>
   onSuccess?: (result: TestModelFailoverResponse) => void
@@ -164,6 +166,7 @@ export function useModelTest(options: UseModelTestOptions) {
       ...(message ? { message } : {}),
       ...(typeof params.applyModelMapping === 'boolean' ? { apply_model_mapping: params.applyModelMapping } : {}),
       ...(params.mappedModelName ? { mapped_model_name: params.mappedModelName } : {}),
+      ...(params.mappedModelNames?.length ? { mapped_model_names: params.mappedModelNames } : {}),
       ...(params.requestHeaders ? { request_headers: params.requestHeaders } : {}),
       ...(params.requestBody ? { request_body: params.requestBody } : {}),
       request_id: reqId,
@@ -276,6 +279,7 @@ export function useModelTest(options: UseModelTestOptions) {
           ...(message ? { message } : {}),
           ...(typeof params.applyModelMapping === 'boolean' ? { apply_model_mapping: params.applyModelMapping } : {}),
           ...(params.mappedModelName ? { mapped_model_name: params.mappedModelName } : {}),
+          ...(params.mappedModelNames?.length ? { mapped_model_names: params.mappedModelNames } : {}),
           ...(params.requestHeaders ? { request_headers: params.requestHeaders } : {}),
           ...(params.requestBody ? { request_body: params.requestBody } : {}),
           request_id: reqId,

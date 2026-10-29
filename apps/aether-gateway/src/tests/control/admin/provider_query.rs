@@ -1775,6 +1775,10 @@ async fn gateway_maps_admin_provider_model_before_model_list_test_request_impl()
         json!("MiniMax-M2.7-highspeed")
     );
     assert_eq!(
+        payload["attempts"][0]["mapping_name"],
+        json!("MiniMax-M2.7-highspeed")
+    );
+    assert_eq!(
         payload["attempts"][0]["request_body"]["model"],
         json!("MiniMax-M2.7-highspeed")
     );
@@ -1782,6 +1786,12 @@ async fn gateway_maps_admin_provider_model_before_model_list_test_request_impl()
         payload["attempts"][0]["response_body"]["model"],
         json!("MiniMax-M2.7")
     );
+    assert_eq!(payload["attempts"][1]["status"], json!("unused"));
+    assert_eq!(
+        payload["attempts"][1]["mapping_name"],
+        json!("MiniMax-M2.7-balanced")
+    );
+    assert_eq!(payload["candidate_summary"]["unused"], json!(1));
 
     let response = reqwest::Client::new()
         .post(format!("{gateway_url}/api/admin/provider-query/test-model"))
@@ -1812,6 +1822,10 @@ async fn gateway_maps_admin_provider_model_before_model_list_test_request_impl()
     assert_eq!(payload["success"], json!(true));
     assert_eq!(
         payload["attempts"][0]["effective_model"],
+        json!("MiniMax-M2.7-balanced")
+    );
+    assert_eq!(
+        payload["attempts"][0]["mapping_name"],
         json!("MiniMax-M2.7-balanced")
     );
     assert_eq!(
@@ -1874,6 +1888,182 @@ async fn gateway_maps_admin_provider_model_before_model_list_test_request_impl()
     assert_eq!(
         payload["attempts"][0]["response_body"]["model"],
         json!("claude-opus-4-6")
+    );
+
+    gateway_handle.abort();
+    execution_runtime_handle.abort();
+}
+
+#[test]
+fn gateway_runs_multi_mapping_model_test_in_priority_and_key_order() {
+    run_provider_query_test(
+        "gateway_runs_multi_mapping_model_test_in_priority_and_key_order",
+        gateway_runs_multi_mapping_model_test_in_priority_and_key_order_impl,
+    );
+}
+
+async fn gateway_runs_multi_mapping_model_test_in_priority_and_key_order_impl() {
+    let calls = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+    let calls_for_server = Arc::clone(&calls);
+    let execution_runtime = Router::new().route(
+        "/v1/execute/sync",
+        any(move |Json(plan): Json<ExecutionPlan>| {
+            let calls = Arc::clone(&calls_for_server);
+            async move {
+                let model = plan.model_name.clone().unwrap_or_default();
+                calls
+                    .lock()
+                    .expect("mutex should lock")
+                    .push((plan.key_id.clone(), model.clone()));
+                let (status_code, body) = if plan.key_id == "key-multi-secondary" {
+                    (
+                        200,
+                        json!({
+                            "id": "chatcmpl-multi-mapping",
+                            "object": "chat.completion",
+                            "model": model,
+                            "choices": [{
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "multi mapping success"
+                                }
+                            }]
+                        }),
+                    )
+                } else {
+                    (
+                        500,
+                        json!({
+                            "error": {
+                                "message": "primary key failed"
+                            }
+                        }),
+                    )
+                };
+                Json(json!({
+                    "request_id": plan.request_id,
+                    "candidate_id": plan.candidate_id,
+                    "status_code": status_code,
+                    "headers": {
+                        "content-type": "application/json"
+                    },
+                    "body": {
+                        "json_body": body
+                    },
+                    "telemetry": {
+                        "elapsed_ms": 12
+                    }
+                }))
+            }
+        }),
+    );
+
+    let (execution_runtime_url, execution_runtime_handle) = start_server(execution_runtime).await;
+    let mut provider = sample_provider("provider-multi-mapping", "Multi Mapping", 10);
+    provider.provider_type = "custom".to_string();
+    let mut secondary_key = sample_key(
+        "key-multi-secondary",
+        "provider-multi-mapping",
+        "openai:chat",
+        "sk-multi-secondary",
+    );
+    secondary_key.allowed_models = Some(json!(["mapping-b"]));
+    let provider_catalog_repository = Arc::new(InMemoryProviderCatalogReadRepository::seed(
+        vec![provider],
+        vec![sample_endpoint(
+            "endpoint-multi-chat",
+            "provider-multi-mapping",
+            "openai:chat",
+            "https://api.multi.example/v1",
+        )],
+        vec![
+            sample_key(
+                "key-multi-primary",
+                "provider-multi-mapping",
+                "openai:chat",
+                "sk-multi-primary",
+            ),
+            secondary_key,
+        ],
+    ));
+    let mut provider_model = sample_admin_provider_model(
+        "model-multi-mapping",
+        "provider-multi-mapping",
+        "global-gpt-5-6",
+        "gpt-5.6",
+    );
+    provider_model.global_model_name = Some("gpt-5.6".to_string());
+    provider_model.provider_model_mappings = Some(json!([
+        {
+            "name": "mapping-b",
+            "priority": 20
+        },
+        {
+            "name": "mapping-a",
+            "priority": 10
+        }
+    ]));
+    let global_model_repository = Arc::new(
+        InMemoryGlobalModelReadRepository::seed(Vec::new())
+            .with_admin_provider_models(vec![provider_model]),
+    );
+    let gateway = build_router_with_state(
+        build_state_with_execution_runtime_override(execution_runtime_url)
+            .with_data_state_for_tests(
+                GatewayDataState::with_provider_transport_reader_for_tests(
+                    provider_catalog_repository,
+                    DEVELOPMENT_ENCRYPTION_KEY.to_string(),
+                )
+                .with_global_model_repository_for_tests(global_model_repository),
+            ),
+    );
+    let (gateway_url, gateway_handle) = start_server(gateway).await;
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{gateway_url}/api/admin/provider-query/test-model-failover"
+        ))
+        .header(GATEWAY_HEADER, "rust-phase3b")
+        .header(TRUSTED_ADMIN_USER_ID_HEADER, "admin-user-123")
+        .header(TRUSTED_ADMIN_USER_ROLE_HEADER, "admin")
+        .header(TRUSTED_ADMIN_SESSION_ID_HEADER, "session-123")
+        .json(&json!({
+            "provider_id": "provider-multi-mapping",
+            "mode": "global",
+            "model_name": "gpt-5.6",
+            "failover_models": ["gpt-5.6"],
+            "api_format": "openai:chat",
+            "endpoint_id": "endpoint-multi-chat"
+        }))
+        .send()
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: serde_json::Value = response.json().await.expect("json body should parse");
+    assert_eq!(payload["success"], json!(true));
+    assert_eq!(payload["total_candidates"], json!(3));
+    assert_eq!(payload["total_attempts"], json!(3));
+    assert_eq!(payload["attempts"].as_array().map(Vec::len), Some(3));
+    assert_eq!(payload["attempts"][0]["key_id"], json!("key-multi-primary"));
+    assert_eq!(payload["attempts"][0]["mapping_name"], json!("mapping-a"));
+    assert_eq!(payload["attempts"][0]["status"], json!("failed"));
+    assert_eq!(payload["attempts"][1]["key_id"], json!("key-multi-primary"));
+    assert_eq!(payload["attempts"][1]["mapping_name"], json!("mapping-b"));
+    assert_eq!(payload["attempts"][1]["status"], json!("failed"));
+    assert_eq!(
+        payload["attempts"][2]["key_id"],
+        json!("key-multi-secondary")
+    );
+    assert_eq!(payload["attempts"][2]["mapping_name"], json!("mapping-b"));
+    assert_eq!(payload["attempts"][2]["status"], json!("success"));
+    assert_eq!(
+        *calls.lock().expect("mutex should lock"),
+        vec![
+            ("key-multi-primary".to_string(), "mapping-a".to_string()),
+            ("key-multi-primary".to_string(), "mapping-b".to_string()),
+            ("key-multi-secondary".to_string(), "mapping-b".to_string()),
+        ]
     );
 
     gateway_handle.abort();

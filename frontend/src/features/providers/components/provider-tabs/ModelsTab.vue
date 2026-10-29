@@ -184,10 +184,7 @@
   <ModelTestDialog
     :open="modelTest.dialogOpen.value"
     :result="modelTest.testResult.value"
-    :mode="modelTest.testMode.value"
-    :provider-type="provider.provider_type"
     :selecting-model-name="pendingTestModel ? (pendingTestModel.global_model_display_name || pendingTestModel.provider_model_name) : null"
-    :requested-model-name="pendingRequestedModelName"
     :endpoints="activeEndpoints"
     :selected-endpoint="selectedTestEndpoint"
     :testing="modelTest.testing.value"
@@ -199,19 +196,18 @@
     :request-body-draft="testRequestBodyDraft"
     :request-body-reset-value="testRequestBodyResetValue"
     :request-body-error="testRequestBodyError"
-    :model-mapping-available="testModelMappingAvailable"
     :model-mapping-options="testModelMappingOptions"
     :selected-model-mapping="selectedTestMappedModelName"
     :key-options="testKeyOptions"
-    :selected-key-ids="selectedTestKeyIds"
+    :selected-key-id="selectedTestKeyId"
     :key-options-loading="loadingModelTestKeys"
-    :start-disabled="!selectedTestEndpoint || !!testRequestHeadersError || !!testRequestBodyError"
+    :start-disabled="!selectedTestEndpoint || !!testRequestHeadersError || !!testRequestBodyError || testCandidateCount === 0"
     @close="handleTestDialogClose"
     @back="handleTestDialogBack"
     @start="handleStartPendingTest"
     @select-endpoint="handleSelectTestEndpoint"
     @select-model-mapping="handleSelectModelMapping"
-    @update:selected-key-ids="handleSelectTestKeyIds"
+    @update:selected-key-id="handleSelectTestKeyId"
     @update:request-headers-draft="testRequestHeadersDraft = $event"
     @update:request-body-draft="testRequestBodyDraft = $event"
   />
@@ -237,12 +233,12 @@ import { formatApiFormat } from '@/api/endpoints/types/api-format'
 import type { ProviderWithEndpointsSummary } from '@/api/endpoints'
 import ModelTestDialog from './ModelTestDialog.vue'
 import {
+  buildModelTestCandidatePlan,
   buildDefaultModelTestRequestHeaders,
   buildDefaultModelTestRequestBody,
   isModelTestableApiFormat,
   isModelTestableEndpoint,
   listModelTestMappedModelOptions,
-  modelTestKeySupportsEndpoint,
   normalizeModelTestMappedModelSelection,
   parseModelTestRequestHeadersDraft,
   parseModelTestRequestBodyDraft,
@@ -281,7 +277,7 @@ const testRequestHeadersResetValue = ref('')
 const testRequestBodyDraft = ref('')
 const testRequestBodyResetValue = ref('')
 const selectedTestMappedModelName = ref<string | null>(null)
-const selectedTestKeyIds = ref<string[]>([])
+const selectedTestKeyId = ref('auto')
 const modelTestProviderKeys = ref<EndpointAPIKey[]>([])
 const modelTestKeysLoadedProviderId = ref<string | null>(null)
 const loadingModelTestKeys = ref(false)
@@ -301,9 +297,7 @@ const parsedTestRequestBody = computed(() => parseModelTestRequestBodyDraft(test
 const testRequestBodyError = computed(() => parsedTestRequestBody.value.error)
 const pendingRequestedModelName = computed(() => getModelTestRequestedModelName(pendingTestModel.value))
 const testModelMappingOptions = computed(() => {
-  const requestedModelName = pendingRequestedModelName.value.trim()
   return listModelTestMappedModelOptions(pendingTestModel.value, selectedTestEndpoint.value)
-    .filter(option => option.name !== requestedModelName)
 })
 const mappedTestModelName = computed(() => {
   const selected = selectedTestMappedModelName.value?.trim()
@@ -312,22 +306,44 @@ const mappedTestModelName = computed(() => {
     ? selected
     : null
 })
-const testModelMappingAvailable = computed(() => testModelMappingOptions.value.length > 0)
 const providerKeysForModelTest = computed(() => (
   modelTestKeysLoadedProviderId.value === props.provider.id
     ? modelTestProviderKeys.value
     : props.providerKeys ?? []
 ))
+const normalizedTestKeyId = computed(() => {
+  const selected = selectedTestKeyId.value.trim()
+  if (!selected || selected === 'auto') return ''
+  return testKeyOptions.value.some(option => option.value === selected) ? selected : ''
+})
+const testCandidatePlan = computed(() => buildModelTestCandidatePlan({
+  requestedModelName: pendingRequestedModelName.value,
+  model: pendingTestModel.value,
+  endpoint: selectedTestEndpoint.value,
+  keys: providerKeysForModelTest.value,
+  selectedMappingName: mappedTestModelName.value,
+  selectedKeyId: normalizedTestKeyId.value,
+}))
+const testCandidateCount = computed(() => testCandidatePlan.value.length)
 const testKeyOptions = computed(() => {
   const endpoint = selectedTestEndpoint.value
   if (!endpoint) return []
 
+  const compatiblePlan = buildModelTestCandidatePlan({
+    requestedModelName: pendingRequestedModelName.value,
+    model: pendingTestModel.value,
+    endpoint,
+    keys: providerKeysForModelTest.value,
+    selectedMappingName: mappedTestModelName.value,
+    selectedKeyId: '',
+  })
+  const compatibleKeyIds = new Set(compatiblePlan.map(candidate => candidate.keyId))
   const seen = new Set<string>()
   return [...providerKeysForModelTest.value]
     .filter((key) => {
       if (seen.has(key.id)) return false
       seen.add(key.id)
-      return modelTestKeySupportsEndpoint(key, endpoint)
+      return compatibleKeyIds.has(key.id)
     })
     .sort((left, right) => formatTestKeyOptionLabel(left).localeCompare(formatTestKeyOptionLabel(right)))
     .map(key => ({
@@ -508,7 +524,7 @@ function handleTestDialogClose() {
   pendingTestModel.value = null
   selectedTestEndpoint.value = null
   selectedTestMappedModelName.value = null
-  selectedTestKeyIds.value = []
+  selectedTestKeyId.value = 'auto'
   testRequestHeadersDraft.value = ''
   testRequestHeadersResetValue.value = ''
   testRequestBodyDraft.value = ''
@@ -527,7 +543,7 @@ function handleSelectTestEndpoint(endpointId: string) {
   selectedTestEndpoint.value = endpoint
   syncSelectedTestModelMapping()
   resetTestRequestBodyForSelectedEndpoint()
-  pruneSelectedTestKeyIds()
+  pruneSelectedTestKeyId()
 }
 
 function handleSelectModelMapping(modelName: string) {
@@ -538,8 +554,8 @@ function handleSelectModelMapping(modelName: string) {
   syncTestRequestBodyModel()
 }
 
-function handleSelectTestKeyIds(ids: string[]) {
-  selectedTestKeyIds.value = normalizeSelectedTestKeyIds(ids)
+function handleSelectTestKeyId(id: string) {
+  selectedTestKeyId.value = normalizeSelectedTestKeyId(id)
 }
 
 async function handleStartPendingTest() {
@@ -565,7 +581,7 @@ async function handleStartPendingTest() {
   }
 
   selectedTestEndpoint.value = endpoint
-  pruneSelectedTestKeyIds()
+  pruneSelectedTestKeyId()
   const model = pendingTestModel.value
   const modelName = model.global_model_name || model.provider_model_name
   const endpointPrefix = `[${formatApiFormat(endpoint.api_format)}] `
@@ -576,9 +592,9 @@ async function handleStartPendingTest() {
     apiFormat: endpoint.api_format,
     endpointId: endpoint.id,
     endpointBaseUrl: endpoint.base_url,
-    apiKeyIds: selectedTestKeyIds.value,
-    applyModelMapping: Boolean(mappedTestModelName.value),
-    mappedModelName: mappedTestModelName.value ?? undefined,
+    apiKeyIds: selectedTestKeyId.value === 'auto' ? [] : [selectedTestKeyId.value],
+    applyModelMapping: true,
+    mappedModelNames: mappedTestModelName.value ? [mappedTestModelName.value] : undefined,
     requestHeaders,
     requestBody,
     onError: () => {
@@ -601,7 +617,7 @@ async function testModelConnection(model: Model) {
   selectedTestEndpoint.value = selectPreferredModelTestEndpoint(model, activeEndpoints.value)
   const requestedModelName = getModelTestRequestedModelName(model)
   selectedTestMappedModelName.value = null
-  selectedTestKeyIds.value = []
+  selectedTestKeyId.value = 'auto'
   testRequestHeadersResetValue.value = buildDefaultModelTestRequestHeaders()
   testRequestHeadersDraft.value = testRequestHeadersResetValue.value
   testRequestBodyResetValue.value = buildDefaultModelTestRequestBody(
@@ -615,17 +631,15 @@ async function testModelConnection(model: Model) {
   void ensureModelTestKeysLoaded()
 }
 
-function normalizeSelectedTestKeyIds(ids: string[]): string[] {
+function normalizeSelectedTestKeyId(id: string | null | undefined): string {
+  const normalized = id?.trim() || ''
+  if (!normalized || normalized === 'auto') return 'auto'
   const allowed = new Set(testKeyOptions.value.map(option => option.value))
-  const selected = ids
-    .map(id => id.trim())
-    .filter(id => id && allowed.has(id))
-  return [...new Set(selected)]
+  return allowed.has(normalized) ? normalized : 'auto'
 }
 
-function pruneSelectedTestKeyIds() {
-  if (selectedTestKeyIds.value.length === 0) return
-  selectedTestKeyIds.value = normalizeSelectedTestKeyIds(selectedTestKeyIds.value)
+function pruneSelectedTestKeyId() {
+  selectedTestKeyId.value = normalizeSelectedTestKeyId(selectedTestKeyId.value)
 }
 
 async function ensureModelTestKeysLoaded() {
@@ -637,7 +651,7 @@ async function ensureModelTestKeysLoaded() {
   try {
     modelTestProviderKeys.value = await getProviderKeys(props.provider.id)
     modelTestKeysLoadedProviderId.value = props.provider.id
-    pruneSelectedTestKeyIds()
+    pruneSelectedTestKeyId()
   } catch (err: unknown) {
     showError(parseApiError(err, '加载测试 Key 失败'), '错误')
   } finally {
@@ -715,14 +729,14 @@ watch(
   () => syncTestRequestBodyModel(),
 )
 
-watch(testKeyOptions, () => pruneSelectedTestKeyIds())
+watch(testKeyOptions, pruneSelectedTestKeyId)
 
 watch(
   () => props.provider.id,
   () => {
     modelTestProviderKeys.value = []
     modelTestKeysLoadedProviderId.value = null
-    selectedTestKeyIds.value = []
+    selectedTestKeyId.value = 'auto'
   },
 )
 

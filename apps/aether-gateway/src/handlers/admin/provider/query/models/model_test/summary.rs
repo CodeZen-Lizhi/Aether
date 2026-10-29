@@ -35,6 +35,7 @@ pub(super) fn provider_query_test_attempt_payload(
         "key_name": provider_query_key_display_name(&candidate.key),
         "key_id": candidate.key.id,
         "auth_type": candidate.key.auth_type,
+        "mapping_name": candidate.mapping_name,
         "effective_model": candidate.effective_model,
         "status": execution.status,
         "skip_reason": execution.skip_reason,
@@ -47,6 +48,26 @@ pub(super) fn provider_query_test_attempt_payload(
         "response_headers": redacted_provider_query_headers(&execution.response_headers),
         "response_body": execution.response_body,
     })
+}
+
+/// 构造成功停止后未执行候选的展示记录，不包含请求或响应数据。
+pub(super) fn provider_query_unused_test_attempt_payload(
+    candidate_index: usize,
+    candidate: &ProviderQueryTestCandidate,
+) -> Value {
+    let execution = ProviderQueryExecutionOutcome {
+        status: "unused",
+        skip_reason: None,
+        error_message: None,
+        status_code: None,
+        latency_ms: None,
+        request_url: String::new(),
+        request_headers: BTreeMap::new(),
+        request_body: Value::Null,
+        response_headers: BTreeMap::new(),
+        response_body: None,
+    };
+    provider_query_test_attempt_payload(candidate_index, candidate, &execution)
 }
 
 fn provider_query_endpoint_route_payload(

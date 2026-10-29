@@ -217,6 +217,8 @@ export interface TestModelRequest {
   request_headers?: Record<string, unknown>
   request_body?: Record<string, unknown>
   request_id?: string
+  /** 本次显式选择的映射名；为空表示自动测试当前端点下的全部映射。 */
+  mapped_model_names?: string[]
 }
 
 export interface TestModelResponse {
@@ -270,6 +272,8 @@ export interface TestModelFailoverRequest {
   request_headers?: Record<string, unknown>
   request_body?: Record<string, unknown>
   request_id?: string
+  /** 本次显式选择的映射名；为空表示自动测试当前端点下的全部映射。 */
+  mapped_model_names?: string[]
 }
 
 export interface TestAttemptDetail {
@@ -281,6 +285,8 @@ export interface TestAttemptDetail {
   key_id: string
   auth_type: string
   effective_model?: string | null
+  /** 实际执行的映射名；无映射直连回退时为空。 */
+  mapping_name?: string | null
   status: 'success' | 'failed' | 'skipped' | 'cancelled' | 'pending' | 'streaming' | 'stream_interrupted' | 'available' | 'unused'
   skip_reason?: string | null
   error_message?: string | null

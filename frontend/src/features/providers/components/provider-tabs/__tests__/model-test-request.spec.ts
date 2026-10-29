@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildModelTestCandidatePlan,
   buildDefaultModelTestRequestBody,
   buildExactModelMappingTestRequest,
   extractModelTestImagePreviews,
@@ -10,12 +11,106 @@ import {
   isModelTestableEndpoint,
   isModelTestableApiFormat,
   listModelTestMappedModelOptions,
+  modelTestKeyAllowsModel,
   modelTestMappingScopeMatchesEndpoint,
   normalizeModelTestMappedModelSelection,
   selectPreferredModelTestEndpoint,
   setModelTestRequestBodyModel,
   syncModelTestRequestBodyDraft,
 } from '../model-test-request'
+
+describe('buildModelTestCandidatePlan', () => {
+  const model = {
+    provider_model_name: 'gpt-5.6',
+    provider_model_mappings: [
+      { name: 'mapping-b', priority: 20 },
+      { name: 'mapping-a', priority: 10 },
+    ],
+  }
+  const endpoint = {
+    id: 'endpoint-responses',
+    api_format: 'openai:responses',
+  }
+  const keys = [
+    {
+      id: 'key-all',
+      api_formats: ['openai:responses'],
+      allowed_models: ['gpt-5.6'],
+    },
+    {
+      id: 'key-b',
+      api_formats: ['openai:responses'],
+      allowed_models: ['mapping-b'],
+    },
+    {
+      id: 'key-incompatible',
+      api_formats: ['openai:chat'],
+      allowed_models: null,
+    },
+  ]
+
+  it('builds mapping-major candidates in priority order and filters model permissions', () => {
+    expect(buildModelTestCandidatePlan({
+      requestedModelName: 'gpt-5.6',
+      model,
+      endpoint,
+      keys,
+    })).toEqual([
+      { mappingName: 'mapping-a', effectiveModel: 'mapping-a', keyId: 'key-all' },
+      { mappingName: 'mapping-b', effectiveModel: 'mapping-b', keyId: 'key-all' },
+      { mappingName: 'mapping-b', effectiveModel: 'mapping-b', keyId: 'key-b' },
+    ])
+  })
+
+  it('narrows candidates for a selected mapping or selected key', () => {
+    expect(buildModelTestCandidatePlan({
+      requestedModelName: 'gpt-5.6',
+      model,
+      endpoint,
+      keys,
+      selectedMappingName: 'mapping-a',
+    })).toEqual([
+      { mappingName: 'mapping-a', effectiveModel: 'mapping-a', keyId: 'key-all' },
+    ])
+    expect(buildModelTestCandidatePlan({
+      requestedModelName: 'gpt-5.6',
+      model,
+      endpoint,
+      keys,
+      selectedKeyId: 'key-b',
+    })).toEqual([
+      { mappingName: 'mapping-b', effectiveModel: 'mapping-b', keyId: 'key-b' },
+    ])
+    expect(buildModelTestCandidatePlan({
+      requestedModelName: 'gpt-5.6',
+      model,
+      endpoint,
+      keys,
+      selectedMappingName: 'mapping-a',
+      selectedKeyId: 'key-b',
+    })).toEqual([])
+  })
+
+  it('falls back to the requested model only when no mapping is configured', () => {
+    expect(buildModelTestCandidatePlan({
+      requestedModelName: 'gpt-5.6',
+      model: { provider_model_name: 'gpt-5.6', provider_model_mappings: [] },
+      endpoint,
+      keys,
+    })).toEqual([
+      { mappingName: null, effectiveModel: 'gpt-5.6', keyId: 'key-all' },
+    ])
+  })
+
+  it('treats an unrestricted key as compatible with every effective model', () => {
+    expect(modelTestKeyAllowsModel({ allowed_models: null }, 'gpt-5.6', 'mapping-a')).toBe(true)
+    expect(modelTestKeyAllowsModel({ allowed_models: [] }, 'gpt-5.6', 'mapping-a')).toBe(true)
+    expect(modelTestKeyAllowsModel({ allowed_models: ['MAPPING-A'] }, 'gpt-5.6', 'mapping-a')).toBe(true)
+    expect(modelTestKeyAllowsModel({ allowed_models: ['gpt-5.4'] }, 'gpt-5.4-xhigh-fast', 'mapping-a')).toBe(true)
+    expect(modelTestKeyAllowsModel({ allowed_models: ['gpt-5.4'] }, 'gpt-5.4-high-max', 'mapping-a')).toBe(false)
+    expect(modelTestKeyAllowsModel({ allowed_models: ['mapping-b'] }, 'gpt-5.6', 'mapping-a')).toBe(false)
+  })
+})
 
 describe('buildDefaultModelTestRequestBody', () => {
   it.each([

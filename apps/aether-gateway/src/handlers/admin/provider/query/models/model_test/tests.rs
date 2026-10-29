@@ -422,6 +422,83 @@ fn provider_query_model_test_extracts_multiple_selected_key_ids() {
 }
 
 #[test]
+fn provider_query_model_test_extracts_mapping_names_with_legacy_compatibility() {
+    let payload = json!({
+        "mapped_model_names": [" mapping-a ", "", "MAPPING-B", "mapping-a"],
+        "mapped_model_name": "mapping-c"
+    });
+
+    assert_eq!(
+        provider_query_extract_mapped_model_names(&payload),
+        Some(vec![
+            "mapping-a".to_string(),
+            "MAPPING-B".to_string(),
+            "mapping-c".to_string(),
+        ])
+    );
+    assert_eq!(
+        provider_query_extract_mapped_model_names(&json!({
+            "mapped_model_names": []
+        })),
+        None
+    );
+}
+
+#[test]
+fn provider_query_model_test_new_mapping_selection_overrides_custom_body_model() {
+    let payload = json!({
+        "mapped_model_names": ["mapping-a"],
+        "request_body": {
+            "model": "stale-model-from-ui",
+            "messages": [{
+                "role": "user",
+                "content": "custom prompt"
+            }]
+        }
+    });
+
+    let body = provider_query_build_test_request_body_for_route(
+        &payload,
+        "mapping-a",
+        "/api/admin/provider-query/test-model",
+    );
+
+    assert_eq!(body["model"], json!("mapping-a"));
+    assert_eq!(body["messages"][0]["content"], json!("custom prompt"));
+}
+
+#[test]
+fn provider_query_unused_attempt_keeps_mapping_identity() {
+    let key = sample_catalog_key_with_allowed_models(None);
+    let candidate = ProviderQueryTestCandidate {
+        endpoint:
+            aether_data_contracts::repository::provider_catalog::StoredProviderCatalogEndpoint::new(
+                "endpoint-1".to_string(),
+                "provider-1".to_string(),
+                "openai:chat".to_string(),
+                None,
+                None,
+                true,
+            )
+            .expect("endpoint should build"),
+        key,
+        mapping_name: Some("mapping-b".to_string()),
+        effective_model: "mapping-b".to_string(),
+    };
+
+    let payload =
+        crate::handlers::admin::provider::query::models::model_test::summary::provider_query_unused_test_attempt_payload(
+            2,
+            &candidate,
+        );
+
+    assert_eq!(payload["candidate_index"], json!(2));
+    assert_eq!(payload["mapping_name"], json!("mapping-b"));
+    assert_eq!(payload["effective_model"], json!("mapping-b"));
+    assert_eq!(payload["status"], json!("unused"));
+}
+
+#[test]
 fn provider_query_model_test_empty_selected_key_ids_keep_default_selection() {
     assert!(provider_query_extract_api_key_ids(&json!({})).is_none());
     assert!(provider_query_extract_api_key_ids(&json!({ "api_key_ids": [] })).is_none());
