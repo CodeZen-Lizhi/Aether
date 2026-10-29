@@ -246,6 +246,16 @@ fn usage_has_admin_unknown_model_or_provider(item: &StoredRequestUsageAudit) -> 
     usage_admin_unknown_label(&item.model) || usage_admin_unknown_label(&item.provider_name)
 }
 
+/** 按归一化请求类型匹配记录；unknown 同时覆盖缺失值和显式 unknown。 */
+fn usage_request_type_matches(record_request_type: Option<&str>, query_request_type: &str) -> bool {
+    let normalized_record = record_request_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_ascii_lowercase();
+    normalized_record == query_request_type.trim().to_ascii_lowercase()
+}
+
 fn usage_matches_list_query(item: &StoredRequestUsageAudit, query: &UsageAuditListQuery) -> bool {
     // The field is historically named `created_at_unix_ms`, but usage audit rows
     // across gateway handlers, SQL repositories and tests are stored as epoch seconds.
@@ -276,6 +286,16 @@ fn usage_matches_list_query(item: &StoredRequestUsageAudit, query: &UsageAuditLi
     }
     if let Some(api_format) = query.api_format.as_deref() {
         if item.api_format.as_deref() != Some(api_format) {
+            return false;
+        }
+    }
+    if let Some(request_type) = query
+        .request_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if !usage_request_type_matches(item.request_type.as_deref(), request_type) {
             return false;
         }
     }
@@ -362,6 +382,16 @@ fn usage_matches_keyword_search_query(
     }
     if let Some(api_format) = query.api_format.as_deref() {
         if item.api_format.as_deref() != Some(api_format) {
+            return false;
+        }
+    }
+    if let Some(request_type) = query
+        .request_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if !usage_request_type_matches(item.request_type.as_deref(), request_type) {
             return false;
         }
     }
@@ -1336,6 +1366,13 @@ impl UsageReadRepository for InMemoryUsageReadRepository {
                 UsageAuditAggregationGroupBy::ApiFormat => item
                     .api_format
                     .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
+                UsageAuditAggregationGroupBy::RequestType => item
+                    .request_type
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_ascii_lowercase)
                     .unwrap_or_else(|| "unknown".to_string()),
                 UsageAuditAggregationGroupBy::User => match item.user_id.clone() {
                     Some(value) => value,

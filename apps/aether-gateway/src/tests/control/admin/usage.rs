@@ -551,6 +551,7 @@ async fn gateway_handles_admin_usage_aggregation_stats_locally_with_trusted_admi
     );
     usage_1.provider_id = Some("provider-openai".to_string());
     usage_1.total_tokens = usage_1.input_tokens;
+    usage_1.request_type = Some("compact".to_string());
 
     let mut usage_2 = sample_usage_row(
         "usage-2",
@@ -692,6 +693,25 @@ async fn gateway_handles_admin_usage_aggregation_stats_locally_with_trusted_admi
     assert_eq!(api_format_items[0]["output_tokens"], 40);
     assert_eq!(api_format_items[1]["api_format"], "claude:messages");
     assert_eq!(api_format_items[1]["output_tokens"], 20);
+
+    let request_type_response = admin_request(reqwest::Client::new().get(format!(
+        "{gateway_url}/api/admin/usage/aggregation/stats?group_by=request_type&limit=10&start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0"
+    )))
+    .send()
+    .await
+    .expect("request should succeed");
+
+    assert_eq!(request_type_response.status(), StatusCode::OK);
+    let request_type_payload: serde_json::Value = request_type_response
+        .json()
+        .await
+        .expect("json body should parse");
+    let request_type_items = request_type_payload.as_array().expect("array response");
+    assert_eq!(request_type_items.len(), 2);
+    assert_eq!(request_type_items[0]["request_type"], "chat");
+    assert_eq!(request_type_items[0]["request_count"], 3);
+    assert_eq!(request_type_items[1]["request_type"], "compact");
+    assert_eq!(request_type_items[1]["request_count"], 1);
     assert_eq!(*upstream_hits.lock().expect("mutex should lock"), 0);
 
     gateway_handle.abort();
@@ -1695,6 +1715,124 @@ async fn gateway_filters_admin_usage_records_by_visible_type() {
     handle.abort();
 }
 
+/// 验证请求类型、生命周期与客户端传输方式能够独立组合，并共同决定分页总数。
+#[tokio::test]
+async fn gateway_filters_admin_usage_records_by_independent_dimensions() {
+    let mut compact_failed_stream = sample_usage_row(
+        "compact-failed-stream",
+        "compact-failed-stream",
+        Some("user-1"),
+        None,
+        None,
+        "OpenAI",
+        "gpt-5",
+        "failed",
+        10,
+        0,
+        0.0,
+        0.0,
+        DAY_2_UNIX_SECS,
+    );
+    compact_failed_stream.request_type = Some("compact".to_string());
+    compact_failed_stream.is_stream = true;
+    compact_failed_stream.request_metadata = Some(json!({
+        "client_requested_stream": true,
+    }));
+
+    let mut chat_failed_stream = compact_failed_stream.clone();
+    chat_failed_stream.id = "chat-failed-stream".to_string();
+    chat_failed_stream.request_id = "chat-failed-stream".to_string();
+    chat_failed_stream.request_type = Some("chat".to_string());
+
+    let mut chat_failed_standard = compact_failed_stream.clone();
+    chat_failed_standard.id = "chat-failed-standard".to_string();
+    chat_failed_standard.request_id = "chat-failed-standard".to_string();
+    chat_failed_standard.request_type = Some("chat".to_string());
+    chat_failed_standard.is_stream = false;
+    chat_failed_standard.request_metadata = Some(json!({
+        "client_requested_stream": false,
+    }));
+
+    let mut realtime_completed_ws = sample_usage_row(
+        "realtime-completed-ws",
+        "realtime-completed-ws",
+        Some("user-1"),
+        None,
+        None,
+        "OpenAI",
+        "gpt-realtime",
+        "completed",
+        10,
+        2,
+        0.0,
+        0.0,
+        DAY_2_UNIX_SECS,
+    );
+    realtime_completed_ws.request_type = Some("realtime".to_string());
+    realtime_completed_ws.is_stream = true;
+    realtime_completed_ws.request_metadata = Some(json!({
+        "client_requested_stream": true,
+        "websocket_mode": true,
+        "websocket_transport": "realtime",
+    }));
+
+    let usage = Arc::new(InMemoryUsageReadRepository::seed(vec![
+        compact_failed_stream,
+        chat_failed_stream,
+        chat_failed_standard,
+        realtime_completed_ws,
+    ]));
+    let state = AppState::new()
+        .expect("gateway should build")
+        .with_data_state_for_tests(GatewayDataState::with_usage_reader_for_tests(usage));
+    let (gateway_url, handle) = start_server(build_router_with_state(state)).await;
+
+    for (query, expected) in [
+        (
+            "request_type=compact&request_status=failed&transport=stream",
+            vec!["compact-failed-stream"],
+        ),
+        (
+            "request_status=failed&transport=standard",
+            vec!["chat-failed-standard"],
+        ),
+        ("transport=websocket", vec!["realtime-completed-ws"]),
+        (
+            "request_type=chat&transport=standard",
+            vec!["chat-failed-standard"],
+        ),
+    ] {
+        let response = admin_request(reqwest::Client::new().get(format!(
+            "{gateway_url}/api/admin/usage/records?start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0&{query}&include_total=true"
+        )))
+        .send()
+        .await
+        .expect("HTTP request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value = response.json().await.expect("JSON response");
+        assert_eq!(body["total"].as_u64(), Some(expected.len() as u64));
+        let mut ids = body["records"]
+            .as_array()
+            .expect("records")
+            .iter()
+            .map(|row| row["id"].as_str().expect("id"))
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        assert_eq!(ids, expected);
+    }
+
+    let invalid = admin_request(reqwest::Client::new().get(format!(
+        "{gateway_url}/api/admin/usage/records?start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0&transport=carrier-pigeon"
+    )))
+    .send()
+    .await
+    .expect("invalid request should return a response");
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+
+    handle.abort();
+}
+
 #[tokio::test]
 async fn gateway_filters_admin_usage_records_with_unknown_model_or_provider() {
     let (upstream_url, upstream_hits, upstream_handle) =
@@ -2150,7 +2288,7 @@ async fn gateway_usage_record_attempt_flags_follow_request_candidate_timeline() 
     assert_eq!(record_by_id("usage-real-retry")["has_retry"], true);
 
     let fallback_response = admin_request(reqwest::Client::new().get(format!(
-        "{gateway_url}/api/admin/usage/records?start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0&status=has_fallback&limit=10&offset=0"
+        "{gateway_url}/api/admin/usage/records?start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0&attempt=fallback&limit=10&offset=0"
     )))
     .send()
     .await
@@ -2164,7 +2302,7 @@ async fn gateway_usage_record_attempt_flags_follow_request_candidate_timeline() 
     assert_eq!(fallback_payload["records"][0]["id"], "usage-real-fallback");
 
     let retry_response = admin_request(reqwest::Client::new().get(format!(
-        "{gateway_url}/api/admin/usage/records?start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0&status=has_retry&limit=10&offset=0"
+        "{gateway_url}/api/admin/usage/records?start_date=2024-03-21&end_date=2024-03-22&tz_offset_minutes=0&attempt=retry&limit=10&offset=0"
     )))
     .send()
     .await

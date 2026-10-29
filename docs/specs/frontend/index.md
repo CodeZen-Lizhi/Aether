@@ -19,7 +19,7 @@
 
 **Usage records**: 按实际 DOM 列顺序输出 colgroup；类型列与其他列同时显示时保留 88px，其余可见列按权重分配剩余宽度。通过实际表格宽度换算为纯百分比，避免在 col 上使用浏览器无法正确分配的混合单位 calc；th / td 不再独立分配百分比。类型表头和状态词保持横排，转换标签仅在完整词组之间换行。选择超过 9 列时使用 wide 模式，紧凑卡片仍显示选中的客户端、IP 和完整 User-Agent。金额不能为了塞入表格而被拆成难读的多行。
 
-**Usage type filters**: 类型列优先呈现请求状态；HTTP 流式/标准筛选仅包含已完成的对应 HTTP 请求，排除失败、取消、活跃与 WebSocket。活跃筛选包含等待中和传输中；轮询进入终态后立即移出，并重新读取当前页与总数。服务端列表和总数共用状态条件，前端本地筛选与轮询后可见记录复用 `matchesUsageLiveTypeFilter`。
+**Usage filters**: 类型列主标签使用 `request_type`，状态与客户端传输方式作为次标签。类型、状态、传输和调度是四个独立筛选维度，服务端分页与总数按“组间同时满足”组合；HTTP 流式/标准按客户端请求模式判断，不能使用转换后的上游 `is_stream` 代替。请求类型选项来自当前时间范围的 `request_type` 聚合，并补充当前页历史值与已选值；轮询更新后，前端本地结果复用 `matchesUsageLiveFilters` 判断四个维度，活跃行终结后立即移出并重新读取当前页与总数。
 
 **Model badges**: `UsageModelDisplay.vue` 的模型名与行内徽标使用同一文字流，徽标左距 4px；空间不足自然续行。不要恢复「可收缩文本 flex 项 + 不收缩徽标」：`w-fit` 仍会保留换行后未绘制的文本盒空白，使徽标离可见文字过远。映射模型在名称与行内徽标后单独一行；无映射且三个及以上徽标沿用独立徽标行。修改后运行 `scripts/check-usage-model-spacing.cjs` 的真实浏览器检查（fixture：`/scripts/fixtures/usage-model-spacing.html`），用 `Range.getClientRects()` 的末行文字边界断言相邻间距，而非仅测 span 容器或 CSS 类名；同时检查真实表格、卡片与详情的调用方样式。
 

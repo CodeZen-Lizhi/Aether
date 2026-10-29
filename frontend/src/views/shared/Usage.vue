@@ -25,10 +25,14 @@
       :filter-model="filterModel"
       :filter-provider="filterProvider"
       :filter-api-format="filterApiFormat"
-      :filter-status="filterStatus"
+      :filter-request-type="filterRequestType"
+      :filter-request-status="filterRequestStatus"
+      :filter-transport="filterTransport"
+      :filter-attempt="filterAttempt"
       :filter-client-family="filterClientFamily"
       :available-models="availableModels"
       :available-providers="availableProviders"
+      :available-request-types="availableRequestTypes"
       :available-client-families="availableClientFamilies"
       :current-page="currentPage"
       :page-size="pageSize"
@@ -40,7 +44,10 @@
       @update:filter-model="handleFilterModelChange"
       @update:filter-provider="handleFilterProviderChange"
       @update:filter-api-format="handleFilterApiFormatChange"
-      @update:filter-status="handleFilterStatusChange"
+      @update:filter-request-type="handleFilterRequestTypeChange"
+      @update:filter-request-status="handleFilterRequestStatusChange"
+      @update:filter-transport="handleFilterTransportChange"
+      @update:filter-attempt="handleFilterAttemptChange"
       @update:filter-client-family="handleFilterClientFamilyChange"
       @update:current-page="handlePageChange"
       @update:page-size="handlePageSizeChange"
@@ -81,7 +88,7 @@ import {
   getDateRangeFromPeriod
 } from '@/features/usage/composables'
 import { reconcileActiveRequestDiscovery } from '@/features/usage/utils/activeRequestDiscovery'
-import { matchesUsageLiveTypeFilter } from '@/features/usage/utils/recordFilterPolicy'
+import { matchesUsageLiveFilters } from '@/features/usage/utils/recordFilterPolicy'
 import {
   mergeUsageRecordErrorMessage,
   mergeUsageRecordFirstByteTimeMs,
@@ -93,7 +100,14 @@ import {
   normalizeRequestStatus,
   resolveDisplayRequestStatus,
 } from '@/features/usage/utils/status'
-import type { DateRangeParams, FilterStatusValue, RequestStatus, UsageRecord } from '@/features/usage/types'
+import type {
+  DateRangeParams,
+  RequestStatus,
+  UsageAttemptFilterValue,
+  UsageLifecycleFilterValue,
+  UsageRecord,
+  UsageTransportFilterValue,
+} from '@/features/usage/types'
 import { log } from '@/utils/logger'
 import { useToast } from '@/composables/useToast'
 
@@ -119,7 +133,10 @@ const pageSizeOptions = [10, 20, 50, 100]
 const filterModel = ref('__all__')
 const filterProvider = ref('__all__')
 const filterApiFormat = ref('__all__')
-const filterStatus = ref<FilterStatusValue>('__all__')
+const filterRequestType = ref('__all__')
+const filterRequestStatus = ref<UsageLifecycleFilterValue>('__all__')
+const filterTransport = ref<UsageTransportFilterValue>('__all__')
+const filterAttempt = ref<UsageAttemptFilterValue>('__all__')
 const filterClientFamily = ref('__all__')
 
 // 使用 composables
@@ -131,6 +148,7 @@ const {
   totalRecords,
   availableModels,
   availableProviders,
+  availableRequestTypes,
   loadStats,
   loadRecords
 } = useUsageData()
@@ -218,11 +236,16 @@ function hasUnknownModelOrProvider(record: UsageRecord): boolean {
   return false
 }
 
-// 轮询更新后继续应用类型条件，避免活跃行终结后仍留在筛选结果里。
+// 轮询更新后继续应用四个独立筛选，避免活跃行终结后仍留在筛选结果里。
 const filteredRecords = computed(() => {
   return currentRecords.value.filter(record =>
     (!hideUnknownRecords.value || !hasUnknownModelOrProvider(record))
-    && matchesUsageLiveTypeFilter(record, filterStatus.value)
+    && matchesUsageLiveFilters(record, {
+      requestType: filterRequestType.value,
+      requestStatus: filterRequestStatus.value,
+      transport: filterTransport.value,
+      attempt: filterAttempt.value,
+    })
   )
 })
 
@@ -446,8 +469,13 @@ async function pollActiveRequests() {
       }
     }
 
-    if (filterStatus.value === 'active' && currentRecords.value.some(record =>
-      !matchesUsageLiveTypeFilter(record, 'active')
+    if (filterRequestStatus.value === 'active' && currentRecords.value.some(record =>
+      !matchesUsageLiveFilters(record, {
+        requestType: filterRequestType.value,
+        requestStatus: filterRequestStatus.value,
+        transport: filterTransport.value,
+        attempt: filterAttempt.value,
+      })
     )) {
       await loadRecords(
         { page: currentPage.value, pageSize: pageSize.value },
@@ -696,7 +724,10 @@ function getCurrentFilters() {
     model: filterModel.value !== '__all__' ? filterModel.value : undefined,
     provider: filterProvider.value !== '__all__' ? filterProvider.value : undefined,
     api_format: filterApiFormat.value !== '__all__' ? filterApiFormat.value : undefined,
-    status: filterStatus.value !== '__all__' ? filterStatus.value : undefined,
+    request_type: filterRequestType.value !== '__all__' ? filterRequestType.value : undefined,
+    request_status: filterRequestStatus.value !== '__all__' ? filterRequestStatus.value : undefined,
+    transport: filterTransport.value !== '__all__' ? filterTransport.value : undefined,
+    attempt: filterAttempt.value !== '__all__' ? filterAttempt.value : undefined,
     client_family: filterClientFamily.value !== '__all__' ? filterClientFamily.value : undefined,
     hideUnknownRecords: hideUnknownRecords.value || undefined
   }
@@ -723,8 +754,26 @@ async function handleFilterApiFormatChange(value: string) {
   await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
 }
 
-async function handleFilterStatusChange(value: string) {
-  filterStatus.value = value as FilterStatusValue
+async function handleFilterRequestTypeChange(value: string) {
+  filterRequestType.value = value
+  currentPage.value = 1
+  await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
+}
+
+async function handleFilterRequestStatusChange(value: string) {
+  filterRequestStatus.value = value as UsageLifecycleFilterValue
+  currentPage.value = 1
+  await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
+}
+
+async function handleFilterTransportChange(value: string) {
+  filterTransport.value = value as UsageTransportFilterValue
+  currentPage.value = 1
+  await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
+}
+
+async function handleFilterAttemptChange(value: string) {
+  filterAttempt.value = value as UsageAttemptFilterValue
   currentPage.value = 1
   await loadRecords({ page: 1, pageSize: pageSize.value }, getCurrentFilters(), timeRange.value)
 }

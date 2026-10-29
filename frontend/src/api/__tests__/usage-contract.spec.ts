@@ -178,4 +178,48 @@ describe('usageApi contract alignment', () => {
       },
     })
   })
+
+  it('passes independent usage dimensions to the admin records endpoint', async () => {
+    getMock.mockResolvedValueOnce({
+      data: {
+        records: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      },
+    })
+
+    await usageApi.getAllUsageRecords({
+      request_type: 'compact',
+      request_status: 'failed',
+      transport: 'stream',
+      attempt: 'retry',
+      limit: 20,
+      offset: 0,
+    })
+
+    expect(getMock).toHaveBeenCalledWith('/api/admin/usage/records', {
+      params: {
+        request_type: 'compact',
+        request_status: 'failed',
+        transport: 'stream',
+        attempt: 'retry',
+        limit: 20,
+        offset: 0,
+      },
+    })
+  })
+
+  it('requests request-type aggregation for usage filter options', async () => {
+    getMock.mockResolvedValueOnce({
+      data: [{ request_type: 'compact', request_count: 2 }],
+    })
+
+    await usageApi.getUsageByRequestType({ preset: 'today' })
+
+    expect(getMock).toHaveBeenCalledWith('/api/admin/usage/aggregation/stats', {
+      params: { group_by: 'request_type', preset: 'today' },
+      timeout: 120000,
+    })
+  })
 })

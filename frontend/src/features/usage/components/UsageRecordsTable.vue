@@ -136,45 +136,6 @@
             </SelectItem>
           </SelectContent>
         </Select>
-
-        <!-- 状态筛选 -->
-        <Select
-          :model-value="filterStatus"
-          @update:model-value="$emit('update:filterStatus', $event)"
-        >
-          <SelectTrigger class="h-8 w-full min-w-0 text-xs border-border/60">
-            <SelectValue placeholder="状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">
-              全部类型
-            </SelectItem>
-            <SelectItem value="stream">
-              HTTP 流式
-            </SelectItem>
-            <SelectItem value="standard">
-              HTTP 标准
-            </SelectItem>
-            <SelectItem value="websocket">
-              WebSocket (WS)
-            </SelectItem>
-            <SelectItem value="active">
-              活跃
-            </SelectItem>
-            <SelectItem value="failed">
-              失败
-            </SelectItem>
-            <SelectItem value="cancelled">
-              已取消
-            </SelectItem>
-            <SelectItem value="has_retry">
-              发生重试
-            </SelectItem>
-            <SelectItem value="has_fallback">
-              发生转移
-            </SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
       <!-- 分隔线 -->
@@ -223,6 +184,108 @@
       </Button>
     </template>
 
+    <!-- 请求语义、状态、传输和调度使用独立下拉，组间同时生效。 -->
+    <div class="usage-quick-filters grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-2 border-b border-border/60 px-4 py-2.5 sm:px-6">
+      <Select
+        :model-value="filterRequestType"
+        @update:model-value="$emit('update:filterRequestType', $event)"
+      >
+        <SelectTrigger
+          class="h-8 w-full min-w-0 text-xs border-border/60"
+          aria-label="筛选请求类型"
+        >
+          <SelectValue placeholder="类型" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">
+            全部类型
+          </SelectItem>
+          <SelectItem
+            v-for="option in requestTypeFilterOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        :model-value="filterRequestStatus"
+        @update:model-value="$emit('update:filterRequestStatus', $event)"
+      >
+        <SelectTrigger
+          class="h-8 w-full min-w-0 text-xs border-border/60"
+          aria-label="筛选请求状态"
+        >
+          <SelectValue placeholder="状态" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">
+            全部状态
+          </SelectItem>
+          <SelectItem value="active">
+            活跃
+          </SelectItem>
+          <SelectItem value="failed">
+            失败
+          </SelectItem>
+          <SelectItem value="cancelled">
+            已取消
+          </SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        :model-value="filterTransport"
+        @update:model-value="$emit('update:filterTransport', $event)"
+      >
+        <SelectTrigger
+          class="h-8 w-full min-w-0 text-xs border-border/60"
+          aria-label="筛选传输方式"
+        >
+          <SelectValue placeholder="传输" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">
+            全部传输
+          </SelectItem>
+          <SelectItem value="stream">
+            HTTP 流式
+          </SelectItem>
+          <SelectItem value="standard">
+            HTTP 标准
+          </SelectItem>
+          <SelectItem value="websocket">
+            WebSocket
+          </SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        :model-value="filterAttempt"
+        @update:model-value="$emit('update:filterAttempt', $event)"
+      >
+        <SelectTrigger
+          class="h-8 w-full min-w-0 text-xs border-border/60"
+          aria-label="筛选调度情况"
+        >
+          <SelectValue placeholder="调度" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">
+            全部调度
+          </SelectItem>
+          <SelectItem value="retry">
+            发生重试
+          </SelectItem>
+          <SelectItem value="fallback">
+            发生转移
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+
     <!-- 紧凑卡片视图 -->
     <div class="responsive-list-cards">
       <div
@@ -248,7 +311,14 @@
                 model-class="text-[15px] font-semibold leading-5"
                 stack-full-width
               />
-              <!-- 状态 Badge -->
+              <Badge
+                variant="secondary"
+                data-usage-request-type="card"
+                class="whitespace-normal text-[10px] px-1.5 h-4 leading-4 inline-flex items-center flex-shrink-0"
+              >
+                {{ formatUsageRequestType(record.request_type) }}
+              </Badge>
+              <!-- 生命周期与传输方式作为独立次标签。 -->
               <Badge
                 v-if="isUsageRecordFailed(record)"
                 variant="destructive"
@@ -278,7 +348,7 @@
                 取消
               </Badge>
               <Badge
-                v-else-if="isUsageWebSocket(record)"
+                v-if="isUsageWebSocket(record)"
                 variant="outline"
                 data-usage-transport="websocket"
                 :title="getWebSocketTransportTitle(record)"
@@ -524,16 +594,16 @@
             column-key="status"
             :sortable="false"
             align="center"
-            :filter-active="filterStatus !== '__all__'"
+            :filter-active="filterRequestType !== '__all__'"
             filter-title="筛选类型"
             filter-content-class="w-44 p-1 rounded-2xl border-border bg-card text-foreground shadow-2xl backdrop-blur-xl"
           >
-            <span class="whitespace-nowrap">类型</span>
+            <span class="whitespace-nowrap">类型 / 状态</span>
             <template #filter="{ close }">
               <TableFilterMenu
-                :model-value="filterStatus"
-                :options="statusFilterOptions"
-                @update:model-value="$emit('update:filterStatus', $event)"
+                :model-value="filterRequestType"
+                :options="requestTypeMenuOptions"
+                @update:model-value="$emit('update:filterRequestType', $event)"
                 @select="close"
               />
             </template>
@@ -726,64 +796,74 @@
             v-if="isColumnVisible('status')"
             class="usage-record-type text-center py-4 [&>div]:px-1.5"
           >
-            <!-- 优先显示请求状态 -->
-            <Badge
-              v-if="isUsageRecordFailed(record)"
-              variant="destructive"
-              class="whitespace-nowrap"
-            >
-              失败
-            </Badge>
-            <Badge
-              v-else-if="getDisplayStatus(record) === 'pending'"
-              variant="outline"
-              class="whitespace-nowrap animate-pulse border-muted-foreground/30 text-muted-foreground"
-            >
-              等待中
-            </Badge>
-            <Badge
-              v-else-if="getDisplayStatus(record) === 'streaming'"
-              variant="outline"
-              class="whitespace-nowrap animate-pulse border-primary/50 text-primary"
-            >
-              传输中
-            </Badge>
-            <Badge
-              v-else-if="record.status === 'cancelled'"
-              variant="outline"
-              class="whitespace-nowrap border-amber-500/50 text-amber-600 dark:text-amber-400"
-            >
-              已取消
-            </Badge>
-            <Badge
-              v-else-if="isUsageWebSocket(record)"
-              variant="outline"
-              data-usage-transport="websocket"
-              :title="getWebSocketTransportTitle(record)"
-              class="whitespace-nowrap border-sky-500/50 text-sky-600 dark:text-sky-400"
-            >
-              WS
-            </Badge>
-            <Badge
-              v-else-if="getStreamModeSegments(record).hasConversion"
-              :variant="streamBadgeVariant(getStreamModeSegments(record).client === '流式')"
-              :class="(streamBadgeVariant(getStreamModeSegments(record).client === '流式') === 'secondary')
-                ? 'whitespace-normal inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'
-                : 'whitespace-normal border-border/60 text-muted-foreground inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'"
-            >
-              <span class="whitespace-nowrap">{{ getStreamModeSegments(record).client }}</span>
-              <span class="opacity-60">→</span>
-              <span class="whitespace-nowrap">{{ getStreamModeSegments(record).upstream }}</span>
-            </Badge>
-            <Badge
-              v-else
-              :variant="streamBadgeVariant(getUpstreamStream(record))"
-              :class="(streamBadgeVariant(getUpstreamStream(record)) === 'secondary')
-                ? 'whitespace-nowrap'
-                : 'whitespace-nowrap border-border/60 text-muted-foreground'"
-            >
-              {{ getStreamModeLabel(record) }}
-            </Badge>
+            <div class="flex flex-col items-center gap-1">
+              <Badge
+                variant="secondary"
+                data-usage-request-type="desktop"
+                class="whitespace-nowrap"
+              >
+                {{ formatUsageRequestType(record.request_type) }}
+              </Badge>
+              <div class="flex flex-wrap items-center justify-center gap-1">
+                <Badge
+                  v-if="isUsageRecordFailed(record)"
+                  variant="destructive"
+                  class="whitespace-nowrap"
+                >
+                  失败
+                </Badge>
+                <Badge
+                  v-else-if="getDisplayStatus(record) === 'pending'"
+                  variant="outline"
+                  class="whitespace-nowrap animate-pulse border-muted-foreground/30 text-muted-foreground"
+                >
+                  等待中
+                </Badge>
+                <Badge
+                  v-else-if="getDisplayStatus(record) === 'streaming'"
+                  variant="outline"
+                  class="whitespace-nowrap animate-pulse border-primary/50 text-primary"
+                >
+                  传输中
+                </Badge>
+                <Badge
+                  v-else-if="record.status === 'cancelled'"
+                  variant="outline"
+                  class="whitespace-nowrap border-amber-500/50 text-amber-600 dark:text-amber-400"
+                >
+                  已取消
+                </Badge>
+                <Badge
+                  v-if="isUsageWebSocket(record)"
+                  variant="outline"
+                  data-usage-transport="websocket"
+                  :title="getWebSocketTransportTitle(record)"
+                  class="whitespace-nowrap border-sky-500/50 text-sky-600 dark:text-sky-400"
+                >
+                  WS
+                </Badge>
+                <Badge
+                  v-else-if="getStreamModeSegments(record).hasConversion"
+                  :variant="streamBadgeVariant(getStreamModeSegments(record).client === '流式')"
+                  :class="(streamBadgeVariant(getStreamModeSegments(record).client === '流式') === 'secondary')
+                    ? 'whitespace-normal inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'
+                    : 'whitespace-normal border-border/60 text-muted-foreground inline-flex max-w-full h-auto min-h-6 flex-wrap items-center gap-x-1 gap-y-0.5'"
+                >
+                  <span class="whitespace-nowrap">{{ getStreamModeSegments(record).client }}</span>
+                  <span class="opacity-60">→</span>
+                  <span class="whitespace-nowrap">{{ getStreamModeSegments(record).upstream }}</span>
+                </Badge>
+                <Badge
+                  v-else
+                  :variant="streamBadgeVariant(getUpstreamStream(record))"
+                  :class="(streamBadgeVariant(getUpstreamStream(record)) === 'secondary')
+                    ? 'whitespace-nowrap'
+                    : 'whitespace-nowrap border-border/60 text-muted-foreground'"
+                >
+                  {{ getStreamModeLabel(record) }}
+                </Badge>
+              </div>
+            </div>
           </TableCell>
           <TableCell
             v-if="isColumnVisible('tokens')"
@@ -1001,6 +1081,10 @@ import { formatClientFamily } from '@/features/usage/utils/clientFamily'
 import { formatServiceTierFact } from '../utils/service-tier'
 import { isCyberPolicyError } from '../utils/cyberError'
 import { formatUsageWebSocketTransportTitle as getWebSocketTransportTitle } from '../utils/websocketTransport'
+import {
+  buildUsageRequestTypeOptions,
+  formatUsageRequestType,
+} from '../utils/requestType'
 import type { DateRangeParams, UsageRecord } from '../types'
 import { MultiSelect, TimeRangePicker } from '@/components/common'
 import type { MultiSelectOption } from '@/components/common/MultiSelect.vue'
@@ -1052,10 +1136,14 @@ const props = defineProps<{
   filterModel: string
   filterProvider: string
   filterApiFormat: string
-  filterStatus: string
+  filterRequestType: string
+  filterRequestStatus: string
+  filterTransport: string
+  filterAttempt: string
   filterClientFamily: string
   availableModels: string[]
   availableProviders: string[]
+  availableRequestTypes: string[]
   availableClientFamilies: string[]
   // 分页
   currentPage: number
@@ -1072,7 +1160,10 @@ const emit = defineEmits<{
   'update:filterModel': [value: string]
   'update:filterProvider': [value: string]
   'update:filterApiFormat': [value: string]
-  'update:filterStatus': [value: string]
+  'update:filterRequestType': [value: string]
+  'update:filterRequestStatus': [value: string]
+  'update:filterTransport': [value: string]
+  'update:filterAttempt': [value: string]
   'update:filterClientFamily': [value: string]
   'update:currentPage': [value: number]
   'update:pageSize': [value: number]
@@ -1224,17 +1315,18 @@ const apiFormatFilterOptions = computed<FilterOption[]>(() => [
   })),
 ])
 
-const statusFilterOptions: FilterOption[] = [
+const requestTypeFilterOptions = computed<FilterOption[]>(() =>
+  buildUsageRequestTypeOptions(
+    props.availableRequestTypes,
+    props.records,
+    props.filterRequestType,
+  )
+)
+
+const requestTypeMenuOptions = computed<FilterOption[]>(() => [
   { value: '__all__', label: '全部类型' },
-  { value: 'stream', label: 'HTTP 流式' },
-  { value: 'standard', label: 'HTTP 标准' },
-  { value: 'websocket', label: 'WebSocket (WS)' },
-  { value: 'active', label: '活跃' },
-  { value: 'failed', label: '失败' },
-  { value: 'cancelled', label: '已取消' },
-  { value: 'has_retry', label: '发生重试' },
-  { value: 'has_fallback', label: '发生转移' },
-]
+  ...requestTypeFilterOptions.value,
+])
 
 const timeRangeModel = computed({
   get: () => props.timeRange,

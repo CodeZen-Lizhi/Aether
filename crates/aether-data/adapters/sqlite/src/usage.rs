@@ -853,6 +853,22 @@ fn push_sqlite_usage_list_filters(
             .push("api_format = ")
             .push_bind(api_format.to_string());
     }
+    if let Some(request_type) = query
+        .request_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        push_sqlite_usage_where(builder, has_where);
+        let normalized = request_type.to_ascii_lowercase();
+        if normalized == "unknown" {
+            builder.push("COALESCE(NULLIF(LOWER(TRIM(request_type)), ''), 'unknown') = 'unknown'");
+        } else {
+            builder
+                .push("LOWER(TRIM(COALESCE(request_type, ''))) = ")
+                .push_bind(normalized);
+        }
+    }
     if let Some(client_family) = query.client_family.as_deref().map(str::trim) {
         if !client_family.is_empty() {
             push_sqlite_usage_where(builder, has_where);
@@ -933,6 +949,7 @@ fn push_sqlite_usage_keyword_filters(
             provider_name: query.provider_name.clone(),
             model: query.model.clone(),
             api_format: query.api_format.clone(),
+            request_type: query.request_type.clone(),
             client_family: query.client_family.clone(),
             exclude_unknown_model_or_provider: query.exclude_unknown_model_or_provider,
             statuses: query.statuses.clone(),
@@ -1089,6 +1106,9 @@ AND LOWER(TRIM(provider_id)) NOT IN ('unknown', 'unknow', 'pending') \
 THEN TRIM(provider_id) ELSE TRIM(provider_name) END"
         }
         UsageAuditAggregationGroupBy::ApiFormat => "COALESCE(NULLIF(api_format, ''), 'unknown')",
+        UsageAuditAggregationGroupBy::RequestType => {
+            "LOWER(COALESCE(NULLIF(TRIM(request_type), ''), 'unknown'))"
+        }
         UsageAuditAggregationGroupBy::User => "user_id",
     }
 }

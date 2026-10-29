@@ -8,10 +8,11 @@ use crate::GatewayError;
 use aether_admin::observability::usage::{
     admin_usage_bad_request_response, admin_usage_data_unavailable_response,
     admin_usage_has_fallback, admin_usage_is_failed, admin_usage_matches_search,
-    admin_usage_matches_username, admin_usage_parse_ids, admin_usage_parse_limit,
-    admin_usage_parse_offset, admin_usage_provider_key_name, admin_usage_record_json,
-    build_admin_usage_active_requests_response, build_admin_usage_records_response,
-    build_admin_usage_summary_stats_response_from_summary, ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
+    admin_usage_matches_transport, admin_usage_matches_username, admin_usage_parse_ids,
+    admin_usage_parse_limit, admin_usage_parse_offset, admin_usage_provider_key_name,
+    admin_usage_record_json, build_admin_usage_active_requests_response,
+    build_admin_usage_records_response, build_admin_usage_summary_stats_response_from_summary,
+    ADMIN_USAGE_DATA_UNAVAILABLE_DETAIL,
 };
 use aether_data::repository::users::StoredUserSummary;
 use aether_data_contracts::repository::{
@@ -83,6 +84,76 @@ fn apply_admin_usage_status_filter(query: &mut UsageAuditListQuery, status: Opti
     }
 }
 
+/// 去除查询值首尾空白并统一小写；全空值视为未提供筛选。
+fn normalized_admin_usage_query_value(query: Option<&str>) -> Option<String> {
+    query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
+}
+
+/// 将独立请求状态筛选映射为只描述生命周期，避免复用过载的旧 status 参数。
+fn apply_admin_usage_request_status_filter(
+    query: &mut UsageAuditListQuery,
+    request_status: Option<&str>,
+) {
+    let Some(request_status) = normalized_admin_usage_query_value(request_status) else {
+        return;
+    };
+    match request_status.as_str() {
+        "active" => {
+            query.statuses = Some(vec!["pending".to_string(), "streaming".to_string()]);
+        }
+        "failed" | "cancelled" => {
+            query.statuses = Some(vec![request_status]);
+        }
+        _ => {}
+    }
+}
+
+/// 将传输方式映射为基础查询；HTTP 流式/标准仍需在管理端按客户端语义复核。
+fn apply_admin_usage_transport_filter(query: &mut UsageAuditListQuery, transport: Option<&str>) {
+    let Some(transport) = normalized_admin_usage_query_value(transport) else {
+        return;
+    };
+    match transport.as_str() {
+        "stream" | "standard" => query.is_websocket = Some(false),
+        "websocket" | "ws" => query.is_websocket = Some(true),
+        _ => {}
+    }
+}
+
+/// 提取需要按客户端语义复核的 HTTP 传输筛选。
+fn admin_usage_client_transport_filter(transport: Option<&str>) -> Option<&'static str> {
+    match normalized_admin_usage_query_value(transport)?.as_str() {
+        "stream" => Some("stream"),
+        "standard" => Some("standard"),
+        _ => None,
+    }
+}
+
+/// 校验显式传入的枚举筛选；非法值返回稳定的 400 错误文案。
+fn validate_admin_usage_explicit_filters(query: Option<&str>) -> Result<(), String> {
+    for (key, allowed) in [
+        ("request_status", &["active", "failed", "cancelled"][..]),
+        ("transport", &["stream", "standard", "websocket", "ws"][..]),
+        ("attempt", &["retry", "fallback"][..]),
+    ] {
+        let Some(value) =
+            normalized_admin_usage_query_value(query_param_value(query, key).as_deref())
+        else {
+            continue;
+        };
+        if !allowed.contains(&value.as_str()) {
+            return Err(format!(
+                "Invalid {key} value: must be one of {}",
+                allowed.join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct AdminUsageAttemptFlags {
     has_fallback: bool,
@@ -91,8 +162,8 @@ struct AdminUsageAttemptFlags {
 
 fn admin_usage_attempt_status_filter(status: Option<&str>) -> Option<&'static str> {
     match status?.trim().to_ascii_lowercase().as_str() {
-        "has_fallback" => Some("has_fallback"),
-        "has_retry" => Some("has_retry"),
+        "has_fallback" | "fallback" => Some("has_fallback"),
+        "has_retry" | "retry" => Some("has_retry"),
         _ => None,
     }
 }
@@ -563,6 +634,9 @@ fn build_admin_usage_records_query(
         provider_name: query_param_value(query, "provider"),
         model: query_param_value(query, "model"),
         api_format: query_param_value(query, "api_format"),
+        request_type: normalized_admin_usage_query_value(
+            query_param_value(query, "request_type").as_deref(),
+        ),
         limit,
         offset,
         newest_first: true,
@@ -571,6 +645,14 @@ fn build_admin_usage_records_query(
     apply_admin_usage_status_filter(
         &mut list_query,
         query_param_value(query, "status").as_deref(),
+    );
+    apply_admin_usage_request_status_filter(
+        &mut list_query,
+        query_param_value(query, "request_status").as_deref(),
+    );
+    apply_admin_usage_transport_filter(
+        &mut list_query,
+        query_param_value(query, "transport").as_deref(),
     );
     list_query
 }
@@ -687,6 +769,7 @@ fn build_admin_usage_keyword_search_query(
         provider_name: base_query.provider_name.clone(),
         model: base_query.model.clone(),
         api_format: base_query.api_format.clone(),
+        request_type: base_query.request_type.clone(),
         client_family: base_query.client_family.clone(),
         exclude_unknown_model_or_provider: base_query.exclude_unknown_model_or_provider,
         statuses: base_query.statuses.clone(),
@@ -838,12 +921,23 @@ pub(super) async fn maybe_build_local_admin_usage_summary_response(
             }
 
             let query = request_context.request_query_string.as_deref();
+            if let Err(detail) = validate_admin_usage_explicit_filters(query) {
+                return Ok(Some(admin_usage_bad_request_response(detail)));
+            }
             let time_range = match resolve_admin_usage_time_range(query) {
                 Ok(value) => value,
                 Err(detail) => return Ok(Some(admin_usage_bad_request_response(detail))),
             };
             let attempt_status_filter =
-                admin_usage_attempt_status_filter(query_param_value(query, "status").as_deref());
+                admin_usage_attempt_status_filter(query_param_value(query, "status").as_deref())
+                    .or_else(|| {
+                        admin_usage_attempt_status_filter(
+                            query_param_value(query, "attempt").as_deref(),
+                        )
+                    });
+            let client_transport_filter = admin_usage_client_transport_filter(
+                query_param_value(query, "transport").as_deref(),
+            );
             let search = query_param_value(query, "search");
             let username_filter = query_param_value(query, "username");
             let client_family_filter = query_param_value(query, "client_family");
@@ -890,7 +984,9 @@ pub(super) async fn maybe_build_local_admin_usage_summary_response(
             );
             base_query.client_family = active_client_family_filter.map(str::to_owned);
             base_query.exclude_unknown_model_or_provider = hide_unknown_records;
-            let (usage, total, total_is_estimated) = if attempt_status_filter.is_some() {
+            let requires_in_memory_filter =
+                attempt_status_filter.is_some() || client_transport_filter.is_some();
+            let (usage, total, total_is_estimated) = if requires_in_memory_filter {
                 let mut usage = state.list_usage_audits(&base_query).await?;
                 let user_ids: Vec<String> = usage
                     .iter()
@@ -903,8 +999,11 @@ pub(super) async fn maybe_build_local_admin_usage_summary_response(
                     aether_data::repository::users::StoredUserSummary,
                 > = state.resolve_auth_user_summaries_by_ids(&user_ids).await?;
                 let api_key_names = admin_usage_api_key_names(state, &usage).await?;
-                let attempt_flags_by_usage_id =
-                    resolve_admin_usage_attempt_flags_by_usage_id(state, &usage).await?;
+                let attempt_flags_by_usage_id = if attempt_status_filter.is_some() {
+                    resolve_admin_usage_attempt_flags_by_usage_id(state, &usage).await?
+                } else {
+                    BTreeMap::new()
+                };
                 let request_candidate_reader_available = state.has_request_candidate_data_reader();
 
                 usage.retain(|item| {
@@ -920,14 +1019,15 @@ pub(super) async fn maybe_build_local_admin_usage_summary_response(
                         active_username_filter,
                         &users_by_id,
                         state.has_auth_user_data_reader(),
-                    ) && attempt_status_filter.is_none_or(|attempt_status| {
-                        admin_usage_matches_attempt_status(
-                            item,
-                            attempt_status,
-                            &attempt_flags_by_usage_id,
-                            request_candidate_reader_available,
-                        )
-                    })
+                    ) && admin_usage_matches_transport(item, client_transport_filter)
+                        && attempt_status_filter.is_none_or(|attempt_status| {
+                            admin_usage_matches_attempt_status(
+                                item,
+                                attempt_status,
+                                &attempt_flags_by_usage_id,
+                                request_candidate_reader_available,
+                            )
+                        })
                 });
                 sort_usage_newest_first(&mut usage);
                 let total = usage.len();
@@ -1067,7 +1167,8 @@ mod tests {
 
     use super::{
         admin_usage_terminal_candidate_state_override, build_admin_usage_keyword_search_query,
-        build_admin_usage_records_query, AdminUsageSearchContext,
+        build_admin_usage_records_query, validate_admin_usage_explicit_filters,
+        AdminUsageSearchContext,
     };
 
     fn sample_candidate(
@@ -1245,5 +1346,21 @@ mod tests {
             assert_eq!(keyword_query.is_websocket, Some(false));
             assert_eq!(keyword_query.statuses, Some(vec!["completed".to_string()]));
         }
+    }
+
+    #[test]
+    fn admin_usage_explicit_dimensions_remain_independent() {
+        let raw_query = "request_type=COMPACT&request_status=failed&transport=stream&attempt=retry";
+        let list_query = build_admin_usage_records_query(100, 200, Some(raw_query), None, None);
+
+        assert_eq!(list_query.request_type.as_deref(), Some("compact"));
+        assert_eq!(list_query.statuses, Some(vec!["failed".to_string()]));
+        assert_eq!(list_query.is_websocket, Some(false));
+        assert!(validate_admin_usage_explicit_filters(Some(raw_query)).is_ok());
+        assert_eq!(
+            super::admin_usage_attempt_status_filter(Some("retry")),
+            Some("has_retry")
+        );
+        assert!(validate_admin_usage_explicit_filters(Some("transport=invalid")).is_err());
     }
 }

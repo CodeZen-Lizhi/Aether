@@ -130,10 +130,14 @@ function mountUsageRecordsTable(records: UsageRecord[], overrides: Record<string
     filterModel: '__all__',
     filterProvider: '__all__',
     filterApiFormat: '__all__',
-    filterStatus: '__all__',
+    filterRequestType: '__all__',
+    filterRequestStatus: '__all__',
+    filterTransport: '__all__',
+    filterAttempt: '__all__',
     filterClientFamily: '__all__',
     availableModels: [],
     availableProviders: [],
+    availableRequestTypes: [],
     availableClientFamilies: [],
     currentPage: 1,
     pageSize: 20,
@@ -248,14 +252,14 @@ describe('UsageRecordsTable', () => {
 
     const titles = [...root.querySelectorAll<HTMLElement>('[title]')]
       .map((element) => element.getAttribute('title'))
-    expect(titles).toContain([
+    expect(titles.some(title => title?.includes([
       '端到端首字: 0.50s',
       '端到端总耗时: 1.00s',
       '成功候选首字: 0.50s',
       '成功候选耗时: 1.00s',
       '生成耗时: 0.50s',
       '输出速度: 100 tokens/s',
-    ].join('\n'))
+    ].join('\n')))).toBe(true)
     expect(titles.join('\n')).not.toContain('500ms')
     expect(titles.join('\n')).not.toContain('首字后生成耗时')
   })
@@ -276,14 +280,14 @@ describe('UsageRecordsTable', () => {
 
     const titles = [...root.querySelectorAll<HTMLElement>('[title]')]
       .map((element) => element.getAttribute('title'))
-    expect(titles).toContain([
+    expect(titles.some(title => title?.includes([
       '端到端首字: 10.12s',
       '端到端总耗时: 10.63s',
       '成功候选首字: 0.10s',
       '成功候选耗时: 0.63s',
       '生成耗时: 0.53s',
       '输出速度: 95.1 tokens/s',
-    ].join('\n'))
+    ].join('\n')))).toBe(true)
   })
 
   it('shows end-to-end latency when candidate timing fields are unavailable', () => {
@@ -299,14 +303,14 @@ describe('UsageRecordsTable', () => {
 
     const titles = [...root.querySelectorAll<HTMLElement>('[title]')]
       .map((element) => element.getAttribute('title'))
-    expect(titles).toContain([
+    expect(titles.some(title => title?.includes([
       '端到端首字: 10.12s',
       '端到端总耗时: 10.63s',
       '成功候选首字: -',
       '成功候选耗时: -',
       '生成耗时: -',
       '输出速度: -',
-    ].join('\n'))
+    ].join('\n')))).toBe(true)
   })
 
   it('shows an output speed placeholder when the rate is unavailable', () => {
@@ -322,14 +326,14 @@ describe('UsageRecordsTable', () => {
       .some((element) => element.textContent?.trim() === '-')).toBe(true)
 
     const titles = [...root.querySelectorAll<HTMLElement>('[title]')].map((element) => element.title)
-    expect(titles).toContain([
+    expect(titles.some(title => title.includes([
       '端到端首字: 0.50s',
       '端到端总耗时: 1.00s',
       '成功候选首字: 0.50s',
       '成功候选耗时: 1.00s',
       '生成耗时: 0.50s',
       '输出速度: -',
-    ].join('\n'))
+    ].join('\n')))).toBe(true)
   })
 
   it('keeps active request latency in one first-byte / live-total line without TPS', () => {
@@ -424,12 +428,14 @@ describe('UsageRecordsTable', () => {
     expect(badges.every(badge => badge.title === 'WebSocket')).toBe(true)
   })
 
-  it('offers a WebSocket type filter in both filter menus', () => {
+  it('offers independent type, status, transport and scheduling filters', () => {
     const root = mountUsageRecordsTable([buildRecord()])
 
-    const labels = [...root.querySelectorAll<HTMLElement>('div')]
-      .filter(element => element.textContent?.trim() === 'WebSocket (WS)')
-    expect(labels.length).toBeGreaterThanOrEqual(2)
+    expect(root.textContent).toContain('全部类型')
+    expect(root.textContent).toContain('全部状态')
+    expect(root.textContent).toContain('全部传输')
+    expect(root.textContent).toContain('全部调度')
+    expect(root.textContent).toContain('WebSocket')
     expect(root.textContent).toContain('HTTP 流式')
     expect(root.textContent).toContain('HTTP 标准')
   })
@@ -506,6 +512,20 @@ describe('UsageRecordsTable', () => {
 
     expect(root.querySelector('[data-usage-model-badge="compact"]')?.textContent?.trim())
       .toBe('会话压缩')
+  })
+
+  it('shows request type as the primary label with status and transport as secondary labels', () => {
+    const root = mountUsageRecordsTable([buildRecord({
+      request_type: 'compact',
+      status: 'failed',
+      is_stream: true,
+    })])
+
+    const typeBadges = [...root.querySelectorAll<HTMLElement>('[data-usage-request-type="desktop"]')]
+    expect(typeBadges.some(badge => badge.textContent?.trim() === '会话压缩')).toBe(true)
+    const typeCell = root.querySelector('.usage-record-type')
+    expect(typeCell?.textContent).toContain('失败')
+    expect(typeCell?.textContent).toContain('流式')
   })
 
   it('shows mapping, reasoning, Fast, and Cyber in the model area', () => {

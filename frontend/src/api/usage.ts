@@ -126,6 +126,27 @@ export interface UsageByApiFormat {
   cache_hit_rate?: number
 }
 
+export interface UsageByRequestType {
+  /** 归一化后的请求语义类型；缺失历史值由服务端归入 `unknown`。 */
+  request_type: string
+  /** 当前时间范围内该类型的请求数。 */
+  request_count: number
+  /** 该类型累计 Token 数。 */
+  total_tokens: number
+  /** 计入有效上下文和计费的输入 Token 数。 */
+  effective_input_tokens?: number
+  /** 缓存命中、创建和原始输入共同构成的上下文总量。 */
+  total_input_context?: number
+  /** 输出 Token 数。 */
+  output_tokens?: number
+  /** 原始请求费用，单位为美元。 */
+  total_cost: number
+  /** 按倍率调整后的实际费用，单位为美元。 */
+  actual_cost: number
+  /** 平均响应时间，单位为毫秒。 */
+  avg_response_time_ms: number
+}
+
 export interface UsageFilters {
   user_id?: string // UUID
   provider_id?: string // UUID
@@ -160,6 +181,15 @@ export type UsageRecordStatusFilter =
   | 'cancelled'
   | 'has_fallback'
   | 'has_retry'
+
+/** 使用记录生命周期筛选；与传输方式和调度状态独立组合。 */
+export type UsageRecordLifecycleFilter = 'active' | 'failed' | 'cancelled'
+
+/** 使用记录客户端传输方式筛选。 */
+export type UsageRecordTransportFilter = 'stream' | 'standard' | 'websocket'
+
+/** 使用记录调度路径筛选。 */
+export type UsageRecordAttemptFilter = 'retry' | 'fallback'
 
 type UsageListResponse = {
   records?: unknown
@@ -424,11 +454,11 @@ export const usageApi = {
 
   /**
    * Get usage aggregation by dimension (RESTful API)
-   * @param groupBy Aggregation dimension: 'model', 'user', 'provider', or 'api_format'
+   * @param groupBy Aggregation dimension: 'model', 'user', 'provider', 'api_format', or 'request_type'
    * @param filters Optional filters
    */
-  async getUsageAggregation<T = UsageByModel[] | UsageByUser[] | UsageByProvider[] | UsageByApiFormat[]>(
-    groupBy: 'model' | 'user' | 'provider' | 'api_format',
+  async getUsageAggregation<T = UsageByModel[] | UsageByUser[] | UsageByProvider[] | UsageByApiFormat[] | UsageByRequestType[]>(
+    groupBy: 'model' | 'user' | 'provider' | 'api_format' | 'request_type',
     filters?: UsageFilters & { limit?: number },
     options?: UsageRequestOptions
   ): Promise<T> {
@@ -475,6 +505,14 @@ export const usageApi = {
     return this.getUsageAggregation<UsageByApiFormat[]>('api_format', filters, options)
   },
 
+  /** 获取当前时间范围的请求类型聚合，用于构建类型筛选项。 */
+  async getUsageByRequestType(
+    filters?: UsageFilters & { limit?: number },
+    options?: UsageRequestOptions
+  ): Promise<UsageByRequestType[]> {
+    return this.getUsageAggregation<UsageByRequestType[]>('request_type', filters, options)
+  },
+
   async getUserUsage(userId: string, filters?: UsageFilters): Promise<{
     records: UsageRecord[]
     stats: UsageStats
@@ -505,6 +543,10 @@ export const usageApi = {
     model?: string
     provider?: string
     api_format?: string  // API 格式筛选（如 openai:chat, claude:messages）
+    request_type?: string // 请求语义类型，空值表示不限制
+    request_status?: UsageRecordLifecycleFilter // 生命周期，与传输和调度条件同时生效
+    transport?: UsageRecordTransportFilter // 客户端可见传输方式
+    attempt?: UsageRecordAttemptFilter // 是否发生重试或转移
     status?: UsageRecordStatusFilter
     client_family?: string
     hide_unknown?: boolean
@@ -538,6 +580,10 @@ export const usageApi = {
     model?: string
     provider?: string
     api_format?: string
+    request_type?: string // 请求语义类型，空值表示不限制
+    request_status?: UsageRecordLifecycleFilter // 生命周期，与传输和调度条件同时生效
+    transport?: UsageRecordTransportFilter // 客户端可见传输方式
+    attempt?: UsageRecordAttemptFilter // 是否发生重试或转移
     status?: UsageRecordStatusFilter
     client_family?: string
     hide_unknown?: boolean

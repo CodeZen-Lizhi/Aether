@@ -7,6 +7,7 @@ const {
   getUsageByModelMock,
   getUsageByProviderMock,
   getUsageByApiFormatMock,
+  getUsageByRequestTypeMock,
 } = vi.hoisted(() => ({
   getAllUsageRecordsMock: vi.fn(),
   getAllUsageRecordTotalMock: vi.fn(),
@@ -14,6 +15,7 @@ const {
   getUsageByModelMock: vi.fn(),
   getUsageByProviderMock: vi.fn(),
   getUsageByApiFormatMock: vi.fn(),
+  getUsageByRequestTypeMock: vi.fn(),
 }))
 
 vi.mock('@/api/usage', () => ({
@@ -24,6 +26,7 @@ vi.mock('@/api/usage', () => ({
     getUsageByModel: getUsageByModelMock,
     getUsageByProvider: getUsageByProviderMock,
     getUsageByApiFormat: getUsageByApiFormatMock,
+    getUsageByRequestType: getUsageByRequestTypeMock,
   },
 }))
 
@@ -90,6 +93,7 @@ describe('useUsageData', () => {
     getUsageByModelMock.mockResolvedValue([])
     getUsageByProviderMock.mockResolvedValue([])
     getUsageByApiFormatMock.mockResolvedValue([])
+    getUsageByRequestTypeMock.mockResolvedValue([])
   })
 
   it.each(['completed', 'failed'] as const)('keeps retry polls active until the logical request is %s', async (finalStatus) => {
@@ -212,6 +216,36 @@ describe('useUsageData', () => {
       status: 'websocket',
       include_total: false,
     }))
+  })
+
+  it('sends independent dimension filters and loads request-type options', async () => {
+    getUsageByRequestTypeMock.mockResolvedValueOnce([
+      { request_type: 'compact', request_count: 2 },
+      { request_type: 'chat', request_count: 8 },
+    ])
+    const { loadRecords, loadStats, availableRequestTypes } = useUsageData()
+    const dateRange = { preset: 'today', tz_offset_minutes: 0 }
+
+    await loadRecords(
+      { page: 1, pageSize: 20 },
+      {
+        request_type: 'compact',
+        request_status: 'failed',
+        transport: 'stream',
+        attempt: 'retry',
+      },
+      dateRange,
+    )
+    await loadStats(dateRange)
+
+    expect(getAllUsageRecordsMock).toHaveBeenCalledWith(expect.objectContaining({
+      request_type: 'compact',
+      request_status: 'failed',
+      transport: 'stream',
+      attempt: 'retry',
+      include_total: false,
+    }))
+    expect(availableRequestTypes.value).toEqual(['chat', 'compact'])
   })
 
   it('keeps locally resolved failure fields when a stale active record refreshes', async () => {

@@ -290,6 +290,26 @@ pub fn admin_usage_matches_status(item: &StoredRequestUsageAudit, status: Option
     }
 }
 
+/// 按客户端可见传输方式匹配记录；HTTP 流式/标准使用客户端请求语义，避免与转换后的上游模式混淆。
+pub fn admin_usage_matches_transport(
+    item: &StoredRequestUsageAudit,
+    transport: Option<&str>,
+) -> bool {
+    let Some(transport) = transport
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
+    else {
+        return true;
+    };
+    match transport.as_str() {
+        "stream" => !item.is_websocket() && admin_usage_client_is_stream(item),
+        "standard" => !item.is_websocket() && !admin_usage_client_is_stream(item),
+        "websocket" | "ws" => item.is_websocket(),
+        _ => true,
+    }
+}
+
 fn admin_usage_has_body_value(
     item: &StoredRequestUsageAudit,
     body: Option<&Value>,
@@ -2677,9 +2697,10 @@ mod tests {
     use super::{
         admin_usage_active_request_json, admin_usage_client_is_stream, admin_usage_has_body_value,
         admin_usage_has_fallback, admin_usage_is_failed, admin_usage_is_success,
-        admin_usage_matches_search, admin_usage_matches_status, admin_usage_matches_username,
-        admin_usage_record_json, admin_usage_resolve_request_capture_body,
-        admin_usage_total_tokens, admin_usage_upstream_is_stream, build_admin_usage_detail_payload,
+        admin_usage_matches_search, admin_usage_matches_status, admin_usage_matches_transport,
+        admin_usage_matches_username, admin_usage_record_json,
+        admin_usage_resolve_request_capture_body, admin_usage_total_tokens,
+        admin_usage_upstream_is_stream, build_admin_usage_detail_payload,
     };
     use aether_data_contracts::repository::usage::{StoredRequestUsageAudit, UsageBodyField};
 
@@ -2765,6 +2786,36 @@ mod tests {
         assert_eq!(record["upstream_is_stream"], true);
         assert_eq!(record["client_requested_stream"], false);
         assert_eq!(record["client_is_stream"], false);
+    }
+
+    #[test]
+    fn transport_filter_uses_client_mode_and_keeps_websocket_separate() {
+        let converted_standard = StoredRequestUsageAudit {
+            is_stream: true,
+            request_metadata: Some(json!({
+                "client_requested_stream": false,
+                "websocket_mode": false
+            })),
+            ..sample_usage("completed", Some(200), None)
+        };
+        assert!(admin_usage_matches_transport(
+            &converted_standard,
+            Some("standard")
+        ));
+        assert!(!admin_usage_matches_transport(
+            &converted_standard,
+            Some("stream")
+        ));
+
+        let websocket = StoredRequestUsageAudit {
+            request_metadata: Some(json!({
+                "client_requested_stream": true,
+                "websocket_mode": true
+            })),
+            ..sample_usage("completed", Some(200), None)
+        };
+        assert!(admin_usage_matches_transport(&websocket, Some("websocket")));
+        assert!(!admin_usage_matches_transport(&websocket, Some("stream")));
     }
 
     #[test]

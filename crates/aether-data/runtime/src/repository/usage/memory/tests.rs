@@ -2033,6 +2033,66 @@ async fn usage_audit_websocket_filter_applies_to_list_count_and_keyword_search()
 }
 
 #[tokio::test]
+async fn usage_audit_request_type_filter_applies_to_list_count_keyword_and_aggregation() {
+    let mut compact = sample_usage("req-compact", 2);
+    compact.request_type = Some("compact".to_string());
+    let repository = InMemoryUsageReadRepository::seed(vec![sample_usage("req-chat", 1), compact]);
+
+    let list_query = crate::repository::usage::UsageAuditListQuery {
+        request_type: Some(" COMPACT ".to_string()),
+        ..Default::default()
+    };
+    let listed = repository
+        .list_usage_audits(&list_query)
+        .await
+        .expect("request type list should succeed");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].request_id, "req-compact");
+    assert_eq!(
+        repository
+            .count_usage_audits(&list_query)
+            .await
+            .expect("request type count should succeed"),
+        1
+    );
+
+    let keyword_query = UsageAuditKeywordSearchQuery {
+        request_type: Some("compact".to_string()),
+        keywords: vec!["gpt-4.1".to_string()],
+        ..Default::default()
+    };
+    assert_eq!(
+        repository
+            .list_usage_audits_by_keyword_search(&keyword_query)
+            .await
+            .expect("request type keyword list should succeed")
+            .len(),
+        1
+    );
+    assert_eq!(
+        repository
+            .count_usage_audits_by_keyword_search(&keyword_query)
+            .await
+            .expect("request type keyword count should succeed"),
+        1
+    );
+
+    let aggregation = repository
+        .aggregate_usage_audits(&UsageAuditAggregationQuery {
+            created_from_unix_secs: 0,
+            created_until_unix_secs: 10,
+            group_by: UsageAuditAggregationGroupBy::RequestType,
+            limit: 10,
+            exclude_reserved_provider_labels: false,
+        })
+        .await
+        .expect("request type aggregation should succeed");
+    assert_eq!(aggregation.len(), 2);
+    assert!(aggregation.iter().any(|row| row.group_key == "chat"));
+    assert!(aggregation.iter().any(|row| row.group_key == "compact"));
+}
+
+#[tokio::test]
 async fn dashboard_and_leaderboard_total_tokens_use_effective_cache_aware_tokens() {
     let mut item = sample_usage("req-cache-aware-total", 1_711_000_000);
     item.input_tokens = 100;

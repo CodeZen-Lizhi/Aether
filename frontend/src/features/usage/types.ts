@@ -170,6 +170,26 @@ export type FilterStatusValue =
   'has_fallback' |
   'has_retry'
 
+/** 使用记录生命周期筛选；空值以 __all__ 表示不限制。 */
+export type UsageLifecycleFilterValue =
+  '__all__' |
+  'active' |
+  'failed' |
+  'cancelled'
+
+/** 使用记录客户端传输筛选；空值以 __all__ 表示不限制。 */
+export type UsageTransportFilterValue =
+  '__all__' |
+  'stream' |
+  'standard' |
+  'websocket'
+
+/** 使用记录调度路径筛选；空值以 __all__ 表示不限制。 */
+export type UsageAttemptFilterValue =
+  '__all__' |
+  'retry' |
+  'fallback'
+
 // 默认统计状态
 export function createDefaultStats(): UsageStatsState {
   return {

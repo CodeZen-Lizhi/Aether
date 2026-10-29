@@ -7,7 +7,10 @@ import type {
   ApiFormatStatsItem,
   UsageRecord,
   DateRangeParams,
-  EnhancedModelStatsItem
+  EnhancedModelStatsItem,
+  UsageAttemptFilterValue,
+  UsageLifecycleFilterValue,
+  UsageTransportFilterValue,
 } from '../types'
 import { createDefaultStats } from '../types'
 import { log } from '@/utils/logger'
@@ -36,6 +39,10 @@ export interface FilterParams {
   model?: string
   provider?: string
   api_format?: string
+  request_type?: string // 请求语义类型，空值表示不限制
+  request_status?: Exclude<UsageLifecycleFilterValue, '__all__'> // 请求生命周期
+  transport?: Exclude<UsageTransportFilterValue, '__all__'> // 客户端可见传输方式
+  attempt?: Exclude<UsageAttemptFilterValue, '__all__'> // 重试或转移调度情况
   status?: string
   client_family?: string
   hideUnknownRecords?: boolean
@@ -68,6 +75,7 @@ export function useUsageData() {
   // 可用的筛选选项（从统计数据获取，而不是从记录中）
   const availableModels = ref<string[]>([])
   const availableProviders = ref<string[]>([])
+  const availableRequestTypes = ref<string[]>([])
 
   // 增强的模型统计（包含效率分析）
   const enhancedModelStats = computed<EnhancedModelStatsItem[]>(() => {
@@ -136,6 +144,7 @@ export function useUsageData() {
           apiFormatStats.value = []
           availableModels.value = []
           availableProviders.value = []
+          availableRequestTypes.value = []
         }
 
         let hadFailure = false
@@ -249,6 +258,24 @@ export function useUsageData() {
           markFailure(error)
         }
 
+        try {
+          const requestTypeData = await usageApi.getUsageByRequestType(dateRange, requestOptions)
+          if (requestId !== loadStatsRequestId) {
+            return true
+          }
+
+          availableRequestTypes.value = Array.from(new Set(
+            requestTypeData
+              .map(item => item.request_type?.trim().toLowerCase())
+              .filter((value): value is string => Boolean(value))
+          )).sort()
+        } catch (error) {
+          if (requestId !== loadStatsRequestId) {
+            return true
+          }
+          markFailure(error)
+        }
+
         return hadFailure
       }
     } catch (error: unknown) {
@@ -295,6 +322,18 @@ export function useUsageData() {
       }
       if (filters?.status) {
         params.status = filters.status
+      }
+      if (filters?.request_type) {
+        params.request_type = filters.request_type
+      }
+      if (filters?.request_status) {
+        params.request_status = filters.request_status
+      }
+      if (filters?.transport) {
+        params.transport = filters.transport
+      }
+      if (filters?.attempt) {
+        params.attempt = filters.attempt
       }
       if (filters?.api_format) {
         params.api_format = filters.api_format
@@ -634,6 +673,7 @@ export function useUsageData() {
     // 筛选选项
     availableModels,
     availableProviders,
+    availableRequestTypes,
 
     // 计算属性
     enhancedModelStats,

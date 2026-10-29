@@ -132,6 +132,28 @@ fn admin_usage_aggregation_by_api_format_json(
         .collect::<Vec<_>>())
 }
 
+/// 将请求类型聚合行转换为管理端稳定的 JSON 字段。
+fn admin_usage_aggregation_by_request_type_json(
+    rows: &[StoredUsageAuditAggregation],
+) -> serde_json::Value {
+    json!(rows
+        .iter()
+        .map(|row| {
+            json!({
+                "request_type": row.group_key,
+                "request_count": row.request_count,
+                "total_tokens": row.total_tokens,
+                "effective_input_tokens": row.effective_input_tokens,
+                "total_input_context": row.total_input_context,
+                "output_tokens": row.output_tokens,
+                "total_cost": round_to(row.total_cost_usd, 6),
+                "actual_cost": round_to(row.actual_total_cost_usd, 6),
+                "avg_response_time_ms": round_to(row.avg_response_time_ms.unwrap_or(0.0), 2),
+            })
+        })
+        .collect::<Vec<_>>())
+}
+
 pub(super) async fn build_admin_usage_aggregation_stats_response(
     state: &AdminAppState<'_>,
     request_context: &AdminRequestContext<'_>,
@@ -149,10 +171,10 @@ pub(super) async fn build_admin_usage_aggregation_stats_response(
         .to_ascii_lowercase();
     if !matches!(
         group_by.as_str(),
-        "model" | "user" | "provider" | "api_format"
+        "model" | "user" | "provider" | "api_format" | "request_type"
     ) {
         return Ok(admin_usage_bad_request_response(
-            "Invalid group_by value: must be one of model, user, provider, api_format",
+            "Invalid group_by value: must be one of model, user, provider, api_format, request_type",
         ));
     }
     let limit = match admin_usage_parse_aggregation_limit(query) {
@@ -172,6 +194,7 @@ pub(super) async fn build_admin_usage_aggregation_stats_response(
         "user" => UsageAuditAggregationGroupBy::User,
         "provider" => UsageAuditAggregationGroupBy::Provider,
         "api_format" => UsageAuditAggregationGroupBy::ApiFormat,
+        "request_type" => UsageAuditAggregationGroupBy::RequestType,
         _ => unreachable!(),
     };
     let exclude_reserved_provider_labels = matches!(
@@ -195,6 +218,7 @@ pub(super) async fn build_admin_usage_aggregation_stats_response(
         "user" => admin_usage_aggregation_by_user_json(state, &usage).await?,
         "provider" => admin_usage_aggregation_by_provider_json(&usage),
         "api_format" => admin_usage_aggregation_by_api_format_json(&usage),
+        "request_type" => admin_usage_aggregation_by_request_type_json(&usage),
         _ => unreachable!(),
     };
     Ok(Json(response).into_response())

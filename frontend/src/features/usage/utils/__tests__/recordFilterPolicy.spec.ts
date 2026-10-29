@@ -2,8 +2,29 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isUserLocalOnlyRecordStatus,
+  matchesUsageLiveFilters,
   shouldUseServerUserRecordFilters,
 } from '../recordFilterPolicy'
+import type { UsageRecord } from '../../types'
+
+function buildUsageRecord(overrides: Partial<UsageRecord> = {}): UsageRecord {
+  return {
+    id: 'usage-1',
+    model: 'gpt-5',
+    request_type: 'compact',
+    input_tokens: 1,
+    output_tokens: 1,
+    total_tokens: 2,
+    cost: 0.01,
+    is_stream: true,
+    client_requested_stream: true,
+    upstream_is_stream: true,
+    status: 'failed',
+    has_retry: true,
+    created_at: '2026-10-29T00:00:00Z',
+    ...overrides,
+  }
+}
 
 describe('normal-user usage record filter policy', () => {
   it.each(['has_retry', 'has_fallback'] as const)(
@@ -32,6 +53,50 @@ describe('normal-user usage record filter policy', () => {
       search: '   ',
       apiFormat: '__all__',
       status: '__all__',
+    })).toBe(false)
+  })
+
+  it('combines request type, lifecycle, transport and attempt filters', () => {
+    const matching = buildUsageRecord()
+    expect(matchesUsageLiveFilters(matching, {
+      requestType: 'compact',
+      requestStatus: 'failed',
+      transport: 'stream',
+      attempt: 'retry',
+    })).toBe(true)
+    expect(matchesUsageLiveFilters(matching, {
+      requestType: 'chat',
+      requestStatus: 'failed',
+      transport: 'stream',
+      attempt: 'retry',
+    })).toBe(false)
+    expect(matchesUsageLiveFilters(matching, {
+      requestType: 'compact',
+      requestStatus: 'failed',
+      transport: 'standard',
+      attempt: 'retry',
+    })).toBe(false)
+  })
+
+  it('uses the client-visible transport mode for converted HTTP requests', () => {
+    const converted = buildUsageRecord({
+      request_type: 'chat',
+      status: 'completed',
+      client_requested_stream: false,
+      upstream_is_stream: true,
+      has_retry: false,
+    })
+    expect(matchesUsageLiveFilters(converted, {
+      requestType: '__all__',
+      requestStatus: '__all__',
+      transport: 'standard',
+      attempt: '__all__',
+    })).toBe(true)
+    expect(matchesUsageLiveFilters(converted, {
+      requestType: '__all__',
+      requestStatus: '__all__',
+      transport: 'stream',
+      attempt: '__all__',
     })).toBe(false)
   })
 })

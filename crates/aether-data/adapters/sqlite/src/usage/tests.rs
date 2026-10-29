@@ -1886,6 +1886,131 @@ async fn sqlite_usage_websocket_filter_applies_to_list_count_and_keyword_search(
 }
 
 #[tokio::test]
+async fn sqlite_usage_request_type_filter_applies_to_list_count_keyword_and_aggregation() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("sqlite pool should connect");
+    run_migrations(&pool)
+        .await
+        .expect("sqlite migrations should run");
+    seed_stats_targets(&pool).await;
+
+    let writer = SqliteUsageWriteRepository::new(pool.clone());
+    writer
+        .upsert(sample_usage("request-chat", "completed", "settled", 1_000))
+        .await
+        .expect("chat usage should upsert");
+    let mut compact = sample_usage("request-compact", "completed", "settled", 1_001);
+    compact.request_type = Some("compact".to_string());
+    writer
+        .upsert(compact)
+        .await
+        .expect("compact usage should upsert");
+    let mut legacy_blank = sample_usage("request-legacy-blank", "completed", "settled", 1_002);
+    legacy_blank.request_type = Some("   ".to_string());
+    writer
+        .upsert(legacy_blank)
+        .await
+        .expect("legacy blank usage should upsert");
+
+    let reader = SqliteUsageReadRepository::new(pool);
+    let list_query = UsageAuditListQuery {
+        request_type: Some(" COMPACT ".to_string()),
+        ..UsageAuditListQuery::default()
+    };
+    let listed = reader
+        .list_usage_audits(&list_query)
+        .await
+        .expect("request type list should load");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].request_id, "request-compact");
+    assert_eq!(
+        reader
+            .count_usage_audits(&list_query)
+            .await
+            .expect("request type count should load"),
+        1
+    );
+
+    let keyword_query = UsageAuditKeywordSearchQuery {
+        request_type: Some("compact".to_string()),
+        keywords: vec!["model-1".to_string()],
+        ..UsageAuditKeywordSearchQuery::default()
+    };
+    assert_eq!(
+        reader
+            .list_usage_audits_by_keyword_search(&keyword_query)
+            .await
+            .expect("request type keyword list should load")
+            .len(),
+        1
+    );
+    assert_eq!(
+        reader
+            .count_usage_audits_by_keyword_search(&keyword_query)
+            .await
+            .expect("request type keyword count should load"),
+        1
+    );
+
+    let unknown_query = UsageAuditListQuery {
+        request_type: Some("unknown".to_string()),
+        ..UsageAuditListQuery::default()
+    };
+    let unknown_listed = reader
+        .list_usage_audits(&unknown_query)
+        .await
+        .expect("unknown request type list should load");
+    assert_eq!(unknown_listed.len(), 1);
+    assert_eq!(unknown_listed[0].request_id, "request-legacy-blank");
+    assert_eq!(
+        reader
+            .count_usage_audits(&unknown_query)
+            .await
+            .expect("unknown request type count should load"),
+        1
+    );
+
+    let unknown_keyword_query = UsageAuditKeywordSearchQuery {
+        request_type: Some("unknown".to_string()),
+        keywords: vec!["model-1".to_string()],
+        ..UsageAuditKeywordSearchQuery::default()
+    };
+    assert_eq!(
+        reader
+            .list_usage_audits_by_keyword_search(&unknown_keyword_query)
+            .await
+            .expect("unknown request type keyword list should load")
+            .len(),
+        1
+    );
+    assert_eq!(
+        reader
+            .count_usage_audits_by_keyword_search(&unknown_keyword_query)
+            .await
+            .expect("unknown request type keyword count should load"),
+        1
+    );
+
+    let aggregation = reader
+        .aggregate_usage_audits(&UsageAuditAggregationQuery {
+            created_from_unix_secs: 0,
+            created_until_unix_secs: 2_000,
+            group_by: UsageAuditAggregationGroupBy::RequestType,
+            limit: 10,
+            exclude_reserved_provider_labels: false,
+        })
+        .await
+        .expect("request type aggregation should load");
+    assert_eq!(aggregation.len(), 3);
+    assert!(aggregation.iter().any(|row| row.group_key == "chat"));
+    assert!(aggregation.iter().any(|row| row.group_key == "compact"));
+    assert!(aggregation.iter().any(|row| row.group_key == "unknown"));
+}
+
+#[tokio::test]
 async fn sqlite_usage_daily_heatmap_reads_imported_daily_aggregates() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)

@@ -1000,6 +1000,8 @@ pub struct UsageAuditListQuery {
     pub provider_name: Option<String>,
     pub model: Option<String>,
     pub api_format: Option<String>,
+    /// 请求语义类型；空值表示不限制，`unknown` 同时匹配缺失值和原始 unknown。
+    pub request_type: Option<String>,
     pub client_family: Option<String>,
     pub exclude_unknown_model_or_provider: bool,
     pub statuses: Option<Vec<String>>,
@@ -1020,6 +1022,8 @@ pub struct UsageAuditKeywordSearchQuery {
     pub provider_name: Option<String>,
     pub model: Option<String>,
     pub api_format: Option<String>,
+    /// 请求语义类型；空值表示不限制，`unknown` 同时匹配缺失值和原始 unknown。
+    pub request_type: Option<String>,
     pub client_family: Option<String>,
     pub exclude_unknown_model_or_provider: bool,
     pub statuses: Option<Vec<String>>,
@@ -1042,9 +1046,15 @@ pub struct UsageAuditKeywordSearchQuery {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageAuditAggregationGroupBy {
+    /// 按模型名称聚合。
     Model,
+    /// 按供应商身份聚合；缺少可靠身份时回退到供应商名称。
     Provider,
+    /// 按 API 格式聚合。
     ApiFormat,
+    /// 按请求语义类型聚合；缺失或空白类型归入 `unknown`。
+    RequestType,
+    /// 按用户标识聚合。
     User,
 }
 
