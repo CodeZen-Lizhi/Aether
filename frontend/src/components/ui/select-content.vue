@@ -1,5 +1,5 @@
 <template>
-  <SelectPortal :disabled="shouldDisablePortal">
+  <SelectPortal :disabled="disablePortal">
     <SelectContentPrimitive
       v-bind="$attrs"
       :class="contentClass"
@@ -50,7 +50,6 @@ import {
 import { Search } from 'lucide-vue-next'
 import {
   computed,
-  inject,
   nextTick,
   onMounted,
   onUnmounted,
@@ -60,13 +59,13 @@ import {
 } from 'vue'
 import Input from './input.vue'
 import { cn } from '@/lib/utils'
-import { DIALOG_CONTEXT_KEY } from './dialog/context'
 import {
   SELECT_SEARCH_CONTEXT_KEY,
   type RegisteredSelectItem,
 } from './select-search-context'
 import { matchesSearchQuery, preloadPinyin } from '@/utils/search'
 
+/** 共用下拉菜单的定位、挂载和搜索配置。 */
 interface Props {
   class?: string
   position?: 'item-aligned' | 'popper'
@@ -74,6 +73,7 @@ interface Props {
   sideOffset?: number
   align?: 'start' | 'center' | 'end'
   alignOffset?: number
+  /** 默认挂载到 body，避开弹窗容器查询的坐标系和滚动裁切；仅需原位渲染时显式启用。 */
   disablePortal?: boolean
   searchable?: boolean
   searchThreshold?: number
@@ -87,16 +87,12 @@ const props = withDefaults(defineProps<Props>(), {
   sideOffset: 4,
   align: undefined,
   alignOffset: undefined,
-  disablePortal: undefined,
+  disablePortal: false,
   searchable: true,
   searchThreshold: 8,
   searchPlaceholder: '输入关键词搜索...',
 })
 
-const isInsideDialog = inject(DIALOG_CONTEXT_KEY, false)
-const shouldDisablePortal = computed(
-  () => props.disablePortal ?? isInsideDialog,
-)
 const searchQuery = ref('')
 const searchInputRef = ref<InstanceType<typeof Input> | null>(null)
 const registeredItems = ref<Record<string, RegisteredSelectItem>>({})
