@@ -63,6 +63,12 @@
 
 **Verification**: `provider-key-concurrent_limit.spec.ts` 验证新增和编辑表单不渲染退役控件且更新载荷不发送旧字段；`gateway_ignores_retired_auto_fetch_fields_when_*` 验证旧字段被忽略、响应不再暴露且不请求上游；架构测试验证手动模型查询保留、自动拉取运行时不复存在。
 
+### Convention: Sub2API Refresh Token 获取命令支持复制
+
+**What**: `ProviderAuthDialog.vue` 的 Sub2API `refresh_token` 字段将获取命令独立显示为可换行代码，右侧提供带名称和悬停提示的复制图标按钮。点击通过现有 `useClipboard` 复制 `localStorage.getItem('refresh_token')` 字符串，并沿用复制成功、失败反馈；不执行该命令、不读取当前应用令牌。其他认证字段保留原帮助文本。
+
+**Verification**: 实际点击后粘贴，内容必须只包含完整命令；模拟剪贴板拒绝时提示失败。900×640、1024×768、1440×900、1920×1080、390×844 下命令和 44px 复制按钮不得相互覆盖或造成横向溢出，英文模式翻译按钮与说明。
+
 ---
 
 ## Convention: i18n 文案机制（中文源文案 + 映射字典）

@@ -233,9 +233,31 @@
                     @update:model-value="handleFieldChange(field.key, $event)"
                   />
 
+                  <div
+                    v-if="selectedArchitectureId === 'sub2api' && field.key === 'refresh_token'"
+                    class="space-y-1"
+                  >
+                    <p class="text-xs text-muted-foreground">
+                      在站点的浏览器控制台执行：
+                    </p>
+                    <div class="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/30 pl-3">
+                      <code class="min-w-0 flex-1 break-all py-2 text-xs">{{ refreshTokenCommand }}</code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        class="shrink-0 rounded-md"
+                        title="复制命令"
+                        aria-label="复制命令"
+                        @click="copyToClipboard(refreshTokenCommand)"
+                      >
+                        <Copy class="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
                   <!-- 帮助文本 -->
                   <p
-                    v-if="field.helpText"
+                    v-else-if="field.helpText"
                     class="text-xs text-muted-foreground"
                   >
                     {{ field.helpText }}
@@ -290,7 +312,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { KeyRound } from 'lucide-vue-next'
+import { Copy, KeyRound } from 'lucide-vue-next'
 import {
   Dialog,
   Button,
@@ -314,6 +336,7 @@ import {
 } from '@/api/providerOps'
 import { parseApiError } from '@/utils/errorParser'
 import { useToast } from '@/composables/useToast'
+import { useClipboard } from '@/composables/useClipboard'
 import { useConfirm } from '@/composables/useConfirm'
 import type { AuthTemplateFieldGroup } from '../auth-templates/types'
 import {
@@ -348,6 +371,9 @@ function isSensitiveField(key: string): boolean {
 }
 
 const { success: showSuccess, error: showError } = useToast()
+const { copyToClipboard } = useClipboard()
+/** 复制给用户在上游站点控制台执行的命令，不读取当前应用的令牌。 */
+const refreshTokenCommand = "localStorage.getItem('refresh_token')"
 const { confirmDanger } = useConfirm()
 const proxyNodeSelectRef = ref<InstanceType<typeof ProxyNodeSelect> | null>(null)
 const proxyNodesStore = useProxyNodesStore()

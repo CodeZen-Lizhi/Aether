@@ -933,6 +933,7 @@ const legacyExactEnglishMessages: Record<string, string> = {
   '重新生成': 'Regenerate',
   '生成命令': 'Generate command',
   '复制命令': 'Copy command',
+  '在站点的浏览器控制台执行：': 'Run in the site browser console:',
   '输入节点名称后点击“生成命令”': 'Enter a node name and click "Generate command"',
   '脚本会自动安装或更新代理程序，并保留已有配置。': 'The script installs or updates the proxy program and preserves existing configuration.',
   '支持一行一个，或使用英文逗号分隔。URL 中的用户名和密码会自动拆分到手动添加接口，节点名称自动使用主机和端口。': 'Supports one entry per line or comma-separated entries. Usernames and passwords in URLs are split into the manual add API automatically, and node names use host and port.',
