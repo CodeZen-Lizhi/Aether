@@ -1,3 +1,4 @@
 node_modules/
+signing.local.json
 src-tauri/binaries/
 src-tauri/gen/

@@ -1,6 +1,6 @@
 {
   "name": "aether-desktop",
-  "version": "0.1.77",
+  "version": "0.1.80",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "build:verified": "node scripts/verify-delivery.mjs --build",
     "verify:delivery": "node scripts/verify-delivery.mjs",
     "prepare:desktop": "node scripts/prepare.mjs",
+    "signing:setup": "node scripts/local-signing.mjs",
     "tauri": "tauri",
     "test": "node --test scripts/*.test.mjs"
   },

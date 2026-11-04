@@ -28,7 +28,7 @@ async function entrypointFixture(t) {
   const { root, desktop } = await fixture(t)
   const scripts = path.join(desktop, 'scripts')
   await mkdir(scripts)
-  for (const file of ['desktop.mjs', 'prepare.mjs', 'release-version.mjs']) {
+  for (const file of ['desktop.mjs', 'local-signing.mjs', 'prepare.mjs', 'release-version.mjs']) {
     await copyFile(new URL(file, import.meta.url), path.join(scripts, file))
   }
   // Run the real entrypoints and version allocator, replacing only expensive build stages.
@@ -116,6 +116,8 @@ test('concurrent builds are excluded and a failed attempt keeps its version but 
 
 test('build entrypoint holds its lock and preserves flags before overriding signing versions', async t => {
   const { root, desktop, launch, stages } = await entrypointFixture(t)
+  const localSigning = path.join(desktop, 'signing.local.json')
+  await writeFile(localSigning, JSON.stringify({ bundle: { macOS: { signingIdentity: 'Aether Local Signing' } } }))
   const signing = JSON.stringify({ version: '0.1.0', bundle: { macOS: { bundleVersion: '0.1.0', signingIdentity: '-' } } })
   const args = ['--target', 'x86_64-apple-darwin', '--debug', '--config', signing, '--no-bundle']
   const { stdout } = await launch(['build', ...args])
@@ -128,7 +130,10 @@ test('build entrypoint holds its lock and preserves flags before overriding sign
   }
   assert.equal(prepared.build.debug, true)
   assert.equal(prepared.build.target, 'x86_64-apple-darwin')
-  assert.deepEqual(tauri.args.slice(0, -4), ['build', '--ci', '--debug', '--target', 'x86_64-apple-darwin', '--config', signing, '--no-bundle'])
+  assert.deepEqual(tauri.args.slice(0, -4), [
+    'build', '--ci', '--debug', '--target', 'x86_64-apple-darwin',
+    '--config', localSigning, '--config', signing, '--no-bundle',
+  ])
   assert.deepEqual(tauri.args.slice(-4), [
     '--config', JSON.stringify({ version: '0.1.1', bundle: { macOS: { bundleVersion: '0.1.1' } } }), '--', '--locked',
   ])

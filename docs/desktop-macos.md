@@ -96,7 +96,15 @@ npm --prefix apps/aether-desktop run build -- --debug --bundles app
 
 ## 签名与发布
 
-默认配置使用本地 ad-hoc 签名（`signingIdentity: "-"`），可用于本机安装和验证，**没有 Apple 公证**。通过网络分发后的 Gatekeeper 行为与已公证应用不同。对外分发需要用户自己的 Developer ID 证书和 Apple 公证凭据。
+未初始化本地稳定签名时，默认配置使用 ad-hoc 签名（`signingIdentity: "-"`）；初始化后使用本机自签名身份。两者都可用于本机安装和验证，但**没有 Apple 公证**，通过网络分发后的 Gatekeeper 行为与已公证应用不同。对外分发需要用户自己的 Developer ID 证书和 Apple 公证凭据。
+
+ad-hoc 签名的指定要求包含每次构建都会变化的代码哈希。应用从登录钥匙串读取网关密钥时，macOS 会把重新构建的版本视为另一个应用并再次要求输入登录密码。为避免反复授权，先在本机执行一次：
+
+```bash
+npm --prefix apps/aether-desktop run signing:setup
+```
+
+该命令只在登录钥匙串创建并复用名为 `Aether Local Signing` 的自签名代码签名身份，同时写入不纳入 Git 的 `apps/aether-desktop/signing.local.json`；`build` 会自动加载该配置。它不需要管理员权限，也不会修改现有钥匙串密钥；首次创建私钥时系统可能要求允许 `codesign` 使用它，这是用户钥匙串授权，不是管理员密码。首次用新身份启动时，允许 Aether 访问钥匙串并选择“始终允许”，之后使用同一身份的重新安装不再重复询问。删除或重新创建该证书会改变签名根，导致下一次启动重新授权。
 
 可在本机另建配置文件覆盖签名身份，再传给构建脚本：
 
@@ -107,6 +115,8 @@ npm --prefix apps/aether-desktop run build -- --debug --bundles app
 ```bash
 npm --prefix apps/aether-desktop run build -- --config /absolute/path/signing.json
 ```
+
+显式传入的 `--config` 优先于本地 `signing.local.json`，因此 Developer ID 分发签名不会被本地身份覆盖。
 
 公证环境变量按 [Tauri 官方 macOS 签名文档](https://v2.tauri.app/distribute/sign/macos/) 配置，凭据不写入仓库。本次不包含公开发布、自动更新服务或 Mac App Store 上架。
 

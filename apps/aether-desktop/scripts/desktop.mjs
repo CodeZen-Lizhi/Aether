@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { desktop, options, prepare, root, run } from './build-common.mjs'
+import { hasLocalSigningConfig, LOCAL_SIGNING_CONFIG } from './local-signing.mjs'
 import { bumpReleaseVersion, withBuildLock } from './release-version.mjs'
 
 try {
@@ -19,6 +20,10 @@ try {
       if (build.debug) tauri.push('--debug')
     }
     if (build.target) tauri.push('--target', build.target)
+    // 本地稳定签名先于用户配置加载，显式传入的签名配置仍可覆盖它。
+    if (mode === 'build' && (await hasLocalSigningConfig())) {
+      tauri.push('--config', LOCAL_SIGNING_CONFIG)
+    }
     tauri.push(...build.tauri)
     // Signing overrides must not silently pin an older application/build version.
     if (version) tauri.push('--config', JSON.stringify({ version, bundle: { macOS: { bundleVersion: version } } }))
