@@ -29,3 +29,11 @@
 - DropdownMenu、Popover、MultiSelect、PlatformSelect 的隔离代表样例，在 390、900、1920px 下共 12 个场景未出现同类坐标偏移；这部分仅检查锚点关系，不证明所有业务调用方的裁切、窗口边界或完整交互。PlatformSelect 当前无业务调用。
 - 全部 Select 的显式 Portal 配置检查完毕，只有明确启用 Portal 的调用方，没有 `disablePortal=true` 的业务入口；本轮未逐页遍历全部业务入口。
 - 扩展后的回归脚本 ESLint 与 `git diff --check` 通过。桌面 WKWebView 仍未实测，安装中的旧版本不会因源码修复自动更新。
+
+## 最新代码打包
+
+- 按用户要求，以提交 `79394d582` 和当前工作区已有稳定签名改动构建；桌面版本按原脚本从 0.1.79 自动递增为 0.1.80。
+- `build:verified` 四项门禁通过：前端类型检查、20 项桌面脚本测试、包内网关隔离生命周期、签名及镜像内容校验。私有证据位于 `.cache/delivery/2026-10-30-select-release/run-1/`。
+- DMG：`target/release/bundle/dmg/Aether_0.1.80_aarch64.dmg`；APP：`target/release/bundle/macos/Aether.app`。
+- DMG SHA-256：`f1ee2610063b78e1046d62838f48a91c265743b7795a6b6ab059102673c894de`。
+- Apple Silicon，最低 macOS 14，使用已有 `Aether Local Signing` 本地稳定签名，无 Apple 公证。未安装替换、未启动原生窗口，版本文件和本节记录尚未提交。
