@@ -11,6 +11,97 @@ use super::{
 };
 
 #[test]
+/// 在隔离子进程继承环境代理，真实请求后重读 usage，验证代理记录及 NO_PROXY 直连。
+fn inherited_proxy_is_recorded_and_no_proxy_bypasses_it_on_real_route() {
+    run("inherited-proxy-record", async {
+        use aether_data_contracts::repository::usage::UsageReadRepository;
+        if let Ok(mode) = std::env::var("AETHER_TEST_INHERITED_PROXY_MODE") {
+            let fixture = Fixture::new(
+                "fixed_order",
+                1,
+                false,
+                [1.0, 1.0],
+                90_000,
+                [vec![Reply::Success], vec![]],
+            )
+            .await;
+            if mode == "proxy" {
+                let mut endpoint = fixture
+                    .catalog
+                    .list_endpoints_by_ids(&["endpoint-0".into()])
+                    .await
+                    .unwrap()
+                    .pop()
+                    .unwrap();
+                endpoint.base_url = "http://provider.invalid/v1".into();
+                fixture.catalog.update_endpoint(&endpoint).await.unwrap();
+            }
+            let request_id = format!("inherited-proxy-record-{mode}");
+            let response = fixture
+                .request_body_with_trace_id(
+                    "/v1/chat/completions",
+                    json!({"model":"gpt-5","messages":[{"role":"user","content":"fixture"}]}),
+                    &request_id,
+                )
+                .await;
+            assert_success(response).await;
+            let usage = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Some(usage) =
+                        fixture.usage.find_by_request_id(&request_id).await.unwrap()
+                    {
+                        if usage.status == "completed" {
+                            break usage;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            let metadata = usage.request_metadata.unwrap();
+            if mode == "proxy" {
+                assert_eq!(metadata["proxy"]["source"], "inherited");
+                assert_eq!(metadata["proxy"]["node_name"], "继承环境代理");
+                assert_eq!(
+                    metadata["proxy"]["url"],
+                    std::env::var("HTTP_PROXY").unwrap()
+                );
+            } else {
+                assert!(metadata.get("proxy").is_none_or(serde_json::Value::is_null));
+                assert_eq!(fixture.targets(), [0]);
+            }
+            return;
+        }
+        let app = axum::Router::new().route("/v1/chat/completions", axum::routing::post(|| async {
+            axum::Json(json!({"id":"chatcmpl-proxy","object":"chat.completion","created":1,
+                "model":"gpt-5","choices":[{"index":0,"message":{"role":"assistant","content":"local-success"},"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}))
+        }));
+        let (proxy_url, server) = crate::tests::start_server(app).await;
+        for mode in ["proxy", "bypass"] {
+            let proxy_url = proxy_url.clone();
+            let output = tokio::task::spawn_blocking(move || {
+                let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+                command.args(["--exact", "tests::scheduler_failover::http_failures::inherited_proxy_is_recorded_and_no_proxy_bypasses_it_on_real_route", "--nocapture"]);
+                for name in ["HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","http_proxy","https_proxy","all_proxy","NO_PROXY","no_proxy"] { command.env_remove(name); }
+                command.env("AETHER_TEST_INHERITED_PROXY_MODE", mode)
+                    .env("HTTP_PROXY", proxy_url)
+                    .env("NO_PROXY", if mode == "bypass" { "127.0.0.1,::1" } else { "" })
+                    .output().unwrap()
+            }).await.unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        server.abort();
+    });
+}
+
+#[test]
 fn service_unavailable_retry_after_is_shared_with_later_requests() {
     run("503-shared-retry-after", async {
         let fixture = Fixture::new(

@@ -43,6 +43,16 @@ HTTP clients consume `ProxySnapshot.url`; WebSocket connections use
   This applies to ordinary and browser-profile HTTP and WebSocket clients.
 - Do not rewrite one SOCKS scheme to the other. Both are intentional supported
   configurations; a different upstream DNS policy is not evidence of a local bug.
+- AI request planners resolve inherited environment proxies against the final upstream
+  URL, after explicit key/endpoint/provider/Aether system-node selection. Reuse the
+  HTTP dependency's environment matcher, including protocol selection and `NO_PROXY`;
+  this does not enable reading macOS system proxy settings.
+- Execution and request metadata share the selected proxy snapshot. Inherited proxies
+  use `proxy.source = "inherited"`, label `继承环境代理`, and a credential-free URL.
+  Preserve HTTP/SOCKS authentication only in the execution snapshot. A no-match
+  snapshot has `enabled = false`: clients must disable automatic proxy discovery,
+  cache it separately from legacy implicit inheritance, omit its proxy trace node,
+  and treat it as direct for TLS diagnostics, trusted-origin classification and WS binding.
 
 ## Validation and Error Matrix
 
@@ -72,6 +82,11 @@ HTTP clients consume `ProxySnapshot.url`; WebSocket connections use
   entry points against a loopback SOCKS fixture. Assert CONNECT address semantics,
   port, HTTP Host/path and successful HTTP/WS responses for both schemes and both
   client profiles. Never use a real provider or production proxy credential.
+- `state::proxy::tests::inherited_request_proxy*`: protocol/NO_PROXY/explicit
+  precedence, inherited authentication round-trip through the real transport, and
+  credential-free trace. `tests::scheduler_failover::http_failures::inherited_proxy*`
+  uses isolated child-process proxy environments, real authenticated local routes
+  and usage readback to verify inherited proxy recording and direct bypass.
 
 With the locked reqwest 0.12.28/hyper-util 0.1.20, a locally resolved IPv6 address
 can use SOCKS domain encoding such as `[::1]`. The DNS assertion accepts only a

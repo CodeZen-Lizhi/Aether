@@ -200,6 +200,7 @@ pub(crate) fn websocket_handshake_headers(
     Ok(headers)
 }
 
+/// 按决策快照构建 WebSocket 客户端，显式直连不再读取环境代理。
 fn build_websocket_client(
     decision: &AiExecutionDecision,
     errors: UpstreamWebSocketErrorCodes,
@@ -217,6 +218,13 @@ fn build_websocket_client(
     }
 
     let mut builder = wreq::Client::builder();
+    if decision
+        .proxy
+        .as_ref()
+        .is_some_and(|proxy| proxy.enabled == Some(false))
+    {
+        builder = builder.no_proxy();
+    }
     if let Some(connect_ms) = timeouts.as_ref().and_then(|timeouts| timeouts.connect_ms) {
         builder = builder.connect_timeout(Duration::from_millis(connect_ms));
     }

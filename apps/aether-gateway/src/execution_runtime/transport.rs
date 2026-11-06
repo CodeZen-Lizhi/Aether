@@ -112,11 +112,14 @@ type DirectHyperH2cSender = HyperH2cSendRequest<DirectHyperH2cRequestBody>;
 type DirectHyperH2cSenderCacheCell = TokioOnceCell<Arc<DirectHyperH2cSenderCacheEntry>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// 以连接配置和有效代理状态隔离 HTTP 客户端池，防止直连复用继承代理的客户端。
 struct DirectReqwestClientCacheKey {
     upstream_origin: Option<String>,
     pool_partition: Option<String>,
     connect_timeout_ms: Option<u64>,
     proxy_url: Option<String>,
+    /// 本次已固定直连；与默认继承环境代理的客户端分开缓存。
+    disable_inherited_proxy: bool,
     follow_redirects: bool,
     http1_only: bool,
     accept_invalid_certs: bool,
@@ -1935,6 +1938,7 @@ async fn collect_wreq_stream_body(
     Ok((Bytes::from(body_bytes), first_byte_ms))
 }
 
+/// 仅为实际直连的明文 HTTP/2 请求启用快速路径，禁用代理的快照仍属于直连。
 fn direct_h2c_fast_path_applies(
     plan: &ExecutionPlan,
     transport_controls: ExecutionTransportControls,
@@ -1943,7 +1947,10 @@ fn direct_h2c_fast_path_applies(
         || !plan.stream
         || transport_controls.http1_only
         || transport_controls.accept_invalid_certs
-        || plan.proxy.is_some()
+        || plan
+            .proxy
+            .as_ref()
+            .is_some_and(|proxy| proxy.enabled != Some(false))
         || !transport_profile_h2c_prior_knowledge(plan.transport_profile.as_ref())
     {
         return false;
@@ -3148,6 +3155,7 @@ fn resolve_local_tunnel_node_id(state: &AppState, proxy: Option<&ProxySnapshot>)
     state.tunnel.has_local_proxy(&node_id).then_some(node_id)
 }
 
+/// 构建本次传输客户端；显式直连与自动继承代理使用不同缓存项。
 fn build_client(
     request_url: &str,
     key_id: &str,
@@ -3158,7 +3166,7 @@ fn build_client(
 ) -> Result<reqwest::Client, ExecutionRuntimeTransportError> {
     validate_reqwest_transport_profile(transport_profile)?;
     let resolved_proxy_url = resolve_proxy_url(proxy)?;
-    let cache_key = direct_reqwest_client_cache_key(
+    let mut cache_key = direct_reqwest_client_cache_key(
         request_url,
         key_id,
         timeouts,
@@ -3166,6 +3174,7 @@ fn build_client(
         transport_profile,
         transport_controls,
     );
+    cache_key.disable_inherited_proxy = proxy.is_some_and(|proxy| proxy.enabled == Some(false));
     cached_direct_reqwest_client(cache_key)
 }
 
@@ -3217,6 +3226,7 @@ pub(crate) fn prewarm_direct_reqwest_client_cache_for_plan(plan: &ExecutionPlan)
     }
 }
 
+/// 按实际执行的代理快照预热，显式直连不复用继承代理的缓存项。
 fn try_prewarm_direct_reqwest_client_cache_for_plan(
     plan: &ExecutionPlan,
 ) -> Result<bool, ExecutionRuntimeTransportError> {
@@ -3236,7 +3246,7 @@ fn try_prewarm_direct_reqwest_client_cache_for_plan(
     }
     validate_reqwest_transport_profile(plan.transport_profile.as_ref())?;
     let resolved_proxy_url = resolve_proxy_url(plan.proxy.as_ref())?;
-    let cache_key = direct_reqwest_client_cache_key(
+    let mut cache_key = direct_reqwest_client_cache_key(
         &plan.url,
         &plan.key_id,
         plan.timeouts.as_ref(),
@@ -3244,6 +3254,10 @@ fn try_prewarm_direct_reqwest_client_cache_for_plan(
         plan.transport_profile.as_ref(),
         transport_controls,
     );
+    cache_key.disable_inherited_proxy = plan
+        .proxy
+        .as_ref()
+        .is_some_and(|proxy| proxy.enabled == Some(false));
     prewarm_direct_reqwest_client_cache(cache_key)?;
     Ok(true)
 }
@@ -3476,6 +3490,7 @@ fn mark_direct_reqwest_client_cache_not_warming(cache_key: &DirectReqwestClientC
     }
 }
 
+/// 汇总影响客户端连接行为的缓存身份，调用方补充显式直连标记。
 fn direct_reqwest_client_cache_key(
     request_url: &str,
     key_id: &str,
@@ -3491,6 +3506,7 @@ fn direct_reqwest_client_cache_key(
         pool_partition: direct_reqwest_pool_partition(transport_profile, key_id),
         connect_timeout_ms: timeouts.and_then(|timeouts| timeouts.connect_ms),
         proxy_url,
+        disable_inherited_proxy: false,
         follow_redirects: transport_controls.follow_redirects == Some(true),
         http1_only: transport_controls.http1_only,
         accept_invalid_certs: transport_controls.accept_invalid_certs,
@@ -3668,10 +3684,14 @@ fn env_positive_usize(name: &str) -> Option<usize> {
         .filter(|value| *value > 0)
 }
 
+/// 根据缓存身份构建客户端；固定直连时关闭依赖的隐式代理读取。
 fn build_direct_reqwest_client_from_cache_key(
     cache_key: &DirectReqwestClientCacheKey,
 ) -> Result<reqwest::Client, ExecutionRuntimeTransportError> {
     let mut builder = reqwest::Client::builder();
+    if cache_key.disable_inherited_proxy {
+        builder = builder.no_proxy();
+    }
     if !cache_key.follow_redirects {
         builder = builder.redirect(Policy::none());
     }
@@ -4051,6 +4071,7 @@ pub(crate) fn direct_reqwest_client_cache_metric_samples() -> Vec<MetricSample> 
     samples
 }
 
+/// 构建浏览器指纹客户端；已固定的直连快照禁止再继承进程代理。
 pub(crate) fn build_browser_wreq_client(
     timeouts: Option<&aether_contracts::ExecutionTimeouts>,
     proxy: Option<&ProxySnapshot>,
@@ -4060,6 +4081,9 @@ pub(crate) fn build_browser_wreq_client(
 ) -> Result<wreq::Client, ExecutionRuntimeTransportError> {
     let emulation = browser_wreq_emulation_from_profile(transport_profile)?;
     let mut builder = wreq::Client::builder().emulation(emulation);
+    if proxy.is_some_and(|proxy| proxy.enabled == Some(false)) {
+        builder = builder.no_proxy();
+    }
     if transport_controls.follow_redirects == Some(true) {
         builder = builder.redirect(wreq::redirect::Policy::limited(10));
     }

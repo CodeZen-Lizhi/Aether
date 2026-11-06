@@ -128,6 +128,7 @@ pub(crate) async fn capture_chat_health_attempt(
     ))
 }
 
+/// 按真实直连状态判断官方错误可信度；显式禁用代理的快照同样属于直连。
 pub(crate) fn classify_chat_failure_for_plan(
     plan: &ExecutionPlan,
     status_code: u16,
@@ -138,7 +139,10 @@ pub(crate) fn classify_chat_failure_for_plan(
     let trusted_origin = reqwest::Url::parse(&plan.url).ok().is_some_and(|url| {
         url.scheme() == "https"
             && matches!(url.host_str(), Some("api.openai.com" | "api.anthropic.com"))
-            && plan.proxy.is_none()
+            && plan
+                .proxy
+                .as_ref()
+                .is_none_or(|proxy| proxy.enabled == Some(false))
     });
     classify_chat_failure(status_code, response_text, source, trusted_origin)
 }
@@ -1841,6 +1845,48 @@ mod tests {
             Err(err) => panic!("redis server should start: {err}"),
         }
     }
+    #[test]
+    /// 固定直连不会改变官方凭据错误的可信判断，继承代理仍不建立官方可信来源。
+    fn explicit_direct_proxy_snapshot_preserves_official_credential_failure() {
+        let mut plan = sample_plan();
+        plan.url = "https://api.openai.com/v1/chat/completions".into();
+        let body = r#"{"error":{"code":"invalid_api_key","message":"invalid API key"}}"#;
+        let expected = super::classify_chat_failure_for_plan(
+            &plan,
+            401,
+            Some(body),
+            crate::orchestration::ChatFailureSource::UpstreamResponse,
+        );
+        assert_eq!(
+            expected.penalty,
+            super::super::classifier::ChatHealthPenalty::Unavailable
+        );
+        plan.proxy = Some(aether_contracts::ProxySnapshot {
+            enabled: Some(false),
+            ..Default::default()
+        });
+        assert_eq!(
+            super::classify_chat_failure_for_plan(
+                &plan,
+                401,
+                Some(body),
+                crate::orchestration::ChatFailureSource::UpstreamResponse
+            ),
+            expected
+        );
+        plan.proxy.as_mut().unwrap().enabled = Some(true);
+        assert_ne!(
+            super::classify_chat_failure_for_plan(
+                &plan,
+                401,
+                Some(body),
+                crate::orchestration::ChatFailureSource::UpstreamResponse
+            )
+            .penalty,
+            super::super::classifier::ChatHealthPenalty::Unavailable
+        );
+    }
+
     fn sample_plan() -> ExecutionPlan {
         ExecutionPlan {
             request_id: "req-1".to_string(),

@@ -204,6 +204,7 @@ mod retry_scope_tests {
     }
 
     #[test]
+    /// OpenAI 重试维持候选顺序，并保留最后一次可信上游错误供最终回传。
     fn non_anthropic_retry_keeps_existing_candidate_order() {
         let disposition = classify_failure_disposition(
             "openai:chat",
@@ -215,7 +216,7 @@ mod retry_scope_tests {
             ai_attempt_retry_scope_from_failure_disposition(disposition),
             AiAttemptRetryScope::Candidate
         );
-        assert!(!disposition.preserve_upstream_error);
+        assert!(disposition.preserve_upstream_error);
     }
 
     #[test]

@@ -19,11 +19,15 @@ use crate::policy::{
 use crate::rules::{body_rules_are_locally_supported, header_rules_are_locally_supported};
 use crate::snapshot::GatewayProviderTransportSnapshot;
 
+/// 记录执行使用的代理快照与来源；直连不生成代理节点，地址去除凭据。
 pub fn build_request_trace_proxy_value(
     transport: Option<&GatewayProviderTransportSnapshot>,
     resolved_proxy: Option<&ProxySnapshot>,
 ) -> Option<Value> {
     let resolved_proxy = resolved_proxy?;
+    if resolved_proxy.enabled == Some(false) {
+        return None;
+    }
     let mut object = Map::new();
 
     if let Some(node_id) = trimmed_non_empty(resolved_proxy.node_id.as_deref()) {
@@ -35,7 +39,15 @@ pub fn build_request_trace_proxy_value(
     if let Some(url) = sanitize_trace_proxy_url(resolved_proxy.url.as_deref()) {
         object.insert("url".to_string(), Value::String(url));
     }
-    if let Some(source) = resolve_request_trace_proxy_source(transport, true) {
+    let inherited_source = resolved_proxy
+        .extra
+        .as_ref()
+        .and_then(|extra| extra.get("source"))
+        .and_then(Value::as_str)
+        .filter(|source| *source == "inherited");
+    if let Some(source) =
+        inherited_source.or_else(|| resolve_request_trace_proxy_source(transport, true))
+    {
         object.insert("source".to_string(), Value::String(source.to_string()));
     }
 

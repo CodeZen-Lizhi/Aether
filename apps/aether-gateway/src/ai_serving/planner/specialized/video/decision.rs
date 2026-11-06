@@ -18,6 +18,7 @@ use super::request::resolve_local_video_create_candidate_payload_parts;
 use super::support::{LocalVideoCreateCandidateAttempt, LocalVideoCreateDecisionInput};
 use super::LocalVideoCreateSpec;
 
+/// 构建候选请求，将最终上游地址对应的代理快照同时用于执行和诊断。
 pub(super) async fn maybe_build_local_video_create_decision_payload_for_candidate(
     state: &AppState,
     parts: &http::request::Parts,
@@ -48,7 +49,7 @@ pub(super) async fn maybe_build_local_video_create_decision_payload_for_candidat
         ai_local_execution_contract_for_formats(spec_metadata.api_format, spec_metadata.api_format);
     let proxy = planner_state
         .app()
-        .resolve_transport_proxy_snapshot_with_tunnel_affinity(&transport)
+        .resolve_request_proxy_snapshot(&transport, &resolved.upstream_url)
         .await;
     let transport_profile = resolve_transport_profile(&transport);
     let mut extra_fields = serde_json::Map::new();

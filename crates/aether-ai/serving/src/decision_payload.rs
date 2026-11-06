@@ -128,10 +128,12 @@ fn attach_outgoing_tls_fingerprint(
     Some(Value::Object(report_context))
 }
 
+/// 记录配置推导的出站 TLS 信息，禁用代理的快照仍按直连展示。
 fn outgoing_tls_fingerprint_value(
     transport_profile: Option<&ResolvedTransportProfile>,
     proxy: Option<&ProxySnapshot>,
 ) -> Value {
+    let proxy = proxy.filter(|proxy| proxy.enabled != Some(false));
     let via_local_proxy = proxy
         .and_then(|value| value.node_id.as_deref())
         .map(str::trim)
@@ -155,7 +157,7 @@ fn outgoing_tls_fingerprint_value(
     };
     let transport_path = if via_local_proxy {
         "aether_proxy_tunnel"
-    } else if proxy.is_some() {
+    } else if proxy.is_some_and(|proxy| proxy.enabled != Some(false)) {
         "direct_with_proxy"
     } else {
         "direct"
@@ -284,6 +286,21 @@ mod tests {
         assert_eq!(
             tls_fingerprint["outgoing"]["alpn_offered"],
             json!(["h2", "http/1.1"])
+        );
+    }
+
+    #[test]
+    /// 显式直连快照不应在 TLS 诊断中产生代理传输路径。
+    fn decision_response_records_disabled_proxy_as_direct() {
+        let mut parts = sample_parts();
+        parts.proxy = Some(ProxySnapshot {
+            enabled: Some(false),
+            ..ProxySnapshot::default()
+        });
+        let decision = build_ai_execution_decision_response(parts);
+        assert_eq!(
+            decision.report_context.unwrap()["tls_fingerprint"]["outgoing"]["transport_path"],
+            "direct"
         );
     }
 

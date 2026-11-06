@@ -23,6 +23,7 @@ use super::support::{
 use super::LocalGeminiFilesSpec;
 
 #[allow(clippy::too_many_arguments)]
+/// 构建候选请求，将最终上游地址对应的代理快照同时用于执行和诊断。
 pub(super) async fn maybe_build_local_gemini_files_decision_payload_for_candidate(
     state: &AppState,
     parts: &http::request::Parts,
@@ -65,7 +66,7 @@ pub(super) async fn maybe_build_local_gemini_files_decision_payload_for_candidat
     );
     let proxy = planner_state
         .app()
-        .resolve_transport_proxy_snapshot_with_tunnel_affinity(&transport)
+        .resolve_request_proxy_snapshot(&transport, &resolved.upstream_url)
         .await;
     let transport_profile = resolve_transport_profile(&transport);
     let mut extra_fields = serde_json::Map::new();

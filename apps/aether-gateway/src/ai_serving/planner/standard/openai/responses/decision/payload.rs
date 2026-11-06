@@ -43,10 +43,8 @@ pub(crate) async fn maybe_build_local_openai_responses_decision_payload_for_cand
     .await
 }
 
-/// Builds a candidate payload for a pinned WebSocket turn without changing
-/// the ordinary HTTP/plan-builder path. The explicit mode is carried all the
-/// way to body normalization because a JSON `type` field is not a reliable
-/// transport discriminator once body rules and conversions have run.
+/// 构建候选请求，并让最终上游地址对应的代理快照同时用于执行和诊断。
+/// WebSocket 固定轮次显式传递传输模式到请求体归一化；转换后的 type 字段不能可靠区分传输。
 pub(crate) async fn maybe_build_local_openai_responses_decision_payload_for_candidate_with_websocket_mode(
     state: &AppState,
     parts: &http::request::Parts,
@@ -111,7 +109,7 @@ pub(crate) async fn maybe_build_local_openai_responses_decision_payload_for_cand
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
     let proxy = state
-        .resolve_transport_proxy_snapshot_with_tunnel_affinity(&resolved.transport)
+        .resolve_request_proxy_snapshot(&resolved.transport, &resolved.upstream_url)
         .await;
     let transport_profile = resolved
         .transport_profile

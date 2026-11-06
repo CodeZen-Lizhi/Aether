@@ -33,6 +33,7 @@ use crate::{
 use super::request::resolve_local_standard_candidate_payload_parts;
 use super::{LocalStandardCandidateAttempt, LocalStandardDecisionInput, LocalStandardSpec};
 
+/// 构建候选请求，将最终上游地址对应的代理快照同时用于执行和诊断。
 pub(super) async fn maybe_build_local_standard_decision_payload_for_candidate(
     state: &AppState,
     parts: &http::request::Parts,
@@ -86,7 +87,7 @@ pub(super) async fn maybe_build_local_standard_decision_payload_for_candidate(
         Some(body_json)
     };
     let proxy = state
-        .resolve_transport_proxy_snapshot_with_tunnel_affinity(&resolved.transport)
+        .resolve_request_proxy_snapshot(&resolved.transport, &resolved.upstream_url)
         .await;
     let mut extra_fields = serde_json::Map::new();
     if let Some(proxy_value) =
