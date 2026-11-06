@@ -191,7 +191,10 @@
                 </SelectItem>
               </SelectContent>
             </Select>
-            <div class="w-20 shrink-0">
+            <div
+              v-if="form.multiplier_source === 'manual'"
+              class="w-20 shrink-0"
+            >
               <Input
                 id="default_rate_multiplier"
                 v-model.number="form.default_rate_multiplier"
@@ -199,12 +202,18 @@
                 min="0"
                 max="100"
                 step="0.01"
-                :disabled="form.multiplier_source === 'upstream'"
                 size="sm"
                 class="h-9 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 aria-describedby="default-rate-multiplier-help"
               />
             </div>
+            <span
+              v-else-if="editingKey?.multiplier_sync?.source === 'upstream'"
+              class="text-sm text-muted-foreground tabular-nums"
+              :aria-label="legacyT('倍率')"
+            >
+              {{ editingKey.default_rate_multiplier }}
+            </span>
           </div>
         </div>
         <div class="flex min-h-[4.5rem] flex-col justify-between gap-2 bg-background px-3 py-2.5">
@@ -417,7 +426,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  saved: [key: EndpointAPIKey]
+  /** 普通保存传回当前快照；来源操作后不传旧快照，由父级重读。 */
+  saved: [key?: EndpointAPIKey]
   /** 倍率操作持久化后通知父级重读密钥。 */
   refresh: []
 }>()
@@ -843,6 +853,7 @@ async function saveMultiplierSource(keyId: string, multiplier: number): Promise<
   }
 }
 
+/** 保存密钥及倍率来源；来源操作完成后重读，避免旧快照覆盖同步结果。 */
 async function handleSave() {
   // 必须有 providerId
   if (!props.providerId) {
@@ -911,13 +922,14 @@ async function handleSave() {
         const applied = await saveMultiplierSource(updatedKey.id, defaultRateMultiplier)
         emit('refresh')
         if (!applied) {
-          emit('saved', updatedKey)
+          emit('saved')
           emit('close')
           return
         }
       }
       success(legacyT('密钥已更新'), legacyT('成功'))
-      emit('saved', updatedKey)
+      if (sourceChanged) emit('saved')
+      else emit('saved', updatedKey)
     } else {
       // 新增模式
       const createdKey = await addProviderKey(props.providerId, {
@@ -940,7 +952,8 @@ async function handleSave() {
         || await saveMultiplierSource(createdKey.id, defaultRateMultiplier)
       if (applied) success(legacyT('密钥已添加'), legacyT('成功'))
       emit('refresh')
-      emit('saved', createdKey)
+      if (form.value.multiplier_source === 'upstream') emit('saved')
+      else emit('saved', createdKey)
       emit('close')
       return
     }

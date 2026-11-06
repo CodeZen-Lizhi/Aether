@@ -10,6 +10,10 @@
   <script type="module">
     import { createApp, h, ref } from 'vue'
     import KeyFormDialog from '/src/features/providers/components/KeyFormDialog.vue'
+    import KeyMultiplierControl from '/src/features/providers/components/KeyMultiplierControl.vue'
+    import ToastContainer from '/src/components/ToastContainer.vue'
+    import client from '/src/api/client'
+    import { getProviderKeys } from '/src/api/endpoints'
     import { createI18n, setI18nLocale } from '/src/i18n'
     import '/src/style.css'
 
@@ -17,6 +21,9 @@
     setI18nLocale(params.get('locale') === 'en' ? 'en-US' : 'zh-CN')
     const mode = ref(params.get('mode') === 'edit' ? 'edit' : 'create')
     const open = ref(params.get('closed') !== '1')
+    // 合成密钥存入当前页会话，以验证保存后重读和刷新；不访问真实 API。
+    const storageKey = 'aether-key-form-verification'
+    const savedKeys = ref(JSON.parse(sessionStorage.getItem(storageKey) || '[]'))
     const editingKey = {
       id: 'fixture-key',
       provider_id: 'fixture-provider',
@@ -35,6 +42,23 @@
       max_probe_interval_minutes: 32,
       is_active: true,
       note: '',
+    }
+    client.get = async () => ({ data: JSON.parse(sessionStorage.getItem(storageKey) || '[]') })
+    client.post = async (url, body) => {
+      if (url.endsWith('/actions/sync_multiplier')) {
+        if (params.has('fail')) return { data: { status: 'error', message: '测试上游倍率查询失败' } }
+        const keys = JSON.parse(sessionStorage.getItem(storageKey) || '[]')
+        const key = keys.find(key => key.id === body.config.key_id)
+        key.default_rate_multiplier = 0.3
+        key.multiplier_sync = { source: 'upstream', status: 'success' }
+        sessionStorage.setItem(storageKey, JSON.stringify(keys))
+        return { data: { status: 'success', data: { failed: 0 } } }
+      }
+      const key = { ...editingKey, ...body, id: 'fixture-created-' + crypto.randomUUID() }
+      const keys = JSON.parse(sessionStorage.getItem(storageKey) || '[]')
+      keys.push(key)
+      sessionStorage.setItem(storageKey, JSON.stringify(keys))
+      return { data: key }
     }
 
     // 隔离页面只使用内存数据，不触发真实密钥写入。
@@ -60,7 +84,21 @@
           existingKeys: [],
           'onUpdate:modelValue': value => { open.value = value },
           onClose: () => { open.value = false },
+          // 保留父页面先重读再应用保存快照的关键顺序，捕捉旧快照覆盖问题。
+          onSaved: async snapshot => {
+            const keys = await getProviderKeys('fixture-provider')
+            if (snapshot) {
+              const index = keys.findIndex(key => key.id === snapshot.id)
+              if (index >= 0) keys[index] = snapshot
+            }
+            savedKeys.value = keys
+          },
         }),
+        ...savedKeys.value.map(key => h('div', { 'data-saved-key': key.id }, [
+          h('span', key.name),
+          h(KeyMultiplierControl, { apiKey: key, providerId: 'fixture-provider' }),
+        ])),
+        h(ToastContainer),
       ]),
     }).use(createI18n()).mount('#fixture')
   </script>

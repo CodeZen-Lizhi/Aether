@@ -589,6 +589,46 @@ describe('provider key concurrent_limit form behavior', () => {
 
 
 describe('密钥表单倍率来源', () => {
+  it('新增跟随时隐藏未查询的倍率，切回手动保留草稿', async () => {
+    const root = mountDialog(KeyFormDialog, { open: true, endpoint: null, providerId: 'provider-1', providerType: 'custom', availableApiFormats: ['openai:chat'], editingKey: null })
+    await settle()
+    updateInput(findInput(root, 'default_rate_multiplier'), '0.7')
+    ;[...root.querySelectorAll('button')].find(button => button.textContent?.trim() === '跟随上游')!.click()
+    await settle()
+    expect(root.querySelector('#default_rate_multiplier')).toBeNull()
+    ;[...root.querySelectorAll('button')].find(button => button.textContent?.trim() === '手动')!.click()
+    await settle()
+    expect(findInput(root, 'default_rate_multiplier').value).toBe('0.7')
+  })
+
+  it('新增跟随同步后重读，不能把创建时的手动快照写回列表', async () => {
+    const saved = vi.fn()
+    const root = mountDialog(KeyFormDialog, { open: true, endpoint: null, providerId: 'provider-1', providerType: 'custom', availableApiFormats: ['openai:chat'], editingKey: null, onSaved: saved })
+    await settle()
+    updateInput(root.querySelector<HTMLInputElement>('input[id^=key-name-]')!, '测试密钥')
+    ;[...root.querySelectorAll('button')].find(button => button.textContent?.trim() === '跟随上游')!.click()
+    await submit(root)
+    expect(multiplierMock).toHaveBeenCalledWith('provider-1', 'provider-key-1', 'upstream', undefined)
+    expect(saved).toHaveBeenCalledWith()
+  })
+
+  it.each(['success', 'error'])('编辑切换来源后不发出旧快照：%s', async (status) => {
+    const saved = vi.fn()
+    multiplierMock.mockResolvedValue({ status, message: '测试同步结果' })
+    const root = mountDialog(KeyFormDialog, { open: true, endpoint: null, providerId: 'provider-1', providerType: 'custom', availableApiFormats: ['openai:chat'], editingKey: createProviderKey(), onSaved: saved })
+    await settle()
+    ;[...root.querySelectorAll('button')].find(button => button.textContent?.trim() === '跟随上游')!.click()
+    await submit(root)
+    expect(saved).toHaveBeenCalledWith()
+  })
+
+  it('已跟随的编辑表单展示真实倍率，零倍率有效', async () => {
+    const root = mountDialog(KeyFormDialog, { open: true, endpoint: null, providerId: 'provider-1', providerType: 'custom', availableApiFormats: ['openai:chat'], editingKey: createProviderKey({ default_rate_multiplier: 0, multiplier_sync: { source: 'upstream', status: 'success' } }) })
+    await settle()
+    expect(root.querySelector('#default_rate_multiplier')).toBeNull()
+    expect(root.querySelector('span[aria-label=倍率]')?.textContent?.trim()).toBe('0')
+  })
+
   it('跟随切回手动调用来源接口，普通编辑不直接覆盖上游倍率', async () => {
     const root = mountDialog(KeyFormDialog, { open: true, endpoint: null, providerId: 'provider-1', providerType: 'custom', availableApiFormats: ['openai:chat'], editingKey: createProviderKey({ default_rate_multiplier: 0.3, multiplier_sync: { source: 'upstream', status: 'success' } }) })
     await settle()
